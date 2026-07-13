@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import { changePassword, createChatGroup, deleteChatGroup, deleteChatGroupMessage, deleteChatMessage, deleteUser, fetchChatConversations, fetchChatGroupMessages, fetchChatGroups, fetchChatMessages, fetchChatUnread, getCurrentUser, listUsers, loadAppData, login, logout, markChatGroupRead, markChatRead, saveAppData, saveUser, sendChatGroupMessage, sendChatMessage, updateChatGroupMembers } from "./api";
 import {
   LayoutDashboard,
   Wallet,
@@ -57,6 +58,7 @@ import {
   ChevronRight,
   Code,
   FileUp,
+  LogOut,
 } from "lucide-react";
 import {
   BarChart,
@@ -277,6 +279,113 @@ const GlobalStyle = () => (
       font-family: 'Be Vietnam Pro', sans-serif;
       background: var(--paper);
       color: var(--charcoal);
+    }
+    .domix-login-shell {
+      position: relative;
+      min-height: 100vh;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 50% -20%, rgba(184,145,43,0.18), transparent 36%),
+        linear-gradient(135deg, #0A1020 0%, #16233F 48%, #101827 100%);
+      isolation: isolate;
+    }
+    .domix-login-shell::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px);
+      background-size: 42px 42px;
+      mask-image: linear-gradient(to bottom, transparent, black 18%, black 82%, transparent);
+      animation: domix-grid-drift 18s linear infinite;
+      z-index: -2;
+    }
+    .domix-login-shell::after {
+      content: "";
+      position: absolute;
+      inset: -40% -20%;
+      background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,0.10) 50%, transparent 65%);
+      animation: domix-light-sweep 7s ease-in-out infinite;
+      z-index: -1;
+    }
+    .domix-login-panel {
+      position: relative;
+      background: #F8FAFC;
+      border: 1px solid rgba(255,255,255,0.72);
+      box-shadow: 0 24px 80px rgba(0,0,0,0.44), inset 0 1px 0 rgba(255,255,255,0.95);
+    }
+    .domix-login-panel::before {
+      content: "";
+      position: absolute;
+      inset: -1px;
+      border-radius: 8px;
+      padding: 1px;
+      background: linear-gradient(135deg, rgba(184,145,43,0.9), rgba(255,255,255,0.12), rgba(47,111,79,0.7));
+      -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+    .domix-login-title { color: #08111F; }
+    .domix-login-subtitle { color: #334155; }
+    .domix-login-kicker { color: #8A650A; }
+    .domix-login-label { color: #1E293B; font-weight: 600; }
+    .domix-login-muted { color: #475569; }
+    .domix-login-stat {
+      background: #E8EEF6;
+      border: 1px solid #CBD5E1;
+      color: #334155;
+    }
+    .domix-login-stat strong {
+      color: #0F172A;
+      display: block;
+      font-weight: 700;
+    }
+    .domix-login-icon {
+      background: #E8EEF6;
+      border: 1px solid #CBD5E1;
+      color: #8A650A;
+    }
+    .domix-login-divider { background: #CBD5E1; }
+    .domix-login-input {
+      background: #FFFFFF;
+      border: 1px solid #94A3B8;
+      color: #0F172A;
+      outline: none;
+      transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+    }
+    .domix-login-input:focus {
+      background: #FFFFFF;
+      border-color: #8A650A;
+      box-shadow: 0 0 0 3px rgba(184,145,43,0.24);
+    }
+    .domix-login-input::placeholder { color: #64748B; }
+    .domix-login-button {
+      background: linear-gradient(135deg, #12315F, #1F6B4C);
+      color: white;
+      border: 0;
+      box-shadow: 0 12px 28px rgba(0,0,0,0.28);
+      transition: transform 160ms ease, filter 160ms ease, box-shadow 160ms ease;
+    }
+    .domix-login-button:hover {
+      transform: translateY(-1px);
+      filter: brightness(1.08);
+      box-shadow: 0 16px 34px rgba(0,0,0,0.34);
+    }
+    .domix-login-button:disabled {
+      transform: none;
+      filter: grayscale(0.35);
+      opacity: 0.72;
+    }
+    @keyframes domix-grid-drift {
+      from { background-position: 0 0, 0 0; }
+      to { background-position: 84px 84px, 84px 84px; }
+    }
+    @keyframes domix-light-sweep {
+      0%, 45% { transform: translateX(-35%) rotate(0deg); opacity: 0; }
+      58% { opacity: 1; }
+      100% { transform: translateX(35%) rotate(0deg); opacity: 0; }
     }
     .ktns-serif { font-family: 'Noto Serif', serif; }
     .ktns-mono { font-family: 'JetBrains Mono', monospace; }
@@ -1204,6 +1313,140 @@ function LinkChip({ children }) {
     </span>
   );
 }
+
+const ConfirmDialogContext = React.createContext(null);
+
+function useConfirmDialog() {
+  const confirmDialog = React.useContext(ConfirmDialogContext);
+  return confirmDialog || (async () => false);
+}
+
+function ConfirmProvider({ children }) {
+  const [dialog, setDialog] = useState(null);
+  const confirmTone = dialog?.tone === "danger"
+    ? { iconBg: "#FEE2E2", iconColor: "#B42318", buttonBg: "#B42318", buttonBorder: "#B42318" }
+    : { iconBg: "#E8EEF6", iconColor: "#1B2A4A", buttonBg: "#1B2A4A", buttonBorder: "#1B2A4A" };
+
+  const confirmDialog = useCallback((options) => new Promise((resolve) => {
+    const config = typeof options === "string" ? { message: options } : (options || {});
+    setDialog({
+      title: config.title || "Xác nhận",
+      message: config.message || "",
+      confirmLabel: config.confirmLabel || "OK",
+      cancelLabel: config.cancelLabel || "Hủy",
+      tone: config.tone || "danger",
+      resolve,
+    });
+  }), []);
+
+  const closeDialog = (confirmed) => {
+    if (!dialog) return;
+    dialog.resolve(confirmed);
+    setDialog(null);
+  };
+
+  return (
+    <ConfirmDialogContext.Provider value={confirmDialog}>
+      {children}
+      {dialog && (
+        <div className="fixed inset-0 z-[100] bg-ink/55 backdrop-blur-[2px] flex items-center justify-center p-4" onMouseDown={() => closeDialog(false)}>
+          <div className="w-full max-w-md rounded-lg bg-white border border-paper-line shadow-2xl overflow-hidden" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="p-5 flex gap-3">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0" style={{ backgroundColor: confirmTone.iconBg, color: confirmTone.iconColor }}>
+                <AlertTriangle size={20} />
+              </div>
+              <div className="min-w-0">
+                <h3 className="ktns-serif text-lg font-semibold text-ink">{dialog.title}</h3>
+                <p className="text-sm text-charcoal mt-1 leading-relaxed whitespace-pre-wrap">{dialog.message}</p>
+              </div>
+            </div>
+            <div className="px-5 py-4 bg-paper border-t border-paper-line flex justify-end gap-2">
+              <button type="button" onClick={() => closeDialog(false)} className="rounded-md border border-paper-line bg-white px-4 py-2 text-sm font-medium text-ink hover:border-gold">
+                {dialog.cancelLabel}
+              </button>
+              <button type="button" onClick={() => closeDialog(true)} className="rounded-md px-4 py-2 text-sm font-semibold hover:opacity-90" style={{ backgroundColor: confirmTone.buttonBg, border: `1px solid ${confirmTone.buttonBorder}`, color: "#FFFFFF" }}>
+                {dialog.confirmLabel}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </ConfirmDialogContext.Provider>
+  );
+}
+
+function LoginScreen({ onLogin }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      await onLogin(email.trim(), password);
+    } catch (err) {
+      setError(err.message || "Không đăng nhập được");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="ktns-app domix-login-shell flex items-center justify-center px-4 py-10">
+      <GlobalStyle />
+      <form onSubmit={submit} className="domix-login-panel w-full max-w-md rounded-lg p-7 flex flex-col gap-5">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="domix-login-kicker inline-flex items-center gap-2 text-[11px] uppercase tracking-[0.18em] mb-3">
+              <Sparkles size={13} /> Secure workspace
+            </div>
+            <div className="domix-login-title ktns-serif text-4xl font-bold leading-none">DOMIX</div>
+            <div className="domix-login-subtitle text-sm mt-3">Đăng nhập để truy cập hệ thống vận hành nội bộ</div>
+          </div>
+          <div className="domix-login-icon w-12 h-12 rounded-md flex items-center justify-center shrink-0">
+            <Building2 size={23} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 text-[10px]">
+          <div className="domix-login-stat rounded px-2 py-2">
+            <strong>SQLite</strong>
+            <div>Lưu DB</div>
+          </div>
+          <div className="domix-login-stat rounded px-2 py-2">
+            <strong>PBKDF2</strong>
+            <div>Mã hóa mật khẩu</div>
+          </div>
+          <div className="domix-login-stat rounded px-2 py-2">
+            <strong>Role</strong>
+            <div>Phân quyền</div>
+          </div>
+        </div>
+
+        <div className="domix-login-divider h-px" />
+
+        <label className="domix-login-label text-xs flex flex-col gap-1.5">
+          Gmail / Email công ty
+          <input id="domix-login-email" name="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="domix-login-input rounded-md px-3 py-2.5 text-sm" autoComplete="email" placeholder="ten@gmail.com" />
+        </label>
+        <label className="domix-login-label text-xs flex flex-col gap-1.5">
+          Mật khẩu
+          <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="domix-login-input rounded-md px-3 py-2.5 text-sm" autoComplete="current-password" placeholder="Nhập mật khẩu" />
+        </label>
+        {error && <div className="text-xs text-red-100 bg-red-500/12 border border-red-300/20 rounded-md px-3 py-2">{error}</div>}
+        <button type="submit" disabled={loading} className="domix-login-button rounded-md text-sm font-semibold px-4 py-3 flex items-center justify-center gap-2">
+          {loading && <Loader2 size={15} className="animate-spin" />}
+          {loading ? "Đang xác thực..." : "Đăng nhập"}
+        </button>
+        <div className="domix-login-muted text-[11px] text-center">Phiên đăng nhập được cấp bằng token và tự hết hạn sau 12 giờ.</div>
+      </form>
+    </div>
+  );
+}
+
 // Bấm vào tên hoặc icon bút chì để sửa — dùng khi lỡ gõ sai tên nhân viên.
 function EditableName({ value, onSave, className }) {
   const [editing, setEditing] = useState(false);
@@ -1340,7 +1583,7 @@ function quarterOf(month) { return Math.ceil(month / 3); }
 function quarterMonths(year, quarter) { return [1, 2, 3].map((i) => ({ year, month: (quarter - 1) * 3 + i })); }
 
 // ---------- Main App ----------
-export default function App() {
+function DomixApp({ authUser, onLogout }) {
   const [tab, setTab] = useState("dashboard");
   const [transactions, setTransactions] = useState(initialTransactions);
   const [employees, setEmployees] = useState(initialEmployees);
@@ -1349,6 +1592,7 @@ export default function App() {
   const [debts, setDebts] = useState(initialDebts);
   const [inventory, setInventory] = useState(initialInventory);
   const [tasks, setTasks] = useState(initialTasks);
+  const [chatUnread, setChatUnread] = useState(0);
   const [lang, setLang] = useState("vi");
   const [company, setCompany] = useState(DEFAULT_COMPANY);
   const [unlockedMonths, setUnlockedMonths] = useState(new Set());
@@ -1417,16 +1661,87 @@ export default function App() {
   // đều tự tính lại đúng số của tháng đó, tháng nào ra tháng đó, không lẫn dữ liệu.
   const [reportYear, setReportYear] = useState(ATT_YEAR);
   const [reportMonth, setReportMonth] = useState(ATT_MONTH);
+  const hasLoadedDbData = useRef(false);
+  const canWriteData = authUser?.role === "admin" || authUser?.role === "user";
 
-  // Xuất/Nhập TOÀN BỘ dữ liệu ra file — vì app không có server lưu trữ thật, dữ liệu chỉ tồn tại
-  // trong phiên làm việc hiện tại (tải lại trang là mất). Đây là cách duy nhất trong phạm vi 1 app
-  // chạy trình duyệt để bạn tự sao lưu trước khi đóng tab, và nạp lại khi mở lại.
+  const appDataSnapshot = useMemo(() => ({
+    transactions, employees, orders, marketingLogs, debts, inventory, tasks, lang, company,
+    unlockedMonths: Array.from(unlockedMonths),
+    capitalContributions, distributionPartners, distributionOrders, payrollPayments, kpiTiers,
+    cvReviews, marketingPages,
+  }), [
+    transactions, employees, orders, marketingLogs, debts, inventory, tasks, lang, company,
+    unlockedMonths, capitalContributions, distributionPartners, distributionOrders, payrollPayments,
+    kpiTiers, cvReviews, marketingPages,
+  ]);
+  const initialAppDataSnapshot = useRef(null);
+  if (!initialAppDataSnapshot.current) initialAppDataSnapshot.current = appDataSnapshot;
+
+  const applyAppData = useCallback((data) => {
+    if (data.transactions) setTransactions(data.transactions);
+    if (data.employees) setEmployees(data.employees);
+    if (data.orders) setOrders(data.orders);
+    if (data.marketingLogs) setMarketingLogs(data.marketingLogs);
+    if (data.debts) setDebts(data.debts);
+    if (data.inventory) setInventory(data.inventory);
+    if (data.tasks) setTasks(data.tasks);
+    if (data.lang) setLang(data.lang);
+    if (data.company) setCompany(data.company);
+    if (Array.isArray(data.unlockedMonths)) setUnlockedMonths(new Set(data.unlockedMonths));
+    if (data.capitalContributions) setCapitalContributions(data.capitalContributions);
+    if (data.distributionPartners) setDistributionPartners(data.distributionPartners);
+    if (data.distributionOrders) setDistributionOrders(data.distributionOrders);
+    if (data.payrollPayments) setPayrollPayments(data.payrollPayments);
+    if (data.kpiTiers) setKpiTiers(data.kpiTiers);
+    if (data.cvReviews) setCvReviews(data.cvReviews);
+    if (data.marketingPages) setMarketingPages(data.marketingPages);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadAppData()
+      .then((result) => {
+        if (cancelled) return;
+        if (result.data) applyAppData(result.data);
+        else saveAppData(initialAppDataSnapshot.current).catch((err) => console.warn("Không seed được dữ liệu vào DB:", err));
+        hasLoadedDbData.current = true;
+      })
+      .catch((err) => {
+        hasLoadedDbData.current = true;
+        console.warn("Không kết nối được DOMIX API, đang dùng dữ liệu mặc định trong trình duyệt:", err);
+      });
+    return () => { cancelled = true; };
+  }, [applyAppData]);
+
+  useEffect(() => {
+    if (!canWriteData) return;
+    if (!hasLoadedDbData.current) return;
+    const timer = window.setTimeout(() => {
+      saveAppData(appDataSnapshot).catch((err) => console.warn("Không lưu được dữ liệu vào DB:", err));
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [appDataSnapshot, canWriteData]);
+
+  const refreshChatUnread = useCallback(async () => {
+    try {
+      const result = await fetchChatUnread();
+      setChatUnread(result.unread || 0);
+    } catch (err) {
+      // Chat dùng polling, bỏ qua lỗi ngắn hạn để không làm gián đoạn màn chính.
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshChatUnread();
+    const timer = window.setInterval(refreshChatUnread, 2000);
+    return () => window.clearInterval(timer);
+  }, [refreshChatUnread]);
+
+  // Xuất/Nhập TOÀN BỘ dữ liệu ra file — dùng như kênh sao lưu thủ công bên cạnh SQLite backend.
   const exportAllData = () => {
     const snapshot = {
       _meta: { exportedAt: new Date().toISOString(), appName: "DOMIX", version: 1 },
-      transactions, employees, orders, marketingLogs, debts, inventory, tasks, lang, company,
-      capitalContributions, distributionPartners, distributionOrders, payrollPayments, kpiTiers,
-      cvReviews, marketingPages,
+      ...appDataSnapshot,
     };
     const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -1437,22 +1752,7 @@ export default function App() {
   const importAllData = (jsonText) => {
     try {
       const data = JSON.parse(jsonText);
-      if (data.transactions) setTransactions(data.transactions);
-      if (data.employees) setEmployees(data.employees);
-      if (data.orders) setOrders(data.orders);
-      if (data.marketingLogs) setMarketingLogs(data.marketingLogs);
-      if (data.debts) setDebts(data.debts);
-      if (data.inventory) setInventory(data.inventory);
-      if (data.tasks) setTasks(data.tasks);
-      if (data.lang) setLang(data.lang);
-      if (data.company) setCompany(data.company);
-      if (data.capitalContributions) setCapitalContributions(data.capitalContributions);
-      if (data.distributionPartners) setDistributionPartners(data.distributionPartners);
-      if (data.distributionOrders) setDistributionOrders(data.distributionOrders);
-      if (data.payrollPayments) setPayrollPayments(data.payrollPayments);
-      if (data.kpiTiers) setKpiTiers(data.kpiTiers);
-      if (data.cvReviews) setCvReviews(data.cvReviews);
-      if (data.marketingPages) setMarketingPages(data.marketingPages);
+      applyAppData(data);
       return { ok: true, exportedAt: data._meta?.exportedAt };
     } catch (err) {
       return { ok: false, error: err.message };
@@ -1581,6 +1881,7 @@ export default function App() {
     { id: "hoptac", label: t("nav_hoptac"), icon: Handshake },
     { id: "kho", label: t("nav_kho"), icon: Package },
     { id: "giaoviec", label: t("nav_giaoviec"), icon: ClipboardList },
+    { id: "chat", label: "Tin nhắn", icon: MessageCircle },
     { id: "crm", label: t("nav_crm"), icon: ShoppingCart },
     { id: "marketing", label: t("nav_marketing"), icon: Megaphone },
     { id: "nhansu", label: t("nav_nhansu"), icon: Users },
@@ -1592,8 +1893,10 @@ export default function App() {
     { id: "hoachdinh", label: t("nav_hoachdinh"), icon: PieChart },
     { id: "ai", label: t("nav_ai"), icon: Bot },
     { id: "phaply", label: t("nav_phaply"), icon: Scale },
+    { id: "my-account", label: "Tài khoản của tôi", icon: UserCheck },
     { id: "settings", label: t("nav_settings"), icon: Settings },
   ];
+  if (authUser?.role === "admin") nav.push({ id: "accounts", label: "Tài khoản", icon: UserCog });
 
   return (
     <div className="ktns-app min-h-screen w-full flex">
@@ -1618,19 +1921,26 @@ export default function App() {
             <option value="th" style={{ color: "#1B2A4A" }}>🇹🇭 ไทย</option>
           </select>
         </div>
-        <nav className="flex-1 py-3">
+        <nav className="flex-1 py-3 bg-ink">
           {nav.map((n) => {
             const Icon = n.icon;
             const active = tab === n.id;
             return (
-              <button key={n.id} onClick={() => setTab(n.id)} className={`w-full flex items-center gap-3 px-5 py-3 text-sm text-left transition-colors ${active ? "ktns-tab-active text-white" : "text-white/70 hover:text-white hover:bg-white/5"}`}>
+              <button key={n.id} onClick={() => setTab(n.id)} className={`w-full flex items-center gap-3 px-5 py-3 text-sm text-left transition-colors border-0 bg-transparent ${active ? "ktns-tab-active text-white" : "text-slate-200 hover:text-white hover:bg-ink-light"}`}>
                 <Icon size={16} />
                 {n.label}
               </button>
             );
           })}
         </nav>
-        <div className="px-5 py-4 border-t border-white/10 flex flex-col gap-2">
+        <div className="px-5 py-4 border-t border-white/10 flex flex-col gap-3">
+          <div className="min-w-0">
+            <div className="text-[11px] text-white/80 font-medium truncate">{authUser.email}</div>
+          </div>
+          <button onClick={onLogout} className="w-full rounded-md bg-stamp-red px-4 py-3 text-sm font-semibold text-white shadow-sm hover:opacity-90 flex items-center justify-center gap-2">
+            <LogOut size={16} />
+            Đăng xuất
+          </button>
           <div className="flex items-center gap-2">
             <Building2 size={13} className="text-gold shrink-0" />
             <span className="text-[11px] text-white/80 font-medium">{company.name}</span>
@@ -1684,6 +1994,7 @@ export default function App() {
           {tab === "hoptac" && <HopTacPhanPhoi partners={distributionPartners} setPartners={setDistributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} setTransactions={setTransactions} transactions={transactions} company={company} inventory={inventory} setInventory={setInventory} reportYear={reportYear} reportMonth={reportMonth} />}
           {tab === "kho" && <KhoHang inventory={inventory} setInventory={setInventory} orders={orders} distOrders={distributionOrders} distPartners={distributionPartners} />}
           {tab === "giaoviec" && <GiaoViec tasks={tasks} setTasks={setTasks} employees={activeEmployees} orders={orders} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} />}
+          {tab === "chat" && <ChatPage authUser={authUser} onUnreadChange={setChatUnread} />}
           {tab === "crm" && <DoanhThuCRM orders={orders} setOrders={setOrders} employees={activeEmployees} revenueByEmployee={revenueByEmployee} setTransactions={setTransactions} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} />}
           {tab === "marketing" && <MarketingDaily logs={marketingLogs} setLogs={setMarketingLogs} employees={activeEmployees} marketingByEmployee={marketingByEmployee} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setPages={setMarketingPages} orders={orders} inventory={inventory} />}
           {tab === "nhansu" && <NhanSu employees={employees} setEmployees={setEmployees} showForm={showEmpForm} setShowForm={setShowEmpForm} reportYear={reportYear} reportMonth={reportMonth} />}
@@ -1695,8 +2006,327 @@ export default function App() {
           {tab === "hoachdinh" && <HoachDinhNganSach prevSnapshot={prevSnapshot} prevPeriod={prevPeriod} roleGroupStats={roleGroupStats} company={company} />}
           {tab === "ai" && <TroLyAI totals={totals} transactions={transactions} setTransactions={setTransactions} orders={orders} employees={effectiveActiveEmployees} payrollRows={payrollRows} totalPayroll={totalPayroll} />}
           {tab === "phaply" && <TroLyPhapLy employees={activeEmployees} setEmployees={setEmployees} company={company} />}
+          {tab === "my-account" && <MyAccount user={authUser} />}
+          {tab === "accounts" && authUser?.role === "admin" && <AdminAccounts currentUser={authUser} />}
         </div>
       </main>
+      <button
+        type="button"
+        onClick={() => setTab("chat")}
+        className="fixed bottom-5 right-5 z-40 w-14 h-14 rounded-full bg-ink text-white shadow-xl border border-white/20 flex items-center justify-center hover:bg-ink-light transition-colors"
+        title="Mở tin nhắn"
+      >
+        <MessageCircle size={24} />
+        {chatUnread > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-6 h-6 px-1 rounded-full bg-stamp-red text-white text-xs font-bold flex items-center justify-center border-2 border-white">
+            {chatUnread > 99 ? "99+" : chatUnread}
+          </span>
+        )}
+      </button>
+    </div>
+  );
+}
+
+export default function App() {
+  const [authUser, setAuthUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCurrentUser()
+      .then((result) => {
+        if (!cancelled) setAuthUser(result.user);
+      })
+      .catch(() => {
+        if (!cancelled) setAuthUser(null);
+      })
+      .finally(() => {
+        if (!cancelled) setAuthLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const handleLogin = async (email, password) => {
+    const user = await login(email, password);
+    setAuthUser(user);
+  };
+
+  const handleLogout = async () => {
+    await logout();
+    setAuthUser(null);
+  };
+
+  if (authLoading) {
+    return (
+      <div className="ktns-app min-h-screen flex items-center justify-center bg-paper text-sm text-muted">
+        Đang kiểm tra phiên đăng nhập...
+      </div>
+    );
+  }
+
+  if (!authUser) {
+    return (
+      <ConfirmProvider>
+        <LoginScreen onLogin={handleLogin} />
+      </ConfirmProvider>
+    );
+  }
+
+  return (
+    <ConfirmProvider>
+      <DomixApp authUser={authUser} onLogout={handleLogout} />
+    </ConfirmProvider>
+  );
+}
+
+function MyAccount({ user }) {
+  const [form, setForm] = useState({ currentPassword: "", newPassword: "", confirmPassword: "" });
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+  const confirmDialog = useConfirmDialog();
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setMessage("");
+    setError("");
+    if (form.newPassword !== form.confirmPassword) {
+      setError("Mật khẩu xác nhận không khớp.");
+      return;
+    }
+    setLoading(true);
+    try {
+      await changePassword(form.currentPassword, form.newPassword);
+      setForm({ currentPassword: "", newPassword: "", confirmPassword: "" });
+      setMessage("Đã đổi mật khẩu thành công.");
+    } catch (err) {
+      setError(err.message || "Không đổi được mật khẩu");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="max-w-2xl flex flex-col gap-5">
+      <div className="bg-white rounded-lg border border-paper-line p-5">
+        <h2 className="ktns-serif text-xl font-bold text-ink">Tài khoản của tôi</h2>
+        <p className="text-sm text-muted mt-1">Bạn chỉ có thể thay đổi mật khẩu của chính tài khoản đang đăng nhập.</p>
+        <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+          <div className="bg-paper border border-paper-line rounded-md px-3 py-2">
+            <div className="text-xs text-muted">Email</div>
+            <div className="ktns-mono text-ink mt-0.5">{user.email}</div>
+          </div>
+          <div className="bg-paper border border-paper-line rounded-md px-3 py-2">
+            <div className="text-xs text-muted">Quyền</div>
+            <div className="uppercase text-ink mt-0.5">{user.role}</div>
+          </div>
+        </div>
+      </div>
+
+      <form onSubmit={submit} className="bg-white rounded-lg border border-paper-line p-5 flex flex-col gap-3">
+        <h3 className="font-semibold text-ink">Đổi mật khẩu</h3>
+        <label className="text-xs text-muted flex flex-col gap-1">
+          Mật khẩu hiện tại
+          <input type="password" value={form.currentPassword} onChange={(e) => setForm({ ...form, currentPassword: e.target.value })} className="border border-paper-line rounded px-3 py-2 text-sm text-ink" autoComplete="current-password" required />
+        </label>
+        <label className="text-xs text-muted flex flex-col gap-1">
+          Mật khẩu mới
+          <input type="password" value={form.newPassword} onChange={(e) => setForm({ ...form, newPassword: e.target.value })} className="border border-paper-line rounded px-3 py-2 text-sm text-ink" autoComplete="new-password" minLength={8} required />
+        </label>
+        <label className="text-xs text-muted flex flex-col gap-1">
+          Nhập lại mật khẩu mới
+          <input type="password" value={form.confirmPassword} onChange={(e) => setForm({ ...form, confirmPassword: e.target.value })} className="border border-paper-line rounded px-3 py-2 text-sm text-ink" autoComplete="new-password" minLength={8} required />
+        </label>
+        {message && <div className="text-xs text-ledger-green bg-ledger-green/10 border border-ledger-green/20 rounded px-3 py-2">{message}</div>}
+        {error && <div className="text-xs text-stamp-red bg-stamp-red/10 border border-stamp-red/20 rounded px-3 py-2">{error}</div>}
+        <button disabled={loading} className="bg-ink text-white text-sm px-4 py-2 rounded-md hover:bg-ink-light disabled:opacity-60">
+          {loading ? "Đang đổi..." : "Lưu mật khẩu mới"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function AdminAccounts({ currentUser }) {
+  const [users, setUsers] = useState([]);
+  const [form, setForm] = useState({ email: "", password: "", role: "user" });
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const refreshUsers = useCallback(async () => {
+    const result = await listUsers();
+    setUsers(result.users || []);
+  }, []);
+
+  useEffect(() => {
+    refreshUsers().catch((err) => setError(err.message || "Không tải được danh sách tài khoản"));
+  }, [refreshUsers]);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    setLoading(true);
+    try {
+      const result = await saveUser(form);
+      setUsers(result.users || []);
+      setForm({ email: "", password: "", role: "user" });
+      setMessage("Đã lưu tài khoản.");
+    } catch (err) {
+      setError(err.message || "Không lưu được tài khoản");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateRole = async (user, role) => {
+    setError("");
+    setMessage("");
+    try {
+      const result = await saveUser({ email: user.email, role, active: user.active });
+      setUsers(result.users || []);
+      setMessage(`Đã cập nhật quyền cho ${user.email}.`);
+    } catch (err) {
+      setError(err.message || "Không cập nhật được quyền");
+    }
+  };
+
+  const toggleActive = async (user) => {
+    if (user.email === currentUser.email) {
+      setError("Không thể tự khóa tài khoản đang đăng nhập.");
+      return;
+    }
+    setError("");
+    setMessage("");
+    try {
+      const result = await saveUser({ email: user.email, role: user.role, active: !user.active });
+      setUsers(result.users || []);
+      setMessage(`Đã ${user.active ? "khóa" : "mở"} tài khoản ${user.email}.`);
+    } catch (err) {
+      setError(err.message || "Không cập nhật được trạng thái");
+    }
+  };
+
+  const editUser = (user) => {
+    setForm({ email: user.email, password: "", role: user.role });
+    setMessage(`Đang sửa ${user.email}. Để trống mật khẩu nếu không cần reset.`);
+    setError("");
+  };
+
+  const removeUser = async (user) => {
+    if (user.email === currentUser.email) {
+      setError("Không thể tự xóa tài khoản đang đăng nhập.");
+      return;
+    }
+    const confirmed = await confirmDialog({
+      title: "Xóa tài khoản",
+      message: `Xóa tài khoản ${user.email}?`,
+      confirmLabel: "Xóa",
+      cancelLabel: "Hủy",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    setError("");
+    setMessage("");
+    try {
+      const result = await deleteUser(user.email);
+      setUsers(result.users || []);
+      setMessage(`Đã xóa tài khoản ${user.email}.`);
+    } catch (err) {
+      setError(err.message || "Không xóa được tài khoản");
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-5">
+      <div className="bg-white rounded-lg border border-paper-line p-5">
+        <div className="flex items-start justify-between gap-4 mb-4">
+          <div>
+            <h2 className="ktns-serif text-xl font-bold text-ink">Quản trị tài khoản</h2>
+            <p className="text-sm text-muted mt-1">Mỗi nhân viên dùng email/Gmail riêng để đăng nhập. Admin có thể cấp quyền user hoặc admin.</p>
+          </div>
+          <div className="text-xs px-3 py-2 rounded-md bg-paper border border-paper-line text-ink-light">
+            {users.length} tài khoản
+          </div>
+        </div>
+
+        <form onSubmit={submit} className="grid grid-cols-4 gap-3 items-end">
+          <label className="text-xs text-muted flex flex-col gap-1 col-span-2">
+            Gmail / Email nhân viên
+            <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="nhanvien@gmail.com" className="border border-paper-line rounded px-3 py-2 text-sm text-ink" required />
+          </label>
+          <label className="text-xs text-muted flex flex-col gap-1">
+            Mật khẩu
+            <input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Bắt buộc khi tạo mới" className="border border-paper-line rounded px-3 py-2 text-sm text-ink" />
+          </label>
+          <label className="text-xs text-muted flex flex-col gap-1">
+            Quyền
+            <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="border border-paper-line rounded px-3 py-2 text-sm text-ink bg-white">
+              <option value="user">User</option>
+              <option value="admin">Admin</option>
+            </select>
+          </label>
+          <button disabled={loading} className="col-span-4 bg-ink text-white text-sm px-4 py-2 rounded-md hover:bg-ink-light disabled:opacity-60">
+            {loading ? "Đang lưu..." : "Tạo / cập nhật tài khoản"}
+          </button>
+          <button type="button" onClick={() => setForm({ email: "", password: "", role: "user" })} className="col-span-4 border border-paper-line text-ink text-sm px-4 py-2 rounded-md hover:border-gold">
+            Làm trống form
+          </button>
+        </form>
+
+        {message && <div className="mt-4 text-xs text-ledger-green bg-ledger-green/10 border border-ledger-green/20 rounded px-3 py-2">{message}</div>}
+        {error && <div className="mt-4 text-xs text-stamp-red bg-stamp-red/10 border border-stamp-red/20 rounded px-3 py-2">{error}</div>}
+      </div>
+
+      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-paper text-xs text-muted uppercase">
+            <tr>
+              <th className="px-4 py-3 text-left">Email</th>
+              <th className="px-4 py-3 text-left">Quyền</th>
+              <th className="px-4 py-3 text-left">Trạng thái</th>
+              <th className="px-4 py-3 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map((user) => (
+              <tr key={user.id} className="border-t border-paper-line">
+                <td className="px-4 py-3 ktns-mono text-ink">{user.email}</td>
+                <td className="px-4 py-3">
+                  <select value={user.role} onChange={(e) => updateRole(user, e.target.value)} className="border border-paper-line rounded px-2 py-1 text-xs text-ink bg-white">
+                    <option value="user">User</option>
+                    <option value="admin">Admin</option>
+                  </select>
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`text-xs px-2 py-1 rounded-full ${user.active ? "bg-ledger-green/10 text-ledger-green" : "bg-stamp-red/10 text-stamp-red"}`}>
+                    {user.active ? "Đang hoạt động" : "Đã khóa"}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  <div className="flex justify-end gap-2">
+                  <button onClick={() => editUser(user)} className="text-xs border border-paper-line text-ink px-3 py-1.5 rounded-md hover:border-gold">
+                    Sửa
+                  </button>
+                  <button onClick={() => toggleActive(user)} className="text-xs border border-paper-line text-ink px-3 py-1.5 rounded-md hover:border-gold disabled:opacity-40" disabled={user.email === currentUser.email}>
+                    {user.active ? "Khóa" : "Mở khóa"}
+                  </button>
+                  <button onClick={() => removeUser(user)} className="text-xs border border-stamp-red/30 text-stamp-red px-3 py-1.5 rounded-md hover:bg-stamp-red/5 disabled:opacity-40" disabled={user.email === currentUser.email}>
+                    Xóa
+                  </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {users.length === 0 && (
+              <tr>
+                <td colSpan={4} className="px-4 py-6 text-center text-sm text-muted">Chưa có tài khoản nào.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -3738,6 +4368,397 @@ function exportTasksExcel(tasks, employees, orders, marketingLogs) {
   ws["!cols"] = [{ wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 16 }, { wch: 40 }, { wch: 22 }];
   XLSX.utils.book_append_sheet(wb, ws, "Giao việc");
   XLSX.writeFile(wb, `DOMIX_Giao_viec_${TODAY.toISOString().slice(0, 10)}.xlsx`);
+}
+
+function ChatPage({ authUser, onUnreadChange }) {
+  const [input, setInput] = useState("");
+  const [mode, setMode] = useState("direct");
+  const [contacts, setContacts] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [selectedEmail, setSelectedEmail] = useState("");
+  const [selectedGroupId, setSelectedGroupId] = useState("");
+  const [messages, setMessages] = useState([]);
+  const [showGroupForm, setShowGroupForm] = useState(false);
+  const [groupForm, setGroupForm] = useState({ id: null, name: "", memberEmails: [] });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const scrollRef = useRef(null);
+  const confirmDialog = useConfirmDialog();
+
+  const loadConversations = useCallback(async () => {
+    const [directResult, groupResult] = await Promise.all([fetchChatConversations(), fetchChatGroups()]);
+    const nextContacts = directResult.contacts || [];
+    const nextGroups = groupResult.groups || [];
+    setContacts(nextContacts);
+    setGroups(nextGroups);
+    const directUnread = nextContacts.reduce((sum, contact) => sum + (Number(contact.unreadCount) || 0), 0);
+    const groupUnread = nextGroups.reduce((sum, group) => sum + (Number(group.unreadCount) || 0), 0);
+    onUnreadChange(directUnread + groupUnread);
+    if (mode === "direct" && !selectedEmail && nextContacts.length) setSelectedEmail(nextContacts[0].email);
+    if (mode === "group" && !selectedGroupId && nextGroups.length) setSelectedGroupId(String(nextGroups[0].id));
+  }, [mode, onUnreadChange, selectedEmail, selectedGroupId]);
+
+  const loadMessages = useCallback(async () => {
+    if (mode === "direct" && !selectedEmail) return;
+    if (mode === "group" && !selectedGroupId) return;
+    const result = mode === "group"
+      ? await fetchChatGroupMessages(selectedGroupId)
+      : await fetchChatMessages(selectedEmail);
+    setMessages(result.messages || []);
+  }, [mode, selectedEmail, selectedGroupId]);
+
+  const selectDirectChat = async (email) => {
+    setMode("direct");
+    setSelectedEmail(email);
+    setSelectedGroupId("");
+    try {
+      const unread = await markChatRead(email);
+      onUnreadChange(unread.unread || 0);
+      await loadConversations();
+    } catch (err) {
+      setError(err.message || "Không cập nhật được trạng thái đã đọc");
+    }
+  };
+
+  const selectGroupChat = async (groupId) => {
+    setMode("group");
+    setSelectedGroupId(String(groupId));
+    setSelectedEmail("");
+    try {
+      const unread = await markChatGroupRead(groupId);
+      onUnreadChange(unread.unread || 0);
+      await loadConversations();
+    } catch (err) {
+      setError(err.message || "Không cập nhật được trạng thái đã đọc");
+    }
+  };
+
+  useEffect(() => {
+    loadConversations().catch((err) => setError(err.message || "Không tải được danh sách chat"));
+    const timer = window.setInterval(() => {
+      loadConversations().catch(() => {});
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [loadConversations]);
+
+  useEffect(() => {
+    if (mode === "direct" && !selectedEmail) return;
+    if (mode === "group" && !selectedGroupId) return;
+    loadMessages().catch((err) => setError(err.message || "Không tải được tin nhắn"));
+    const timer = window.setInterval(() => {
+      loadMessages().catch(() => {});
+    }, 2000);
+    return () => window.clearInterval(timer);
+  }, [loadMessages, mode, selectedEmail, selectedGroupId]);
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages]);
+
+  const selectedContact = contacts.find((c) => c.email === selectedEmail);
+  const selectedGroup = groups.find((g) => String(g.id) === String(selectedGroupId));
+  const groupMembers = selectedGroup?.members || [];
+  const directUnreadTotal = contacts.reduce((sum, contact) => sum + (Number(contact.unreadCount) || 0), 0);
+  const groupUnreadTotal = groups.reduce((sum, group) => sum + (Number(group.unreadCount) || 0), 0);
+  const renderUnreadBadge = (count) => {
+    const value = Number(count) || 0;
+    if (value <= 0) return null;
+    return (
+      <span className="absolute right-2 top-2 min-w-6 h-6 px-1 rounded-full bg-stamp-red text-white text-[11px] font-bold flex items-center justify-center border border-white shadow-sm">
+        {value > 99 ? "99+" : value}
+      </span>
+    );
+  };
+  const renderModeAlert = (count) => {
+    if ((Number(count) || 0) <= 0) return null;
+    return (
+      <span
+        aria-label="Có tin nhắn mới"
+        className="absolute -top-1 -right-1 w-5 h-5 rounded-full text-[12px] font-bold flex items-center justify-center border-2 border-white shadow-sm"
+        style={{ backgroundColor: "#B42318", color: "#FFFFFF" }}
+      >
+        !
+      </span>
+    );
+  };
+  const send = async () => {
+    if (!input.trim() || loading) return;
+    if (mode === "direct" && !selectedEmail) return;
+    if (mode === "group" && !selectedGroupId) return;
+    setLoading(true);
+    setError("");
+    try {
+      if (mode === "group") await sendChatGroupMessage(selectedGroupId, input.trim());
+      else await sendChatMessage(selectedEmail, input.trim());
+      setInput("");
+      await loadMessages();
+      await loadConversations();
+    } catch (err) {
+      setError(err.message || "Không gửi được tin nhắn");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openCreateGroup = () => {
+    setGroupForm({ id: null, name: "", memberEmails: [] });
+    setShowGroupForm(true);
+  };
+  const openEditGroup = () => {
+    if (!selectedGroup) return;
+    setGroupForm({ id: selectedGroup.id, name: selectedGroup.name, memberEmails: groupMembers.map((m) => m.email).filter((email) => email !== authUser?.email) });
+    setShowGroupForm(true);
+  };
+  const toggleGroupMember = (email) => {
+    setGroupForm((form) => ({
+      ...form,
+      memberEmails: form.memberEmails.includes(email)
+        ? form.memberEmails.filter((item) => item !== email)
+        : [...form.memberEmails, email],
+    }));
+  };
+  const saveGroup = async () => {
+    if (!groupForm.name.trim()) return;
+    setLoading(true);
+    setError("");
+    try {
+      const result = groupForm.id
+        ? await updateChatGroupMembers(groupForm.id, groupForm.name.trim(), groupForm.memberEmails)
+        : await createChatGroup(groupForm.name.trim(), groupForm.memberEmails);
+      setGroups(result.groups || []);
+      if (!groupForm.id && result.groupId) {
+        setMode("group");
+        setSelectedGroupId(String(result.groupId));
+      }
+      setShowGroupForm(false);
+    } catch (err) {
+      setError(err.message || "Không lưu được nhóm");
+    } finally {
+      setLoading(false);
+    }
+  };
+  const removeGroup = async () => {
+    if (!selectedGroup) return;
+    const confirmed = await confirmDialog({
+      title: "Xóa nhóm",
+      message: `Xóa nhóm "${selectedGroup.name}"?`,
+      confirmLabel: "Xóa",
+      cancelLabel: "Hủy",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    setLoading(true);
+    setError("");
+    try {
+      const result = await deleteChatGroup(selectedGroup.id);
+      setGroups(result.groups || []);
+      setSelectedGroupId("");
+      setMessages([]);
+    } catch (err) {
+      setError(err.message || "Không xóa được nhóm");
+    } finally {
+      setLoading(false);
+    }
+  };
+  const removeMessage = async (message) => {
+    const confirmed = await confirmDialog({
+      title: "Xóa tin nhắn",
+      message: "Xóa tin nhắn này?",
+      confirmLabel: "Xóa",
+      cancelLabel: "Hủy",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    setError("");
+    try {
+      if (mode === "group") await deleteChatGroupMessage(message.id);
+      else await deleteChatMessage(message.id);
+      await loadMessages();
+      await loadConversations();
+    } catch (err) {
+      setError(err.message || "Không xóa được tin nhắn");
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)] gap-4 h-[calc(100vh-180px)]">
+      <div className="bg-white rounded-lg border border-paper-line overflow-hidden flex flex-col">
+        <div className="px-5 py-4 border-b border-paper-line flex items-center justify-between">
+          <div>
+            <h2 className="ktns-serif text-lg font-semibold text-ink">Tin nhắn</h2>
+            <p className="text-xs text-muted mt-0.5">Nhắn riêng hoặc theo nhóm.</p>
+          </div>
+          <MessageCircle size={18} className="text-ink-light" />
+        </div>
+        <div className="p-3 border-b border-paper-line flex gap-2">
+          <button onClick={() => setMode("direct")} className={`relative flex-1 text-xs px-3 py-2 rounded-md border ${mode === "direct" ? "bg-ink text-white border-ink" : "bg-white text-ink border-paper-line"}`}>
+            Cá nhân
+            {renderModeAlert(directUnreadTotal)}
+          </button>
+          <button onClick={() => setMode("group")} className={`relative flex-1 text-xs px-3 py-2 rounded-md border ${mode === "group" ? "bg-ink text-white border-ink" : "bg-white text-ink border-paper-line"}`}>
+            Nhóm
+            {renderModeAlert(groupUnreadTotal)}
+          </button>
+        </div>
+        {mode === "group" && authUser?.role === "admin" && (
+          <div className="px-3 pb-3 border-b border-paper-line flex gap-2">
+            <button onClick={openCreateGroup} className="flex-1 text-xs bg-ledger-green text-white px-3 py-2 rounded-md hover:opacity-90">Tạo nhóm</button>
+            <button onClick={openEditGroup} disabled={!selectedGroup} className="flex-1 text-xs border border-paper-line text-ink px-3 py-2 rounded-md hover:border-gold disabled:opacity-40">Sửa nhóm</button>
+            <button onClick={removeGroup} disabled={!selectedGroup || loading} className="flex-1 text-xs border border-stamp-red/40 text-stamp-red px-3 py-2 rounded-md hover:bg-stamp-red/5 disabled:opacity-40">Xóa nhóm</button>
+          </div>
+        )}
+        <div className="flex-1 overflow-y-auto ktns-scrollbar p-3 flex flex-col gap-2">
+          {mode === "direct" && contacts.length === 0 && (
+            <div className="text-sm text-muted p-4 text-center">Chưa có tài khoản khác để nhắn tin.</div>
+          )}
+          {mode === "direct" && contacts.map((contact) => {
+            const active = contact.email === selectedEmail;
+            return (
+              <button
+                key={contact.email}
+                onClick={() => selectDirectChat(contact.email)}
+                className={`relative text-left rounded-md border px-3 py-3 pr-10 transition-colors ${active ? "bg-ink text-white border-ink" : "bg-white text-ink border-paper-line hover:border-gold"}`}
+              >
+                {renderUnreadBadge(contact.unreadCount)}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-medium text-sm truncate">{contact.email}</div>
+                </div>
+                <div className={`text-[11px] uppercase mt-0.5 ${active ? "text-white/60" : "text-muted"}`}>{contact.role}</div>
+                {contact.lastMessage && <div className={`text-xs mt-1 truncate ${active ? "text-white/75" : "text-muted"}`}>{contact.lastMessage}</div>}
+              </button>
+            );
+          })}
+          {mode === "group" && groups.length === 0 && (
+            <div className="text-sm text-muted p-4 text-center">Chưa có nhóm chat.</div>
+          )}
+          {mode === "group" && groups.map((group) => {
+            const active = String(group.id) === String(selectedGroupId);
+            return (
+              <button
+                key={group.id}
+                onClick={() => selectGroupChat(group.id)}
+                className={`relative text-left rounded-md border px-3 py-3 pr-10 transition-colors ${active ? "bg-ink text-white border-ink" : "bg-white text-ink border-paper-line hover:border-gold"}`}
+              >
+                {renderUnreadBadge(group.unreadCount)}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="font-medium text-sm truncate">{group.name}</div>
+                </div>
+                <div className={`text-[11px] mt-0.5 ${active ? "text-white/60" : "text-muted"}`}>{group.members?.length || 0} thành viên</div>
+                {group.lastMessage && <div className={`text-xs mt-1 truncate ${active ? "text-white/75" : "text-muted"}`}>{group.lastMessage}</div>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {showGroupForm && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg border border-paper-line w-full max-w-lg p-5 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="ktns-serif text-lg font-semibold text-ink">{groupForm.id ? "Sửa nhóm" : "Tạo nhóm"}</h3>
+              <button onClick={() => setShowGroupForm(false)} className="text-muted hover:text-ink"><X size={18} /></button>
+            </div>
+            <label className="text-xs text-muted flex flex-col gap-1">
+              Tên nhóm
+              <input value={groupForm.name} onChange={(e) => setGroupForm({ ...groupForm, name: e.target.value })} className="border border-paper-line rounded px-3 py-2 text-sm text-ink" placeholder="VD: Kinh doanh tháng này" />
+            </label>
+            <div className="mt-4">
+              <div className="text-xs text-muted mb-2">Thành viên</div>
+              <div className="max-h-64 overflow-y-auto ktns-scrollbar border border-paper-line rounded-md divide-y divide-paper-line">
+                {contacts.map((contact) => (
+                  <label key={contact.email} className="flex items-center gap-2 px-3 py-2 text-sm text-ink">
+                    <input type="checkbox" checked={groupForm.memberEmails.includes(contact.email)} onChange={() => toggleGroupMember(contact.email)} />
+                    <span className="truncate">{contact.email}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <div className="flex gap-2">
+                <button onClick={() => setShowGroupForm(false)} className="text-sm border border-paper-line text-ink px-4 py-2 rounded-md hover:border-gold">Hủy</button>
+                <button onClick={saveGroup} disabled={loading || !groupForm.name.trim()} className="text-sm bg-ink text-white px-4 py-2 rounded-md hover:bg-ink-light disabled:opacity-40">Lưu nhóm</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div className="bg-white rounded-lg border border-paper-line flex flex-col overflow-hidden">
+        <div className="px-5 py-4 border-b border-paper-line flex items-center justify-between">
+          <div>
+            <h2 className="ktns-serif text-lg font-semibold text-ink">
+              {mode === "group" ? (selectedGroup?.name || "Chọn nhóm") : (selectedContact?.email || "Chọn người nhận")}
+            </h2>
+            {mode === "group" && selectedGroup && (
+              <p className="text-xs text-muted mt-0.5">{groupMembers.map((m) => m.email).join(", ")}</p>
+            )}
+          </div>
+          {mode === "direct" && selectedContact && <span className="text-[10px] uppercase px-2 py-1 rounded-full bg-paper border border-paper-line text-ink-light">{selectedContact.role}</span>}
+          {mode === "group" && selectedGroup && authUser?.role === "admin" && (
+            <button onClick={openEditGroup} className="text-xs border border-paper-line text-ink px-3 py-1.5 rounded-md hover:border-gold">Quản trị nhóm</button>
+          )}
+        </div>
+
+        <div ref={scrollRef} className="flex-1 overflow-y-auto ktns-scrollbar p-5 flex flex-col gap-3 bg-paper/60">
+          {mode === "direct" && !selectedEmail && (
+            <div className="m-auto text-center max-w-sm">
+              <MessageCircle size={36} className="mx-auto text-ink-light mb-3" />
+              <div className="ktns-serif text-lg font-semibold text-ink">Chọn một người để nhắn</div>
+              <p className="text-sm text-muted mt-1">Bạn có thể giao việc riêng bằng nội dung tin nhắn.</p>
+            </div>
+          )}
+          {mode === "group" && !selectedGroupId && (
+            <div className="m-auto text-center max-w-sm">
+              <MessageCircle size={36} className="mx-auto text-ink-light mb-3" />
+              <div className="ktns-serif text-lg font-semibold text-ink">Chọn một nhóm để nhắn</div>
+              <p className="text-sm text-muted mt-1">Admin có thể tạo nhóm và thêm thành viên ở cột bên trái.</p>
+            </div>
+          )}
+          {((mode === "direct" && selectedEmail) || (mode === "group" && selectedGroupId)) && messages.length === 0 && (
+            <div className="m-auto text-center max-w-sm">
+              <div className="ktns-serif text-lg font-semibold text-ink">Chưa có tin nhắn</div>
+              <p className="text-sm text-muted mt-1">Bắt đầu trao đổi hoặc giao việc riêng cho tài khoản này.</p>
+            </div>
+          )}
+          {messages.map((m) => {
+            const mine = m.senderEmail === authUser?.email;
+            const time = m.createdAt ? new Date(m.createdAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "";
+            return (
+              <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                <div className={`group relative min-w-16 max-w-[78%] rounded-lg px-4 py-3 border flex flex-col gap-1 shadow-sm ${mine ? "bg-ink text-white border-ink" : "bg-white text-charcoal border-paper-line"}`}>
+                  {mode === "group" && !mine && <div className="text-[10px] text-ink-light mb-0.5">{m.senderEmail}</div>}
+                  <div className="text-sm whitespace-pre-wrap leading-relaxed">{m.body}</div>
+                  {time && <div className={`text-[10px] leading-none ${mine ? "text-white/60" : "text-muted"}`}>{time}</div>}
+                  {authUser?.role === "admin" && (
+                    <button onClick={() => removeMessage(m)} className={`absolute -top-2 ${mine ? "-left-2" : "-right-2"} w-6 h-6 rounded-full bg-white border border-paper-line text-muted hover:text-stamp-red opacity-0 group-hover:opacity-100 flex items-center justify-center shadow`}>
+                      <Trash2 size={12} />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="border-t border-paper-line p-4 bg-white flex flex-col gap-2">
+          {error && <div className="text-xs text-stamp-red bg-stamp-red/10 border border-stamp-red/20 rounded px-3 py-2">{error}</div>}
+          <div className="flex gap-2">
+            <input
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send()}
+              disabled={mode === "direct" ? !selectedEmail : !selectedGroupId}
+              placeholder={(mode === "direct" ? selectedEmail : selectedGroupId) ? "Nhập tin nhắn hoặc nội dung giao việc..." : "Chọn nơi nhận trước"}
+              className="flex-1 border border-paper-line rounded-md px-3 py-2 text-sm text-charcoal bg-white disabled:bg-paper disabled:text-muted"
+            />
+            <button onClick={send} disabled={(mode === "direct" ? !selectedEmail : !selectedGroupId) || !input.trim() || loading} className="bg-ink text-white px-4 rounded-md flex items-center gap-1.5 text-sm hover:bg-ink-light disabled:opacity-40">
+              <Send size={14} /> Gửi
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function GiaoViec({ tasks, setTasks, employees, orders, marketingLogs, reportYear, reportMonth }) {

@@ -4,6 +4,8 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "backend": "python backend/server.py --host 0.0.0.0 --port 8000",
+    "serve:lan": "npm.cmd run build && npm.cmd run backend",
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
