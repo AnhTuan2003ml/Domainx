@@ -1,14 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { changePassword, createChatGroup, deleteChatGroup, deleteChatGroupMessage, deleteChatMessage, fetchChatConversations, fetchChatGroupMessages, fetchChatGroups, fetchChatMessages, fetchChatUnread, getCurrentUser, listEmployees, listUsers, loadAppData, login, logout, markChatGroupRead, markChatRead, requestRegistrationOtp, saveAppData, saveEmployees, saveUser, sendChatGroupMessage, sendChatMessage, updateChatGroupMembers, verifyRegistrationOtp } from "./api";
-import {
-  roundVND, normalizePartner, normalizeDistributionOrder, normalizeDebt,
-  calculateDistributionFinancials, eligibleOrdersForSettlement, buildSettlementDraft,
-  approveSettlement, createDebtFromSettlement, recordDebtPayment, removeDebtPayment,
-  debtDisplayStatus, daysOverdue, makeTransaction, findDuplicateTransaction, isAutoTransaction,
-  SOURCE_MODULE_LABELS, buildStockMovement, hasStockMovement, MOVEMENT_LABELS,
-  buildCustomersFromOrders, customerKeyOf, makeAuditEntry, diffAudit, migrateAppData,
-  can, ACTIONS,
-} from "./domain";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   LayoutDashboard,
   Wallet,
@@ -27,14 +17,6 @@ import {
   Building2,
   Banknote,
   Loader2,
-  LogOut,
-  Eye,
-  EyeOff,
-  ShieldCheck,
-  Database,
-  KeyRound,
-  ChevronLeft,
-  Calendar,
   Target,
   CalendarCheck,
   Link2,
@@ -81,15 +63,6 @@ import {
   Search,
   Sun,
   Moon,
-  Info,
-  MoreHorizontal,
-  Smile,
-  CheckCheck,
-  UsersRound,
-  Mail,
-  PanelRightOpen,
-  ArrowLeft,
-  SlidersHorizontal,
 } from "lucide-react";
 import {
   BarChart,
@@ -358,590 +331,6 @@ const GlobalStyle = () => (
     @keyframes ktnsTickerScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
     .ktns-ticker { animation: ktnsTickerScroll 28s linear infinite; }
     .ktns-ticker:hover { animation-play-state: paused; }
-    .domix-login-shell {
-      position: relative;
-      min-height: 100vh;
-      overflow: hidden;
-      isolation: isolate;
-      color: #FFFFFF;
-      background: #08111B;
-    }
-    .domix-login-shell::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      z-index: -5;
-      background:
-        linear-gradient(110deg, rgba(6, 12, 22, 0.82) 0%, rgba(6, 12, 22, 0.58) 38%, rgba(7, 14, 25, 0.72) 100%),
-        linear-gradient(180deg, rgba(6, 12, 22, 0.18), rgba(6, 12, 22, 0.72)),
-        url("https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=80");
-      background-size: cover;
-      background-position: center;
-      transform: scale(1.03);
-    }
-    .domix-login-shell::after {
-      content: "";
-      position: absolute;
-      inset: -12%;
-      z-index: -1;
-      pointer-events: none;
-      background:
-        radial-gradient(circle at 18% 18%, rgba(81, 180, 184, 0.24), transparent 22%),
-        radial-gradient(circle at 78% 24%, rgba(255, 204, 126, 0.18), transparent 20%),
-        radial-gradient(circle at 54% 78%, rgba(113, 132, 255, 0.18), transparent 26%);
-      filter: blur(42px);
-      animation: domix-login-fog 16s ease-in-out infinite alternate;
-    }
-    .domix-login-backdrop {
-      position: absolute;
-      inset: 0;
-      overflow: hidden;
-      z-index: -4;
-      pointer-events: none;
-    }
-    .domix-login-backdrop-layer {
-      position: absolute;
-      inset: -8%;
-      opacity: 0;
-      transform: scale(1.08);
-      filter: saturate(0.8) contrast(1.05);
-      animation: domix-backdrop-cycle 20s linear infinite;
-      mix-blend-mode: screen;
-    }
-    .domix-login-backdrop-layer:nth-child(1) {
-      background:
-        linear-gradient(180deg, rgba(3, 10, 16, 0.24), rgba(3, 9, 14, 0.78)),
-        radial-gradient(circle at 52% 31%, rgba(217, 225, 204, 0.22), transparent 14%),
-        linear-gradient(150deg, transparent 0 30%, rgba(40, 94, 82, 0.68) 31% 52%, transparent 53%),
-        linear-gradient(35deg, #0C171B 0 36%, #244036 37% 54%, #0C171B 55% 100%);
-      animation-delay: 0s;
-    }
-    .domix-login-backdrop-layer:nth-child(2) {
-      background:
-        linear-gradient(180deg, rgba(4, 12, 19, 0.22), rgba(3, 9, 14, 0.76)),
-        radial-gradient(circle at 58% 24%, rgba(218, 238, 241, 0.24), transparent 16%),
-        linear-gradient(135deg, transparent 0 36%, rgba(35, 102, 123, 0.64) 37% 58%, transparent 59%),
-        linear-gradient(22deg, #0B151D 0 38%, #234557 39% 57%, #0A161D 58% 100%);
-      animation-delay: -6.66s;
-    }
-    .domix-login-backdrop-layer:nth-child(3) {
-      background:
-        linear-gradient(180deg, rgba(3, 10, 16, 0.20), rgba(3, 9, 14, 0.78)),
-        radial-gradient(circle at 46% 25%, rgba(234, 231, 210, 0.20), transparent 16%),
-        linear-gradient(145deg, transparent 0 34%, rgba(69, 79, 99, 0.70) 35% 55%, transparent 56%),
-        linear-gradient(30deg, #0B151C 0 36%, #323A47 37% 56%, #0A141B 57% 100%);
-      animation-delay: -13.33s;
-    }
-    .domix-login-noise {
-      position: absolute;
-      inset: 0;
-      z-index: -2;
-      pointer-events: none;
-      opacity: 0.38;
-      background-image:
-        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
-      background-size: 44px 44px;
-      mask-image: linear-gradient(to bottom, rgba(0,0,0,.85), transparent 94%);
-    }
-    .domix-login-topbar {
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-      background: rgba(6, 12, 22, 0.28);
-      backdrop-filter: blur(16px);
-      -webkit-backdrop-filter: blur(16px);
-    }
-    .domix-login-logo-mark {
-      background: linear-gradient(145deg, #F0CA68, #A97A20);
-      color: #07111D;
-      box-shadow: 0 10px 30px rgba(197, 148, 43, 0.26);
-    }
-    .domix-login-stage {
-      width: min(1280px, calc(100vw - 40px));
-      min-height: calc(100vh - 78px);
-      margin: 0 auto;
-      display: grid;
-      grid-template-columns: minmax(0, 1.08fr) minmax(390px, 0.62fr);
-      gap: clamp(24px, 4vw, 72px);
-      align-items: center;
-      padding: clamp(28px, 5vh, 58px) 0;
-    }
-    .domix-login-showcase {
-      min-width: 0;
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      padding-right: clamp(4px, 1vw, 18px);
-    }
-    .domix-login-eyebrow {
-      color: #F4D37F;
-      letter-spacing: 0.22em;
-      text-shadow: 0 8px 30px rgba(0,0,0,0.28);
-    }
-    .domix-login-heading {
-      text-wrap: balance;
-      text-shadow: 0 18px 54px rgba(0,0,0,0.45);
-      max-width: 720px;
-    }
-    .domix-carousel-window {
-      position: relative;
-      height: clamp(300px, 40vw, 455px);
-      margin-top: clamp(26px, 4vh, 42px);
-      perspective: 1300px;
-      overflow: hidden;
-      border-radius: 22px;
-      mask-image: linear-gradient(90deg, transparent, #000 10%, #000 90%, transparent);
-    }
-    .domix-carousel-window::before {
-      content: "";
-      position: absolute;
-      inset: 7% 6% 4%;
-      border-radius: 26px;
-      background: radial-gradient(ellipse at center, rgba(78, 144, 157, 0.20), transparent 67%);
-      filter: blur(30px);
-    }
-    .domix-voyage-card {
-      --scene-a: #203845;
-      --scene-b: #477A73;
-      --scene-c: #D8C17B;
-      position: absolute;
-      left: 50%;
-      top: 50%;
-      width: clamp(190px, 24vw, 310px);
-      height: clamp(260px, 33vw, 410px);
-      translate: -50% -50%;
-      overflow: hidden;
-      border-radius: 8px;
-      border: 1px solid rgba(255,255,255,0.18);
-      background:
-        linear-gradient(180deg, rgba(4,9,14,0.08) 0%, rgba(4,9,14,0.20) 48%, rgba(4,9,14,0.84) 100%),
-        radial-gradient(circle at 68% 20%, color-mix(in srgb, var(--scene-c) 70%, transparent), transparent 18%),
-        linear-gradient(145deg, transparent 0 34%, color-mix(in srgb, var(--scene-b) 92%, #101820) 35% 57%, transparent 58%),
-        linear-gradient(25deg, var(--scene-a) 0 37%, var(--scene-b) 38% 58%, #12202A 59% 100%);
-      box-shadow: 0 26px 56px rgba(0,0,0,0.52);
-      transform-style: preserve-3d;
-      animation: domix-card-orbit 20s cubic-bezier(.45,0,.2,1) infinite;
-      animation-delay: var(--delay);
-      will-change: transform, opacity, filter;
-    }
-    .domix-voyage-card::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      background:
-        repeating-linear-gradient(115deg, transparent 0 32px, rgba(255,255,255,0.035) 33px, transparent 34px),
-        linear-gradient(90deg, rgba(255,255,255,0.08), transparent 24%, transparent 76%, rgba(255,255,255,0.06));
-      mix-blend-mode: screen;
-    }
-    .domix-voyage-card::after {
-      content: "";
-      position: absolute;
-      left: -15%;
-      right: -15%;
-      bottom: -9%;
-      height: 42%;
-      background:
-        radial-gradient(ellipse at 30% 20%, rgba(255,255,255,0.22), transparent 35%),
-        radial-gradient(ellipse at 70% 32%, rgba(255,255,255,0.17), transparent 38%);
-      filter: blur(16px);
-      animation: domix-card-mist 7s ease-in-out infinite alternate;
-    }
-    .domix-voyage-card-copy {
-      position: absolute;
-      inset: auto 18px 24px;
-      z-index: 2;
-      text-align: center;
-      opacity: 0;
-      transform: translateY(8px);
-      animation: domix-card-copy 20s ease infinite;
-      animation-delay: var(--delay);
-    }
-    .domix-voyage-card-copy strong {
-      display: block;
-      font-size: clamp(17px, 2vw, 28px);
-      line-height: 1.06;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      text-shadow: 0 3px 18px rgba(0,0,0,0.72);
-    }
-    .domix-voyage-card-copy span {
-      display: block;
-      margin-top: 8px;
-      font-size: 10px;
-      color: rgba(255,255,255,0.72);
-      letter-spacing: 0.08em;
-    }
-    .domix-carousel-control {
-      position: absolute;
-      top: 50%;
-      width: 36px;
-      height: 36px;
-      border-radius: 999px;
-      border: 1px solid rgba(255,255,255,0.20);
-      background: rgba(4,12,20,0.42);
-      color: rgba(255,255,255,0.86);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      backdrop-filter: blur(8px);
-      z-index: 15;
-      pointer-events: none;
-    }
-    .domix-carousel-control.left { left: 6px; }
-    .domix-carousel-control.right { right: 6px; }
-    .domix-carousel-dots {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      gap: 7px;
-      margin-top: 12px;
-    }
-    .domix-carousel-dots span {
-      width: 5px;
-      height: 5px;
-      border-radius: 999px;
-      background: rgba(255,255,255,0.30);
-      animation: domix-dot-cycle 20s linear infinite;
-      animation-delay: var(--dot-delay);
-    }
-    .domix-login-card {
-      position: relative;
-      overflow: hidden;
-      border: 1px solid rgba(255,255,255,0.16);
-      background: rgba(8, 18, 30, 0.66);
-      box-shadow: 0 32px 90px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.10);
-      backdrop-filter: blur(24px) saturate(1.12);
-      -webkit-backdrop-filter: blur(24px) saturate(1.12);
-    }
-    .domix-login-card::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      background:
-        linear-gradient(125deg, rgba(255,255,255,0.10), transparent 27%),
-        radial-gradient(circle at 100% 0%, rgba(226, 189, 89, 0.14), transparent 32%);
-    }
-    .domix-login-panel {
-      position: relative;
-      z-index: 1;
-    }
-    .domix-login-kicker { color: #E7C66C; }
-    .domix-login-title { color: #FFFFFF; }
-    .domix-login-subtitle { color: rgba(255,255,255,0.60); }
-    .domix-login-label { color: rgba(255,255,255,0.82); font-weight: 600; }
-    .domix-login-muted { color: rgba(255,255,255,0.48); }
-    .domix-login-icon {
-      color: #E7C66C;
-      border: 1px solid rgba(231,198,108,0.30);
-      background: rgba(231,198,108,0.10);
-    }
-    .domix-login-divider { background: rgba(255,255,255,0.11); }
-    .domix-login-input {
-      width: 100%;
-      background: rgba(255,255,255,0.07);
-      border: 1px solid rgba(255,255,255,0.16);
-      color: #FFFFFF;
-      outline: none;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
-    }
-    .domix-login-input:hover { border-color: rgba(255,255,255,0.28); }
-    .domix-login-input:focus {
-      background: rgba(255,255,255,0.10);
-      border-color: #E7C66C !important;
-      box-shadow: 0 0 0 3px rgba(231,198,108,0.15) !important;
-    }
-    .domix-login-input::placeholder { color: rgba(255,255,255,0.34); }
-    .domix-login-eye {
-      background: rgba(255,255,255,0.92);
-      border: 1px solid rgba(255,255,255,0.38);
-      color: #111111;
-      cursor: pointer;
-      touch-action: manipulation;
-      user-select: none;
-      -webkit-tap-highlight-color: transparent;
-      transform: translateY(-50%) !important;
-      transition: color 0.12s ease, background-color 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease, transform 0.08s ease !important;
-      will-change: transform;
-    }
-    .domix-login-eye svg {
-      pointer-events: none;
-      stroke-width: 2.2;
-      transition: opacity 0.12s ease, transform 0.12s ease;
-    }
-    .domix-login-eye:hover {
-      color: #000000;
-      background: #FFFFFF;
-      border-color: rgba(255,255,255,0.78);
-      box-shadow: 0 4px 14px rgba(0,0,0,0.16);
-    }
-    .domix-login-eye:focus-visible {
-      outline: 2px solid #E7C66C;
-      outline-offset: 2px;
-    }
-    .domix-login-eye:active {
-      transform: translateY(-50%) scale(0.94) !important;
-    }
-    .domix-login-button {
-      position: relative;
-      overflow: hidden;
-      color: #08111B;
-      border: 0;
-      background: linear-gradient(135deg, #F0CE76, #C59431);
-      box-shadow: 0 16px 34px rgba(181, 132, 36, 0.25);
-    }
-    .domix-login-button::before {
-      content: "";
-      position: absolute;
-      inset: 0;
-      transform: translateX(-120%);
-      background: linear-gradient(100deg, transparent, rgba(255,255,255,0.48), transparent);
-      transition: transform 0.7s cubic-bezier(.16,1,.3,1);
-    }
-    .domix-login-button:hover::before { transform: translateX(120%); }
-    .domix-login-button:hover {
-      transform: translateY(-2px);
-      filter: brightness(1.05);
-      box-shadow: 0 20px 42px rgba(181, 132, 36, 0.34);
-    }
-    .domix-login-button:disabled { opacity: 0.66; transform: none; }
-    .domix-login-security {
-      border: 1px solid rgba(255,255,255,0.10);
-      background: rgba(255,255,255,0.045);
-    }
-    .domix-auth-switch {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 5px;
-      padding: 5px;
-      border-radius: 12px;
-      border: 1px solid rgba(255,255,255,0.10);
-      background: rgba(255,255,255,0.045);
-    }
-    .domix-auth-switch button {
-      min-height: 38px;
-      border: 0;
-      border-radius: 9px;
-      background: transparent;
-      color: rgba(255,255,255,0.56);
-      font-size: 12px;
-      font-weight: 700;
-      cursor: pointer;
-    }
-    .domix-auth-switch button.active {
-      background: rgba(255,255,255,0.13);
-      color: #FFFFFF;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 8px 22px rgba(0,0,0,0.16);
-    }
-    .domix-register-note {
-      border: 1px solid rgba(231,198,108,0.22);
-      background: rgba(231,198,108,0.08);
-      color: rgba(255,255,255,0.72);
-    }
-    .domix-otp-input {
-      text-align: center;
-      letter-spacing: 0.55em;
-      padding-left: calc(1rem + 0.55em);
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 22px;
-      font-weight: 700;
-    }
-    .domix-auth-link {
-      border: 0;
-      background: transparent;
-      color: #E7C66C;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 700;
-      padding: 0;
-    }
-    .domix-auth-link:disabled {
-      color: rgba(255,255,255,0.34);
-      cursor: not-allowed;
-    }
-    @keyframes domix-backdrop-cycle {
-      0%, 27% { opacity: 1; transform: scale(1.08); }
-      33%, 94% { opacity: 0; transform: scale(1.15); }
-      100% { opacity: 1; transform: scale(1.08); }
-    }
-    @keyframes domix-card-orbit {
-      0%, 7% { transform: translate3d(0,0,120px) rotateY(0deg) scale(1); opacity: 1; filter: brightness(1.06); z-index: 10; }
-      18%, 27% { transform: translate3d(150px,5px,20px) rotateY(-8deg) scale(.86); opacity: .82; filter: brightness(.78); z-index: 8; }
-      38%, 47% { transform: translate3d(285px,14px,-100px) rotateY(-13deg) scale(.70); opacity: .42; filter: brightness(.58); z-index: 4; }
-      58%, 67% { transform: translate3d(-285px,14px,-100px) rotateY(13deg) scale(.70); opacity: .42; filter: brightness(.58); z-index: 4; }
-      78%, 87% { transform: translate3d(-150px,5px,20px) rotateY(8deg) scale(.86); opacity: .82; filter: brightness(.78); z-index: 8; }
-      98%, 100% { transform: translate3d(0,0,120px) rotateY(0deg) scale(1); opacity: 1; filter: brightness(1.06); z-index: 10; }
-    }
-    @keyframes domix-card-copy {
-      0%, 8%, 96%, 100% { opacity: 1; transform: translateY(0); }
-      14%, 90% { opacity: 0; transform: translateY(9px); }
-    }
-    @keyframes domix-card-mist {
-      from { transform: translateX(-4%) scale(1); opacity: .66; }
-      to { transform: translateX(5%) scale(1.1); opacity: .92; }
-    }
-    @keyframes domix-dot-cycle {
-      0%, 8%, 96%, 100% { width: 18px; background: #E7C66C; }
-      14%, 90% { width: 5px; background: rgba(255,255,255,0.30); }
-    }
-    .domix-login-hero-panel {
-      position: relative;
-      margin-top: 30px;
-      width: min(100%, 620px);
-      border-radius: 30px;
-      padding: 24px;
-      border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(255,255,255,0.08);
-      box-shadow: 0 30px 70px rgba(0,0,0,0.28);
-      backdrop-filter: blur(18px);
-      -webkit-backdrop-filter: blur(18px);
-      transform-style: preserve-3d;
-      perspective: 1200px;
-      transition: transform .5s cubic-bezier(.16,1,.3,1), box-shadow .45s cubic-bezier(.16,1,.3,1), border-color .35s ease;
-    }
-    .domix-login-showcase:hover .domix-login-hero-panel {
-      transform: perspective(1200px) rotateX(5deg) rotateY(-8deg) translateY(-8px);
-      box-shadow: 0 40px 90px rgba(0,0,0,0.34);
-      border-color: rgba(255,255,255,0.22);
-    }
-    .domix-login-hero-panel::before {
-      content: "";
-      position: absolute;
-      inset: 12px;
-      border-radius: 24px;
-      background:
-        linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02)),
-        url("https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80");
-      background-size: cover;
-      background-position: center;
-      filter: saturate(1.02) contrast(1.04);
-      z-index: 0;
-    }
-    .domix-login-hero-panel::after {
-      content: "";
-      position: absolute;
-      inset: 12px;
-      border-radius: 24px;
-      background: linear-gradient(180deg, rgba(8,16,28,0.08), rgba(8,16,28,0.72));
-      z-index: 0;
-    }
-    .domix-login-hero-content, .domix-login-hero-chips, .domix-login-hero-bar { position: relative; z-index: 1; }
-    .domix-login-hero-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 14px;
-      border-radius: 999px;
-      background: rgba(9, 18, 30, 0.52);
-      border: 1px solid rgba(255,255,255,0.16);
-      color: #FFFFFF;
-      font-size: 11px;
-      letter-spacing: .14em;
-      text-transform: uppercase;
-      backdrop-filter: blur(8px);
-    }
-    .domix-login-hero-title {
-      margin-top: 18px;
-      font-size: clamp(26px, 3vw, 38px);
-      line-height: 1.08;
-      font-weight: 700;
-      text-shadow: 0 10px 30px rgba(0,0,0,0.45);
-    }
-    .domix-login-hero-copy {
-      margin-top: 12px;
-      max-width: 360px;
-      font-size: 13px;
-      line-height: 1.6;
-      color: rgba(255,255,255,0.74);
-    }
-    .domix-login-hero-chips {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 10px;
-      margin-top: 22px;
-    }
-    .domix-login-hero-chip {
-      padding: 10px 14px;
-      border-radius: 16px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(9, 18, 30, 0.46);
-      backdrop-filter: blur(7px);
-      min-width: 120px;
-    }
-    .domix-login-hero-chip strong {
-      display: block;
-      font-size: 13px;
-      color: #FFFFFF;
-    }
-    .domix-login-hero-chip span {
-      display: block;
-      margin-top: 4px;
-      font-size: 11px;
-      color: rgba(255,255,255,0.68);
-    }
-    .domix-login-hero-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-      margin-top: 22px;
-      padding: 12px 14px;
-      border-radius: 18px;
-      border: 1px solid rgba(255,255,255,0.12);
-      background: rgba(9, 18, 30, 0.40);
-      backdrop-filter: blur(8px);
-    }
-    .domix-login-hero-metric {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      min-width: 0;
-    }
-    .domix-login-hero-metric label {
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: .16em;
-      color: rgba(255,255,255,0.55);
-    }
-    .domix-login-hero-metric strong {
-      font-size: 18px;
-      color: #FFFFFF;
-    }
-    .domix-login-hero-line {
-      flex: 1;
-      height: 6px;
-      border-radius: 999px;
-      background: rgba(255,255,255,0.12);
-      overflow: hidden;
-    }
-    .domix-login-hero-line span {
-      display: block;
-      width: 72%;
-      height: 100%;
-      border-radius: inherit;
-      background: linear-gradient(90deg, #F0CE76, #85D5C5);
-      box-shadow: 0 0 18px rgba(240, 206, 118, 0.38);
-    }
-    @keyframes domix-login-fog {
-      from { transform: translate3d(-3%, 1%, 0) scale(1); }
-      to { transform: translate3d(3%, -2%, 0) scale(1.08); }
-    }
-    @media (max-width: 1023px) {
-      .domix-login-stage { grid-template-columns: 1fr; width: min(620px, calc(100vw - 32px)); }
-      .domix-login-showcase { display: none; }
-      .domix-login-top-links { display: none; }
-    }
-    @media (max-width: 560px) {
-      .domix-login-stage { width: min(100% - 24px, 500px); padding: 20px 0; min-height: calc(100vh - 64px); }
-      .domix-login-topbar { min-height: 64px; }
-      .domix-login-card { border-radius: 18px; }
-    }
-    @media (prefers-reduced-motion: reduce) {
-      .domix-voyage-card, .domix-voyage-card-copy, .domix-login-backdrop-layer,
-      .domix-login-shell::after, .domix-carousel-dots span, .domix-login-showcase:hover .domix-login-hero-panel { animation: none !important; }
-      .domix-voyage-card:nth-child(n+2) { display: none; }
-      .domix-voyage-card:first-child { transform: translate3d(0,0,0) scale(1); opacity: 1; }
-      .domix-voyage-card-copy { opacity: 1; transform: none; }
-    }
     .ktns-serif { font-family: 'Noto Serif', serif; }
     .ktns-mono { font-family: 'JetBrains Mono', monospace; }
 
@@ -1006,8 +395,6 @@ const GlobalStyle = () => (
     .ktns-scrollbar::-webkit-scrollbar-thumb { background: var(--ink-light); border-radius: 5px; border: 2px solid var(--paper); }
     .ktns-scrollbar::-webkit-scrollbar-thumb:hover { background: var(--ink); }
     .ktns-scrollbar { scrollbar-width: auto; scrollbar-color: var(--ink-light) var(--paper); }
-    .ktns-sidebar-scroll { scrollbar-width: none !important; -ms-overflow-style: none; }
-    .ktns-sidebar-scroll::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
     /* Mọi khung cuộn nội bộ trong bảng (max-h-[420px] overflow-y-auto) cũng dùng chung kiểu thanh
        cuộn rõ ràng này — trước đây mặc định của trình duyệt quá mảnh, gần như không thấy được. */
     div[class*="overflow-y-auto"]::-webkit-scrollbar { width: 10px; }
@@ -1588,9 +975,16 @@ const ROLE_BAND_CLASS = { sale: "band-blue", ky_thuat: "band-green", ads: "band-
 // bonus target, generic KPI, join date, role type + role-specific operating
 // metrics, plus per-day attendance. Chấm công, Bảng lương và Hiệu suất đều đọc
 // thẳng từ đây.
-// Không còn nhân sự fix cứng — dữ liệu nhân sự nạp động từ bảng `employees` trong SQLite
-// qua /api/employees. Mỗi nhân sự gắn với một tài khoản đăng nhập (email) trong bảng `users`.
-const initialEmployees = [];
+const initialEmployees = [
+  { id: 12, name: "Trần Tuấn Nghĩa", position: "Nhân viên Sale", dept: "Kinh doanh", baseSalary: 7500000, bonusTarget: 2000000, kpi: 0, joined: "2026-06-15", status: "active", resignedDate: null, roleType: "sale", salesTarget: 150000000, salesActual: 49790000, dealsClosed: 24, leadsHandled: 24, consecutiveLowKpiMonths: 0, dependents: 0, mealAllowance: 730000, attendanceBonus: 300000, otherBonus: 0, advance: 0, contractType: "chinh_thuc", probationRate: 1, dob: "", hometown: "", bankName: "", bankAccount: "", phone: "", email: "", idNumber: "", education: "", major: "", resumeSummary: "Nhập từ dữ liệu thật — sheet DOANH THU_TEAM AE.", attendance: defaultAttendance() },
+  { id: 13, name: "Trần Văn Hiếu", position: "Nhân viên Sale", dept: "Kinh doanh", baseSalary: 7500000, bonusTarget: 2000000, kpi: 0, joined: "2026-06-15", status: "active", resignedDate: null, roleType: "sale", salesTarget: 150000000, salesActual: 15930000, dealsClosed: 10, leadsHandled: 10, consecutiveLowKpiMonths: 0, dependents: 0, mealAllowance: 730000, attendanceBonus: 300000, otherBonus: 0, advance: 0, contractType: "chinh_thuc", probationRate: 1, dob: "", hometown: "", bankName: "", bankAccount: "", phone: "", email: "", idNumber: "", education: "", major: "", resumeSummary: "Nhập từ dữ liệu thật — sheet DOANH THU_TEAM AE.", attendance: defaultAttendance() },
+  { id: 14, name: "Lê Văn Thương", position: "Nhân viên Sale", dept: "Kinh doanh", baseSalary: 7500000, bonusTarget: 2000000, kpi: 0, joined: "2026-06-15", status: "active", resignedDate: null, roleType: "sale", salesTarget: 150000000, salesActual: 12160000, dealsClosed: 7, leadsHandled: 7, consecutiveLowKpiMonths: 0, dependents: 0, mealAllowance: 730000, attendanceBonus: 300000, otherBonus: 0, advance: 0, contractType: "chinh_thuc", probationRate: 1, dob: "", hometown: "", bankName: "", bankAccount: "", phone: "", email: "", idNumber: "", education: "", major: "", resumeSummary: "Nhập từ dữ liệu thật — sheet DOANH THU_TEAM AE.", attendance: defaultAttendance() },
+  { id: 15, name: "Đỗ Tuấn Anh", position: "Nhân viên chạy Ads", dept: "Marketing", baseSalary: 7500000, bonusTarget: 2000000, kpi: 0, joined: "2026-06-15", status: "active", resignedDate: null, roleType: "ads", adSpend: 8305889, adRevenue: 51200000, conversions: 24, ctr: 0, consecutiveLowKpiMonths: 0, dependents: 0, mealAllowance: 730000, attendanceBonus: 300000, otherBonus: 0, advance: 0, contractType: "chinh_thuc", probationRate: 1, dob: "", hometown: "", bankName: "", bankAccount: "", phone: "", email: "", idNumber: "", education: "", major: "", resumeSummary: "Nhập từ dữ liệu thật — sheet BÁO CÁO MKT 2026.", attendance: defaultAttendance() },
+
+  { id: 16, name: "Nguyễn Văn Toản", position: "Nhân viên chạy Ads", dept: "Marketing", baseSalary: 7500000, bonusTarget: 2000000, kpi: 0, joined: "2026-06-15", status: "active", resignedDate: null, roleType: "ads", adSpend: 10168694, adRevenue: 60340000, conversions: 29, ctr: 0, consecutiveLowKpiMonths: 0, dependents: 0, mealAllowance: 730000, attendanceBonus: 300000, otherBonus: 0, advance: 0, contractType: "chinh_thuc", probationRate: 1, dob: "", hometown: "", bankName: "", bankAccount: "", phone: "", email: "", idNumber: "", education: "", major: "", resumeSummary: "Nhập từ dữ liệu thật — sheet BÁO CÁO MKT 2026, khối đầu tiên.", attendance: defaultAttendance() },
+  { id: 18, name: "Nguyễn Tiến Phong", position: "Hỗ trợ kỹ thuật", dept: "Kỹ thuật", baseSalary: 7500000, bonusTarget: 2000000, kpi: 0, joined: "2026-06-15", status: "active", resignedDate: null, roleType: "ky_thuat", tasksAssigned: 0, tasksCompleted: 0, tasksOnTime: 0, bugsFixed: 0, upsaleValue: 0, dependents: 0, mealAllowance: 730000, attendanceBonus: 300000, otherBonus: 0, advance: 0, contractType: "chinh_thuc", probationRate: 1, dob: "", hometown: "", bankName: "", bankAccount: "", phone: "", email: "", idNumber: "", education: "", major: "", resumeSummary: "Nhập từ danh sách nhân viên thật, chưa có dữ liệu task/upsale.", attendance: defaultAttendance() },
+  { id: 19, name: "Hoàng Văn Hiệp", position: "Hỗ trợ kỹ thuật", dept: "Kỹ thuật", baseSalary: 7500000, bonusTarget: 2000000, kpi: 0, joined: "2026-06-15", status: "active", resignedDate: null, roleType: "ky_thuat", tasksAssigned: 0, tasksCompleted: 0, tasksOnTime: 0, bugsFixed: 0, upsaleValue: 0, dependents: 0, mealAllowance: 730000, attendanceBonus: 300000, otherBonus: 0, advance: 0, contractType: "chinh_thuc", probationRate: 1, dob: "", hometown: "", bankName: "", bankAccount: "", phone: "", email: "", idNumber: "", education: "", major: "", resumeSummary: "Nhập từ danh sách nhân viên thật, chưa có dữ liệu task/upsale.", attendance: defaultAttendance() },
+];
 
 const fmtVND = (n) => Math.round(n || 0).toLocaleString("vi-VN") + "đ";
 
@@ -2256,7 +1650,7 @@ function quarterOf(month) { return Math.ceil(month / 3); }
 function quarterMonths(year, quarter) { return [1, 2, 3].map((i) => ({ year, month: (quarter - 1) * 3 + i })); }
 
 // ---------- Main App ----------
-function DomixApp({ authUser, onLogout }) {
+export default function App() {
   const [tab, setTab] = useState("dashboard");
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
@@ -2273,8 +1667,6 @@ function DomixApp({ authUser, onLogout }) {
   const [debts, setDebts] = useState(initialDebts);
   const [inventory, setInventory] = useState(initialInventory);
   const [tasks, setTasks] = useState(initialTasks);
-  const [taskViewRequest, setTaskViewRequest] = useState(null);
-  const [chatUnread, setChatUnread] = useState(0);
   const [lang, setLang] = useState("vi");
   const [company, setCompany] = useState(DEFAULT_COMPANY);
   const [unlockedMonths, setUnlockedMonths] = useState(new Set());
@@ -2342,12 +1734,6 @@ function DomixApp({ authUser, onLogout }) {
   const [fixedAssets, setFixedAssets] = useState([]);
   const [contracts, setContracts] = useState([]);
   const [supportCases, setSupportCases] = useState([]);
-  // Hồ sơ khách hàng tách khỏi đơn hàng (mục VIII) — đơn liên kết qua customerId.
-  const [customers, setCustomers] = useState([]);
-  // Hồ sơ quyết toán đối tác phân phối (mục IV) — nguồn sự thật cho công nợ đối tác.
-  const [distributionSettlements, setDistributionSettlements] = useState([]);
-  // Nhật ký xuất/nhập kho (mục IX) — mọi thay đổi tồn phải đi qua movement, có nguồn gốc.
-  const [stockMovements, setStockMovements] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
   const [chatMessages, setChatMessages] = useState([]);
   // Cầu nối Tuyển dụng AI → Nhân sự — ứng viên "Nên tuyển" bấm 1 nút là tự chuyển tab + điền sẵn
@@ -2367,209 +1753,15 @@ function DomixApp({ authUser, onLogout }) {
   const [reportYear, setReportYear] = useState(ATT_YEAR);
   const [reportMonth, setReportMonth] = useState(ATT_MONTH);
 
-  // ---------- Đồng bộ backend SQLite ----------
-  // Toàn bộ dữ liệu vận hành lưu trong khối app_state (/api/data); NHÂN SỰ có bảng
-  // riêng trong DB và đồng bộ qua /api/employees (mỗi email = một tài khoản đăng nhập).
-  const hasLoadedDbData = useRef(false);
-  const hasLoadedEmployees = useRef(false);
-  const canWriteData = authUser?.role === "admin" || authUser?.role === "user";
-
-  const appDataSnapshot = useMemo(() => ({
-    transactions, orders, marketingLogs, debts, inventory, tasks, lang, company,
-    unlockedMonths: Array.from(unlockedMonths),
-    capitalContributions, distributionPartners, distributionOrders, payrollPayments, kpiTiers,
-    cvReviews, marketingPages, contracts, fixedAssets, leads, supportCases, announcements,
-    chatMessages, payrollApprovals, midMonthRequests,
-    customers, distributionSettlements, stockMovements,
-  }), [
-    transactions, orders, marketingLogs, debts, inventory, tasks, lang, company, unlockedMonths,
-    capitalContributions, distributionPartners, distributionOrders, payrollPayments, kpiTiers,
-    cvReviews, marketingPages, contracts, fixedAssets, leads, supportCases, announcements,
-    chatMessages, payrollApprovals, midMonthRequests,
-    customers, distributionSettlements, stockMovements,
-  ]);
-  const initialAppDataSnapshot = useRef(null);
-  if (!initialAppDataSnapshot.current) initialAppDataSnapshot.current = appDataSnapshot;
-
-  const applyAppData = useCallback((rawData) => {
-    // Migration mục XIII: chuẩn hóa dữ liệu cũ (đối tác, đơn phân phối, công nợ, khách hàng)
-    // NGAY KHI LOAD — không xóa/không đổi id, chỉ bổ sung trường mới + migrationNote.
-    const data = migrateAppData(rawData);
-    if (data.transactions) setTransactions(data.transactions);
-    if (data.orders) setOrders(data.orders);
-    if (data.marketingLogs) setMarketingLogs(data.marketingLogs);
-    if (data.debts) setDebts(data.debts);
-    if (data.inventory) setInventory(data.inventory);
-    if (data.tasks) setTasks(data.tasks);
-    if (data.lang) setLang(data.lang);
-    if (data.company) setCompany(data.company);
-    if (Array.isArray(data.unlockedMonths)) setUnlockedMonths(new Set(data.unlockedMonths));
-    if (data.capitalContributions) setCapitalContributions(data.capitalContributions);
-    if (data.distributionPartners) setDistributionPartners(data.distributionPartners);
-    if (data.distributionOrders) setDistributionOrders(data.distributionOrders);
-    if (data.payrollPayments) setPayrollPayments(data.payrollPayments);
-    if (data.kpiTiers) setKpiTiers(data.kpiTiers);
-    if (data.cvReviews) setCvReviews(data.cvReviews);
-    if (data.marketingPages) setMarketingPages(data.marketingPages);
-    if (data.contracts) setContracts(data.contracts);
-    if (data.fixedAssets) setFixedAssets(data.fixedAssets);
-    if (data.leads) setLeads(data.leads);
-    if (data.supportCases) setSupportCases(data.supportCases);
-    if (data.announcements) setAnnouncements(data.announcements);
-    if (data.chatMessages) setChatMessages(data.chatMessages);
-    if (data.payrollApprovals) setPayrollApprovals(data.payrollApprovals);
-    if (data.midMonthRequests) setMidMonthRequests(data.midMonthRequests);
-    if (data.customers) setCustomers(data.customers);
-    if (data.distributionSettlements) setDistributionSettlements(data.distributionSettlements);
-    if (data.stockMovements) setStockMovements(data.stockMovements);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    loadAppData()
-      .then((result) => {
-        if (cancelled) return;
-        if (result.data) applyAppData(result.data);
-        else saveAppData(initialAppDataSnapshot.current).catch((err) => console.warn("Không seed được dữ liệu vào DB:", err));
-        hasLoadedDbData.current = true;
-      })
-      .catch((err) => {
-        hasLoadedDbData.current = true;
-        console.warn("Không kết nối được DOMIX API, đang dùng dữ liệu mặc định trong trình duyệt:", err);
-      });
-    return () => { cancelled = true; };
-  }, [applyAppData]);
-
-  useEffect(() => {
-    if (!canWriteData) return;
-    if (!hasLoadedDbData.current) return;
-    const timer = window.setTimeout(() => {
-      saveAppData(appDataSnapshot).catch((err) => console.warn("Không lưu được dữ liệu vào DB:", err));
-    }, 500);
-    return () => window.clearTimeout(timer);
-  }, [appDataSnapshot, canWriteData]);
-
-  // Nhân sự: nạp từ bảng employees khi vào app, ghi đè (debounce) khi có thay đổi.
-  const refreshEmployees = useCallback(async () => {
-    const result = await listEmployees();
-    setEmployees(result.employees || []);
-    return result.employees || [];
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    refreshEmployees()
-      .catch((err) => console.warn("Không tải được danh sách nhân sự từ DB:", err))
-      .finally(() => { if (!cancelled) hasLoadedEmployees.current = true; });
-    return () => { cancelled = true; };
-  }, [refreshEmployees]);
-
-  useEffect(() => {
-    if (!canWriteData) return;
-    if (!hasLoadedEmployees.current) return;
-    const timer = window.setTimeout(() => {
-      saveEmployees(employees).catch((err) => console.warn("Không lưu được nhân sự vào DB:", err));
-    }, 500);
-    return () => window.clearTimeout(timer);
-  }, [employees, canWriteData]);
-
-  const refreshChatUnread = useCallback(async () => {
-    try {
-      const result = await fetchChatUnread();
-      setChatUnread(Number(result.unread) || 0);
-    } catch (err) {
-      // Polling chat: bỏ qua lỗi ngắn hạn để không ảnh hưởng màn hình chính.
-    }
-  }, []);
-
-  useEffect(() => {
-    refreshChatUnread();
-    const timer = window.setInterval(refreshChatUnread, 2500);
-    return () => window.clearInterval(timer);
-  }, [refreshChatUnread]);
-
-  // ---------- KHO: hàm DUY NHẤT được đổi tồn (mục IX + XIV) ----------
-  // Mọi component muốn cộng/trừ kho phải gọi moveStock — tự chống trùng theo
-  // (sourceModule, sourceId, movementType), ghi nhật ký stockMovements và cập nhật stock.
-  const moveStock = useCallback((fields) => {
-    let applied = false;
-    setStockMovements((prevMovements) => {
-      const movement = buildStockMovement(fields, prevMovements);
-      if (!movement) return prevMovements; // đã có movement này rồi — không trừ/cộng lần 2
-      applied = true;
-      setInventory((prevInv) => prevInv.map((i) => (
-        i.id === movement.productId ? { ...i, stock: Math.max(0, (Number(i.stock) || 0) + movement.delta) } : i
-      )));
-      return [...prevMovements, movement];
-    });
-    return applied;
-  }, []);
-
-  // ---------- CÔNG NỢ: ghi/hủy thanh toán TẬP TRUNG (mục VI + VII + XIV) ----------
-  // Một lần thanh toán = đúng 1 giao dịch Thu/Chi + 1 dòng paymentHistory. Nếu công nợ
-  // thuộc hồ sơ quyết toán thì đồng bộ luôn trạng thái hồ sơ + các đơn phân phối liên quan.
-  const payDebt = (debtId, paymentFields) => {
-    const debt = debts.find((d) => d.id === debtId);
-    if (!debt) return { error: "Không tìm thấy khoản công nợ." };
-    const r = recordDebtPayment(debt, { ...paymentFields, createdBy: authUser?.email || "" }, transactions);
-    if (r.error) return r;
-    setDebts((prev) => prev.map((d) => (d.id === debtId ? r.updatedDebt : d)));
-    setTransactions((prev) => [...prev, r.transaction]);
-    if (debt.settlementId) {
-      setDistributionSettlements((prev) => prev.map((s) => {
-        if (s.id !== debt.settlementId) return s;
-        const paidAmount = roundVND((s.paidAmount || 0) + r.payment.amount);
-        const remainingAmount = roundVND(s.netAmount - paidAmount);
-        return {
-          ...s, paidAmount, remainingAmount,
-          paymentStatus: remainingAmount <= 0 ? "paid" : "partial",
-          linkedTransactionIds: [...(s.linkedTransactionIds || []), r.transaction.id],
-        };
-      }));
-      setDistributionOrders((prev) => prev.map((o) => (
-        o.settlementId === debt.settlementId
-          ? { ...o, settlementStatus: r.updatedDebt.status === "paid" ? "settled" : "partially_paid" }
-          : o
-      )));
-    }
-    return r;
-  };
-  // Xóa một lần thanh toán: đảo giao dịch liên kết + phục hồi đúng số dư (CA 9).
-  const unpayDebt = (debtId, paymentId) => {
-    const debt = debts.find((d) => d.id === debtId);
-    if (!debt) return { error: "Không tìm thấy khoản công nợ." };
-    const r = removeDebtPayment(debt, paymentId);
-    if (r.error) return r;
-    setDebts((prev) => prev.map((d) => (d.id === debtId ? r.updatedDebt : d)));
-    setTransactions((prev) => prev.filter((t) => t.id !== r.removedTransactionId));
-    if (debt.settlementId) {
-      setDistributionSettlements((prev) => prev.map((s) => {
-        if (s.id !== debt.settlementId) return s;
-        const paidAmount = r.updatedDebt.paidAmount;
-        const remainingAmount = roundVND(s.netAmount - paidAmount);
-        return {
-          ...s, paidAmount, remainingAmount,
-          paymentStatus: paidAmount <= 0 ? "unpaid" : remainingAmount <= 0 ? "paid" : "partial",
-          linkedTransactionIds: (s.linkedTransactionIds || []).filter((id) => id !== r.removedTransactionId),
-        };
-      }));
-      setDistributionOrders((prev) => prev.map((o) => (
-        o.settlementId === debt.settlementId
-          ? { ...o, settlementStatus: r.updatedDebt.status === "paid" ? "settled" : r.updatedDebt.paidAmount > 0 ? "partially_paid" : "approved" }
-          : o
-      )));
-    }
-    return r;
-  };
-
-  // Xuất/Nhập TOÀN BỘ dữ liệu ra file — kênh sao lưu thủ công bên cạnh SQLite backend.
+  // Xuất/Nhập TOÀN BỘ dữ liệu ra file — vì app không có server lưu trữ thật, dữ liệu chỉ tồn tại
+  // trong phiên làm việc hiện tại (tải lại trang là mất). Đây là cách duy nhất trong phạm vi 1 app
+  // chạy trình duyệt để bạn tự sao lưu trước khi đóng tab, và nạp lại khi mở lại.
   const exportAllData = () => {
     const snapshot = {
       _meta: { exportedAt: new Date().toISOString(), appName: "DOMIX", version: 1 },
       transactions, employees, orders, marketingLogs, debts, inventory, tasks, lang, company,
       capitalContributions, distributionPartners, distributionOrders, payrollPayments, kpiTiers,
       cvReviews, marketingPages, contracts, fixedAssets, leads, supportCases, announcements, chatMessages, payrollApprovals, midMonthRequests,
-      customers, distributionSettlements, stockMovements,
     };
     const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -2579,7 +1771,7 @@ function DomixApp({ authUser, onLogout }) {
   };
   const importAllData = (jsonText) => {
     try {
-      const data = migrateAppData(JSON.parse(jsonText));
+      const data = JSON.parse(jsonText);
       if (data.transactions) setTransactions(data.transactions);
       if (data.employees) setEmployees(data.employees);
       if (data.orders) setOrders(data.orders);
@@ -2604,9 +1796,6 @@ function DomixApp({ authUser, onLogout }) {
       if (data.chatMessages) setChatMessages(data.chatMessages);
       if (data.payrollApprovals) setPayrollApprovals(data.payrollApprovals);
       if (data.midMonthRequests) setMidMonthRequests(data.midMonthRequests);
-      if (data.customers) setCustomers(data.customers);
-      if (data.distributionSettlements) setDistributionSettlements(data.distributionSettlements);
-      if (data.stockMovements) setStockMovements(data.stockMovements);
       return { ok: true, exportedAt: data._meta?.exportedAt };
     } catch (err) {
       return { ok: false, error: err.message };
@@ -2748,25 +1937,23 @@ function DomixApp({ authUser, onLogout }) {
     { label: lang === "vi" ? "Tổng quan" : "Overview", items: [
       { id: "dashboard", label: t("nav_dashboard"), icon: LayoutDashboard },
     ]},
-    { label: lang === "vi" ? "Tài chính & Kế toán" : "Finance & Accounting", items: [
+    { label: lang === "vi" ? "Tài chính" : "Finance", items: [
       { id: "thuchi", label: t("nav_thuchi"), icon: Wallet },
       { id: "congno", label: t("nav_congno"), icon: CreditCard },
+      { id: "hopdong", label: lang === "vi" ? "Hợp đồng" : "Contracts", icon: FileSignature },
       { id: "vongop", label: t("nav_vongop"), icon: Coins },
       { id: "taisan", label: lang === "vi" ? "Tài sản cố định & CCDC" : "Fixed Assets & Tools", icon: Archive },
       { id: "quy", label: t("nav_quy"), icon: FileSpreadsheet },
       { id: "hoachdinh", label: t("nav_hoachdinh"), icon: PieChart },
     ]},
-    { label: lang === "vi" ? "Kinh doanh & Vận hành" : "Business & Operations", items: [
+    { label: lang === "vi" ? "Kinh doanh" : "Business", items: [
       { id: "crm", label: t("nav_crm"), icon: ShoppingCart },
-      { id: "marketing", label: t("nav_marketing"), icon: Megaphone },
       { id: "hoptac", label: t("nav_hoptac"), icon: Handshake },
       { id: "kho", label: t("nav_kho"), icon: Package },
-      { id: "hopdong", label: lang === "vi" ? "Hợp đồng" : "Contracts", icon: FileSignature },
-      { id: "hotro", label: lang === "vi" ? "Hỗ trợ khách hàng" : "Customer Support", icon: Headphones },
-    ]},
-    { label: lang === "vi" ? "Công việc & Trao đổi" : "Tasks & Communication", items: [
+      { id: "marketing", label: t("nav_marketing"), icon: Megaphone },
       { id: "giaoviec", label: t("nav_giaoviec"), icon: ClipboardList },
-      { id: "chat", label: lang === "vi" ? "Tin nhắn" : "Messages", icon: MessageCircle },
+      { id: "hotro", label: lang === "vi" ? "Hỗ trợ khách hàng" : "Customer Support", icon: Headphones },
+      { id: "chat", label: lang === "vi" ? "Chat công ty" : "Company Chat", icon: MessageCircle },
     ]},
     { label: lang === "vi" ? "Nhân sự" : "HR", items: [
       { id: "nhansu", label: t("nav_nhansu"), icon: Users },
@@ -2775,9 +1962,11 @@ function DomixApp({ authUser, onLogout }) {
       { id: "hieusuat", label: t("nav_hieusuat"), icon: Gauge },
       { id: "luong", label: t("nav_luong"), icon: Banknote },
     ]},
-    { label: lang === "vi" ? "Trợ lý & Hệ thống" : "Assistants & System", items: [
+    { label: lang === "vi" ? "Trợ lý AI" : "AI Assistants", items: [
       { id: "ai", label: t("nav_ai"), icon: Bot },
       { id: "phaply", label: t("nav_phaply"), icon: Scale },
+    ]},
+    { label: lang === "vi" ? "Hệ thống" : "System", items: [
       { id: "settings", label: t("nav_settings"), icon: Settings },
     ]},
   ];
@@ -2820,7 +2009,7 @@ function DomixApp({ authUser, onLogout }) {
         </div>
       )}
 
-      <aside className="w-60 shrink-0 h-screen overflow-hidden bg-ink text-white flex flex-col" style={{ position: "relative", zIndex: 1 }}>
+      <aside className="w-60 shrink-0 bg-ink text-white flex flex-col" style={{ position: "relative", zIndex: 1 }}>
         <div className="px-5 py-6 border-b border-white/10 flex items-start justify-between">
           <div>
             <div className="ktns-serif text-2xl font-bold leading-tight tracking-tight" style={{ background: "linear-gradient(135deg, #fff, var(--gold))", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text" }}>DOMIX</div>
@@ -2851,7 +2040,7 @@ function DomixApp({ authUser, onLogout }) {
           <span className="flex items-center gap-2"><Search size={13} /> Tìm nhanh...</span>
           <span className="ktns-mono text-[10px] border border-white/20 rounded px-1.5 py-0.5">⌘K</span>
         </button>
-        <nav className="ktns-sidebar-scroll flex-1 min-h-0 py-3 overflow-y-auto overscroll-contain">
+        <nav className="flex-1 py-3 overflow-y-auto">
           {navGroups.map((group) => (
             <div key={group.label} className="mb-1">
               <div className="px-5 pt-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-white/35">{group.label}</div>
@@ -2859,14 +2048,9 @@ function DomixApp({ authUser, onLogout }) {
                 const Icon = n.icon;
                 const active = tab === n.id;
                 return (
-                  <button key={n.id} onClick={() => setTab(n.id)} className={`relative w-full flex items-center gap-3 px-5 py-2.5 text-sm text-left transition-all duration-150 ${active ? "ktns-tab-active text-white" : "text-white/70 hover:text-white hover:bg-white/5 hover:pl-6"}`}>
+                  <button key={n.id} onClick={() => setTab(n.id)} className={`w-full flex items-center gap-3 px-5 py-2.5 text-sm text-left transition-all duration-150 ${active ? "ktns-tab-active text-white" : "text-white/70 hover:text-white hover:bg-white/5 hover:pl-6"}`}>
                     <Icon size={16} />
-                    <span className="truncate">{n.label}</span>
-                    {n.id === "chat" && chatUnread > 0 && (
-                      <span className="ml-auto min-w-5 h-5 px-1 rounded-full bg-stamp-red text-white text-[10px] font-bold flex items-center justify-center border border-white/30">
-                        {chatUnread > 99 ? "99+" : chatUnread}
-                      </span>
-                    )}
+                    {n.label}
                   </button>
                 );
               })}
@@ -2889,20 +2073,22 @@ function DomixApp({ authUser, onLogout }) {
         </div>
       </aside>
 
-      <main className="flex-1 h-screen ktns-scrollbar overflow-y-auto overflow-x-hidden" style={{ position: "relative", zIndex: 1 }}>
+      <main className="flex-1 ktns-scrollbar overflow-y-auto" style={{ position: "relative", zIndex: 1 }}>
         <div className="sticky top-0 z-10" style={{ boxShadow: "0 2px 8px rgba(20,20,15,0.05)" }}>
         <header className="bg-white border-b border-paper-line px-8 py-4 flex items-center justify-between">
           <div>
-            <h1 className="ktns-serif text-xl font-bold text-ink">{nav.find((n) => n.id === tab)?.label || (tab === "taikhoan" ? "Cài đặt tài khoản" : "")}</h1>
+            <h1 className="ktns-serif text-xl font-bold text-ink">{nav.find((n) => n.id === tab)?.label}</h1>
             <p className="text-xs text-muted mt-0.5">{formatFullDateToday(lang)} · DOMIX · {t("header_subtitle")}</p>
           </div>
           <div className="flex items-center gap-2">
-            <MonthPicker
-              year={reportYear}
-              month={reportMonth}
-              onChange={(y, m) => { setReportYear(y); setReportMonth(m); }}
+            <select
+              value={monthKey(reportYear, reportMonth)}
+              onChange={(e) => { const opt = MONTH_OPTIONS.find((o) => monthKey(o.year, o.month) === e.target.value); if (opt) { setReportYear(opt.year); setReportMonth(opt.month); } }}
+              className="border border-paper-line rounded-md px-2.5 py-1.5 text-xs ktns-mono bg-white"
               title={t("header_period")}
-            />
+            >
+              {MONTH_OPTIONS.map((o) => (<option key={monthKey(o.year, o.month)} value={monthKey(o.year, o.month)}>{monthLabelVN(o.month, o.year)}{o.year === ATT_YEAR && o.month === ATT_MONTH ? t("label_current") : ""}</option>))}
+            </select>
             {!isCurrentPeriod && <span className="text-[10px] text-gold px-2 py-1 rounded-full bg-gold/10">{t("header_prev_period")}</span>}
             {warnCount > 0 && (
               <div className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full bg-stamp-red/10 text-stamp-red">
@@ -2914,7 +2100,6 @@ function DomixApp({ authUser, onLogout }) {
                 <AlertTriangle size={13} /> {totals.missing} {t("missing_invoice_tx")}
               </div>
             )}
-            <UserMenu authUser={authUser} onLogout={onLogout} onOpenSettings={() => setTab("taikhoan")} />
           </div>
         </header>
 
@@ -2953,25 +2138,18 @@ function DomixApp({ authUser, onLogout }) {
           {tab === "dashboard" && <Dashboard totals={totals} transactions={transactions} payrollRows={payrollRows} totalPayroll={totalPayroll} activeEmployees={effectiveActiveEmployees} warnCount={warnCount} warnNames={warnNames} cashBalance={cashBalance} totalReceivable={totalReceivable} totalPayable={totalPayable} overdueDebts={overdueDebts} t={t} lang={lang} totalCharterCapitalContributed={totalCharterCapitalContributed} registeredCharterCapital={company.registeredCharterCapital} monthlyChart={monthlyChart} orders={orders} distributionOrders={distributionOrders} cvReviews={cvReviews} masterRanking={masterRanking} inventory={inventory} debts={debts} setTab={setTab} pendingDistRevenue={pendingDistRevenue} contracts={contracts} leads={leads} perfWarningApprovedAt={perfWarningApprovedAt} setPerfWarningApprovedAt={setPerfWarningApprovedAt} announcements={announcements} setAnnouncements={setAnnouncements} totalEmployerCost={totalEmployerCost} />}
           {tab === "settings" && <CaiDatCongTy company={company} setCompany={setCompany} t={t} lang={lang} exportAllData={exportAllData} importAllData={importAllData} announcements={announcements} setAnnouncements={setAnnouncements} />}
           {tab === "thuchi" && <ThuChi transactions={transactions} setTransactions={setTransactions} showForm={showTxForm} setShowForm={setShowTxForm} company={company} orders={orders} setOrders={setOrders} reportYear={reportYear} reportMonth={reportMonth} employees={activeEmployees} distributionOrders={distributionOrders} distributionPartners={distributionPartners} />}
-          {tab === "congno" && <CongNo debts={debts} setDebts={setDebts} setTransactions={setTransactions} transactions={transactions} distributionOrders={distributionOrders} distributionPartners={distributionPartners} setTab={setTab} authUser={authUser} allEmployees={employees} payDebt={payDebt} unpayDebt={unpayDebt} customers={customers} />}
+          {tab === "congno" && <CongNo debts={debts} setDebts={setDebts} setTransactions={setTransactions} transactions={transactions} distributionOrders={distributionOrders} distributionPartners={distributionPartners} setTab={setTab} />}
           {tab === "hopdong" && <HopDong contracts={contracts} setContracts={setContracts} partners={distributionPartners} employees={activeEmployees} />}
           {tab === "vongop" && <VonGop contributions={capitalContributions} setContributions={setCapitalContributions} company={company} setCompany={setCompany} totalContributed={totalCharterCapitalContributed} />}
-          {tab === "hoptac" && <HopTacPhanPhoi partners={distributionPartners} setPartners={setDistributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} setTransactions={setTransactions} transactions={transactions} company={company} inventory={inventory} setInventory={setInventory} reportYear={reportYear} reportMonth={reportMonth} orders={orders} employees={activeEmployees} authUser={authUser} allEmployees={employees} debts={debts} setDebts={setDebts} settlements={distributionSettlements} setSettlements={setDistributionSettlements} moveStock={moveStock} payDebt={payDebt} />}
-          {tab === "kho" && <KhoHang inventory={inventory} setInventory={setInventory} orders={orders} distOrders={distributionOrders} distPartners={distributionPartners} moveStock={moveStock} stockMovements={stockMovements} authUser={authUser} />}
+          {tab === "hoptac" && <HopTacPhanPhoi partners={distributionPartners} setPartners={setDistributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} setTransactions={setTransactions} transactions={transactions} company={company} inventory={inventory} setInventory={setInventory} reportYear={reportYear} reportMonth={reportMonth} orders={orders} employees={activeEmployees} />}
+          {tab === "kho" && <KhoHang inventory={inventory} setInventory={setInventory} orders={orders} distOrders={distributionOrders} distPartners={distributionPartners} />}
           {tab === "taisan" && <TaiSanCoDinh assets={fixedAssets} setAssets={setFixedAssets} setTransactions={setTransactions} reportYear={reportYear} reportMonth={reportMonth} />}
-          {tab === "giaoviec" && <GiaoViec authUser={authUser} tasks={tasks} setTasks={setTasks} employees={activeEmployees} orders={orders} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} openRequest={taskViewRequest} />}
+          {tab === "giaoviec" && <GiaoViec tasks={tasks} setTasks={setTasks} employees={activeEmployees} orders={orders} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} />}
           {tab === "hotro" && <HoTroKhachHang cases={supportCases} setCases={setSupportCases} employees={activeEmployees} orders={orders} setOrders={setOrders} />}
-          {tab === "chat" && <ChatPage authUser={authUser} onUnreadChange={setChatUnread} onOpenTasks={(task = null) => {
-            setTaskViewRequest(task ? {
-              date: task.date || "",
-              description: task.description || "",
-              requestedAt: Date.now(),
-            } : { date: "", description: "", requestedAt: Date.now() });
-            setTab("giaoviec");
-          }} />}
-          {tab === "crm" && <DoanhThuCRM orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} revenueByEmployee={revenueByEmployee} setTransactions={setTransactions} transactions={transactions} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} authUser={authUser} debts={debts} setDebts={setDebts} />}
+          {tab === "chat" && <ChatCongTy messages={chatMessages} setMessages={setChatMessages} employees={activeEmployees} />}
+          {tab === "crm" && <DoanhThuCRM orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} revenueByEmployee={revenueByEmployee} setTransactions={setTransactions} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setSupportCases={setSupportCases} />}
           {tab === "marketing" && <MarketingDaily logs={marketingLogs} setLogs={setMarketingLogs} employees={activeEmployees} marketingByEmployee={marketingByEmployee} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setPages={setMarketingPages} orders={orders} inventory={inventory} />}
-          {tab === "nhansu" && <NhanSu authUser={authUser} employees={employees} setEmployees={setEmployees} showForm={showEmpForm} setShowForm={setShowEmpForm} reportYear={reportYear} reportMonth={reportMonth} prefillEmployee={prefillEmployee} setPrefillEmployee={setPrefillEmployee} />}
+          {tab === "nhansu" && <NhanSu employees={employees} setEmployees={setEmployees} showForm={showEmpForm} setShowForm={setShowEmpForm} reportYear={reportYear} reportMonth={reportMonth} prefillEmployee={prefillEmployee} setPrefillEmployee={setPrefillEmployee} />}
           {tab === "tuyendung" && <TuyenDungAI cvReviews={cvReviews} setCvReviews={setCvReviews} employees={activeEmployees} masterRanking={masterRanking} company={company} queue={cvQueue} setQueue={setCvQueue} processing={cvProcessing} setProcessing={setCvProcessing} progress={cvProgress} setProgress={setCvProgress} setPrefillEmployee={setPrefillEmployee} setTab={setTab} setShowEmpForm={setShowEmpForm} />}
           {tab === "chamcong" && <ChamCong employees={employees} setEmployees={setEmployees} unlockedMonths={unlockedMonths} setUnlockedMonths={setUnlockedMonths} company={company} />}
           {tab === "hieusuat" && <HieuSuat employees={effectiveActiveEmployees} masterRanking={masterRanking} supportCases={supportCases} />}
@@ -2980,24 +2158,8 @@ function DomixApp({ authUser, onLogout }) {
           {tab === "hoachdinh" && <HoachDinhNganSach prevSnapshot={prevSnapshot} prevPeriod={prevPeriod} roleGroupStats={roleGroupStats} company={company} />}
           {tab === "ai" && <TroLyAI totals={totals} transactions={transactions} setTransactions={setTransactions} orders={orders} employees={effectiveActiveEmployees} payrollRows={payrollRows} totalPayroll={totalPayroll} totalEmployerCost={totalEmployerCost} />}
           {tab === "phaply" && <TroLyPhapLy employees={activeEmployees} setEmployees={setEmployees} company={company} />}
-          {tab === "taikhoan" && <CaiDatTaiKhoan authUser={authUser} />}
         </div>
       </main>
-
-      <button
-        type="button"
-        onClick={() => setTab("chat")}
-        className={`fixed bottom-5 right-5 z-40 w-14 h-14 rounded-full text-white shadow-xl border border-white/20 flex items-center justify-center transition-all ${tab === "chat" ? "bg-ledger-green" : "bg-ink hover:bg-ink-light"}`}
-        title="Mở tin nhắn"
-        aria-label="Mở tin nhắn"
-      >
-        <MessageCircle size={25} />
-        {chatUnread > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-6 h-6 px-1 rounded-full bg-stamp-red text-white text-xs font-bold flex items-center justify-center border-2 border-white">
-            {chatUnread > 99 ? "99+" : chatUnread}
-          </span>
-        )}
-      </button>
 
       {showCommandPalette && (
         <div className="fixed inset-0 bg-ink/50 flex items-start justify-center z-[100] pt-24 backdrop-blur-sm" onClick={() => setShowCommandPalette(false)}>
@@ -3443,13 +2605,6 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
 
   const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankTx); if (fileInputRef.current) fileInputRef.current.value = ""; };
   const startEditTx = (t) => {
-    // Giao dịch TỰ SINH (từ công nợ/quyết toán/lương...): không cho sửa số tiền trực tiếp khi
-    // nguồn gốc còn tồn tại — muốn đổi số phải quay lại đơn/công nợ/hồ sơ gốc (mục VII).
-    if (isAutoTransaction(t) && t.kind && (t.sourceModule === "congno_payment" || t.source === "congno" || t.settlementId)) {
-      setBlockedMsg(`Giao dịch này tự sinh từ "${SOURCE_MODULE_LABELS[t.sourceModule || t.source] || "hệ thống"}" — muốn sửa số tiền hãy xóa lần thanh toán ở tab Công nợ (giao dịch sẽ tự đảo) rồi ghi nhận lại cho đúng.`);
-      setTimeout(() => setBlockedMsg(""), 6000);
-      return;
-    }
     setEditingId(t.id);
     setForm({
       date: t.date, kind: t.kind, category: t.category || "", desc: t.desc, amount: String(t.amount),
@@ -3480,15 +2635,15 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
     closeForm();
   };
   const [blockedMsg, setBlockedMsg] = useState("");
-  const AUTO_SOURCE_LABELS = { bangluong: "Bảng lương", hoptac: "Hợp tác phân phối", hoptac_muahang: "Hợp tác phân phối (nhập hàng)", congno: "Công nợ", congno_payment: "Công nợ (thanh toán)", distribution_settlement: "Quyết toán đối tác" };
+  const AUTO_SOURCE_LABELS = { bangluong: "Bảng lương", hoptac: "Hợp tác phân phối", hoptac_muahang: "Hợp tác phân phối (nhập hàng)", congno: "Công nợ" };
   const removeTx = (id) => {
     const tx = transactions.find((t) => t.id === id);
     if (tx?.source === "crm" && tx.sourceOrderId && setOrders) {
       setOrders((prev) => prev.map((o) => (o.id === tx.sourceOrderId ? { ...o, invoiceStatus: "pending", invoiceNo: "", invoiceAttachmentData: "", invoiceAttachmentName: "", linkedTxId: null } : o)));
-    } else if (tx?.source && AUTO_SOURCE_LABELS[tx.sourceModule || tx.source]) {
-      // Giao dịch tự sinh: chặn xoá trực tiếp — thanh toán công nợ phải xóa Ở TAB CÔNG NỢ
-      // (xóa lần thanh toán sẽ tự đảo giao dịch này + phục hồi số dư nợ, mục VI/VII).
-      setBlockedMsg(`Giao dịch này tự động sinh ra từ "${AUTO_SOURCE_LABELS[tx.sourceModule || tx.source]}" — vui lòng huỷ/sửa đúng ở tab gốc để dữ liệu 2 bên luôn khớp nhau, không xoá trực tiếp ở đây.`);
+    } else if (tx?.source && AUTO_SOURCE_LABELS[tx.source]) {
+      // Các nguồn này (Lương, Hợp tác phân phối) chưa có đường đồng bộ ngược ở đây — chặn xoá
+      // trực tiếp tại Thu Chi để tránh lệch dữ liệu, phải huỷ đúng ở tab gốc.
+      setBlockedMsg(`Giao dịch này tự động sinh ra từ tab "${AUTO_SOURCE_LABELS[tx.source]}" — vui lòng huỷ/sửa đúng ở tab đó để dữ liệu 2 bên luôn khớp nhau, không xoá trực tiếp ở đây.`);
       setTimeout(() => setBlockedMsg(""), 5000);
       return;
     }
@@ -4119,7 +3274,7 @@ function exportDistributionExcel(distOrders, partners) {
   XLSX.writeFile(wb, `DOMIX_Hop_tac_phan_phoi_${TODAY.toISOString().slice(0, 10)}.xlsx`);
 }
 
-function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setTransactions, transactions, company, inventory, setInventory, reportYear, reportMonth, orders, employees, authUser, allEmployees, debts, setDebts, settlements, setSettlements, moveStock, payDebt }) {
+function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setTransactions, transactions, company, inventory, setInventory, reportYear, reportMonth, orders, employees }) {
   const [rangeMode, setRangeMode] = useState("month");
   const [rangeFrom, setRangeFrom] = useState(new Date(reportYear || TODAY.getFullYear(), (reportMonth || TODAY.getMonth() + 1) - 1, 1).toISOString().slice(0, 10));
   const [rangeTo, setRangeTo] = useState(new Date(reportYear || TODAY.getFullYear(), (reportMonth || TODAY.getMonth() + 1), 0).toISOString().slice(0, 10));
@@ -4133,16 +3288,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
   const inPeriod = (o) => rangeMode === "all" || (o.date >= rangeFrom && o.date <= rangeTo);
   const [showPartnerForm, setShowPartnerForm] = useState(false);
   const blankTiers = [{ minRevenue: 0, pct: 36 }, { minRevenue: 100000000, pct: 34 }, { minRevenue: 300000000, pct: 33 }];
-  // Cấu hình hợp tác đầy đủ (mục I): trách nhiệm thu tiền + xuất hóa đơn LƯU RÕ trên đối tác,
-  // không suy luận từ partnerRole lúc chạy nữa.
-  const blankPartnerForm = {
-    name: "", taxCode: "", phone: "", email: "", partnerRole: "dai_ly", commissionTiers: blankTiers, productIds: [],
-    cashCollector: "partner", customerInvoiceIssuer: "partner",
-    settlementCycle: "monthly", settlementDay: 5, commissionBase: "before_vat", defaultVatRate: 8,
-    invoiceAttachmentRequired: false, partnerCommissionInvoiceRequired: false,
-    contractNo: "", contractDate: "", contractNote: "", active: true,
-  };
-  const [partnerForm, setPartnerForm] = useState(blankPartnerForm);
+  const [partnerForm, setPartnerForm] = useState({ name: "", taxCode: "", phone: "", email: "", partnerRole: "dai_ly", commissionTiers: blankTiers, productIds: [] });
   const [showOrderForm, setShowOrderForm] = useState(false);
   const [orderForm, setOrderForm] = useState({ date: TODAY_STR, productId: "", productName: "", quantity: "1", partnerId: partners[0]?.id || "", revenue: "", vatRate: 8, issuedKeyCode: "", endCustomerName: "", note: "" });
   // Mô hình "Nhà cung cấp — mua đứt bán lại" dùng form NHẬP HÀNG riêng (không phải hoa hồng):
@@ -4197,36 +3343,37 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
   };
 
   const [editingPartnerId, setEditingPartnerId] = useState(null);
-  const closePartnerForm = () => { setShowPartnerForm(false); setEditingPartnerId(null); setPartnerForm({ ...blankPartnerForm, commissionTiers: [...blankTiers] }); };
+  const closePartnerForm = () => { setShowPartnerForm(false); setEditingPartnerId(null); setPartnerForm({ name: "", taxCode: "", phone: "", email: "", partnerRole: "dai_ly", commissionTiers: [...blankTiers], productIds: [] }); };
   const [syncMsg, setSyncMsg] = useState("");
   const startEditPartner = (p) => {
-    const np = normalizePartner(p);
     setEditingPartnerId(p.id);
-    setPartnerForm({
-      name: np.name, taxCode: np.taxCode || "", phone: np.phone || "", email: np.email || "",
-      partnerRole: np.partnerRole, commissionTiers: (np.commissionTiers || blankTiers).map((t) => ({ ...t })), productIds: [...(np.productIds || [])],
-      cashCollector: np.cashCollector, customerInvoiceIssuer: np.customerInvoiceIssuer,
-      settlementCycle: np.settlementCycle, settlementDay: np.settlementDay, commissionBase: np.commissionBase, defaultVatRate: np.defaultVatRate,
-      invoiceAttachmentRequired: np.invoiceAttachmentRequired, partnerCommissionInvoiceRequired: np.partnerCommissionInvoiceRequired,
-      contractNo: np.contractNo, contractDate: np.contractDate, contractNote: np.contractNote, active: np.active,
-    });
+    setPartnerForm({ name: p.name, taxCode: p.taxCode || "", phone: p.phone || "", email: p.email || "", partnerRole: p.partnerRole || "dai_ly", commissionTiers: (p.commissionTiers || blankTiers).map((t) => ({ ...t })), productIds: [...(p.productIds || [])] });
     setShowPartnerForm(true);
   };
   const addPartner = () => {
     if (!partnerForm.name) return;
     if (partnerForm.partnerRole !== "nha_cung_cap" && partnerForm.commissionTiers.length === 0) return;
     if (editingPartnerId) {
-      setPartners((prev) => prev.map((p) => (p.id === editingPartnerId ? normalizePartner({ ...p, ...partnerForm }) : p)));
-      // Đổi % chỉ ảnh hưởng đơn CHƯA thuộc hồ sơ quyết toán (các đơn đó tra % động qua resolvePct).
-      // Đơn đã nằm trong hồ sơ quyết toán GIỮ NGUYÊN số đã khóa — muốn tính lại phải hủy hồ sơ
-      // (mục VIII: không âm thầm thay đổi số liệu đã duyệt, không tự sửa giao dịch đã ghi).
-      const locked = distOrders.filter((o) => o.partnerId === editingPartnerId && o.settlementId).length;
-      if (locked > 0) {
-        setSyncMsg(`Đã lưu cấu hình mới. ${locked} đơn thuộc hồ sơ quyết toán GIỮ NGUYÊN số đã khóa — muốn tính lại theo % mới phải hủy hồ sơ quyết toán tương ứng.`);
-        setTimeout(() => setSyncMsg(""), 8000);
+      setPartners((prev) => prev.map((p) => (p.id === editingPartnerId ? { ...p, ...partnerForm } : p)));
+      // Đổi bậc %/vai trò xong thì quét lại TẤT CẢ đơn của đối tác này ĐÃ XÁC NHẬN (đã ghi Thu Chi
+      // thật) — tính lại đúng theo cấu hình MỚI, sửa luôn số tiền đã ghi sổ cho khớp, theo đúng
+      // yêu cầu: đổi % là mọi đơn (kể cả đã xác nhận) đều cập nhật theo, không giữ số cũ.
+      const affected = distOrders.filter((o) => o.partnerId === editingPartnerId && o.orderKind !== "purchase" && (o.partnerInvoiceReceived || o.partnerInvoiceConfirmed) && o.linkedTxId);
+      if (affected.length > 0) {
+        const updatesByTxId = {};
+        affected.forEach((o) => {
+          const monthlyRevenue = getPartnerMonthlyRevenue(o.partnerId, o.date, distOrders);
+          const newPct = lookupCommissionTier(monthlyRevenue, partnerForm.commissionTiers);
+          const split = computePartnerAmount(o.revenue, o.vatRate, newPct, partnerForm.partnerRole);
+          updatesByTxId[o.linkedTxId] = { amount: Math.round(split.remittedToCompany), settledPct: newPct, settledRevenue: o.revenue };
+        });
+        setTransactions((prev) => prev.map((t) => (updatesByTxId[t.id] ? { ...t, ...updatesByTxId[t.id] } : t)));
+        setDistOrders((prev) => prev.map((o) => (updatesByTxId[o.linkedTxId] ? { ...o, commissionPct: updatesByTxId[o.linkedTxId].settledPct } : o)));
+        setSyncMsg(`Đã cập nhật lại ${affected.length} đơn đã xác nhận theo % mới, sửa luôn số tiền trong Thu Chi.`);
+        setTimeout(() => setSyncMsg(""), 6000);
       }
     } else {
-      setPartners((prev) => [...prev, normalizePartner({ ...partnerForm, id: Date.now() })]);
+      setPartners((prev) => [...prev, { ...partnerForm, id: Date.now() }]);
     }
     closePartnerForm();
   };
@@ -4248,41 +3395,28 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
     // khảo/xuất Excel, còn hiển thị/tính toán thực tế luôn tra động qua resolvePct().
     const monthlySoFar = getPartnerMonthlyRevenue(Number(orderForm.partnerId), orderForm.date, distOrders);
     const commissionPct = lookupCommissionTier(monthlySoFar + revenue, p?.commissionTiers);
-    const newId = Date.now();
-    // Đơn mới sinh ra đã mang đủ 4 nhóm trạng thái độc lập (mục II) — thu tiền/hóa đơn lấy
-    // theo cấu hình đối tác, quyết toán bắt đầu ở "chờ quyết toán".
-    setDistOrders((prev) => [...prev, normalizeDistributionOrder({
-      ...orderForm, id: newId, partnerId: Number(orderForm.partnerId), productId: orderForm.productId ? Number(orderForm.productId) : null,
+    setDistOrders((prev) => [...prev, {
+      ...orderForm, id: Date.now(), partnerId: Number(orderForm.partnerId), productId: orderForm.productId ? Number(orderForm.productId) : null,
       quantity: Number(orderForm.quantity) || 1, revenue, vatRate: Number(orderForm.vatRate) || 0, commissionPct,
       partnerInvoiceReceived: false, partnerInvoiceNo: "", linkedTxId: null,
-      orderStatus: "fulfilled",
-    }, { [Number(orderForm.partnerId)]: p })]);
-    if (orderForm.productId && moveStock) {
-      // Trừ kho qua movement DUY NHẤT — có nguồn gốc, không trừ được lần 2 (mục IX).
-      moveStock({
-        productId: Number(orderForm.productId), movementType: "distribution_out",
-        quantity: Number(orderForm.quantity) || 1, date: orderForm.date,
-        sourceModule: "hoptac", sourceId: newId, note: `Xuất phân phối qua ${p?.name || "đối tác"}`,
-        createdBy: authUser?.email || "",
-      });
+    }]);
+    if (orderForm.productId && setInventory) {
+      const pid = Number(orderForm.productId);
+      const qty = Number(orderForm.quantity) || 1;
+      setInventory((prev) => prev.map((i) => (i.id === pid ? { ...i, stock: Math.max(0, i.stock - qty) } : i)));
     }
     setOrderForm({ date: TODAY_STR, productId: "", productName: "", quantity: "1", partnerId: partners[0]?.id || "", revenue: "", vatRate: 8, issuedKeyCode: "", endCustomerName: "", note: "" });
     setShowOrderForm(false);
   };
   const removeDistOrder = (id) => {
     const o = distOrders.find((x) => x.id === id);
-    // Đơn đã thuộc hồ sơ quyết toán: không được xóa âm thầm — phải hủy hồ sơ trước (mục VIII/X).
-    if (o?.settlementId) {
-      window.alert("Đơn này đã thuộc hồ sơ quyết toán. Hủy hồ sơ quyết toán trước rồi mới xóa được đơn.");
-      return;
-    }
     if (o?.linkedTxId) setTransactions((prev) => prev.filter((t) => t.id !== o.linkedTxId));
-    if (o?.orderKind === "purchase" && o.productId && moveStock) {
-      // Xóa đơn nhập hàng: điều chỉnh giảm đúng số đã cộng lúc nhập (một lần duy nhất).
-      moveStock({ productId: o.productId, movementType: "adjustment_out", quantity: o.quantity, sourceModule: "hoptac", sourceId: o.id, note: "Xóa đơn nhập hàng — trừ lại tồn đã cộng", createdBy: authUser?.email || "" });
-    } else if (o?.productId && moveStock) {
-      // Xóa đơn phân phối: hoàn tồn đúng MỘT lần qua movement cancel_reverse (CA 8).
-      moveStock({ productId: o.productId, movementType: "cancel_reverse", quantity: o.quantity || 1, sourceModule: "hoptac", sourceId: o.id, note: "Hủy/xóa đơn phân phối — hoàn tồn", createdBy: authUser?.email || "" });
+    if (o?.orderKind === "purchase" && o.productId && setInventory) {
+      // Xoá đơn nhập hàng thì phải trừ lại đúng số lượng đã cộng vào tồn kho lúc nhập.
+      setInventory((prev) => prev.map((i) => (i.id === o.productId ? { ...i, stock: Math.max(0, i.stock - o.quantity) } : i)));
+    } else if (o?.productId && setInventory) {
+      // Xoá đơn phân phối/nhượng quyền thì trả lại tồn kho đã trừ lúc bán.
+      setInventory((prev) => prev.map((i) => (i.id === o.productId ? { ...i, stock: i.stock + (o.quantity || 1) } : i)));
     }
     setDistOrders((prev) => prev.filter((x) => x.id !== id));
   };
@@ -4306,27 +3440,22 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
     const unitCost = Number(purchaseForm.unitCost) || 0;
     const totalCost = unitCost * qty;
     const txId = Date.now();
-    const purchaseOrderId = txId + 1;
-    // Tăng tồn qua movement (nguồn gốc rõ, không cộng tay) + cập nhật giá nhập mới nhất.
-    if (product && moveStock) {
-      moveStock({ productId: product.id, movementType: "purchase_in", quantity: qty, date: purchaseForm.date, sourceModule: "hoptac_muahang", sourceId: purchaseOrderId, note: `Nhập từ ${p?.name || "đối tác"}`, createdBy: authUser?.email || "" });
-      setInventory((prev) => prev.map((i) => (i.id === product.id ? { ...i, costPrice: unitCost } : i)));
+    // Tăng tồn kho + cập nhật giá nhập mới nhất cho sản phẩm.
+    if (product && setInventory) {
+      setInventory((prev) => prev.map((i) => (i.id === product.id ? { ...i, stock: i.stock + qty, costPrice: unitCost } : i)));
     }
-    // Mua đứt bán lại, TRẢ NGAY → tạo Chi thật (Quy tắc 3). Nếu mua chịu thì tạo Phải trả ở Công nợ.
-    setTransactions((prev) => [...prev, makeTransaction({
+    setTransactions((prev) => [...prev, {
       id: txId, date: purchaseForm.date, kind: "chi", category: "Nhập hàng (mua đứt bán lại)",
       desc: `Nhập ${qty} ${product?.unit || ""} ${product?.name || ""} từ ${p?.name || "đối tác"}`, amount: totalCost,
       partnerName: p?.name || "", partnerTaxCode: p?.taxCode || "", paymentMethod: "chuyen_khoan",
       invoiceType: "Hóa đơn GTGT (VAT)", invoiceNo: purchaseForm.invoiceNo, vatRate: purchaseForm.vatRate,
       attachmentData: purchaseForm.attachmentData, attachmentName: purchaseForm.attachmentName, attachmentType: purchaseForm.attachmentType,
-      status: "approved", source: "hoptac_muahang", sourceModule: "hoptac_muahang", sourceId: purchaseOrderId, sourceOrderId: null,
-      createdAutomatically: true,
-    })]);
+      status: "approved", source: "hoptac_muahang", sourceOrderId: null,
+    }]);
     setDistOrders((prev) => [...prev, {
-      id: purchaseOrderId, orderKind: "purchase", date: purchaseForm.date, partnerId: Number(purchaseForm.partnerId),
+      id: Date.now() + 1, orderKind: "purchase", date: purchaseForm.date, partnerId: Number(purchaseForm.partnerId),
       productId: product?.id || null, productName: product?.name || "", quantity: qty, unitCost, totalCost,
       vatRate: purchaseForm.vatRate, invoiceNo: purchaseForm.invoiceNo, note: purchaseForm.note, linkedTxId: txId,
-      orderStatus: "fulfilled", settlementStatus: "settled", customerPaymentStatus: "paid", customerInvoiceStatus: "not_required",
     }]);
     setPurchaseForm({ date: TODAY_STR, productId: "", quantity: "1", unitCost: "", vatRate: 8, partnerId: partners[0]?.id || "", note: "", invoiceNo: "", attachmentData: "", attachmentName: "", attachmentType: "" });
     setPurchaseErr("");
@@ -4345,35 +3474,38 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
     reader.onload = () => setInvoiceDraft((d) => ({ ...d, attachmentData: reader.result, attachmentName: file.name, attachmentType: file.type }));
     reader.readAsDataURL(file);
   };
-  // "XÁC NHẬN ĐỐI TÁC ĐÃ XUẤT VAT" — CHỈ là trạng thái hóa đơn (mục V + VII).
-  // TUYỆT ĐỐI KHÔNG tạo khoản Thu ở đây: đối tác đã xuất hóa đơn KHÔNG có nghĩa là đối tác
-  // đã chuyển tiền. Tiền chỉ vào Thu Chi khi ghi nhận thanh toán công nợ của hồ sơ quyết toán.
   const saveCommissionInvoice = () => {
     if (!invoiceDraft.invoiceNo) { setInvoiceErr("Cần nhập số hoá đơn đối tác đã báo lại cho bạn."); return; }
     const o = distOrders.find((x) => x.id === activeInvoiceOrderId);
     const p = partnerOf(o.partnerId);
+    const resolvedPct = resolvePct(o);
+    const split = computePartnerAmount(o.revenue, o.vatRate, resolvedPct, p?.partnerRole);
+    const linkedTxId = o.linkedTxId || Date.now();
     const hasAttachment = !!invoiceDraft.attachmentData;
-    // File đính kèm chỉ bắt buộc khi cấu hình đối tác yêu cầu (CA 3).
-    if (p?.invoiceAttachmentRequired && !hasAttachment) {
-      setInvoiceErr(`Đối tác ${p.name} được cấu hình BẮT BUỘC đính kèm ảnh/file hóa đơn — bổ sung file trước khi xác nhận.`);
-      return;
-    }
-    const resolvedPct = o.settlementId ? o.commissionPct : resolvePct(o);
-    setDistOrders((prev) => prev.map((x) => (x.id === activeInvoiceOrderId ? {
-      ...x,
-      customerInvoiceStatus: "confirmed",
-      customerInvoiceNo: invoiceDraft.invoiceNo,
-      customerInvoiceDate: invoiceDraft.invoiceDate || TODAY_STR,
-      customerInvoiceAttachmentData: invoiceDraft.attachmentData || "",
-      customerInvoiceAttachmentName: invoiceDraft.attachmentName || "",
-      customerInvoiceConfirmedBy: authUser?.email || "",
-      customerInvoiceConfirmedAt: new Date().toISOString(),
-      customerInvoiceNote: hasAttachment ? "" : "Đối tác giữ chứng từ, công ty chưa có bản ảnh",
-      invoiceEvidenceReceived: hasAttachment,
-      // giữ trường cũ để tương thích hiển thị/dữ liệu — KHÔNG còn nghĩa "đã nhận tiền"
-      partnerInvoiceReceived: hasAttachment, partnerInvoiceConfirmed: true, partnerInvoiceNo: invoiceDraft.invoiceNo,
-      commissionPct: resolvedPct,
-    } : x)));
+    const srcOrder = o.sourceCrmOrderId ? (orders || []).find((x) => x.id === o.sourceCrmOrderId) : null;
+    // ĐÚNG 1 KHOẢN THU DUY NHẤT — không tách thành Thu gộp + Chi hoa hồng nữa (tránh cảm giác
+    // "xuất 2 lần"). Chỉ khi đối tác xác nhận xong (biết chính xác % áp dụng) mới ghi đúng số tiền
+    // công ty THỰC SỰ nhận được vào Thu Chi — trước đó không có gì trong Thu Chi cho đơn này cả.
+    // Mô tả rút gọn — chi tiết VAT/% xem ở khung mở rộng khi bấm vào dòng, không nhồi hết vào đây.
+    setTransactions((prev) => {
+      const without = prev.filter((t) => t.id !== o.linkedTxId);
+      return [...without, {
+        id: linkedTxId, date: o.date, kind: "thu", category: "Bán hàng (qua đối tác phân phối)",
+        desc: `${o.endCustomerName || o.productName} — qua ${p?.name || "đối tác"}`, amount: Math.round(split.remittedToCompany),
+        partnerName: o.endCustomerName || p?.name || "", partnerTaxCode: srcOrder?.customerTaxCode || "", partnerPhone: srcOrder?.phone || "", partnerEmail: srcOrder?.email || "", paymentMethod: "chuyen_khoan",
+        // ĐÃ SỬA: có đính kèm file KHÔNG có nghĩa đây là "Hóa đơn GTGT (VAT)" của chính công ty —
+        // file đính kèm thường là hoá đơn/chứng từ đối tác báo hoa hồng, không tự động là căn cứ
+        // tính thuế GTGT đầu ra cho khoản THU RÒNG này. Để "Biên lai nội bộ" làm mặc định an toàn,
+        // kế toán tự đổi đúng loại hoá đơn ở tab Thu Chi sau khi xác minh rõ nghĩa vụ thuế thật.
+        invoiceType: "Biên lai / Phiếu thu nội bộ", invoiceNo: invoiceDraft.invoiceNo, vatRate: o.vatRate,
+        attachmentData: invoiceDraft.attachmentData, attachmentName: invoiceDraft.attachmentName, attachmentType: invoiceDraft.attachmentType,
+        status: hasAttachment ? "approved" : "pending", source: "hoptac", sourceOrderId: o.id,
+        settledPct: resolvedPct, settledRevenue: o.revenue, settledPartnerName: p?.name || "",
+      }];
+    });
+    // Đóng băng % đã áp dụng lúc xác nhận (commissionPct) — từ giờ bảng luôn hiện đúng % này cho
+    // đơn đã xác nhận, không tính lại theo cấu hình mới nữa dù sau đó bạn đổi bậc % của đối tác.
+    setDistOrders((prev) => prev.map((x) => (x.id === activeInvoiceOrderId ? { ...x, partnerInvoiceReceived: hasAttachment, partnerInvoiceConfirmed: true, partnerInvoiceNo: invoiceDraft.invoiceNo, linkedTxId, commissionPct: resolvedPct } : x)));
     setActiveInvoiceOrderId(null);
   };
 
@@ -4396,8 +3528,6 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
     reader.onload = () => setBatchDraft((d) => ({ ...d, attachmentData: reader.result, attachmentName: file.name, attachmentType: file.type }));
     reader.readAsDataURL(file);
   };
-  // Xác nhận GỘP: đối tác xuất MỘT hóa đơn tổng cuối tháng cho nhiều đơn. CHỈ cập nhật trạng thái
-  // hóa đơn hàng loạt — KHÔNG tạo khoản Thu (tiền đi theo hồ sơ quyết toán + công nợ, mục V/VII).
   const saveBatchSettlement = () => {
     if (!batchDraft.partnerId) { setBatchErr("Chọn đối tác cần xác nhận gộp."); return; }
     if (!batchDraft.invoiceNo) { setBatchErr("Cần nhập số hoá đơn tổng đối tác đã báo."); return; }
@@ -4406,29 +3536,22 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
     if (pending.length === 0) { setBatchErr("Đối tác này không có đơn nào đang chờ trong kỳ đang xem."); return; }
     const p = partnerOf(pid);
     const hasAttachment = !!batchDraft.attachmentData;
-    if (p?.invoiceAttachmentRequired && !hasAttachment) {
-      setBatchErr(`Đối tác ${p.name} được cấu hình BẮT BUỘC đính kèm ảnh/file hóa đơn — bổ sung file trước khi xác nhận.`);
-      return;
-    }
-    // Đóng băng % từng đơn tại thời điểm xác nhận (mỗi đơn có thể rơi bậc khác nhau trong tháng).
+    const total = batchTotal(pid);
+    const txId = Date.now();
+    // Lưu lại % đã áp dụng cho TỪNG đơn tại đúng thời điểm gộp — mỗi đơn có thể rơi vào bậc khác
+    // nhau nếu doanh thu cộng dồn vượt mốc giữa chừng trong tháng.
     const pctByOrderId = {};
     pending.forEach((o) => { pctByOrderId[o.id] = resolvePct(o); });
+    setTransactions((prev) => [...prev, {
+      id: txId, date: TODAY_STR, kind: "thu", category: "Bán hàng (qua đối tác phân phối)",
+      desc: `Gộp ${pending.length} đơn qua ${p?.name || "đối tác"} (HĐ tổng #${batchDraft.invoiceNo})`, amount: Math.round(total),
+      partnerName: p?.name || "", partnerTaxCode: "", paymentMethod: "chuyen_khoan",
+      invoiceType: "Biên lai / Phiếu thu nội bộ", invoiceNo: batchDraft.invoiceNo, vatRate: pending[0]?.vatRate || 8,
+      attachmentData: batchDraft.attachmentData, attachmentName: batchDraft.attachmentName, attachmentType: batchDraft.attachmentType,
+      status: hasAttachment ? "approved" : "pending", source: "hoptac", sourceOrderId: null,
+    }]);
     const pendingIds = new Set(pending.map((o) => o.id));
-    const confirmedAt = new Date().toISOString();
-    setDistOrders((prev) => prev.map((x) => (pendingIds.has(x.id) ? {
-      ...x,
-      customerInvoiceStatus: "confirmed",
-      customerInvoiceNo: batchDraft.invoiceNo,
-      customerInvoiceDate: TODAY_STR,
-      customerInvoiceAttachmentData: batchDraft.attachmentData || "",
-      customerInvoiceAttachmentName: batchDraft.attachmentName || "",
-      customerInvoiceConfirmedBy: authUser?.email || "",
-      customerInvoiceConfirmedAt: confirmedAt,
-      customerInvoiceNote: hasAttachment ? "" : "Đối tác giữ chứng từ, công ty chưa có bản ảnh",
-      invoiceEvidenceReceived: hasAttachment,
-      partnerInvoiceReceived: hasAttachment, partnerInvoiceConfirmed: true, partnerInvoiceNo: batchDraft.invoiceNo,
-      batchSettled: true, commissionPct: pctByOrderId[x.id],
-    } : x)));
+    setDistOrders((prev) => prev.map((x) => (pendingIds.has(x.id) ? { ...x, partnerInvoiceReceived: hasAttachment, partnerInvoiceConfirmed: true, partnerInvoiceNo: batchDraft.invoiceNo, linkedTxId: txId, batchSettled: true, commissionPct: pctByOrderId[x.id] } : x)));
     setBatchDraft({ partnerId: "", invoiceNo: "", attachmentData: "", attachmentName: "", attachmentType: "" });
     setBatchErr("");
     setShowBatchModal(false);
@@ -4446,110 +3569,6 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
   // Có tìm kiếm thì bỏ qua giới hạn kỳ — tìm xuyên suốt mọi tháng.
   const salesOrders = distOrders.filter((o) => o.orderKind !== "purchase" && (distSearchQ ? matchesDistSearch(o) : inPeriod(o)));
   const purchaseOrders = distOrders.filter((o) => o.orderKind === "purchase" && (distSearchQ ? matchesDistSearch(o) : inPeriod(o)));
-
-  // ---------- HỒ SƠ QUYẾT TOÁN ĐỐI TÁC (mục IV + X) ----------
-  const mayCreateSettlement = can(authUser, ACTIONS.CREATE_SETTLEMENT, allEmployees);
-  const mayApproveSettlement = can(authUser, ACTIONS.APPROVE_SETTLEMENT, allEmployees);
-  const mayRecordPayment = can(authUser, ACTIONS.RECORD_PAYMENT, allEmployees);
-  const [showSettlementModal, setShowSettlementModal] = useState(false);
-  const [settlementForm, setSettlementForm] = useState({ partnerId: "", periodFrom: rangeFrom, periodTo: rangeTo, dueDate: "", note: "" });
-  const [settlementErr, setSettlementErr] = useState("");
-  const [settlementSearch, setSettlementSearch] = useState("");
-  const [expandedSettlementId, setExpandedSettlementId] = useState(null);
-  const [payingSettlement, setPayingSettlement] = useState(null); // hồ sơ đang ghi nhận thanh toán
-  const [payForm, setPayForm] = useState({ amount: "", date: TODAY_STR, paymentMethod: "chuyen_khoan", referenceNo: "", note: "" });
-  const [payErr, setPayErr] = useState("");
-
-  // Đơn đủ điều kiện đưa vào hồ sơ: đã xác nhận, không hủy, CHƯA thuộc hồ sơ khác (mục IV.3).
-  const settlementEligible = settlementForm.partnerId
-    ? eligibleOrdersForSettlement(distOrders, Number(settlementForm.partnerId), settlementForm.periodFrom, settlementForm.periodTo)
-    : [];
-  const settlementPreview = settlementForm.partnerId && settlementEligible.length > 0
-    ? buildSettlementDraft({
-        partner: partnerOf(Number(settlementForm.partnerId)),
-        orders: settlementEligible,
-        periodFrom: settlementForm.periodFrom,
-        periodTo: settlementForm.periodTo,
-        resolvePct,
-      })
-    : null;
-
-  const createSettlement = () => {
-    if (!settlementForm.partnerId) { setSettlementErr("Chọn đối tác cần quyết toán."); return; }
-    if (!settlementPreview || settlementEligible.length === 0) { setSettlementErr("Không có đơn đủ điều kiện trong kỳ đã chọn (đơn đã hủy hoặc đã thuộc hồ sơ khác không được tính)."); return; }
-    const draft = { ...settlementPreview, dueDate: settlementForm.dueDate || "", note: settlementForm.note || "" };
-    setSettlements((prev) => [...prev, draft]);
-    // Khóa các đơn vào hồ sơ để không lọt vào hồ sơ khác (số liệu chỉ đóng băng khi DUYỆT).
-    const ids = new Set(draft.orderIds);
-    setDistOrders((prev) => prev.map((o) => (ids.has(o.id) ? { ...o, settlementId: draft.id, settlementStatus: "awaiting_settlement" } : o)));
-    setSettlementForm({ partnerId: "", periodFrom: rangeFrom, periodTo: rangeTo, dueDate: "", note: "" });
-    setSettlementErr("");
-    setShowSettlementModal(false);
-  };
-
-  // DUYỆT quyết toán: khóa số liệu + tạo ĐÚNG MỘT khoản công nợ. KHÔNG tạo Thu/Chi (mục IV.8).
-  const approveSettlementAction = (s) => {
-    if (!mayApproveSettlement) return;
-    const partner = partnerOf(s.partnerId);
-    const approved = approveSettlement(s, authUser?.email || "");
-    const debt = createDebtFromSettlement(approved, partner, debts);
-    if (debt) setDebts((prev) => [...prev, debt]);
-    setSettlements((prev) => prev.map((x) => (x.id === s.id ? {
-      ...approved,
-      debtId: debt ? debt.id : null,
-      paymentStatus: s.netAmount <= 0 ? "paid" : "unpaid",
-      remainingAmount: s.netAmount,
-    } : x)));
-    const ids = new Set(s.orderIds);
-    setDistOrders((prev) => prev.map((o) => (ids.has(o.id) ? { ...o, settlementStatus: s.netAmount <= 0 ? "settled" : "approved" } : o)));
-  };
-
-  // HỦY hồ sơ: chỉ khi chưa có đồng nào được thanh toán — nhả các đơn về "chờ quyết toán".
-  const cancelSettlementAction = (s) => {
-    if (!mayApproveSettlement) return;
-    if ((s.paidAmount || 0) > 0) { window.alert("Hồ sơ đã có thanh toán — xóa các lần thanh toán ở tab Công nợ trước rồi mới hủy được."); return; }
-    if (!window.confirm(`Hủy hồ sơ ${s.settlementCode}? Các đơn trong hồ sơ sẽ trở về trạng thái chờ quyết toán.`)) return;
-    setSettlements((prev) => prev.map((x) => (x.id === s.id ? { ...x, status: "cancelled" } : x)));
-    const ids = new Set(s.orderIds);
-    setDistOrders((prev) => prev.map((o) => (ids.has(o.id) ? { ...o, settlementId: null, settlementStatus: "awaiting_settlement" } : o)));
-    if (s.debtId) setDebts((prev) => prev.map((d) => (d.id === s.debtId ? { ...d, status: "cancelled" } : d)));
-  };
-
-  // Ghi nhận ĐỐI TÁC/CÔNG TY thực chuyển tiền cho hồ sơ — đi qua payDebt tập trung:
-  // đúng 1 giao dịch Thu/Chi + cập nhật công nợ + trạng thái hồ sơ + các đơn (mục X.10).
-  const submitSettlementPayment = () => {
-    if (!payingSettlement) return;
-    const r = payDebt(payingSettlement.debtId, {
-      amount: Number(payForm.amount) || 0, date: payForm.date,
-      paymentMethod: payForm.paymentMethod, referenceNo: payForm.referenceNo, note: payForm.note,
-    });
-    if (r?.error) { setPayErr(r.error); return; }
-    setPayingSettlement(null);
-    setPayForm({ amount: "", date: TODAY_STR, paymentMethod: "chuyen_khoan", referenceNo: "", note: "" });
-    setPayErr("");
-  };
-
-  const settlementSearchQ = settlementSearch.trim().toLowerCase();
-  const visibleSettlements = (settlements || []).filter((s) => {
-    if (!settlementSearchQ) return true;
-    const partner = partnerOf(s.partnerId);
-    return (s.settlementCode || "").toLowerCase().includes(settlementSearchQ)
-      || (partner?.name || "").toLowerCase().includes(settlementSearchQ)
-      || (s.invoiceNo || "").toLowerCase().includes(settlementSearchQ)
-      || (s.paymentStatus || "").toLowerCase().includes(settlementSearchQ)
-      || (s.periodFrom || "").includes(settlementSearchQ) || (s.periodTo || "").includes(settlementSearchQ);
-  }).sort((a, b) => b.id - a.id);
-
-  const SETTLEMENT_STATUS_META = {
-    draft: { label: "Nháp — chờ duyệt", cls: "bg-gold/10 text-gold" },
-    approved: { label: "Đã duyệt", cls: "bg-ink/5 text-ink-light" },
-    cancelled: { label: "Đã hủy", cls: "bg-stamp-red/10 text-stamp-red" },
-  };
-  const PAY_STATUS_META = {
-    unpaid: { label: "Chưa thanh toán", cls: "text-stamp-red" },
-    partial: { label: "Thanh toán một phần", cls: "text-gold" },
-    paid: { label: "Đã thanh toán đủ", cls: "text-ledger-green" },
-  };
   const totalRevenue = salesOrders.reduce((a, o) => a + o.revenue, 0);
   const totalCommission = salesOrders.reduce((a, o) => a + computePartnerAmount(o.revenue, o.vatRate, resolvePct(o), partnerOf(o.partnerId)?.partnerRole).commissionAmount, 0);
   const totalRemitted = salesOrders.reduce((a, o) => a + computePartnerAmount(o.revenue, o.vatRate, resolvePct(o), partnerOf(o.partnerId)?.partnerRole).remittedToCompany, 0);
@@ -4589,168 +3608,15 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
         </div>
       )}
 
-      {/* ---------- HỒ SƠ QUYẾT TOÁN (mục IV): hóa đơn ≠ tiền, duyệt ≠ tiền — tiền chỉ vào Thu Chi khi ghi nhận thanh toán ---------- */}
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
-        <div className="px-4 py-3 flex items-center justify-between flex-wrap gap-2 border-b border-paper-line bg-paper/60">
-          <div className="text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><FileText size={13} /> Hồ sơ quyết toán đối tác — duyệt tạo CÔNG NỢ, tiền thật mới vào Thu Chi</div>
-          <div className="flex items-center gap-2">
-            <input value={settlementSearch} onChange={(e) => setSettlementSearch(e.target.value)} placeholder="Tìm mã QT / đối tác / số HĐ / trạng thái..." className="border border-paper-line rounded px-2.5 py-1.5 text-xs w-64" />
-            {mayCreateSettlement && (
-              <button onClick={() => { setSettlementForm({ partnerId: partners[0]?.id || "", periodFrom: rangeFrom, periodTo: rangeTo, dueDate: "", note: "" }); setSettlementErr(""); setShowSettlementModal(true); }} className="flex items-center gap-1.5 text-xs bg-ink text-white px-3 py-2 rounded-md hover:bg-ink-light"><Plus size={13} /> Tạo quyết toán</button>
-            )}
-          </div>
-        </div>
-        {visibleSettlements.length === 0 ? (
-          <p className="px-4 py-4 text-xs text-muted">Chưa có hồ sơ quyết toán nào. Cuối kỳ, bấm "Tạo quyết toán" để gom các đơn chưa quyết toán của một đối tác, kiểm tra rồi duyệt — duyệt xong hệ thống tạo đúng một khoản công nợ tương ứng.</p>
-        ) : (
-          <div className="divide-y divide-paper-line">
-            {visibleSettlements.map((s) => {
-              const partner = partnerOf(s.partnerId);
-              const sMeta = SETTLEMENT_STATUS_META[s.status] || SETTLEMENT_STATUS_META.draft;
-              const pMeta = PAY_STATUS_META[s.paymentStatus] || PAY_STATUS_META.unpaid;
-              const expanded = expandedSettlementId === s.id;
-              return (
-                <div key={s.id}>
-                  <button onClick={() => setExpandedSettlementId(expanded ? null : s.id)} className="w-full text-left px-4 py-2.5 flex items-center gap-3 hover:bg-paper/50 flex-wrap">
-                    <span className="ktns-mono text-xs text-ink font-semibold">{s.settlementCode}</span>
-                    <span className="text-sm text-charcoal font-medium">{partner?.name || "—"}</span>
-                    <span className="text-xs text-muted ktns-mono">{s.periodFrom} → {s.periodTo}</span>
-                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${sMeta.cls}`}>{sMeta.label}</span>
-                    <span className="ml-auto flex items-center gap-3">
-                      <span className="text-xs text-muted">{s.direction === "partner_to_company" ? "Đối tác phải chuyển" : s.direction === "company_to_partner" ? "Công ty phải trả" : "Cân bằng"}</span>
-                      <span className="ktns-mono text-sm font-semibold text-ink">{fmtVND(s.netAmount)}</span>
-                      {s.status === "approved" && <span className={`text-[11px] font-medium ${pMeta.cls}`}>{pMeta.label}{s.paidAmount > 0 && s.remainingAmount > 0 ? ` (còn ${fmtVND(s.remainingAmount)})` : ""}</span>}
-                      <ChevronRight size={14} className={`text-muted transition-transform ${expanded ? "rotate-90" : ""}`} />
-                    </span>
-                  </button>
-                  {expanded && (
-                    <div className="px-4 pb-3 bg-paper/40 border-t border-paper-line">
-                      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 py-3 text-xs">
-                        <div><div className="text-muted">Tổng tiền khách</div><div className="ktns-mono font-semibold text-ink">{fmtVND(s.grossRevenue)}</div></div>
-                        <div><div className="text-muted">Trước VAT</div><div className="ktns-mono">{fmtVND(s.amountBeforeVat)}</div></div>
-                        <div><div className="text-muted">VAT</div><div className="ktns-mono">{fmtVND(s.vatAmount)}</div></div>
-                        <div><div className="text-muted">Hoa hồng đối tác</div><div className="ktns-mono">{fmtVND(s.commissionAmount)}</div></div>
-                        <div><div className="text-muted">{s.direction === "partner_to_company" ? "Công ty được nhận" : "Công ty phải trả"}</div><div className="ktns-mono font-semibold text-ink">{fmtVND(s.netAmount)}</div></div>
-                      </div>
-                      <div className="overflow-x-auto rounded border border-paper-line bg-white">
-                        <table className="w-full text-xs">
-                          <thead><tr className="bg-paper text-left uppercase text-muted"><th className="px-3 py-1.5">Ngày</th><th className="px-3 py-1.5">Khách/Đơn</th><th className="px-3 py-1.5">Sản phẩm</th><th className="px-3 py-1.5 text-right">Tiền khách</th><th className="px-3 py-1.5 text-right">%</th><th className="px-3 py-1.5 text-right">Hoa hồng</th><th className="px-3 py-1.5 text-right">Về công ty</th></tr></thead>
-                          <tbody>
-                            {(s.lines || []).map((l) => (
-                              <tr key={l.orderId} className="border-t border-paper-line">
-                                <td className="px-3 py-1.5 ktns-mono">{l.date}</td>
-                                <td className="px-3 py-1.5">{l.endCustomerName || `#${l.orderId}`}</td>
-                                <td className="px-3 py-1.5">{l.productName}</td>
-                                <td className="px-3 py-1.5 text-right ktns-mono">{fmtVND(l.grossCustomerAmount)}</td>
-                                <td className="px-3 py-1.5 text-right ktns-mono">{l.commissionPct}%</td>
-                                <td className="px-3 py-1.5 text-right ktns-mono">{fmtVND(l.commissionAmount)}</td>
-                                <td className="px-3 py-1.5 text-right ktns-mono font-medium">{fmtVND(l.amountDueToCompany || 0)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                      <div className="flex items-center gap-3 flex-wrap pt-3 text-xs">
-                        {s.approvedAt && <span className="text-muted">Duyệt bởi <strong className="text-ink">{s.approvedBy}</strong> lúc {new Date(s.approvedAt).toLocaleString("vi-VN")}</span>}
-                        {s.note && <span className="text-muted">Ghi chú: {s.note}</span>}
-                        <span className="ml-auto flex items-center gap-2">
-                          {s.status === "draft" && mayApproveSettlement && (
-                            <button onClick={() => approveSettlementAction(s)} className="bg-ledger-green text-white px-3 py-1.5 rounded-md hover:opacity-90 font-medium">Duyệt quyết toán → tạo công nợ</button>
-                          )}
-                          {s.status === "approved" && s.paymentStatus !== "paid" && mayRecordPayment && s.debtId && (
-                            <button onClick={() => { setPayingSettlement(s); setPayForm({ amount: String(s.remainingAmount || ""), date: TODAY_STR, paymentMethod: "chuyen_khoan", referenceNo: "", note: "" }); setPayErr(""); }} className="bg-ink text-white px-3 py-1.5 rounded-md hover:bg-ink-light font-medium">
-                              {s.direction === "partner_to_company" ? "Xác nhận đã nhận tiền" : "Xác nhận đã chuyển tiền"}
-                            </button>
-                          )}
-                          {s.status !== "cancelled" && (s.paidAmount || 0) === 0 && mayApproveSettlement && (
-                            <button onClick={() => cancelSettlementAction(s)} className="text-stamp-red border border-stamp-red/30 px-3 py-1.5 rounded-md hover:bg-stamp-red/5">Hủy hồ sơ</button>
-                          )}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {showSettlementModal && (
-        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-5 w-full max-w-2xl shadow-xl max-h-[88vh] overflow-y-auto" onClick={(ev) => ev.stopPropagation()}>
-            <h3 className="ktns-serif font-semibold text-ink mb-1">Tạo hồ sơ quyết toán</h3>
-            <p className="text-xs text-muted mb-3">Gom các đơn đã xác nhận, chưa hủy, CHƯA thuộc hồ sơ khác trong kỳ. Kiểm tra kỹ rồi bấm Duyệt — duyệt xong mới khóa số liệu và tạo công nợ. Duyệt KHÔNG tạo Thu Chi.</p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <label className="text-xs text-muted flex flex-col gap-1">Đối tác
-                <select value={settlementForm.partnerId} onChange={(e) => setSettlementForm({ ...settlementForm, partnerId: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
-                  {partners.filter((p) => p.partnerRole !== "nha_cung_cap").map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
-                </select>
-              </label>
-              <label className="text-xs text-muted flex flex-col gap-1">Từ ngày<input type="date" value={settlementForm.periodFrom} onChange={(e) => setSettlementForm({ ...settlementForm, periodFrom: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Đến ngày<input type="date" value={settlementForm.periodTo} onChange={(e) => setSettlementForm({ ...settlementForm, periodTo: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Hạn thanh toán<input type="date" value={settlementForm.dueDate} onChange={(e) => setSettlementForm({ ...settlementForm, dueDate: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1 col-span-2 md:col-span-4">Ghi chú<input value={settlementForm.note} onChange={(e) => setSettlementForm({ ...settlementForm, note: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-            </div>
-            {settlementPreview ? (
-              <div className="mt-3 rounded border border-paper-line overflow-hidden">
-                <div className="px-3 py-2 bg-paper text-xs font-semibold text-ink">{settlementEligible.length} đơn đủ điều kiện — {settlementPreview.direction === "partner_to_company" ? "đối tác phải chuyển về công ty" : settlementPreview.direction === "company_to_partner" ? "công ty phải trả đối tác" : "cân bằng"} <span className="ktns-mono">{fmtVND(settlementPreview.netAmount)}</span></div>
-                <div className="max-h-48 overflow-y-auto">
-                  <table className="w-full text-xs">
-                    <tbody>
-                      {settlementPreview.lines.map((l) => (
-                        <tr key={l.orderId} className="border-t border-paper-line">
-                          <td className="px-3 py-1 ktns-mono">{l.date}</td><td className="px-3 py-1">{l.endCustomerName || `#${l.orderId}`}</td>
-                          <td className="px-3 py-1 text-right ktns-mono">{fmtVND(l.grossCustomerAmount)}</td>
-                          <td className="px-3 py-1 text-right ktns-mono">{l.commissionPct}%</td>
-                          <td className="px-3 py-1 text-right ktns-mono font-medium">{fmtVND(l.amountDueToCompany || l.amountDueToPartner)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ) : settlementForm.partnerId ? (
-              <p className="mt-3 text-xs text-gold">Không có đơn đủ điều kiện trong kỳ này (đơn đã thuộc hồ sơ khác hoặc đã tất toán không được tính lại).</p>
-            ) : null}
-            {settlementErr && <p className="text-xs text-stamp-red mt-2">{settlementErr}</p>}
-            <div className="flex gap-2 mt-4">
-              <button onClick={createSettlement} className="bg-ink text-white text-sm px-4 py-2 rounded-md hover:bg-ink-light">Lưu hồ sơ (nháp)</button>
-              <button onClick={() => setShowSettlementModal(false)} className="border border-paper-line text-sm px-4 py-2 rounded-md text-muted">Huỷ</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {payingSettlement && (
-        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-5 w-full max-w-md shadow-xl" onClick={(ev) => ev.stopPropagation()}>
-            <h3 className="ktns-serif font-semibold text-ink mb-1">{payingSettlement.direction === "partner_to_company" ? "Xác nhận tiền ĐÃ VỀ tài khoản công ty" : "Xác nhận ĐÃ CHUYỂN tiền cho đối tác"}</h3>
-            <p className="text-xs text-muted mb-3">{payingSettlement.settlementCode} — còn lại <strong className="ktns-mono text-ink">{fmtVND(payingSettlement.remainingAmount)}</strong>. Cho phép thanh toán một phần; mỗi lần ghi đúng MỘT giao dịch Thu/Chi.</p>
-            <div className="flex flex-col gap-2.5">
-              <label className="text-xs text-muted flex flex-col gap-1">Số tiền thực tế<MoneyInput value={payForm.amount} onChange={(v) => setPayForm({ ...payForm, amount: v })} /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Ngày tiền vào/ra<input type="date" value={payForm.date} onChange={(e) => setPayForm({ ...payForm, date: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Số tham chiếu/UNC<input value={payForm.referenceNo} onChange={(e) => setPayForm({ ...payForm, referenceNo: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" placeholder="Mã giao dịch ngân hàng (nếu có)" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Ghi chú<input value={payForm.note} onChange={(e) => setPayForm({ ...payForm, note: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-            </div>
-            {payErr && <p className="text-xs text-stamp-red mt-2">{payErr}</p>}
-            <div className="flex gap-2 mt-4">
-              <button onClick={submitSettlementPayment} className="bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">Ghi nhận thanh toán</button>
-              <button onClick={() => setPayingSettlement(null)} className="border border-paper-line text-sm px-4 py-2 rounded-md text-muted">Huỷ</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {summaryByPartnerProduct.length > 0 && (
         <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
-          <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Tổng hợp theo Đối tác + Sản phẩm — theo trạng thái HÓA ĐƠN (tiền thật xem ở hồ sơ quyết toán + Công nợ)</div>
+          <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Tổng hợp theo Đối tác + Sản phẩm — đã nhận / còn phải thu cuối tháng</div>
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-paper text-left text-xs uppercase text-muted">
                 <th className="px-4 py-2">Đối tác</th><th className="px-4 py-2">Sản phẩm</th>
-                <th className="px-4 py-2 text-right">Giá trị đã xác nhận HĐ</th><th className="px-4 py-2 text-right">Số đơn</th>
-                <th className="px-4 py-2 text-right">Giá trị chờ xác nhận HĐ</th><th className="px-4 py-2 text-right">Số đơn</th>
+                <th className="px-4 py-2 text-right">Đã nhận</th><th className="px-4 py-2 text-right">Số đơn đã nhận</th>
+                <th className="px-4 py-2 text-right">Còn phải thu</th><th className="px-4 py-2 text-right">Số đơn chưa nhận</th>
               </tr>
             </thead>
             <tbody>
@@ -4821,60 +3687,6 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
                   </label>
                 ))}
               </div>
-            </div>
-
-            {/* Cấu hình trách nhiệm THẬT (mục I) — không suy từ vai trò lúc chạy nữa */}
-            <div className="mt-3">
-              <div className="text-[11px] font-semibold text-ink uppercase mb-1.5">Cấu hình hợp tác — ai thu tiền, ai xuất hóa đơn, chu kỳ quyết toán</div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                <label className="text-[10px] text-muted flex flex-col gap-1">Bên nhận tiền từ khách
-                  <select value={partnerForm.cashCollector} onChange={(e) => setPartnerForm({ ...partnerForm, cashCollector: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-xs bg-white">
-                    <option value="partner">Đối tác thu tiền khách</option>
-                    <option value="company">Công ty DOMIX thu tiền</option>
-                  </select>
-                </label>
-                <label className="text-[10px] text-muted flex flex-col gap-1">Bên xuất hóa đơn VAT cho khách
-                  <select value={partnerForm.customerInvoiceIssuer} onChange={(e) => setPartnerForm({ ...partnerForm, customerInvoiceIssuer: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-xs bg-white">
-                    <option value="partner">Đối tác xuất</option>
-                    <option value="company">Công ty DOMIX xuất</option>
-                    <option value="none">Không cần xuất</option>
-                  </select>
-                </label>
-                <label className="text-[10px] text-muted flex flex-col gap-1">Chu kỳ quyết toán
-                  <select value={partnerForm.settlementCycle} onChange={(e) => setPartnerForm({ ...partnerForm, settlementCycle: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-xs bg-white">
-                    <option value="per_order">Theo từng đơn</option>
-                    <option value="weekly">Hàng tuần</option>
-                    <option value="monthly">Hàng tháng</option>
-                    <option value="custom">Tùy chọn</option>
-                  </select>
-                </label>
-                <label className="text-[10px] text-muted flex flex-col gap-1">Ngày quyết toán dự kiến (trong tháng)
-                  <input type="number" min="1" max="31" value={partnerForm.settlementDay} onChange={(e) => setPartnerForm({ ...partnerForm, settlementDay: Number(e.target.value) || 5 })} className="border border-paper-line rounded px-2 py-1.5 text-xs ktns-mono" />
-                </label>
-                <label className="text-[10px] text-muted flex flex-col gap-1">Cách tính hoa hồng
-                  <select value={partnerForm.commissionBase} onChange={(e) => setPartnerForm({ ...partnerForm, commissionBase: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-xs bg-white">
-                    <option value="before_vat">Trên phần SAU khi trừ VAT</option>
-                    <option value="gross">Trên tổng tiền khách (gross)</option>
-                  </select>
-                </label>
-                <label className="text-[10px] text-muted flex flex-col gap-1">VAT mặc định theo thỏa thuận
-                  <select value={partnerForm.defaultVatRate} onChange={(e) => setPartnerForm({ ...partnerForm, defaultVatRate: Number(e.target.value) })} className="border border-paper-line rounded px-2 py-1.5 text-xs ktns-mono bg-white">
-                    {VAT_RATE_OPTIONS.map((r) => (<option key={r} value={r}>{r}%</option>))}
-                  </select>
-                </label>
-                <label className="flex items-center gap-1.5 text-[10px] text-muted mt-4">
-                  <input type="checkbox" checked={partnerForm.invoiceAttachmentRequired} onChange={(e) => setPartnerForm({ ...partnerForm, invoiceAttachmentRequired: e.target.checked })} />
-                  Bắt buộc đính kèm ảnh/file hóa đơn
-                </label>
-                <label className="flex items-center gap-1.5 text-[10px] text-muted mt-4">
-                  <input type="checkbox" checked={partnerForm.partnerCommissionInvoiceRequired} onChange={(e) => setPartnerForm({ ...partnerForm, partnerCommissionInvoiceRequired: e.target.checked })} />
-                  Đối tác phải xuất HĐ hoa hồng cho công ty
-                </label>
-                <input value={partnerForm.contractNo} onChange={(e) => setPartnerForm({ ...partnerForm, contractNo: e.target.value })} placeholder="Số hợp đồng" className="border border-paper-line rounded px-2 py-1.5 text-xs ktns-mono" />
-                <input type="date" value={partnerForm.contractDate} onChange={(e) => setPartnerForm({ ...partnerForm, contractDate: e.target.value })} title="Ngày hợp đồng" className="border border-paper-line rounded px-2 py-1.5 text-xs ktns-mono" />
-                <input value={partnerForm.contractNote} onChange={(e) => setPartnerForm({ ...partnerForm, contractNote: e.target.value })} placeholder="Ghi chú hợp đồng" className="border border-paper-line rounded px-2 py-1.5 text-xs col-span-2" />
-              </div>
-              <p className="text-[10px] text-muted mt-1.5">VD Say Media: <strong>đối tác thu tiền khách + đối tác xuất VAT</strong> — công ty không cần ảnh hóa đơn (bỏ tick "bắt buộc đính kèm"), cuối tháng quyết toán, đối tác chuyển phần còn lại về công ty.</p>
             </div>
 
             <div className="mt-3">
@@ -4989,7 +3801,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
       {partners.length === 0 && <p className="text-xs text-gold flex items-center gap-1.5"><AlertTriangle size={12} /> Thêm đối tác phân phối trước khi ghi đơn.</p>}
 
       {showBatchModal && (
-        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-6">
+        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-6" onClick={() => setShowBatchModal(false)}>
           <div className="bg-white rounded-lg p-5 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="ktns-serif font-semibold text-ink mb-1">Xác nhận thanh toán gộp cả tháng</h3>
             <p className="text-xs text-muted mb-3">Dùng khi đối tác KHÔNG xuất hoá đơn riêng từng đơn mà gộp lại xuất 1 hoá đơn tổng cuối tháng (VD Say Media) — chọn đối tác, hệ thống tự cộng hết các đơn đang "chờ" của đối tác đó trong kỳ đang xem, ghi 1 khoản Chi duy nhất.</p>
@@ -5250,7 +4062,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
           setActiveInvoiceOrderId(null);
         };
         return (
-          <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-6">
+          <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-6" onClick={closeInvoiceModal}>
             <div className="bg-white rounded-lg p-5 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
               <h3 className="ktns-serif font-semibold text-ink mb-1">Hoá đơn VAT {label} từ đối tác</h3>
               <div className="bg-paper rounded-md p-3 mb-3 text-xs flex flex-col gap-1">
@@ -5464,65 +4276,37 @@ function HopDong({ contracts, setContracts, partners, employees }) {
   );
 }
 
-function CongNo({ debts, setDebts, setTransactions, transactions, distributionOrders, distributionPartners, setTab, authUser, allEmployees, payDebt, unpayDebt, customers }) {
+function CongNo({ debts, setDebts, setTransactions, transactions, distributionOrders, distributionPartners, setTab }) {
   const [showForm, setShowForm] = useState(false);
   const [filter, setFilter] = useState("all");
-  const blankDebtForm = {
-    type: "thu", counterpartyType: "customer", partner: "", counterpartyTaxCode: "", counterpartyPhone: "",
-    amount: "", issueDate: TODAY_STR, dueDate: new Date(TODAY.getTime() + 7 * 86400000).toISOString().slice(0, 10), note: "",
-  };
-  const [form, setForm] = useState(blankDebtForm);
-  const mayRecordPayment = can(authUser, ACTIONS.RECORD_PAYMENT, allEmployees);
+  const [form, setForm] = useState({ type: "thu", partner: "", amount: "", issueDate: TODAY_STR, dueDate: new Date(TODAY.getTime() + 7 * 86400000).toISOString().slice(0, 10), note: "" });
 
   const addDebt = () => {
     if (!form.partner || !form.amount) return;
-    setDebts((prev) => [...prev, normalizeDebt({
-      id: Date.now(), type: form.type,
-      counterpartyType: form.counterpartyType, counterpartyName: form.partner,
-      counterpartyTaxCode: form.counterpartyTaxCode, counterpartyPhone: form.counterpartyPhone,
-      sourceModule: "manual", sourceId: null,
-      amount: Number(form.amount) || 0, paidAmount: 0,
-      issueDate: form.issueDate, dueDate: form.dueDate, note: form.note,
-      status: "open", paymentHistory: [],
-      createdAt: new Date().toISOString(), createdBy: authUser?.email || "",
-    })]);
-    setForm(blankDebtForm);
+    setDebts((prev) => [...prev, { ...form, id: Date.now(), amount: Number(form.amount) || 0, status: "open" }]);
+    setForm({ type: "thu", partner: "", amount: "", issueDate: TODAY_STR, dueDate: new Date(TODAY.getTime() + 7 * 86400000).toISOString().slice(0, 10), note: "" });
     setShowForm(false);
   };
-
-  // ---------- Ghi nhận thanh toán TỪNG PHẦN (mục VI) ----------
-  const [payingDebt, setPayingDebt] = useState(null);
-  const [payForm, setPayForm] = useState({ amount: "", date: TODAY_STR, paymentMethod: "chuyen_khoan", referenceNo: "", note: "" });
-  const [payErr, setPayErr] = useState("");
-  const [expandedDebtId, setExpandedDebtId] = useState(null);
-  const openPayModal = (d) => {
-    setPayingDebt(d);
-    setPayForm({ amount: String(d.remainingAmount || ""), date: TODAY_STR, paymentMethod: "chuyen_khoan", referenceNo: "", note: "" });
-    setPayErr("");
-  };
-  const submitPayment = () => {
-    if (!payingDebt) return;
-    const r = payDebt(payingDebt.id, {
-      amount: Number(payForm.amount) || 0, date: payForm.date,
-      paymentMethod: payForm.paymentMethod, referenceNo: payForm.referenceNo, note: payForm.note,
-    });
-    if (r?.error) { setPayErr(r.error); return; }
-    setPayingDebt(null);
-  };
-  const deletePayment = (d, paymentId) => {
-    if (!window.confirm("Xóa lần thanh toán này? Giao dịch Thu Chi liên kết sẽ bị xóa và công nợ trở lại đúng số còn nợ.")) return;
-    const r = unpayDebt(d.id, paymentId);
-    if (r?.error) window.alert(r.error);
-  };
-  const removeDebt = (id) => {
-    const d = debts.find((x) => x.id === id);
-    if (d && (d.paidAmount || 0) > 0) {
-      window.alert("Khoản nợ này đã có thanh toán — xóa từng lần thanh toán trước (để đảo giao dịch Thu Chi), rồi mới xóa được khoản nợ.");
-      return;
+  // Đánh dấu "Đã trả" phải ghi THẬT 1 khoản Thu/Chi tương ứng — trước đây chỉ đổi trạng thái,
+  // tiền thật vào/ra không hề xuất hiện ở Thu Chi, làm sai lệch số dư quỹ thực tế.
+  const togglePaid = (d) => {
+    const nowPaid = d.status !== "paid";
+    if (nowPaid) {
+      const txId = Date.now();
+      setTransactions((prev) => [...prev, {
+        id: txId, date: TODAY_STR, kind: d.type === "thu" ? "thu" : "chi", category: d.type === "thu" ? "Thu công nợ" : "Trả công nợ",
+        desc: `${d.type === "thu" ? "Thu nợ từ" : "Trả nợ cho"} ${d.partner}${d.note ? " — " + d.note : ""}`, amount: d.amount,
+        partnerName: d.partner, partnerTaxCode: "", paymentMethod: "chuyen_khoan",
+        invoiceType: "Chưa xác định", invoiceNo: "", vatRate: 0, attachmentData: "", attachmentName: "", attachmentType: "",
+        status: "pending", source: "congno", sourceOrderId: d.id,
+      }]);
+      setDebts((prev) => prev.map((x) => (x.id === d.id ? { ...x, status: "paid", linkedTxId: txId } : x)));
+    } else {
+      if (d.linkedTxId) setTransactions((prev) => prev.filter((t) => t.id !== d.linkedTxId));
+      setDebts((prev) => prev.map((x) => (x.id === d.id ? { ...x, status: "open", linkedTxId: null } : x)));
     }
-    if (!window.confirm("Xóa khoản công nợ này?")) return;
-    setDebts((prev) => prev.filter((x) => x.id !== id));
   };
+  const removeDebt = (id) => setDebts((prev) => prev.filter((d) => d.id !== id));
 
   // Doanh thu ròng đang CHỜ đối tác phân phối xác nhận — CHƯA vào Thu Chi, CHƯA phải là công nợ
   // (không có gì để "nợ" vì chưa ghi nhận thu ở đâu cả) — chỉ hiện để biết còn bao nhiêu tiền
@@ -5538,37 +4322,17 @@ function CongNo({ debts, setDebts, setTransactions, transactions, distributionOr
     return { partner: p, count: pending.length, total };
   }).filter((x) => x.count > 0);
 
-  // Tổng theo SỐ CÒN LẠI thật (đã trừ phần thanh toán một phần) — không tính khoản đã hủy.
-  const activeDebts = debts.filter((d) => d.status !== "cancelled");
-  const receivable = activeDebts.filter((d) => d.type === "thu").reduce((a, d) => a + (d.remainingAmount ?? d.amount), 0);
-  const payable = activeDebts.filter((d) => d.type === "tra").reduce((a, d) => a + (d.remainingAmount ?? d.amount), 0);
-  const overdue = activeDebts.filter((d) => d.status !== "paid" && d.dueDate && new Date(d.dueDate) < TODAY);
+  const receivable = debts.filter((d) => d.type === "thu" && d.status !== "paid").reduce((a, d) => a + d.amount, 0);
+  const payable = debts.filter((d) => d.type === "tra" && d.status !== "paid").reduce((a, d) => a + d.amount, 0);
+  const overdue = debts.filter((d) => d.status !== "paid" && new Date(d.dueDate) < TODAY);
 
-  // 5 nhóm công nợ tách rõ (mục VI): ai nợ ai, nguồn từ đâu.
-  const DEBT_GROUPS = [
-    ["all", "Tất cả"],
-    ["thu_customer", "Phải thu khách hàng"],
-    ["thu_partner", "Phải thu đối tác PP"],
-    ["tra_partner", "Phải trả đối tác PP"],
-    ["tra_supplier", "Phải trả nhà cung cấp"],
-    ["other", "Công nợ khác"],
-    ["open", "Còn nợ"],
-    ["overdue", "Quá hạn"],
-  ];
-  const groupOf = (d) => {
-    if (d.type === "thu" && d.counterpartyType === "customer") return "thu_customer";
-    if (d.type === "thu" && d.counterpartyType === "distribution_partner") return "thu_partner";
-    if (d.type === "tra" && d.counterpartyType === "distribution_partner") return "tra_partner";
-    if (d.type === "tra" && d.counterpartyType === "supplier") return "tra_supplier";
-    return "other";
-  };
-  const filtered = activeDebts.filter((d) => {
-    if (filter === "overdue") return d.status !== "paid" && d.dueDate && new Date(d.dueDate) < TODAY;
+  const filtered = debts.filter((d) => {
+    if (filter === "thu") return d.type === "thu";
+    if (filter === "tra") return d.type === "tra";
+    if (filter === "overdue") return d.status !== "paid" && new Date(d.dueDate) < TODAY;
     if (filter === "open") return d.status !== "paid";
-    if (filter === "all") return true;
-    return groupOf(d) === filter;
+    return true;
   });
-  const SOURCE_LABELS = { crm: "CRM", distribution_settlement: "Quyết toán ĐT", purchase: "Nhập hàng", manual: "Nhập tay", payroll: "Lương", other: "Khác" };
 
   return (
     <div className="flex flex-col gap-4">
@@ -5600,7 +4364,7 @@ function CongNo({ debts, setDebts, setTransactions, transactions, distributionOr
 
       <div className="flex justify-between items-center flex-wrap gap-2">
         <div className="flex gap-2 flex-wrap">
-          {DEBT_GROUPS.map(([id, label]) => (
+          {[["all", "Tất cả"], ["thu", "Phải thu"], ["tra", "Phải trả"], ["open", "Còn nợ"], ["overdue", "Quá hạn"]].map(([id, label]) => (
             <button key={id} onClick={() => setFilter(id)} className={`ktns-role-pill ${filter === id ? "active" : ""}`}>{label}</button>
           ))}
         </div>
@@ -5625,16 +4389,7 @@ function CongNo({ debts, setDebts, setTransactions, transactions, distributionOr
                 <option value="tra">Phải trả (mình nợ đối tác)</option>
               </select>
             </label>
-            <label className="text-xs text-muted flex flex-col gap-1">Đối tượng
-              <select value={form.counterpartyType} onChange={(e) => setForm({ ...form, counterpartyType: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
-                <option value="customer">Khách hàng</option>
-                <option value="distribution_partner">Đối tác phân phối</option>
-                <option value="supplier">Nhà cung cấp</option>
-                <option value="employee">Nhân viên</option>
-                <option value="other">Khác</option>
-              </select>
-            </label>
-            <label className="text-xs text-muted flex flex-col gap-1">Tên đối tượng<input value={form.partner} onChange={(e) => setForm({ ...form, partner: e.target.value })} placeholder="Tên khách hàng / đối tác / NCC" className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
+            <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Đối tác<input value={form.partner} onChange={(e) => setForm({ ...form, partner: e.target.value })} placeholder="Tên khách hàng / nhà cung cấp" className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Số tiền (đ)<MoneyInput value={form.amount} onChange={(v) => setForm({ ...form, amount: v })} /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Ngày phát sinh<input type="date" value={form.issueDate} onChange={(e) => setForm({ ...form, issueDate: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Hạn thanh toán<input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
@@ -5645,119 +4400,47 @@ function CongNo({ debts, setDebts, setTransactions, transactions, distributionOr
       )}
 
       <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
-        <div className="max-h-[480px] overflow-y-auto">
+        <div className="max-h-[420px] overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10">
             <tr className="bg-paper text-left text-xs uppercase text-muted">
-              <th className="px-3 py-2.5">Ai nợ ai</th>
-              <th className="px-3 py-2.5">Đối tượng</th>
-              <th className="px-3 py-2.5">Nguồn</th>
-              <th className="px-3 py-2.5 text-right">Tổng nợ</th>
-              <th className="px-3 py-2.5 text-right">Đã thanh toán</th>
-              <th className="px-3 py-2.5 text-right">Còn lại</th>
-              <th className="px-3 py-2.5">Hạn</th>
-              <th className="px-3 py-2.5">Trạng thái</th>
-              <th className="px-3 py-2.5"></th>
+              <th className="px-4 py-2.5">Loại</th>
+              <th className="px-4 py-2.5">Đối tác</th>
+              <th className="px-4 py-2.5 text-right">Số tiền</th>
+              <th className="px-4 py-2.5">Hạn thanh toán</th>
+              <th className="px-4 py-2.5">Trạng thái</th>
+              <th className="px-4 py-2.5">Ghi chú</th>
+              <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
           <tbody>
-            {filtered.length === 0 && <tr><td colSpan={9} className="px-4 py-6 text-center text-xs text-muted">Không có khoản công nợ nào trong nhóm này.</td></tr>}
             {filtered.slice().reverse().map((d) => {
-              const od = daysOverdue(d, TODAY_STR);
-              const isOverdue = od > 0;
-              const expanded = expandedDebtId === d.id;
+              const isOverdue = d.status !== "paid" && new Date(d.dueDate) < TODAY;
               return (
-                <React.Fragment key={d.id}>
-                <tr className={`border-t border-paper-line ${isOverdue ? "ktns-warn-row" : ""} cursor-pointer hover:bg-paper/40`} onClick={() => setExpandedDebtId(expanded ? null : d.id)}>
-                  <td className="px-3 py-2">
-                    <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${d.type === "thu" ? "bg-ledger-green" : "bg-stamp-red"}`} style={{ color: "white" }}>{d.type === "thu" ? "Họ nợ mình" : "Mình nợ họ"}</span>
+                <tr key={d.id} className={`border-t border-paper-line ${isOverdue ? "ktns-warn-row" : ""}`}>
+                  <td className="px-4 py-2">
+                    <span className={`text-xs px-2 py-0.5 rounded font-medium ${d.type === "thu" ? "bg-ledger-green" : "bg-stamp-red"}`} style={{ color: "white" }}>{d.type === "thu" ? "Phải thu" : "Phải trả"}</span>
                   </td>
-                  <td className="px-3 py-2 font-medium">{d.counterpartyName || d.partner}
-                    {d.settlementCode && <div className="text-[10px] text-muted ktns-mono">{d.settlementCode}</div>}
+                  <td className="px-4 py-2 font-medium">{d.partner}</td>
+                  <td className={`px-4 py-2 text-right ktns-mono font-medium ${d.type === "thu" ? "text-ledger-green" : "text-stamp-red"}`}>{fmtVND(d.amount)}</td>
+                  <td className="px-4 py-2 ktns-mono text-xs">
+                    <span className={isOverdue ? "text-stamp-red font-semibold" : "text-muted"}>{d.dueDate}</span>
                   </td>
-                  <td className="px-3 py-2 text-[11px] text-muted">{SOURCE_LABELS[d.sourceModule] || "Khác"}</td>
-                  <td className="px-3 py-2 text-right ktns-mono">{fmtVND(d.amount)}</td>
-                  <td className="px-3 py-2 text-right ktns-mono text-ledger-green">{d.paidAmount > 0 ? fmtVND(d.paidAmount) : "—"}</td>
-                  <td className={`px-3 py-2 text-right ktns-mono font-semibold ${d.type === "thu" ? "text-ledger-green" : "text-stamp-red"}`}>{fmtVND(d.remainingAmount ?? d.amount)}</td>
-                  <td className="px-3 py-2 ktns-mono text-xs">
-                    <span className={isOverdue ? "text-stamp-red font-semibold" : "text-muted"}>{d.dueDate || "—"}</span>
-                    {isOverdue && <div className="text-[10px] text-stamp-red">quá hạn {od} ngày</div>}
+                  <td className="px-4 py-2">
+                    <button onClick={() => togglePaid(d)}>
+                      {d.status === "paid" ? <StampBadge text="ĐÃ THANH TOÁN" gold /> : isOverdue ? <StampBadge text="QUÁ HẠN" /> : <StampBadge text="CÒN NỢ" muted />}
+                    </button>
                   </td>
-                  <td className="px-3 py-2">
-                    {d.status === "paid" ? <StampBadge text="ĐÃ THANH TOÁN" gold /> : d.status === "partial" ? <StampBadge text="MỘT PHẦN" /> : isOverdue ? <StampBadge text="QUÁ HẠN" /> : <StampBadge text="CÒN NỢ" muted />}
-                  </td>
-                  <td className="px-3 py-2 text-right whitespace-nowrap" onClick={(ev) => ev.stopPropagation()}>
-                    {d.status !== "paid" && mayRecordPayment && (
-                      <button onClick={() => openPayModal(d)} className="text-[11px] bg-ink text-white px-2 py-1 rounded hover:bg-ink-light mr-2">{d.type === "thu" ? "Thu tiền" : "Trả tiền"}</button>
-                    )}
-                    <button onClick={() => removeDebt(d.id)} className="text-muted hover:text-stamp-red"><Trash2 size={14} /></button>
-                  </td>
+                  <td className="px-4 py-2 text-xs text-muted max-w-xs">{d.note}</td>
+                  <td className="px-4 py-2 text-right"><button onClick={() => removeDebt(d.id)} className="text-muted hover:text-stamp-red"><Trash2 size={14} /></button></td>
                 </tr>
-                {expanded && (
-                  <tr className="border-t border-paper-line bg-paper/40">
-                    <td colSpan={9} className="px-4 py-3">
-                      <div className="text-[11px] text-muted mb-1.5">{d.note || "Không có ghi chú."} {d.issueDate && <span> · Phát sinh: <span className="ktns-mono">{d.issueDate}</span></span>}{d.createdBy && <span> · Tạo bởi {d.createdBy}</span>}</div>
-                      {(d.paymentHistory || []).length === 0 ? (
-                        <p className="text-xs text-muted">Chưa có lần thanh toán nào.</p>
-                      ) : (
-                        <table className="w-full text-xs bg-white rounded border border-paper-line">
-                          <thead><tr className="text-left text-muted uppercase"><th className="px-3 py-1.5">Ngày</th><th className="px-3 py-1.5 text-right">Số tiền</th><th className="px-3 py-1.5">Hình thức</th><th className="px-3 py-1.5">Tham chiếu</th><th className="px-3 py-1.5">Người ghi</th><th className="px-3 py-1.5">Ghi chú</th><th></th></tr></thead>
-                          <tbody>
-                            {(d.paymentHistory || []).map((p) => (
-                              <tr key={p.id} className="border-t border-paper-line">
-                                <td className="px-3 py-1.5 ktns-mono">{p.date}</td>
-                                <td className="px-3 py-1.5 text-right ktns-mono font-medium">{fmtVND(p.amount)}</td>
-                                <td className="px-3 py-1.5">{p.paymentMethod === "tien_mat" ? "Tiền mặt" : "Chuyển khoản"}</td>
-                                <td className="px-3 py-1.5 ktns-mono">{p.referenceNo || "—"}</td>
-                                <td className="px-3 py-1.5">{p.createdBy || "—"}</td>
-                                <td className="px-3 py-1.5 text-muted">{p.note || "—"}</td>
-                                <td className="px-3 py-1.5 text-right">
-                                  {mayRecordPayment && <button onClick={() => deletePayment(d, p.id)} className="text-muted hover:text-stamp-red" title="Xóa lần thanh toán này — giao dịch Thu Chi liên kết bị đảo, số dư nợ phục hồi"><Trash2 size={12} /></button>}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
-                    </td>
-                  </tr>
-                )}
-                </React.Fragment>
               );
             })}
           </tbody>
         </table>
         </div>
       </div>
-      <p className="text-xs text-muted">* Bấm vào dòng để xem lịch sử thanh toán. Cho phép thanh toán MỘT PHẦN — mỗi lần thu/trả tạo đúng một giao dịch Thu Chi thật; xóa lần thanh toán sẽ đảo giao dịch tương ứng và phục hồi số dư nợ.</p>
-
-      {payingDebt && (
-        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-5 w-full max-w-md shadow-xl" onClick={(ev) => ev.stopPropagation()}>
-            <h3 className="ktns-serif font-semibold text-ink mb-1">{payingDebt.type === "thu" ? "Ghi nhận TIỀN THU về từ" : "Ghi nhận TIỀN TRẢ cho"} {payingDebt.counterpartyName || payingDebt.partner}</h3>
-            <p className="text-xs text-muted mb-3">Còn nợ <strong className="ktns-mono text-ink">{fmtVND(payingDebt.remainingAmount ?? payingDebt.amount)}</strong> — nhập đúng số tiền THỰC TẾ lần này (được phép một phần, không mặc định toàn bộ).</p>
-            <div className="flex flex-col gap-2.5">
-              <label className="text-xs text-muted flex flex-col gap-1">Số tiền thực tế lần này<MoneyInput value={payForm.amount} onChange={(v) => setPayForm({ ...payForm, amount: v })} /></label>
-              <div className="grid grid-cols-2 gap-2.5">
-                <label className="text-xs text-muted flex flex-col gap-1">Ngày tiền vào/ra<input type="date" value={payForm.date} onChange={(e) => setPayForm({ ...payForm, date: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-                <label className="text-xs text-muted flex flex-col gap-1">Hình thức
-                  <select value={payForm.paymentMethod} onChange={(e) => setPayForm({ ...payForm, paymentMethod: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
-                    <option value="chuyen_khoan">Chuyển khoản</option>
-                    <option value="tien_mat">Tiền mặt</option>
-                  </select>
-                </label>
-              </div>
-              <label className="text-xs text-muted flex flex-col gap-1">Số tham chiếu/UNC<input value={payForm.referenceNo} onChange={(e) => setPayForm({ ...payForm, referenceNo: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Ghi chú<input value={payForm.note} onChange={(e) => setPayForm({ ...payForm, note: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-            </div>
-            {payErr && <p className="text-xs text-stamp-red mt-2">{payErr}</p>}
-            <div className="flex gap-2 mt-4">
-              <button onClick={submitPayment} className="bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">Ghi nhận (tạo 1 giao dịch Thu Chi)</button>
-              <button onClick={() => setPayingDebt(null)} className="border border-paper-line text-sm px-4 py-2 rounded-md text-muted">Huỷ</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <p className="text-xs text-muted">* Bấm vào trạng thái để đánh dấu đã thanh toán/còn nợ. Khoản quá hạn (đỏ) là chưa thanh toán và đã qua hạn — nên nhắc khách/tự nhắc mình xử lý sớm.</p>
     </div>
   );
 }
@@ -5905,22 +4588,14 @@ function TaiSanCoDinh({ assets, setAssets, setTransactions, reportYear, reportMo
   );
 }
 
-function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, moveStock, stockMovements, authUser }) {
+function KhoHang({ inventory, setInventory, orders, distOrders, distPartners }) {
   const [showForm, setShowForm] = useState(false);
   const blankProduct = { sku: "", name: "", groupName: "", unit: "cái", stock: "", minStock: "10", costPrice: "", sellPrice: "", durationMonths: "0", vatRate: 8 };
   const [form, setForm] = useState(blankProduct);
-  const [showMovements, setShowMovements] = useState(false);
 
   const addProduct = () => {
     if (!form.name || !form.stock) return;
-    const newId = Date.now();
-    const openingQty = Number(form.stock) || 0;
-    // Sản phẩm tạo với tồn 0, tồn đầu vào bằng movement "opening" — mọi biến động tồn
-    // từ lúc sinh ra đều có nhật ký, không có con số xuất hiện "từ hư không" (mục IX).
-    setInventory((prev) => [...prev, { ...form, id: newId, stock: 0, minStock: Number(form.minStock) || 0, costPrice: Number(form.costPrice) || 0, sellPrice: Number(form.sellPrice) || 0, durationMonths: Number(form.durationMonths) || 0, vatRate: Number(form.vatRate) || 0 }]);
-    if (moveStock && openingQty > 0) {
-      moveStock({ productId: newId, movementType: "opening", quantity: openingQty, sourceModule: "kho", sourceId: newId, note: "Tồn đầu khi tạo sản phẩm", createdBy: authUser?.email || "" });
-    }
+    setInventory((prev) => [...prev, { ...form, id: Date.now(), stock: Number(form.stock) || 0, minStock: Number(form.minStock) || 0, costPrice: Number(form.costPrice) || 0, sellPrice: Number(form.sellPrice) || 0, durationMonths: Number(form.durationMonths) || 0, vatRate: Number(form.vatRate) || 0 }]);
     setForm(blankProduct);
     setShowForm(false);
   };
@@ -5934,16 +4609,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
     });
     setShowForm(true);
   };
-  // Điều chỉnh tay = movement adjustment_in/out có nhật ký + người thao tác — không sửa số trực tiếp.
-  const adjustStock = (id, delta) => {
-    if (!moveStock) return;
-    moveStock({
-      productId: id, movementType: delta > 0 ? "adjustment_in" : "adjustment_out",
-      quantity: Math.abs(delta), sourceModule: "kho",
-      sourceId: Date.now() + Math.floor(Math.random() * 1000),
-      note: "Điều chỉnh tay tại tab Kho hàng", createdBy: authUser?.email || "",
-    });
-  };
+  const adjustStock = (id, delta) => setInventory((prev) => prev.map((p) => (p.id === id ? { ...p, stock: Math.max(0, p.stock + delta) } : p)));
   const removeProduct = (id) => setInventory((prev) => prev.filter((p) => p.id !== id));
 
   const totalValue = inventory.reduce((a, p) => a + p.stock * p.costPrice, 0);
@@ -6201,41 +4867,6 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
           <p className="px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Tự tính từ ngày bán (CRM/Hợp tác phân phối) + số tháng thời hạn khai báo ở sản phẩm. "Sắp hết hạn" là còn ≤7 ngày — dùng để nhắc khách/đối tác gia hạn trước khi mã hết hiệu lực.</p>
         </div>
       )}
-
-      {/* ---------- Nhật ký xuất/nhập kho (mục IX): mọi biến động tồn đều có nguồn gốc ---------- */}
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
-        <button onClick={() => setShowMovements((v) => !v)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-semibold text-ink uppercase hover:bg-paper/50">
-          <span className="flex items-center gap-1.5"><ClipboardList size={13} /> Nhật ký xuất/nhập kho ({(stockMovements || []).length} bút toán)</span>
-          <ChevronRight size={14} className={`text-muted transition-transform ${showMovements ? "rotate-90" : ""}`} />
-        </button>
-        {showMovements && (
-          <div className="max-h-[360px] overflow-y-auto border-t border-paper-line">
-            <table className="w-full text-xs">
-              <thead className="sticky top-0"><tr className="bg-paper text-left uppercase text-muted">
-                <th className="px-3 py-2">Ngày</th><th className="px-3 py-2">Sản phẩm</th><th className="px-3 py-2">Loại bút toán</th>
-                <th className="px-3 py-2 text-right">Δ Tồn</th><th className="px-3 py-2">Nguồn</th><th className="px-3 py-2">Ghi chú</th><th className="px-3 py-2">Người thao tác</th>
-              </tr></thead>
-              <tbody>
-                {(stockMovements || []).length === 0 && <tr><td colSpan={7} className="px-4 py-4 text-center text-muted">Chưa có bút toán kho nào — các biến động tồn từ giờ (bán, nhập, điều chỉnh, hủy đơn) sẽ tự ghi vào đây.</td></tr>}
-                {(stockMovements || []).slice().reverse().map((m) => {
-                  const product = inventory.find((i) => i.id === m.productId);
-                  return (
-                    <tr key={m.id} className="border-t border-paper-line">
-                      <td className="px-3 py-1.5 ktns-mono">{m.date}</td>
-                      <td className="px-3 py-1.5 font-medium">{product?.name || `#${m.productId}`}</td>
-                      <td className="px-3 py-1.5">{MOVEMENT_LABELS[m.movementType] || m.movementType}</td>
-                      <td className={`px-3 py-1.5 text-right ktns-mono font-semibold ${m.delta > 0 ? "text-ledger-green" : "text-stamp-red"}`}>{m.delta > 0 ? `+${m.delta}` : m.delta}</td>
-                      <td className="px-3 py-1.5 text-muted">{SOURCE_MODULE_LABELS[m.sourceModule] || m.sourceModule}{m.sourceId ? ` #${String(m.sourceId).slice(-6)}` : ""}</td>
-                      <td className="px-3 py-1.5 text-muted">{m.note || "—"}</td>
-                      <td className="px-3 py-1.5 text-muted">{m.createdBy || "—"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
@@ -6379,713 +5010,118 @@ function exportTasksExcel(tasks, employees, orders, marketingLogs) {
 }
 
 // ---------- Hỗ trợ khách hàng — tránh nhiều người cùng hỗ trợ 1 khách, biết ai đang bận ----------
-// ---------- Tin nhắn công ty — đồng bộ SQLite backend, có chat cá nhân và nhóm ----------
-function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
-  const isAdmin = authUser?.role === "admin";
-  const [mode, setMode] = useState("direct");
-  const [contacts, setContacts] = useState([]);
-  const [groups, setGroups] = useState([]);
-  const [selectedEmail, setSelectedEmail] = useState("");
-  const [selectedGroupId, setSelectedGroupId] = useState("");
-  const [messages, setMessages] = useState([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [showInfo, setShowInfo] = useState(true);
-  const [showConversationMenu, setShowConversationMenu] = useState(false);
-  const [mobilePane, setMobilePane] = useState("list");
-  const [showGroupForm, setShowGroupForm] = useState(false);
-  const [groupMemberSearch, setGroupMemberSearch] = useState("");
-  const [groupForm, setGroupForm] = useState({ id: null, name: "", memberEmails: [] });
-  const scrollRef = useRef(null);
-  const composerRef = useRef(null);
-  const searchRef = useRef(null);
+// ---------- Chat công ty — gắn vị trí, gửi ảnh/file, lọc nội dung, chỉ lưu 30 ngày ----------
+// LƯU Ý QUAN TRỌNG: app chưa có server thật, nên chat này hoạt động đúng trong PHIÊN TRÌNH DUYỆT
+// HIỆN TẠI — chưa đồng bộ thời gian thực giữa các máy/điện thoại khác nhau (giống mọi tính năng
+// khác trong app). Cấu trúc dữ liệu đã đúng chuẩn để sau này cắm vào backend thật là chạy được ngay.
+const CHAT_RETENTION_DAYS = 30;
+function ChatCongTy({ messages, setMessages, employees }) {
+  const [postingAsId, setPostingAsId] = useState(employees[0]?.id || "");
+  const [text, setText] = useState("");
+  const [fileDraft, setFileDraft] = useState(null);
+  const [blockedMsg, setBlockedMsg] = useState("");
+  const fileInputRef = useRef(null);
+  const [viewingFile, setViewingFile] = useState(null);
 
-  const displayName = useCallback((email = "") => {
-    const local = String(email).split("@")[0] || "Người dùng";
-    return local
-      .replace(/[._-]+/g, " ")
-      .replace(/\b\w/g, (char) => char.toUpperCase());
+  // Tự dọn tin nhắn quá 30 ngày — chỉ xoá đúng lúc mở tab này, không cần chạy nền liên tục.
+  useEffect(() => {
+    const cutoff = new Date(TODAY.getTime() - CHAT_RETENTION_DAYS * 86400000);
+    setMessages((prev) => prev.filter((m) => new Date(m.timestamp.replace(" ", "T")) >= cutoff));
   }, []);
 
-  const initialsOf = useCallback((value = "") => {
-    const words = displayName(value).split(/\s+/).filter(Boolean);
-    return (words.length > 1 ? `${words[0][0]}${words[words.length - 1][0]}` : words[0]?.slice(0, 2) || "U").toUpperCase();
-  }, [displayName]);
-
-  const avatarColor = useCallback((value = "") => {
-    const palette = ["#77A7F4", "#75C4A3", "#E1B96F", "#A995F5", "#E59B86", "#6FBAC6"];
-    const score = String(value).split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
-    return palette[score % palette.length];
-  }, []);
-
-  const roleLabel = useCallback((role) => role === "admin" ? "Quản trị viên" : "Nhân viên", []);
-
-  const formatListTime = useCallback((value) => {
-    if (!value) return "";
-    const date = new Date(String(value).replace(" ", "T") + (String(value).includes("Z") ? "" : "Z"));
-    if (Number.isNaN(date.getTime())) return "";
-    const now = new Date();
-    if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
-    const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
-    if (date.toDateString() === yesterday.toDateString()) return "Hôm qua";
-    return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
-  }, []);
-
-  const formatMessageTime = useCallback((value) => {
-    if (!value) return "";
-    const date = new Date(String(value).replace(" ", "T") + (String(value).includes("Z") ? "" : "Z"));
-    if (Number.isNaN(date.getTime())) return "";
-    return date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
-  }, []);
-
-  const parseTaskMessage = useCallback((body = "") => {
-    if (!String(body).startsWith("Bạn được giao việc mới.")) return null;
-    const fields = {};
-    String(body).split("\n").slice(1).forEach((line) => {
-      const index = line.indexOf(":");
-      if (index > -1) fields[line.slice(0, index).trim()] = line.slice(index + 1).trim();
-    });
-    return {
-      date: fields["Ngày"] || "—",
-      visibility: fields["Chế độ"] || "Riêng tư",
-      type: fields["Loại"] || "Công việc",
-      target: fields["Chỉ tiêu"] || "",
-      description: fields["Nội dung"] || "Bạn có một công việc mới cần xử lý.",
-    };
-  }, []);
-
-  const directContacts = useMemo(() => (
-    isAdmin ? contacts : contacts.filter((contact) => contact.lastMessage || Number(contact.unreadCount) > 0)
-  ), [contacts, isAdmin]);
-
-  const normalizedSearch = searchTerm.trim().toLowerCase();
-  const visibleContacts = useMemo(() => directContacts.filter((contact) => {
-    if (!normalizedSearch) return true;
-    return [contact.email, contact.role, contact.lastMessage, displayName(contact.email)]
-      .some((value) => String(value || "").toLowerCase().includes(normalizedSearch));
-  }), [directContacts, normalizedSearch, displayName]);
-  const visibleGroups = useMemo(() => groups.filter((group) => {
-    if (!normalizedSearch) return true;
-    return [group.name, group.lastMessage, ...(group.members || []).map((member) => member.email)]
-      .some((value) => String(value || "").toLowerCase().includes(normalizedSearch));
-  }), [groups, normalizedSearch]);
-
-  const selectedContact = directContacts.find((contact) => contact.email === selectedEmail);
-  const selectedGroup = groups.find((group) => String(group.id) === String(selectedGroupId));
-  const groupMembers = selectedGroup?.members || [];
-  const selectedTitle = mode === "group" ? (selectedGroup?.name || "Chọn nhóm") : (selectedContact ? displayName(selectedContact.email) : "Chọn người nhận");
-  const selectedSubtitle = mode === "group"
-    ? `${groupMembers.length} thành viên`
-    : selectedContact ? roleLabel(selectedContact.role) : "Bắt đầu một cuộc trao đổi";
-  const selectedAvatarKey = mode === "group" ? selectedGroup?.name : selectedContact?.email;
-  const hasDestination = mode === "direct" ? !!selectedEmail : !!selectedGroupId;
-  const taskMessages = useMemo(() => messages.map((message) => ({ message, task: parseTaskMessage(message.body) })).filter((item) => item.task), [messages, parseTaskMessage]);
-  const relatedGroups = useMemo(() => {
-    if (mode === "group") return groups.filter((group) => String(group.id) !== String(selectedGroupId)).slice(0, 3);
-    if (!selectedEmail) return [];
-    return groups.filter((group) => (group.members || []).some((member) => member.email === selectedEmail)).slice(0, 3);
-  }, [groups, mode, selectedEmail, selectedGroupId]);
-
-  const directUnread = contacts.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0);
-  const groupUnread = groups.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0);
-
-  const loadLists = useCallback(async () => {
-    const [directResult, groupResult] = await Promise.all([fetchChatConversations(), fetchChatGroups()]);
-    const nextContacts = directResult.contacts || [];
-    const nextGroups = groupResult.groups || [];
-    setContacts(nextContacts);
-    setGroups(nextGroups);
-    const unread = nextContacts.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0)
-      + nextGroups.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0);
-    onUnreadChange?.(unread);
-
-    const nextDirectVisible = isAdmin
-      ? nextContacts
-      : nextContacts.filter((contact) => contact.lastMessage || Number(contact.unreadCount) > 0);
-    if (mode === "direct") {
-      if (!nextDirectVisible.length) {
-        setSelectedEmail("");
-        setMessages([]);
-      } else if (!nextDirectVisible.some((contact) => contact.email === selectedEmail)) {
-        setSelectedEmail(nextDirectVisible[0].email);
-        setMessages([]);
-      }
-    } else if (!nextGroups.length) {
-      setSelectedGroupId("");
-      setMessages([]);
-    } else if (!nextGroups.some((group) => String(group.id) === String(selectedGroupId))) {
-      setSelectedGroupId(String(nextGroups[0].id));
-      setMessages([]);
-    }
-  }, [isAdmin, mode, onUnreadChange, selectedEmail, selectedGroupId]);
-
-  const loadMessages = useCallback(async () => {
-    if (mode === "direct") {
-      if (!selectedEmail) { setMessages([]); return; }
-      const result = await fetchChatMessages(selectedEmail);
-      setMessages(result.messages || []);
-      return;
-    }
-    if (!selectedGroupId) { setMessages([]); return; }
-    const result = await fetchChatGroupMessages(selectedGroupId);
-    setMessages(result.messages || []);
-  }, [mode, selectedEmail, selectedGroupId]);
-
-  useEffect(() => {
-    loadLists().catch((err) => setError(err.message || "Không tải được danh sách tin nhắn"));
-    const timer = window.setInterval(() => loadLists().catch(() => {}), 2500);
-    return () => window.clearInterval(timer);
-  }, [loadLists]);
-
-  useEffect(() => {
-    loadMessages().catch((err) => setError(err.message || "Không tải được nội dung tin nhắn"));
-    if ((mode === "direct" && !selectedEmail) || (mode === "group" && !selectedGroupId)) return undefined;
-    const timer = window.setInterval(() => loadMessages().catch(() => {}), 2500);
-    return () => window.clearInterval(timer);
-  }, [loadMessages, mode, selectedEmail, selectedGroupId]);
-
-  useEffect(() => {
-    if (mode === "direct" && selectedEmail) {
-      markChatRead(selectedEmail).then((result) => onUnreadChange?.(Number(result.unread) || 0)).catch(() => {});
-    }
-    if (mode === "group" && selectedGroupId) {
-      markChatGroupRead(selectedGroupId).then((result) => onUnreadChange?.(Number(result.unread) || 0)).catch(() => {});
-    }
-  }, [mode, selectedEmail, selectedGroupId, onUnreadChange]);
-
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages]);
-
-  useEffect(() => {
-    const textarea = composerRef.current;
-    if (!textarea) return;
-    textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 44), 120)}px`;
-  }, [input]);
-
-  const selectDirect = async (email) => {
-    setMode("direct");
-    setSelectedEmail(email);
-    setSelectedGroupId("");
-    setMessages([]);
-    setError("");
-    setMobilePane("chat");
-    try {
-      const result = await markChatRead(email);
-      onUnreadChange?.(Number(result.unread) || 0);
-      await loadLists();
-    } catch (err) {
-      setError(err.message || "Không đánh dấu đã đọc được");
-    }
+  const handleFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setFileDraft({ data: reader.result, name: file.name, type: file.type });
+    reader.readAsDataURL(file);
   };
 
-  const selectGroup = async (groupId) => {
-    setMode("group");
-    setSelectedGroupId(String(groupId));
-    setSelectedEmail("");
-    setMessages([]);
-    setError("");
-    setMobilePane("chat");
-    try {
-      const result = await markChatGroupRead(groupId);
-      onUnreadChange?.(Number(result.unread) || 0);
-      await loadLists();
-    } catch (err) {
-      setError(err.message || "Không đánh dấu đã đọc được");
+  const send = () => {
+    if (!text.trim() && !fileDraft) return;
+    if (!postingAsId) { setBlockedMsg("Chọn bạn là ai trước khi gửi (chưa có đăng nhập thật, phải tự chọn)."); return; }
+    if (text.trim()) {
+      const bad = containsProfanity(text);
+      if (bad) { setBlockedMsg(`Nội dung chứa từ ngữ không phù hợp ("${bad}") — vui lòng sửa lại trước khi gửi.`); return; }
     }
+    setBlockedMsg("");
+    const emp = employees.find((e) => e.id === Number(postingAsId));
+    setMessages((prev) => [...prev, {
+      id: Date.now(), employeeId: emp?.id, employeeName: emp?.name || "—", position: ROLE_META[emp?.roleType]?.label || "—",
+      text: text.trim(), fileData: fileDraft?.data || "", fileName: fileDraft?.name || "", fileType: fileDraft?.type || "",
+      timestamp: nowStamp(),
+    }]);
+    setText("");
+    setFileDraft(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
-
-  const switchMode = (nextMode) => {
-    setMode(nextMode);
-    setMessages([]);
-    setError("");
-    if (nextMode === "direct") {
-      setSelectedGroupId("");
-      setSelectedEmail(directContacts[0]?.email || "");
-    } else {
-      setSelectedEmail("");
-      setSelectedGroupId(groups[0] ? String(groups[0].id) : "");
-    }
-  };
-
-  const send = async () => {
-    const body = input.trim();
-    if (!body || loading || !hasDestination) return;
-    setLoading(true);
-    setError("");
-    try {
-      if (mode === "group") await sendChatGroupMessage(selectedGroupId, body);
-      else await sendChatMessage(selectedEmail, body);
-      setInput("");
-      await Promise.all([loadMessages(), loadLists()]);
-      composerRef.current?.focus();
-    } catch (err) {
-      setError(err.message || "Không gửi được tin nhắn");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const openCreateGroup = () => {
-    setGroupForm({ id: null, name: "", memberEmails: [] });
-    setGroupMemberSearch("");
-    setShowGroupForm(true);
-  };
-
-  const openEditGroup = () => {
-    if (!selectedGroup) return;
-    setGroupForm({
-      id: selectedGroup.id,
-      name: selectedGroup.name,
-      memberEmails: groupMembers.map((member) => member.email).filter((email) => email !== authUser?.email),
-    });
-    setGroupMemberSearch("");
-    setShowConversationMenu(false);
-    setShowGroupForm(true);
-  };
-
-  const toggleMember = (email) => {
-    setGroupForm((current) => ({
-      ...current,
-      memberEmails: current.memberEmails.includes(email)
-        ? current.memberEmails.filter((item) => item !== email)
-        : [...current.memberEmails, email],
-    }));
-  };
-
-  const saveGroup = async () => {
-    if (!isAdmin || !groupForm.name.trim() || loading) return;
-    setLoading(true);
-    setError("");
-    try {
-      const result = groupForm.id
-        ? await updateChatGroupMembers(groupForm.id, groupForm.name.trim(), groupForm.memberEmails)
-        : await createChatGroup(groupForm.name.trim(), groupForm.memberEmails);
-      setGroups(result.groups || []);
-      if (!groupForm.id && result.groupId) {
-        setMode("group");
-        setSelectedEmail("");
-        setSelectedGroupId(String(result.groupId));
-        setMobilePane("chat");
-      }
-      setShowGroupForm(false);
-      await loadLists();
-    } catch (err) {
-      setError(err.message || "Không lưu được nhóm chat");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const removeGroup = async () => {
-    if (!isAdmin || !selectedGroup || loading) return;
-    if (!window.confirm(`Xóa nhóm "${selectedGroup.name}"?`)) return;
-    setLoading(true);
-    setError("");
-    try {
-      const result = await deleteChatGroup(selectedGroup.id);
-      setGroups(result.groups || []);
-      setSelectedGroupId("");
-      setMessages([]);
-      setShowConversationMenu(false);
-      setMobilePane("list");
-      await loadLists();
-    } catch (err) {
-      setError(err.message || "Không xóa được nhóm chat");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const removeMessage = async (message) => {
-    if (!isAdmin || !message || !window.confirm("Xóa tin nhắn này?")) return;
-    setError("");
-    try {
-      if (mode === "group") await deleteChatGroupMessage(message.id);
-      else await deleteChatMessage(message.id);
-      await Promise.all([loadMessages(), loadLists()]);
-    } catch (err) {
-      setError(err.message || "Không xóa được tin nhắn");
-    }
-  };
-
-  const filteredGroupFormContacts = contacts.filter((contact) => {
-    if (contact.email === authUser?.email) return false;
-    const term = groupMemberSearch.trim().toLowerCase();
-    return !term || contact.email.toLowerCase().includes(term) || displayName(contact.email).toLowerCase().includes(term);
-  });
-
-  const renderAvatar = (key, size = "w-11 h-11", textSize = "text-sm") => (
-    <div className={`${size} ${textSize} rounded-full shrink-0 text-white font-semibold flex items-center justify-center ring-2 ring-white shadow-sm`} style={{ backgroundColor: avatarColor(key) }}>
-      {initialsOf(key)}
-    </div>
-  );
-
-  const renderTaskCard = (task, mine) => (
-    <div className={`w-[min(520px,76vw)] rounded-2xl border overflow-hidden shadow-sm ${mine ? "bg-white text-ink border-white/30" : "bg-white text-ink border-paper-line"}`}>
-      <div className="px-4 py-3 border-b border-paper-line flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 font-semibold text-sm"><ClipboardList size={16} className="text-ink" /> Công việc mới</div>
-        <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-stamp-red/10 text-stamp-red">Cần xử lý</span>
-      </div>
-      <div className="p-4 flex gap-4">
-        <div className="w-14 h-14 rounded-xl bg-ink text-white flex items-center justify-center shrink-0 shadow-md"><Briefcase size={24} /></div>
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold text-[15px] leading-snug">{task.description}</div>
-          <div className="mt-3 grid sm:grid-cols-2 gap-x-5 gap-y-2 text-xs text-muted">
-            <div><span className="block text-[10px] uppercase tracking-wide text-muted/70">Ngày thực hiện</span><strong className="text-ink font-medium">{task.date}</strong></div>
-            <div><span className="block text-[10px] uppercase tracking-wide text-muted/70">Loại công việc</span><strong className="text-ink font-medium">{task.type}</strong></div>
-            {task.target && <div className="sm:col-span-2"><span className="block text-[10px] uppercase tracking-wide text-muted/70">Chỉ tiêu</span><strong className="text-ink font-medium">{task.target}</strong></div>}
-          </div>
-          <button onClick={() => onOpenTasks?.(task)} className="mt-4 w-full sm:w-auto bg-ink text-white rounded-lg px-4 py-2.5 text-xs font-semibold inline-flex items-center justify-center gap-2 hover:bg-ink-light">
-            Xem công việc <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  const conversationList = mode === "direct" ? visibleContacts : visibleGroups;
 
   return (
-    <div className={`relative h-[calc(100vh-174px)] min-h-[620px] grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] ${showInfo ? "2xl:grid-cols-[320px_minmax(0,1fr)_300px]" : ""} gap-0 bg-white border border-paper-line rounded-2xl overflow-hidden shadow-[0_18px_45px_rgba(27,42,74,0.08)]`}>
-      <section className={`${mobilePane === "chat" ? "hidden lg:flex" : "flex"} min-h-0 flex-col bg-white border-r border-paper-line`}>
-        <div className="px-5 pt-5 pb-4">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <h2 className="ktns-serif text-2xl font-semibold text-ink">Tin nhắn</h2>
-              <p className="text-[11px] text-muted mt-1">Trao đổi công việc tập trung và rõ ràng.</p>
-            </div>
-            <div className="relative w-11 h-11 rounded-xl bg-ink text-white flex items-center justify-center shadow-lg shadow-ink/15">
-              <MessageCircle size={20} />
-              {(directUnread + groupUnread) > 0 && <span className="absolute -right-2 -top-2 min-w-5 h-5 px-1 rounded-full bg-stamp-red text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">{directUnread + groupUnread > 99 ? "99+" : directUnread + groupUnread}</span>}
-            </div>
-          </div>
+    <div className="flex flex-col gap-4">
+      <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
+        <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
+        <span>Chat nội bộ công ty — tin nhắn gắn kèm tên + vị trí công việc của người gửi, gửi được ảnh/file, có lọc nội dung không phù hợp. <strong className="text-charcoal">Tự động xoá tin nhắn cũ hơn {CHAT_RETENTION_DAYS} ngày</strong>, không lưu vĩnh viễn.</span>
+      </div>
 
-          <div className="mt-4 flex gap-2">
-            <div className="relative flex-1">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-              <input ref={searchRef} value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Tìm người, nhóm, tin nhắn..." className="w-full h-10 pl-9 pr-3 rounded-xl border border-paper-line bg-paper/45 text-xs text-ink placeholder:text-muted focus:bg-white" />
-            </div>
-            <button onClick={() => setSearchTerm("")} title="Xóa bộ lọc" className="w-10 h-10 rounded-xl border border-paper-line text-muted hover:text-ink hover:bg-paper flex items-center justify-center"><SlidersHorizontal size={16} /></button>
-          </div>
-
-          <div className="mt-4 flex items-center gap-2">
-            <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-paper flex-1">
-              <button onClick={() => switchMode("direct")} className={`relative h-9 rounded-lg text-xs font-semibold ${mode === "direct" ? "bg-ink text-white shadow" : "text-muted hover:text-ink"}`}>
-                Cá nhân
-                {directUnread > 0 && <span className={`ml-1.5 inline-flex min-w-4 h-4 px-1 rounded-full items-center justify-center text-[9px] ${mode === "direct" ? "bg-white text-ink" : "bg-stamp-red text-white"}`}>{directUnread > 99 ? "99+" : directUnread}</span>}
-              </button>
-              <button onClick={() => switchMode("group")} className={`relative h-9 rounded-lg text-xs font-semibold ${mode === "group" ? "bg-ink text-white shadow" : "text-muted hover:text-ink"}`}>
-                Nhóm
-                {groupUnread > 0 && <span className={`ml-1.5 inline-flex min-w-4 h-4 px-1 rounded-full items-center justify-center text-[9px] ${mode === "group" ? "bg-white text-ink" : "bg-stamp-red text-white"}`}>{groupUnread > 99 ? "99+" : groupUnread}</span>}
-              </button>
-            </div>
-            {isAdmin && <button onClick={openCreateGroup} title="Tạo nhóm" className="h-11 px-3 rounded-xl border border-gold/45 text-gold bg-gold/5 text-xs font-semibold flex items-center gap-1.5 hover:bg-gold/10"><Plus size={14} /> Nhóm</button>}
-          </div>
-        </div>
-
-        <div className="h-px bg-paper-line" />
-        <div className="ktns-scrollbar flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-2">
-          {conversationList.length === 0 && (
-            <div className="px-5 py-12 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-paper text-muted mx-auto flex items-center justify-center"><MessageCircle size={24} /></div>
-              <div className="mt-4 text-sm font-semibold text-ink">Không tìm thấy cuộc trò chuyện</div>
-              <p className="mt-1 text-xs text-muted">Thử từ khóa khác hoặc bắt đầu một cuộc trò chuyện mới.</p>
-            </div>
-          )}
-
-          {mode === "direct" && visibleContacts.map((contact) => {
-            const active = selectedEmail === contact.email;
-            return (
-              <button key={contact.email} onClick={() => selectDirect(contact.email)} className={`group relative w-full rounded-xl border p-3 text-left flex gap-3 transition-all ${active ? "bg-[#EEF4FF] border-[#AFCBFA] shadow-[0_8px_22px_rgba(43,90,170,0.08)]" : "bg-white border-transparent hover:border-paper-line hover:bg-paper/45"}`}>
-                <div className="relative">
-                  {renderAvatar(contact.email)}
-                  <span className="absolute right-0 bottom-0 w-3 h-3 rounded-full bg-[#30B36B] border-2 border-white" />
+      <div className="bg-white rounded-lg border border-paper-line overflow-hidden flex flex-col" style={{ height: "560px" }}>
+        <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-3">
+          {messages.length === 0 && <p className="text-xs text-muted text-center mt-8">Chưa có tin nhắn nào — bắt đầu trò chuyện bên dưới.</p>}
+          {messages.map((m) => (
+            <div key={m.id} className="flex gap-2">
+              <div className="w-8 h-8 rounded-full bg-ink text-white flex items-center justify-center text-xs font-semibold shrink-0">{m.employeeName?.charAt(0) || "?"}</div>
+              <div className="flex-1">
+                <div className="flex items-center gap-1.5 text-xs">
+                  <span className="font-semibold text-charcoal">{m.employeeName}</span>
+                  <span className="text-[10px] text-white bg-ink-light px-1.5 py-0.5 rounded-full">{m.position}</span>
+                  <span className="text-[10px] text-muted ktns-mono">{m.timestamp}</span>
                 </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="font-semibold text-sm text-ink truncate">{displayName(contact.email)}</div>
-                    <span className="text-[10px] text-muted shrink-0">{formatListTime(contact.lastAt)}</span>
-                  </div>
-                  <div className="text-[10px] text-muted mt-0.5 truncate">{roleLabel(contact.role)}</div>
-                  <div className="mt-1.5 flex items-center justify-between gap-2">
-                    <p className="text-xs text-muted truncate">{contact.lastMessage || "Bắt đầu cuộc trò chuyện"}</p>
-                    {Number(contact.unreadCount) > 0 && <span className="min-w-5 h-5 px-1 rounded-full bg-stamp-red text-white text-[10px] font-bold flex items-center justify-center shrink-0">{contact.unreadCount > 99 ? "99+" : contact.unreadCount}</span>}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-
-          {mode === "group" && visibleGroups.map((group) => {
-            const active = String(group.id) === String(selectedGroupId);
-            return (
-              <button key={group.id} onClick={() => selectGroup(group.id)} className={`group relative w-full rounded-xl border p-3 text-left flex gap-3 transition-all ${active ? "bg-[#EEF4FF] border-[#AFCBFA] shadow-[0_8px_22px_rgba(43,90,170,0.08)]" : "bg-white border-transparent hover:border-paper-line hover:bg-paper/45"}`}>
-                <div className="w-11 h-11 rounded-full bg-gradient-to-br from-ink to-[#41699E] text-white flex items-center justify-center shrink-0 ring-2 ring-white shadow-sm"><UsersRound size={18} /></div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="font-semibold text-sm text-ink truncate">{group.name}</div>
-                    <span className="text-[10px] text-muted shrink-0">{formatListTime(group.lastAt)}</span>
-                  </div>
-                  <div className="text-[10px] text-muted mt-0.5">{group.members?.length || 0} thành viên</div>
-                  <div className="mt-1.5 flex items-center justify-between gap-2">
-                    <p className="text-xs text-muted truncate">{group.lastMessage || "Chưa có tin nhắn"}</p>
-                    {Number(group.unreadCount) > 0 && <span className="min-w-5 h-5 px-1 rounded-full bg-stamp-red text-white text-[10px] font-bold flex items-center justify-center shrink-0">{group.unreadCount > 99 ? "99+" : group.unreadCount}</span>}
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className={`${mobilePane === "list" ? "hidden lg:flex" : "flex"} min-h-0 flex-col bg-[#FBFCFE]`}>
-        <div className="h-[74px] px-4 sm:px-5 border-b border-paper-line bg-white flex items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <button onClick={() => setMobilePane("list")} className="lg:hidden w-9 h-9 rounded-lg border border-paper-line text-muted flex items-center justify-center"><ArrowLeft size={17} /></button>
-            <div className="relative">
-              {mode === "group"
-                ? <div className="w-11 h-11 rounded-full bg-gradient-to-br from-ink to-[#41699E] text-white flex items-center justify-center ring-2 ring-white shadow-sm"><UsersRound size={18} /></div>
-                : renderAvatar(selectedAvatarKey || "user")}
-              {hasDestination && mode === "direct" && <span className="absolute right-0 bottom-0 w-3 h-3 rounded-full bg-[#30B36B] border-2 border-white" />}
-            </div>
-            <div className="min-w-0">
-              <h3 className="font-semibold text-[15px] text-ink truncate">{selectedTitle}</h3>
-              <p className="text-[11px] text-muted mt-0.5 truncate">{selectedSubtitle}</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <button onClick={() => searchRef.current?.focus()} title="Tìm kiếm" className="w-9 h-9 rounded-xl border border-paper-line bg-white text-muted hover:text-ink hover:shadow-sm flex items-center justify-center"><Search size={16} /></button>
-            <button onClick={() => setShowInfo((value) => !value)} title="Thông tin cuộc trò chuyện" className={`w-9 h-9 rounded-xl border flex items-center justify-center ${showInfo ? "bg-ink text-white border-ink" : "bg-white text-muted border-paper-line hover:text-ink"}`}><Info size={16} /></button>
-            {isAdmin && mode === "group" && selectedGroup && (
-              <div className="relative">
-                <button onClick={() => setShowConversationMenu((value) => !value)} title="Quản trị nhóm" className="w-9 h-9 rounded-xl border border-paper-line bg-white text-muted hover:text-ink flex items-center justify-center"><MoreHorizontal size={17} /></button>
-                {showConversationMenu && (
-                  <div className="absolute right-0 top-11 z-30 w-44 rounded-xl border border-paper-line bg-white shadow-xl p-1.5">
-                    <button onClick={openEditGroup} className="w-full px-3 py-2 rounded-lg text-left text-xs text-ink hover:bg-paper flex items-center gap-2"><Pencil size={14} /> Sửa nhóm</button>
-                    <button onClick={removeGroup} className="w-full px-3 py-2 rounded-lg text-left text-xs text-stamp-red hover:bg-stamp-red/5 flex items-center gap-2"><Trash2 size={14} /> Xóa nhóm</button>
-                  </div>
+                {m.text && <div className="text-sm text-charcoal mt-0.5">{m.text}</div>}
+                {m.fileData && (
+                  m.fileType?.startsWith("image/") ? (
+                    <img src={m.fileData} alt={m.fileName} className="mt-1.5 max-w-xs rounded-md border border-paper-line cursor-pointer" onClick={() => setViewingFile(m)} />
+                  ) : (
+                    <button onClick={() => setViewingFile(m)} className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-light underline"><FileText size={12} /> {m.fileName}</button>
+                  )
                 )}
               </div>
+            </div>
+          ))}
+        </div>
+        <div className="border-t border-paper-line p-3">
+          {blockedMsg && <p className="text-xs text-stamp-red mb-2 flex items-center gap-1"><AlertTriangle size={12} /> {blockedMsg}</p>}
+          {fileDraft && (
+            <div className="flex items-center gap-2 mb-2 bg-paper rounded px-2 py-1.5 text-xs">
+              <CheckCircle2 size={12} className="text-ledger-green" /> {fileDraft.name}
+              <button onClick={() => { setFileDraft(null); if (fileInputRef.current) fileInputRef.current.value = ""; }} className="ml-auto text-muted hover:text-stamp-red"><X size={12} /></button>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <select value={postingAsId} onChange={(e) => setPostingAsId(e.target.value)} className="border border-paper-line rounded px-2 py-2 text-xs bg-white shrink-0" title="Chưa có đăng nhập thật — tự chọn bạn là ai">
+              <option value="">— Bạn là ai? —</option>
+              {employees.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
+            </select>
+            <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder="Nhập tin nhắn..." className="flex-1 border border-paper-line rounded-md px-3 py-2 text-sm" />
+            <label className="border border-paper-line rounded-md p-2 cursor-pointer hover:border-ink shrink-0" title="Gửi ảnh/file">
+              <Paperclip size={16} className="text-ink-light" />
+              <input ref={fileInputRef} type="file" accept="image/*,.pdf,.doc,.docx,.xlsx,.xls" onChange={handleFile} className="hidden" />
+            </label>
+            <button onClick={send} className="bg-ink text-white text-sm px-4 py-2 rounded-md hover:bg-ink-light shrink-0">Gửi</button>
+          </div>
+        </div>
+      </div>
+
+      {viewingFile && (
+        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-8" onClick={() => setViewingFile(null)}>
+          <div className="bg-white rounded-lg p-4 max-w-2xl max-h-[85vh] overflow-y-auto shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="ktns-serif font-semibold text-ink text-sm">{viewingFile.fileName}</h3>
+              <button onClick={() => setViewingFile(null)} className="text-muted hover:text-ink"><X size={18} /></button>
+            </div>
+            {viewingFile.fileType?.startsWith("image/") ? (
+              <img src={viewingFile.fileData} alt={viewingFile.fileName} className="max-w-full rounded" />
+            ) : (
+              <a href={viewingFile.fileData} download={viewingFile.fileName} className="text-sm text-ink-light underline">Tải file {viewingFile.fileName}</a>
             )}
-          </div>
-        </div>
-
-        {hasDestination && (
-          <div className="px-4 sm:px-5 py-3 border-b border-paper-line bg-white/95 flex items-center gap-2 overflow-x-auto ktns-scrollbar-hidden shrink-0">
-            <span className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-[#EEF4FF] text-[#315EA8] px-3 py-2 text-[11px] font-medium"><MessageCircle size={13} /> {messages.length} tin nhắn</span>
-            <span className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-[#FFF5E6] text-[#A36717] px-3 py-2 text-[11px] font-medium"><ClipboardList size={13} /> {taskMessages.length} việc được giao</span>
-            <span className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-[#EAF7EF] text-[#288253] px-3 py-2 text-[11px] font-medium"><CheckCircle2 size={13} /> {mode === "group" ? `${groupMembers.length} thành viên` : "Đang hoạt động"}</span>
-          </div>
-        )}
-
-        <div ref={scrollRef} className="ktns-scrollbar flex-1 min-h-0 overflow-y-auto px-4 sm:px-7 py-6 bg-[radial-gradient(circle_at_top_left,rgba(58,102,170,0.06),transparent_32%),linear-gradient(180deg,#FBFCFE,#F8FAFD)]">
-          {!hasDestination && (
-            <div className="h-full flex items-center justify-center text-center">
-              <div className="max-w-sm">
-                <div className="w-20 h-20 rounded-3xl bg-white border border-paper-line shadow-sm text-ink mx-auto flex items-center justify-center"><MessageCircle size={32} /></div>
-                <h3 className="mt-5 ktns-serif text-2xl font-semibold text-ink">Chọn một cuộc trò chuyện</h3>
-                <p className="mt-2 text-sm text-muted leading-relaxed">Trao đổi với đồng nghiệp hoặc nhóm làm việc trong một không gian rõ ràng và tập trung.</p>
-              </div>
-            </div>
-          )}
-
-          {hasDestination && messages.length === 0 && (
-            <div className="h-full flex items-center justify-center text-center">
-              <div className="max-w-sm">
-                <div className="w-16 h-16 rounded-2xl bg-white border border-paper-line shadow-sm text-ink mx-auto flex items-center justify-center"><Send size={24} /></div>
-                <h3 className="mt-4 text-lg font-semibold text-ink">Bắt đầu cuộc trao đổi</h3>
-                <p className="mt-1 text-sm text-muted">Gửi tin nhắn đầu tiên để bắt đầu làm việc cùng nhau.</p>
-              </div>
-            </div>
-          )}
-
-          {hasDestination && messages.length > 0 && (
-            <>
-              <div className="flex items-center justify-center mb-6"><span className="rounded-full bg-white border border-paper-line px-3 py-1.5 text-[10px] text-muted shadow-sm">Hôm nay</span></div>
-              <div className="space-y-4">
-                {messages.map((message) => {
-                  const mine = message.senderEmail === authUser?.email;
-                  const time = formatMessageTime(message.createdAt);
-                  const task = parseTaskMessage(message.body);
-                  const senderName = displayName(message.senderEmail);
-                  return (
-                    <div key={message.id} className={`group flex items-end gap-2.5 ${mine ? "justify-end" : "justify-start"}`}>
-                      {!mine && (
-                        <div className="relative mb-5">
-                          {renderAvatar(message.senderEmail, "w-8 h-8", "text-[10px]")}
-                          <span className="absolute right-0 bottom-0 w-2.5 h-2.5 rounded-full bg-[#30B36B] border-2 border-white" />
-                        </div>
-                      )}
-                      <div className={`relative max-w-[82%] sm:max-w-[74%] ${mine ? "items-end" : "items-start"} flex flex-col`}>
-                        {mode === "group" && !mine && <div className="mb-1.5 px-1 text-[10px] font-semibold text-[#4F6886]">{senderName}</div>}
-                        {task ? renderTaskCard(task, mine) : (
-                          <div className={`relative px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap shadow-sm ${mine ? "bg-ink text-white rounded-br-md" : "bg-[#E7EEF8] text-[#17314F] border border-[#CFDCEB] rounded-bl-md"}`}>
-                            {message.body}
-                          </div>
-                        )}
-                        <div className={`mt-1.5 px-1 flex items-center gap-1 text-[10px] ${mine ? "text-muted justify-end" : "text-muted"}`}>
-                          {time}
-                          {mine && <CheckCheck size={13} className="text-[#4D7FC4]" />}
-                        </div>
-                        {isAdmin && (
-                          <button onClick={() => removeMessage(message)} title="Xóa tin nhắn" className={`absolute top-0 ${mine ? "-left-10" : "-right-10"} w-8 h-8 rounded-full border border-paper-line bg-white text-muted hover:text-stamp-red shadow-sm opacity-0 group-hover:opacity-100 flex items-center justify-center`}><Trash2 size={13} /></button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
-        </div>
-
-        <div className="px-3 sm:px-5 py-4 border-t border-paper-line bg-white shrink-0">
-          {error && <div className="mb-3 text-xs text-stamp-red bg-stamp-red/10 border border-stamp-red/20 rounded-lg px-3 py-2">{error}</div>}
-          <div className="rounded-2xl border border-paper-line bg-white shadow-[0_8px_24px_rgba(27,42,74,0.06)] p-2 flex items-end gap-2">
-            <button type="button" onClick={() => { if (isAdmin) onOpenTasks?.(); else composerRef.current?.focus(); }} title={isAdmin ? "Giao công việc" : "Soạn tin nhắn"} className="w-10 h-10 rounded-full bg-ink text-white flex items-center justify-center shrink-0 hover:bg-ink-light"><Plus size={18} /></button>
-            <textarea ref={composerRef} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }} disabled={!hasDestination || loading} rows={1} placeholder={hasDestination ? "Nhập tin nhắn..." : "Chọn nơi nhận trước"} className="ktns-scrollbar flex-1 min-h-10 max-h-[120px] resize-none border-0 bg-transparent px-2 py-2.5 text-sm text-ink placeholder:text-muted focus:shadow-none disabled:text-muted" />
-            <button type="button" disabled title="Đính kèm sẽ được bổ sung sau" className="w-9 h-9 rounded-full text-muted/45 flex items-center justify-center shrink-0 cursor-not-allowed"><Paperclip size={17} /></button>
-            <button type="button" title="Thêm biểu cảm" onClick={() => { setInput((value) => `${value}🙂`); composerRef.current?.focus(); }} className="w-9 h-9 rounded-full text-muted hover:text-ink hover:bg-paper flex items-center justify-center shrink-0"><Smile size={17} /></button>
-            <button onClick={send} disabled={!hasDestination || !input.trim() || loading} title="Gửi tin nhắn" className="w-11 h-11 rounded-full bg-ink text-white flex items-center justify-center shrink-0 shadow-lg shadow-ink/20 hover:bg-ink-light disabled:opacity-35 disabled:shadow-none"><Send size={18} /></button>
-          </div>
-          <div className="mt-2 px-2 text-[10px] text-muted">Enter để gửi · Shift + Enter để xuống dòng</div>
-        </div>
-      </section>
-
-      {showInfo && <div onClick={() => setShowInfo(false)} className="fixed inset-0 z-40 bg-ink/20 backdrop-blur-[2px] 2xl:hidden" />}
-      <aside className={`${showInfo ? "flex" : "hidden"} fixed top-4 bottom-4 right-4 z-50 w-[min(320px,calc(100vw-32px))] 2xl:static 2xl:z-auto 2xl:w-auto min-h-0 flex-col bg-white border border-paper-line 2xl:border-y-0 2xl:border-r-0 rounded-2xl 2xl:rounded-none shadow-2xl 2xl:shadow-none overflow-hidden`}>
-        <div className="h-[74px] px-5 border-b border-paper-line flex items-center justify-between shrink-0">
-          <h3 className="font-semibold text-ink">Thông tin</h3>
-          <button onClick={() => setShowInfo(false)} className="w-9 h-9 rounded-xl border border-paper-line text-muted hover:text-ink flex items-center justify-center"><X size={16} /></button>
-        </div>
-        <div className="ktns-scrollbar flex-1 min-h-0 overflow-y-auto p-4 space-y-4 bg-[#FCFDFE]">
-          <div className="rounded-2xl border border-paper-line bg-white p-5 text-center shadow-sm">
-            <div className="relative w-fit mx-auto">
-              {mode === "group"
-                ? <div className="w-16 h-16 rounded-full bg-gradient-to-br from-ink to-[#41699E] text-white flex items-center justify-center ring-4 ring-[#EEF4FF]"><UsersRound size={26} /></div>
-                : renderAvatar(selectedAvatarKey || "user", "w-16 h-16", "text-xl")}
-              {hasDestination && mode === "direct" && <span className="absolute right-0 bottom-1 w-4 h-4 rounded-full bg-[#30B36B] border-[3px] border-white" />}
-            </div>
-            <div className="mt-3 font-semibold text-ink">{selectedTitle}</div>
-            <div className="mt-1 text-xs text-muted">{selectedSubtitle}</div>
-            {mode === "direct" && selectedContact && (
-              <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-muted"><Mail size={13} /> <span className="truncate">{selectedContact.email}</span></div>
-            )}
-          </div>
-
-          {mode === "direct" && selectedContact && (
-            <div className="rounded-2xl border border-paper-line bg-white p-4 shadow-sm">
-              <div className="text-xs font-semibold text-ink">Thông tin tài khoản</div>
-              <div className="mt-3 space-y-3 text-xs">
-                <div className="flex items-center justify-between gap-3"><span className="text-muted">Vai trò</span><strong className="font-medium text-ink">{roleLabel(selectedContact.role)}</strong></div>
-                <div className="flex items-center justify-between gap-3"><span className="text-muted">Trạng thái</span><strong className="font-medium text-[#288253] inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#30B36B]" /> Hoạt động</strong></div>
-              </div>
-            </div>
-          )}
-
-          {mode === "group" && selectedGroup && (
-            <div className="rounded-2xl border border-paper-line bg-white p-4 shadow-sm">
-              <div className="flex items-center justify-between gap-3"><div className="text-xs font-semibold text-ink">Thành viên</div><span className="text-[10px] text-muted">{groupMembers.length} người</span></div>
-              <div className="mt-3 space-y-3">
-                {groupMembers.slice(0, 8).map((member) => (
-                  <div key={member.email} className="flex items-center gap-3">
-                    {renderAvatar(member.email, "w-8 h-8", "text-[10px]")}
-                    <div className="min-w-0"><div className="text-xs font-medium text-ink truncate">{displayName(member.email)}</div><div className="text-[10px] text-muted truncate">{member.email}</div></div>
-                  </div>
-                ))}
-              </div>
-              {isAdmin && <button onClick={openEditGroup} className="mt-4 w-full rounded-lg border border-paper-line text-xs text-ink px-3 py-2.5 hover:bg-paper">Quản lý thành viên</button>}
-            </div>
-          )}
-
-          <div className="rounded-2xl border border-paper-line bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3"><div className="text-xs font-semibold text-ink">Nhóm liên quan</div><span className="text-[10px] text-muted">{relatedGroups.length}</span></div>
-            <div className="mt-3 space-y-2">
-              {relatedGroups.length === 0 && <div className="text-xs text-muted py-2">Chưa có nhóm liên quan.</div>}
-              {relatedGroups.map((group) => (
-                <button key={group.id} onClick={() => selectGroup(group.id)} className="w-full flex items-center gap-3 rounded-xl p-2 hover:bg-paper text-left">
-                  <div className="w-9 h-9 rounded-full bg-[#EEF4FF] text-[#315EA8] flex items-center justify-center"><UsersRound size={15} /></div>
-                  <div className="min-w-0"><div className="text-xs font-medium text-ink truncate">{group.name}</div><div className="text-[10px] text-muted">{group.members?.length || 0} thành viên</div></div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-paper-line bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3"><div className="text-xs font-semibold text-ink">Công việc gần nhất</div><button onClick={onOpenTasks} className="text-[10px] text-[#315EA8]">Xem tất cả</button></div>
-            <div className="mt-3 space-y-3">
-              {taskMessages.length === 0 && <div className="text-xs text-muted py-2">Chưa có công việc được gửi trong cuộc trò chuyện.</div>}
-              {taskMessages.slice(-3).reverse().map(({ message, task }) => (
-                <button key={message.id} onClick={() => onOpenTasks?.(task)} className="w-full text-left rounded-xl border border-paper-line p-3 hover:border-[#AFCBFA] hover:bg-[#F7FAFF]">
-                  <div className="text-xs font-medium text-ink line-clamp-2">{task.description}</div>
-                  <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-muted"><span>{task.date}</span><span className="rounded-full bg-stamp-red/10 text-stamp-red px-2 py-1">Cần xử lý</span></div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </aside>
-
-      {showGroupForm && isAdmin && (
-        <div className="fixed inset-0 z-[90] bg-ink/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-paper-line shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col overflow-hidden" onClick={(event) => event.stopPropagation()}>
-            <div className="px-6 py-5 border-b border-paper-line flex items-center justify-between gap-4">
-              <div>
-                <h3 className="ktns-serif text-2xl font-semibold text-ink">{groupForm.id ? "Sửa nhóm chat" : "Tạo nhóm chat"}</h3>
-                <p className="text-xs text-muted mt-1">Tạo không gian trao đổi theo phòng ban, dự án hoặc đội nhóm.</p>
-              </div>
-              <button onClick={() => setShowGroupForm(false)} className="w-10 h-10 rounded-xl border border-paper-line text-muted hover:text-ink flex items-center justify-center"><X size={17} /></button>
-            </div>
-
-            <div className="p-6 overflow-y-auto ktns-scrollbar">
-              <label className="flex flex-col gap-2 text-xs font-semibold text-ink">
-                Tên nhóm
-                <input value={groupForm.name} onChange={(event) => setGroupForm({ ...groupForm, name: event.target.value })} placeholder="VD: Nhóm triển khai dự án ABC" className="h-11 border border-paper-line rounded-xl px-4 text-sm font-normal" />
-              </label>
-
-              {groupForm.memberEmails.length > 0 && (
-                <div className="mt-5">
-                  <div className="text-xs font-semibold text-ink mb-2">Đã chọn {groupForm.memberEmails.length} thành viên</div>
-                  <div className="flex flex-wrap gap-2">
-                    {groupForm.memberEmails.map((email) => (
-                      <button key={email} onClick={() => toggleMember(email)} className="inline-flex items-center gap-2 rounded-full bg-[#EEF4FF] text-[#315EA8] px-3 py-1.5 text-[11px]">
-                        {initialsOf(email)} · {displayName(email)} <X size={12} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-5">
-                <div className="flex items-center justify-between gap-3 mb-2"><div className="text-xs font-semibold text-ink">Chọn thành viên</div><span className="text-[10px] text-muted">Tài khoản đang hoạt động</span></div>
-                <div className="relative mb-3">
-                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-                  <input value={groupMemberSearch} onChange={(event) => setGroupMemberSearch(event.target.value)} placeholder="Tìm theo tên hoặc email..." className="w-full h-10 pl-9 pr-3 rounded-xl border border-paper-line bg-paper/45 text-xs" />
-                </div>
-                <div className="border border-paper-line rounded-xl divide-y divide-paper-line max-h-72 overflow-y-auto ktns-scrollbar">
-                  {filteredGroupFormContacts.map((contact) => {
-                    const checked = groupForm.memberEmails.includes(contact.email);
-                    return (
-                      <label key={contact.email} className={`flex items-center gap-3 px-4 py-3 cursor-pointer ${checked ? "bg-[#F3F7FF]" : "hover:bg-paper/50"}`}>
-                        <input type="checkbox" checked={checked} onChange={() => toggleMember(contact.email)} />
-                        {renderAvatar(contact.email, "w-9 h-9", "text-[11px]")}
-                        <div className="min-w-0 flex-1"><div className="text-sm font-medium text-ink truncate">{displayName(contact.email)}</div><div className="text-[10px] text-muted truncate">{contact.email} · {roleLabel(contact.role)}</div></div>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="px-6 py-4 border-t border-paper-line bg-paper/30 flex justify-end gap-2 shrink-0">
-              <button onClick={() => setShowGroupForm(false)} className="border border-paper-line bg-white text-ink px-5 py-2.5 rounded-xl text-sm">Hủy</button>
-              <button onClick={saveGroup} disabled={!groupForm.name.trim() || loading} className="bg-ink text-white px-5 py-2.5 rounded-xl text-sm disabled:opacity-40">{groupForm.id ? "Lưu thay đổi" : "Tạo nhóm"}</button>
-            </div>
           </div>
         </div>
       )}
@@ -7326,262 +5362,158 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders }) {
   );
 }
 
-function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs, reportYear, reportMonth, openRequest }) {
-  const isAdmin = authUser?.role === "admin";
-  const currentEmail = (authUser?.email || "").trim().toLowerCase();
+function GiaoViec({ tasks, setTasks, employees, orders, marketingLogs, reportYear, reportMonth }) {
   const [showForm, setShowForm] = useState(false);
-  const [filterDate, setFilterDate] = useState(openRequest?.date || GIAOVIEC_TODAY);
+  const [filterDate, setFilterDate] = useState(GIAOVIEC_TODAY);
   const [viewMonthMode, setViewMonthMode] = useState(false);
-  const [focusedTaskDescription, setFocusedTaskDescription] = useState(openRequest?.description || "");
-  const [notice, setNotice] = useState("");
-  const [error, setError] = useState("");
   const firstEmp = employees[0];
-  const [form, setForm] = useState({
-    date: GIAOVIEC_TODAY,
-    employeeId: firstEmp?.id || "",
-    targetType: (ROLE_TASK_TYPES[firstEmp?.roleType] || ["khac"])[0],
-    targetValue: "",
-    description: "",
-    visibility: "private",
-  });
-
-  useEffect(() => {
-    if (!openRequest?.requestedAt) return;
-    if (openRequest.date) setFilterDate(openRequest.date);
-    setViewMonthMode(false);
-    setFocusedTaskDescription(openRequest.description || "");
-  }, [openRequest]);
+  const [form, setForm] = useState({ date: GIAOVIEC_TODAY, employeeId: firstEmp?.id || "", targetType: (ROLE_TASK_TYPES[firstEmp?.roleType] || ["khac"])[0], targetValue: "", description: "" });
 
   const availableTypes = (empId) => {
-    const emp = employees.find((employee) => employee.id === Number(empId));
+    const emp = employees.find((e) => e.id === Number(empId));
     return ROLE_TASK_TYPES[emp?.roleType] || ["khac"];
   };
-
   const selectEmployee = (empId) => {
     const types = availableTypes(empId);
-    setForm((current) => ({
-      ...current,
-      employeeId: empId,
-      targetType: types.includes(current.targetType) ? current.targetType : types[0],
-    }));
+    setForm((f) => ({ ...f, employeeId: empId, targetType: types.includes(f.targetType) ? f.targetType : types[0] }));
   };
 
-  const closeForm = () => {
+  const addTask = () => {
+    if (!form.employeeId || !form.description) return;
+    setTasks((prev) => [...prev, { ...form, id: Date.now(), employeeId: Number(form.employeeId), targetValue: Number(form.targetValue) || 0, doneManual: false }]);
+    setForm({ date: GIAOVIEC_TODAY, employeeId: firstEmp?.id || "", targetType: (ROLE_TASK_TYPES[firstEmp?.roleType] || ["khac"])[0], targetValue: "", description: "" });
     setShowForm(false);
-    setError("");
   };
+  const toggleDone = (id) => setTasks((prev) => prev.map((t) => (t.id === id ? { ...t, doneManual: !t.doneManual } : t)));
+  const removeTask = (id) => setTasks((prev) => prev.filter((t) => t.id !== id));
+  const nameOf = (id) => employees.find((e) => e.id === id)?.name || "—";
 
-  const addTask = async () => {
-    if (!isAdmin || !form.employeeId || !form.description.trim()) {
-      setError("Cần chọn nhân viên và nhập nội dung công việc.");
-      return;
-    }
-    const assignedEmployee = employees.find((employee) => employee.id === Number(form.employeeId));
-    const newTask = {
-      ...form,
-      id: Date.now(),
-      employeeId: Number(form.employeeId),
-      targetValue: Number(form.targetValue) || 0,
-      description: form.description.trim(),
-      doneManual: false,
-      visibility: form.visibility === "public" ? "public" : "private",
-      createdByEmail: authUser?.email || "",
-    };
-    setTasks((current) => [...current, newTask]);
-    setShowForm(false);
-    setError("");
-    setForm({
-      date: filterDate,
-      employeeId: firstEmp?.id || "",
-      targetType: (ROLE_TASK_TYPES[firstEmp?.roleType] || ["khac"])[0],
-      targetValue: "",
-      description: "",
-      visibility: "private",
-    });
-
-    if (!assignedEmployee?.email) {
-      setNotice("Đã lưu công việc. Nhân viên chưa có email nên chưa gửi được thông báo tin nhắn.");
-      return;
-    }
-    try {
-      const targetLabel = TASK_TYPES[newTask.targetType]?.label || newTask.targetType;
-      const targetLine = newTask.targetType === "khac" ? "" : `\nChỉ tiêu: ${newTask.targetValue} ${TASK_TYPES[newTask.targetType]?.unit || ""}`;
-      await sendChatMessage(
-        assignedEmployee.email,
-        `Bạn được giao việc mới.\nNgày: ${newTask.date}\nChế độ: ${newTask.visibility === "public" ? "Công khai" : "Riêng tư"}\nLoại: ${targetLabel}${targetLine}\nNội dung: ${newTask.description}`
-      );
-      setNotice(`Đã giao việc và gửi thông báo cho ${assignedEmployee.email}.`);
-    } catch (err) {
-      setNotice("Đã lưu công việc nhưng chưa gửi được thông báo tin nhắn.");
-    }
-  };
-
-  const toggleDone = (id) => {
-    if (!isAdmin) return;
-    setTasks((current) => current.map((task) => task.id === id ? { ...task, doneManual: !task.doneManual } : task));
-  };
-  const removeTask = (id) => {
-    if (!isAdmin) return;
-    setTasks((current) => current.filter((task) => task.id !== id));
-  };
-  const nameOf = (id) => employees.find((employee) => employee.id === id)?.name || "—";
-  const employeeEmailOf = (id) => (employees.find((employee) => employee.id === id)?.email || "").trim().toLowerCase();
-
-  const permittedTasks = isAdmin
-    ? tasks
-    : tasks.filter((task) => task.visibility !== "private" || employeeEmailOf(task.employeeId) === currentEmail);
   const filtered = viewMonthMode
-    ? permittedTasks.filter((task) => { const date = new Date(task.date); return date.getFullYear() === reportYear && date.getMonth() + 1 === reportMonth; })
-    : permittedTasks.filter((task) => task.date === filterDate);
+    ? tasks.filter((t) => { const d = new Date(t.date); return d.getFullYear() === reportYear && d.getMonth() + 1 === reportMonth; })
+    : tasks.filter((t) => t.date === filterDate);
   const statusOrder = { canh_bao: 0, dang_lam: 1, dat: 2 };
-  const rows = filtered.map((task) => {
-    const progress = computeTaskProgress(task, orders, marketingLogs);
-    const status = evaluateTaskStatus(task, progress.value);
-    return { ...task, progress, status };
-  }).sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
-  const normalizedFocusedDescription = focusedTaskDescription.trim().toLowerCase();
-  const isFocusedTask = (task) => normalizedFocusedDescription
-    && String(task.description || "").trim().toLowerCase() === normalizedFocusedDescription;
-  const warnCount = rows.filter((row) => row.status === "canh_bao").length;
-  const doneCount = rows.filter((row) => row.status === "dat").length;
-  const unassigned = isAdmin ? employees.filter((employee) => !filtered.some((task) => task.employeeId === employee.id)) : [];
+  const rows = filtered
+    .map((t) => {
+      const progress = computeTaskProgress(t, orders, marketingLogs);
+      const status = evaluateTaskStatus(t, progress.value);
+      return { ...t, progress, status };
+    })
+    .sort((a, b) => statusOrder[a.status] - statusOrder[b.status]); // cảnh báo lên đầu — nhìn phát biết ai chưa hiệu quả
+  const warnCount = rows.filter((r) => r.status === "canh_bao").length;
+  const doneCount = rows.filter((r) => r.status === "dat").length;
+
+  // Nhân viên chưa được giao việc gì ngày này — cũng đáng để ý, tránh sót người.
+  const unassigned = employees.filter((e) => !filtered.some((t) => t.employeeId === e.id));
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
+        <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
+        <span>Giao chỉ tiêu rõ ràng cho từng vị trí mỗi ngày — <strong className="text-charcoal">Sale</strong> tự lấy doanh số/số khách/số cuộc gọi từ CRM, <strong className="text-charcoal">Marketing</strong> tự lấy khách tiếp cận/chuyển đổi từ nhật ký hàng ngày, <strong className="text-charcoal">Kỹ thuật &amp; vị trí khác</strong> giao việc cụ thể tick hoàn thành. Qua buổi trưa mà vẫn 0 tiến độ sẽ tự chuyển sang <strong className="text-stamp-red">cảnh báo</strong>.</span>
+      </div>
+
+      <div className="grid grid-cols-4 gap-4">
         <KpiCard icon={ClipboardList} label={viewMonthMode ? `Nhiệm vụ kỳ ${reportMonth}/${reportYear}` : "Nhiệm vụ hôm nay"} value={filtered.length} />
         <KpiCard icon={CheckCircle2} label="Đã đạt chỉ tiêu" value={doneCount} tone="up" />
         <KpiCard icon={AlertTriangle} label="Cảnh báo — chưa có tiến độ" value={warnCount} tone={warnCount > 0 ? "down" : "up"} />
-        <KpiCard icon={UserCheck} label={isAdmin ? "Chưa được giao việc" : "Việc của tôi / công khai"} value={isAdmin ? unassigned.length : filtered.length} tone={isAdmin && unassigned.length > 0 ? "down" : "up"} />
+        <KpiCard icon={UserCheck} label="Chưa được giao việc" value={unassigned.length} tone={unassigned.length > 0 ? "down" : "up"} />
       </div>
 
-      {notice && <div className="bg-ledger-green/10 border border-ledger-green/20 rounded-lg px-3 py-2 text-xs text-ledger-green">{notice}</div>}
-      {focusedTaskDescription && (
-        <div className="bg-[#EEF4FF] border border-[#B9D1FF] rounded-lg px-3 py-2.5 text-xs text-[#244F92] flex items-start gap-2">
-          <MessageCircle size={14} className="shrink-0 mt-0.5" />
-          <span>Đang hiển thị công việc mở từ Tin nhắn ngày <strong>{filterDate}</strong>: {focusedTaskDescription}</span>
-        </div>
-      )}
-
-      <div className="flex justify-between items-center flex-wrap gap-3">
-        <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={() => { setViewMonthMode((value) => !value); setFocusedTaskDescription(""); }} className={`text-xs px-3 py-2 rounded-md border flex items-center gap-1.5 ${viewMonthMode ? "bg-ink text-white border-ink" : "border-paper-line text-ink-light"}`}>
+      <div className="flex justify-between items-center flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <button onClick={() => setViewMonthMode((v) => !v)} className={`text-xs px-2.5 py-1.5 rounded-md border flex items-center gap-1.5 ${viewMonthMode ? "bg-ink text-white border-ink" : "border-paper-line text-ink-light"}`}>
             <CalendarCheck size={12} /> {viewMonthMode ? `Xem cả kỳ ${reportMonth}/${reportYear}` : "Xem theo ngày"}
           </button>
-          {!viewMonthMode && <input type="date" value={filterDate} onChange={(event) => { setFilterDate(event.target.value); setFocusedTaskDescription(""); }} className="border border-paper-line rounded-md px-3 py-2 text-sm ktns-mono" />}
+          {!viewMonthMode && <input type="date" value={filterDate} onChange={(e) => setFilterDate(e.target.value)} className="border border-paper-line rounded-md px-3 py-2 text-sm ktns-mono" />}
         </div>
         <div className="flex gap-2">
-          <button onClick={() => exportTasksExcel(permittedTasks, employees, orders, marketingLogs)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md">
+          <button onClick={() => exportTasksExcel(tasks, employees, orders, marketingLogs)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90">
             <FileSpreadsheet size={15} /> Xuất Excel
           </button>
-          {isAdmin && (
-            <button onClick={() => { selectEmployee(firstEmp?.id || ""); setForm((current) => ({ ...current, date: filterDate, targetValue: "", description: "", visibility: "private" })); setShowForm(true); }} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md">
-              <Plus size={15} /> Giao việc mới
-            </button>
-          )}
+          <button onClick={() => { selectEmployee(firstEmp?.id || ""); setForm((f) => ({ ...f, date: filterDate, targetValue: "", description: "" })); setShowForm(true); }} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light">
+            <Plus size={15} /> Giao việc mới
+          </button>
         </div>
       </div>
 
-      {isAdmin && unassigned.length > 0 && (
+      {unassigned.length > 0 && (
         <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
           <AlertTriangle size={13} className="text-gold shrink-0 mt-0.5" />
-          <span>Chưa giao việc cho: <strong className="text-charcoal">{unassigned.map((employee) => employee.name).join(", ")}</strong>.</span>
+          <span>Chưa giao việc cho: <strong className="text-charcoal">{unassigned.map((e) => e.name).join(", ")}</strong> — nên giao để tránh sót người ngồi không.</span>
         </div>
       )}
 
-      {showForm && isAdmin && (
-        <div className="fixed inset-0 z-[80] bg-ink/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl border border-paper-line shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden" onClick={(event) => event.stopPropagation()}>
-            <div className="px-6 py-5 border-b border-paper-line flex items-center justify-between gap-4 bg-paper/30">
-              <div>
-                <h3 className="ktns-serif font-semibold text-ink text-2xl">Giao việc mới</h3>
-                <p className="text-xs text-muted mt-1">Thông tin được lưu và gửi trực tiếp tới mục Tin nhắn của nhân viên.</p>
-              </div>
-              <button onClick={closeForm} className="w-10 h-10 rounded-lg border border-paper-line text-muted hover:text-ink flex items-center justify-center"><X size={18} /></button>
-            </div>
-
-            <div className="p-6 overflow-y-auto ktns-scrollbar space-y-5">
-              {error && <div className="text-xs text-stamp-red bg-stamp-red/10 border border-stamp-red/20 rounded-lg px-3 py-2">{error}</div>}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <label className="flex flex-col gap-2 min-w-0">
-                  <span className="text-sm font-semibold text-ink">Ngày</span>
-                  <input type="date" value={form.date} onChange={(event) => setForm({ ...form, date: event.target.value })} className="w-full h-12 border border-paper-line rounded-lg px-4 text-sm ktns-mono" />
-                </label>
-                <label className="flex flex-col gap-2 min-w-0">
-                  <span className="text-sm font-semibold text-ink">Nhân viên</span>
-                  <select value={form.employeeId} onChange={(event) => selectEmployee(event.target.value)} className="w-full h-12 min-w-0 border border-paper-line rounded-lg px-4 text-sm bg-white">
-                    {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} — {ROLE_META[employee.roleType]?.label}</option>)}
-                  </select>
-                </label>
-                <label className="flex flex-col gap-2 min-w-0">
-                  <span className="text-sm font-semibold text-ink">Loại chỉ tiêu</span>
-                  <select value={form.targetType} onChange={(event) => setForm({ ...form, targetType: event.target.value })} className="w-full h-12 min-w-0 border border-paper-line rounded-lg px-4 text-sm bg-white">
-                    {availableTypes(form.employeeId).map((id) => <option key={id} value={id}>{TASK_TYPES[id].label}</option>)}
-                  </select>
-                  <span className="text-[11px] text-muted">Danh sách tự thay đổi theo nhóm vị trí của nhân viên.</span>
-                </label>
-                <label className="flex flex-col gap-2 min-w-0">
-                  <span className="text-sm font-semibold text-ink">Chế độ hiển thị</span>
-                  <select value={form.visibility} onChange={(event) => setForm({ ...form, visibility: event.target.value })} className="w-full h-12 border border-paper-line rounded-lg px-4 text-sm bg-white">
-                    <option value="private">Riêng tư</option>
-                    <option value="public">Công khai</option>
-                  </select>
-                  <span className="text-[11px] text-muted">Riêng tư chỉ người được giao và admin nhìn thấy.</span>
-                </label>
-              </div>
-
-              {form.targetType !== "khac" && (
-                <label className="flex flex-col gap-2">
-                  <span className="text-sm font-semibold text-ink">Giá trị chỉ tiêu ({TASK_TYPES[form.targetType].unit})</span>
-                  <input type="number" value={form.targetValue} onChange={(event) => setForm({ ...form, targetValue: event.target.value })} className="w-full h-12 border border-paper-line rounded-lg px-4 text-sm ktns-mono" />
-                </label>
-              )}
-
-              <label className="flex flex-col gap-2">
-                <span className="text-sm font-semibold text-ink">Mô tả công việc cụ thể</span>
-                <textarea value={form.description} onChange={(event) => setForm({ ...form, description: event.target.value })} rows={5} placeholder="VD: Chốt ít nhất 30 triệu doanh số, ưu tiên khách cũ..." className="w-full border border-paper-line rounded-lg px-4 py-3 text-sm resize-none" />
-              </label>
-            </div>
-
-            <div className="px-6 py-4 border-t border-paper-line bg-paper/30 flex justify-end gap-3">
-              <button onClick={closeForm} className="border border-paper-line text-ink px-5 py-2.5 rounded-lg text-sm">Hủy</button>
-              <button onClick={addTask} className="bg-ledger-green text-white px-5 py-2.5 rounded-lg text-sm">Giao việc</button>
-            </div>
+      {showForm && (
+        <div className="bg-white rounded-lg border border-paper-line p-5 relative">
+          <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={() => { if (form.description && !window.confirm("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?")) return; setShowForm(false); }}><X size={16} /></button>
+          <h3 className="ktns-serif font-semibold text-ink mb-4">Giao việc mới</h3>
+          <div className="grid grid-cols-4 gap-3">
+            <label className="text-xs text-muted flex flex-col gap-1">Ngày<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
+            <label className="text-xs text-muted flex flex-col gap-1">Nhân viên
+              <select value={form.employeeId} onChange={(e) => selectEmployee(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-sm">
+                {employees.map((e) => (<option key={e.id} value={e.id}>{e.name} — {ROLE_META[e.roleType]?.label}</option>))}
+              </select>
+            </label>
+            <label className="text-xs text-muted flex flex-col gap-1">Loại chỉ tiêu <span className="text-[10px] text-muted normal-case">(theo vị trí đã chọn)</span>
+              <select value={form.targetType} onChange={(e) => setForm({ ...form, targetType: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
+                {availableTypes(form.employeeId).map((id) => (<option key={id} value={id}>{TASK_TYPES[id].label}</option>))}
+              </select>
+            </label>
+            {form.targetType !== "khac" && (
+              <label className="text-xs text-muted flex flex-col gap-1">Giá trị chỉ tiêu ({TASK_TYPES[form.targetType].unit})<input type="number" value={form.targetValue} onChange={(e) => setForm({ ...form, targetValue: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
+            )}
+            <label className="text-xs text-muted flex flex-col gap-1 col-span-4">Mô tả công việc cụ thể<input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="VD: Chốt ít nhất 30 triệu doanh số, ưu tiên khách cũ..." className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
           </div>
+          <button onClick={addTask} className="mt-4 bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">Giao việc</button>
         </div>
       )}
 
       <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
-        <div className="max-h-[480px] overflow-y-auto ktns-scrollbar">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10">
-              <tr className="bg-paper text-left text-xs uppercase text-muted">
-                <th className="px-4 py-2.5">Nhân viên</th>
-                <th className="px-4 py-2.5">Công việc được giao</th>
-                <th className="px-4 py-2.5 text-right">Chỉ tiêu</th>
-                <th className="px-4 py-2.5 text-right">Tiến độ thực tế</th>
-                <th className="px-4 py-2.5">Trạng thái</th>
-                <th className="px-4 py-2.5">Hiển thị</th>
-                {isAdmin && <th className="px-4 py-2.5"></th>}
+        <div className="max-h-[420px] overflow-y-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-paper text-left text-xs uppercase text-muted">
+              <th className="px-4 py-2.5">Nhân viên</th>
+              <th className="px-4 py-2.5">Công việc được giao</th>
+              <th className="px-4 py-2.5 text-right">Chỉ tiêu</th>
+              <th className="px-4 py-2.5 text-right">Tiến độ thực tế</th>
+              <th className="px-4 py-2.5">Trạng thái</th>
+              <th className="px-4 py-2.5"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.length === 0 && (
+              <tr><td colSpan={6} className="px-4 py-4 text-center text-xs text-muted">Chưa giao việc nào cho ngày này.</td></tr>
+            )}
+            {rows.map((r) => (
+              <tr key={r.id} className={`border-t border-paper-line ${r.status === "canh_bao" ? "ktns-warn-row" : ""}`}>
+                <td className="px-4 py-2">
+                  <div className="font-medium">{nameOf(r.employeeId)}</div>
+                  <div className="text-[11px] text-muted">{ROLE_META[employees.find((e) => e.id === r.employeeId)?.roleType]?.label}</div>
+                </td>
+                <td className="px-4 py-2 text-xs text-muted max-w-sm">{r.description}</td>
+                <td className="px-4 py-2 text-right ktns-mono text-xs">{r.targetType === "khac" ? "—" : `${r.targetValue} ${TASK_TYPES[r.targetType].unit}`}</td>
+                <td className="px-4 py-2 text-right ktns-mono text-xs font-medium">{r.progress.label}</td>
+                <td className="px-4 py-2">
+                  {r.status === "dat" && <StampBadge text="ĐẠT CHỈ TIÊU" gold />}
+                  {r.status === "dang_lam" && <StampBadge text="ĐANG LÀM" muted />}
+                  {r.status === "canh_bao" && <StampBadge text="CẢNH BÁO" />}
+                </td>
+                <td className="px-4 py-2 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    {r.targetType === "khac" && (
+                      <button onClick={() => toggleDone(r.id)} className="text-[10px] border border-paper-line rounded px-2 py-1 text-ink-light hover:border-gold">{r.doneManual ? "Bỏ đánh dấu" : "Đánh dấu xong"}</button>
+                    )}
+                    <button onClick={() => removeTask(r.id)} className="text-muted hover:text-stamp-red"><Trash2 size={14} /></button>
+                  </div>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {rows.length === 0 && <tr><td colSpan={isAdmin ? 7 : 6} className="px-4 py-6 text-center text-xs text-muted">Chưa có công việc phù hợp.</td></tr>}
-              {rows.map((row) => (
-                <tr key={row.id} className={`border-t border-paper-line transition-colors ${row.status === "canh_bao" ? "ktns-warn-row" : ""} ${isFocusedTask(row) ? "bg-[#EEF4FF] ring-2 ring-inset ring-[#7EABFA]" : ""}`}>
-                  <td className="px-4 py-2"><div className="font-medium">{nameOf(row.employeeId)}</div><div className="text-[11px] text-muted">{ROLE_META[employees.find((employee) => employee.id === row.employeeId)?.roleType]?.label}</div></td>
-                  <td className="px-4 py-2 text-xs text-muted max-w-sm">{row.description}</td>
-                  <td className="px-4 py-2 text-right ktns-mono text-xs">{row.targetType === "khac" ? "—" : `${row.targetValue} ${TASK_TYPES[row.targetType].unit}`}</td>
-                  <td className="px-4 py-2 text-right ktns-mono text-xs font-medium">{row.progress.label}</td>
-                  <td className="px-4 py-2">{row.status === "dat" && <StampBadge text="ĐẠT CHỈ TIÊU" gold />}{row.status === "dang_lam" && <StampBadge text="ĐANG LÀM" muted />}{row.status === "canh_bao" && <StampBadge text="CẢNH BÁO" />}</td>
-                  <td className="px-4 py-2 text-xs text-muted">{row.visibility === "public" ? "Công khai" : "Riêng tư"}</td>
-                  {isAdmin && <td className="px-4 py-2 text-right"><div className="flex items-center justify-end gap-2">{row.targetType === "khac" && <button onClick={() => toggleDone(row.id)} className="text-[10px] border border-paper-line rounded px-2 py-1 text-ink-light">{row.doneManual ? "Bỏ đánh dấu" : "Đánh dấu xong"}</button>}<button onClick={() => removeTask(row.id)} className="text-muted hover:text-stamp-red"><Trash2 size={14} /></button></div></td>}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+            ))}
+          </tbody>
+        </table>
         </div>
       </div>
+      <p className="text-xs text-muted">* Doanh số/số khách/số cuộc gọi lấy tự động từ Doanh thu CRM và nhật ký liên hệ theo đúng ngày — không cần nhập tay tiến độ. Cảnh báo áp dụng khi đã qua buổi trưa (theo giờ máy đang dùng) mà tiến độ vẫn bằng 0.</p>
     </div>
   );
 }
@@ -7671,7 +5603,7 @@ function exportDailyCallReportExcel(dailyContacts, dailyBySale, date, nameOf) {
   XLSX.writeFile(wb, `DOMIX_Bao_cao_goi_khach_${date}.xlsx`);
 }
 
-function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByEmployee, setTransactions, transactions, inventory, setInventory, distPartners, distOrders, setDistOrders, reportYear, reportMonth, pages, setSupportCases, customers, setCustomers, moveStock, authUser, debts, setDebts }) {
+function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByEmployee, setTransactions, inventory, setInventory, distPartners, distOrders, setDistOrders, reportYear, reportMonth, pages, setSupportCases }) {
   const [showForm, setShowForm] = useState(false);
   const [rangeMode, setRangeMode] = useState("month");
   const [rangeFrom, setRangeFrom] = useState(new Date(reportYear || TODAY.getFullYear(), (reportMonth || TODAY.getMonth() + 1) - 1, 1).toISOString().slice(0, 10));
@@ -7727,7 +5659,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
     date: TODAY_STR, customerName: "", phone: "", email: "", customerTaxCode: "", note: "",
     saleEmployeeId: saleEmployees[0]?.id || "", dealType: "sale", receivedAt: "", amount: "",
     productId: "", quantity: "1", issuedKeyCode: "", pageId: "",
-    invoiceStatus: "pending", invoiceNo: "", invoiceDate: "", paidNow: true,
+    invoiceStatus: "pending", invoiceNo: "", invoiceDate: "",
   });
   const selectProduct = (productId) => {
     const p = (inventory || []).find((i) => i.id === Number(productId));
@@ -7738,23 +5670,6 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
     setForm((f) => ({ ...f, quantity: qty, amount: p ? String(p.sellPrice * Number(qty || 1)) : f.amount }));
   };
 
-  // Tìm/tạo hồ sơ khách hàng theo ưu tiên SĐT → email → tên (mục VIII).
-  const findOrCreateCustomer = (rec) => {
-    const key = customerKeyOf(rec);
-    const existing = (customers || []).find((c) => customerKeyOf(c) === key);
-    if (existing) return existing.id;
-    const newCustomer = {
-      id: Date.now() + 7,
-      customerName: rec.customerName || "(Chưa rõ tên)", phone: rec.phone || "", secondaryPhone: "", email: rec.email || "", zalo: "",
-      customerType: rec.customerTaxCode ? "company" : "individual",
-      companyName: rec.customerCompanyName || "", taxCode: rec.customerTaxCode || "",
-      invoiceAddress: "", address: "", source: rec.source || "", assignedSaleEmployeeId: Number(rec.saleEmployeeId) || null,
-      status: "active", tags: [], note: "", createdAt: rec.date || TODAY_STR, updatedAt: "", contactLog: [], auditLog: [],
-    };
-    setCustomers((prev) => [...prev, newCustomer]);
-    return newCustomer.id;
-  };
-
   const addOrder = () => {
     if (!form.customerName || !form.amount) return;
     const emp = employees.find((e) => e.id === Number(form.saleEmployeeId));
@@ -7762,67 +5677,40 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
     const orderId = Date.now();
     const linkedTxId = orderId + 1;
     const product = form.productId ? (inventory || []).find((i) => i.id === Number(form.productId)) : null;
+    // Sản phẩm này có gán cho đối tác phân phối nào không (VD Tool AI Agent ← Say Media)? Việc này
+    // phải biết TRƯỚC khi quyết định có đẩy Thu Chi ngay hay không.
     const owningPartner = product && distPartners ? distPartners.find((p) => (p.productIds || []).includes(product.id)) : null;
-    const customerId = findOrCreateCustomer(form);
-    const amount = Number(form.amount) || 0;
-    // ĐƠN HÀNG ≠ ĐÃ THU TIỀN (nguyên tắc 1): checkbox "khách đã thanh toán" quyết định có ghi
-    // Thu hay không. Sản phẩm của đối tác thu tiền → công ty KHÔNG bao giờ ghi Thu ở bước này.
-    const companyCollects = !owningPartner || (owningPartner.cashCollector || "partner") === "company";
-    const paidNow = form.paidNow !== false; // mặc định: khách chuyển khoản ngay như luồng hiện tại
-    setOrders((prev) => [...prev, {
-      ...form, id: orderId, customerId, saleEmployeeId: Number(form.saleEmployeeId) || null, dealType,
-      productId: form.productId ? Number(form.productId) : null, productName: product?.name || "",
-      quantity: Number(form.quantity) || 1, amount, pageId: form.pageId ? Number(form.pageId) : null, contactLog: [], auditLog: [],
-      customerPaymentStatus: paidNow ? "paid" : "unpaid",
-      customerPaidAmount: paidNow ? amount : 0,
-      cashCollector: companyCollects ? "company" : "partner",
-      customerInvoiceIssuer: owningPartner ? (owningPartner.customerInvoiceIssuer || "partner") : "company",
-      linkedTxId: (!owningPartner && paidNow) ? linkedTxId : null,
-    }]);
-    // Trừ kho qua movement duy nhất — CRM là đơn gốc, đơn phân phối liên kết KHÔNG trừ lần 2 (mục IX).
-    if (product && moveStock) {
-      moveStock({ productId: product.id, movementType: "sale_out", quantity: Number(form.quantity) || 1, date: form.date, sourceModule: "crm", sourceId: orderId, note: `Bán cho ${form.customerName}`, createdBy: authUser?.email || "" });
+    setOrders((prev) => [...prev, { ...form, id: orderId, saleEmployeeId: Number(form.saleEmployeeId) || null, dealType, productId: form.productId ? Number(form.productId) : null, productName: product?.name || "", quantity: Number(form.quantity) || 1, amount: Number(form.amount) || 0, pageId: form.pageId ? Number(form.pageId) : null, contactLog: [], linkedTxId: owningPartner ? null : linkedTxId }]);
+    // Bán được hàng thật (có chọn sản phẩm trong kho) thì tự trừ tồn kho ngay — Kho hàng và
+    // Doanh thu CRM luôn khớp số lượng thật, không phải đối chiếu tay.
+    if (product && setInventory) {
+      setInventory((prev) => prev.map((i) => (i.id === product.id ? { ...i, stock: Math.max(0, i.stock - (Number(form.quantity) || 1)) } : i)));
     }
     if (owningPartner) {
-      // Sản phẩm đối tác: chỉ tạo bản ghi tài chính liên kết bên Hợp tác — KHÔNG Thu Chi,
-      // KHÔNG trừ kho lần 2. Tiền đi theo hồ sơ quyết toán + công nợ (mục X-A).
+      // Sản phẩm của đối tác phân phối — KHÔNG đẩy Thu Chi ngay ở bước này. Số tiền khách trả gồm
+      // cả phần thuộc về đối tác, chưa xác nhận hoá đơn thì chưa biết chính xác công ty thực nhận
+      // bao nhiêu — đẩy sớm sẽ phải sửa lại/xuất 2 lần khi đối tác xác nhận. Chỉ tạo đơn Hợp tác
+      // phân phối; Thu Chi chỉ nhận đúng 1 khoản DUY NHẤT (lợi nhuận ròng) khi xác nhận xong bên đó.
       const distId = orderId + 2;
-      setDistOrders((prev) => [...prev, normalizeDistributionOrder({
+      setDistOrders((prev) => [...prev, {
         id: distId, sourceCrmOrderId: orderId, date: form.date, partnerId: owningPartner.id,
         productId: product.id, productName: product.name, quantity: Number(form.quantity) || 1,
-        revenue: amount, vatRate: product.vatRate ?? 8, commissionPct: 0,
+        revenue: Number(form.amount) || 0, vatRate: product.vatRate ?? 8, commissionPct: 0,
         issuedKeyCode: form.issuedKeyCode || "", endCustomerName: form.customerName,
         note: `Tự tạo từ đơn CRM #${orderId} — ${owningPartner.name} cung cấp sản phẩm này`,
         partnerInvoiceReceived: false, partnerInvoiceConfirmed: false, partnerInvoiceNo: "", linkedTxId: null,
-        orderStatus: "fulfilled",
-        customerPaymentStatus: paidNow ? "paid" : "unpaid", customerPaidAmount: paidNow ? amount : 0,
-      }, { [owningPartner.id]: owningPartner })]);
-    } else if (paidNow) {
-      // Công ty tự bán + khách ĐÃ chuyển tiền thật → ghi Thu toàn bộ số thực nhận (Quy tắc 2).
-      setTransactions((prev) => [...prev, makeTransaction({
-        id: linkedTxId, date: form.date, kind: "thu", category: dealType === "upsale" ? "Upsale Kỹ thuật (CRM)" : "Bán hàng (CRM)",
-        desc: `${form.customerName}${product ? " — " + product.name + " x" + form.quantity : ""} — ${emp?.name || "—"}`, amount,
-        partnerName: form.customerName, partnerTaxCode: form.customerTaxCode || "", partnerPhone: form.phone || "", partnerEmail: form.email || "", paymentMethod: "chuyen_khoan",
-        invoiceType: "Chưa xác định", invoiceNo: "", vatRate: product?.vatRate ?? 8,
-        status: "pending", source: "crm", sourceModule: "crm", sourceId: orderId, sourceOrderId: orderId, orderId,
-        createdAutomatically: true,
-      })]);
+      }]);
     } else {
-      // Khách CHƯA trả (tình huống C): không Thu Chi — tạo Phải thu khách hàng gắn đơn + khách.
-      setDebts((prev) => {
-        if (prev.some((d) => d.sourceModule === "crm" && d.sourceId === orderId)) return prev; // chống trùng
-        return [...prev, normalizeDebt({
-          id: orderId + 3, type: "thu", counterpartyType: "customer", counterpartyId: customerId,
-          counterpartyName: form.customerName, counterpartyPhone: form.phone || "",
-          sourceModule: "crm", sourceId: orderId, orderId,
-          amount, paidAmount: 0, issueDate: form.date,
-          dueDate: new Date(TODAY.getTime() + 7 * 86400000).toISOString().slice(0, 10),
-          status: "open", paymentHistory: [], note: `Khách chưa thanh toán đơn CRM #${orderId}`,
-          createdAt: new Date().toISOString(), createdBy: authUser?.email || "",
-        })];
-      });
+      // Sản phẩm/dịch vụ công ty tự làm — đẩy thẳng lên Thu Chi như cũ, không phải chờ đối tác nào.
+      setTransactions((prev) => [...prev, {
+        id: linkedTxId, date: form.date, kind: "thu", category: dealType === "upsale" ? "Upsale Kỹ thuật (CRM)" : "Bán hàng (CRM)",
+        desc: `${form.customerName}${product ? " — " + product.name + " x" + form.quantity : ""} — ${emp?.name || "—"}`, amount: Number(form.amount) || 0,
+        partnerName: form.customerName, partnerTaxCode: form.customerTaxCode || "", partnerPhone: form.phone || "", partnerEmail: form.email || "", paymentMethod: "chuyen_khoan",
+        invoiceType: "Chưa xác định", invoiceNo: "", vatRate: product?.vatRate ?? 8, attachmentData: "", attachmentName: "", attachmentType: "",
+        status: "pending", source: "crm", sourceOrderId: orderId,
+      }]);
     }
-    setForm({ date: TODAY_STR, customerName: "", phone: "", email: "", customerTaxCode: "", note: "", saleEmployeeId: saleEmployees[0]?.id || "", dealType: "sale", receivedAt: "", amount: "", productId: "", quantity: "1", issuedKeyCode: "", pageId: "", invoiceStatus: "pending", invoiceNo: "", invoiceDate: "", paidNow: true });
+    setForm({ date: TODAY_STR, customerName: "", phone: "", email: "", customerTaxCode: "", note: "", saleEmployeeId: saleEmployees[0]?.id || "", dealType: "sale", receivedAt: "", amount: "", productId: "", quantity: "1", issuedKeyCode: "", pageId: "", invoiceStatus: "pending", invoiceNo: "", invoiceDate: "" });
     setShowForm(false);
   };
   const prefillOrderFromCustomer = (o) => {
@@ -7915,94 +5803,22 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
   };
   const removeOrder = (id) => {
     const order = orders.find((o) => o.id === id);
-    const linkedDist = (distOrders || []).find((d) => d.sourceCrmOrderId === id);
-    // Đơn đã nằm trong hồ sơ quyết toán đã duyệt: KHÔNG xóa âm thầm (CA 7) — hủy hồ sơ trước.
-    if (linkedDist?.settlementId) {
-      window.alert("Đơn này đã thuộc hồ sơ quyết toán với đối tác. Hủy hồ sơ quyết toán ở tab Hợp tác phân phối trước, rồi mới xóa được đơn.");
-      return;
-    }
     if (order?.linkedTxId) setTransactions((prev) => prev.filter((t) => t.id !== order.linkedTxId));
-    // Hoàn tồn đúng MỘT lần qua movement cancel_reverse — chống hoàn 2 lần, không tạo tồn âm (CA 8).
-    if (order?.productId && moveStock) {
-      moveStock({ productId: order.productId, movementType: "cancel_reverse", quantity: order.quantity || 1, sourceModule: "crm", sourceId: id, note: `Hủy/xóa đơn CRM #${id} — hoàn tồn`, createdBy: authUser?.email || "" });
+    // Hoàn lại đúng tồn kho đã trừ lúc tạo đơn — trước đây thiếu bước này, xoá đơn nhầm là tồn
+    // kho mất vĩnh viễn dù hàng chưa hề thật sự bán ra ngoài.
+    if (order?.productId && setInventory) {
+      setInventory((prev) => prev.map((i) => (i.id === order.productId ? { ...i, stock: i.stock + (order.quantity || 1) } : i)));
     }
-    // Xóa công nợ phải thu khách của đơn này nếu chưa có thanh toán nào.
-    setDebts((prev) => prev.filter((d) => !(d.sourceModule === "crm" && d.sourceId === id && (d.paidAmount || 0) === 0)));
-    // Xoá đơn Hợp tác liên kết — KHÔNG hoàn tồn lần nữa (CRM là bên giữ movement gốc).
-    if (setDistOrders && linkedDist) {
-      if (linkedDist.linkedTxId) setTransactions((prev) => prev.filter((t) => t.id !== linkedDist.linkedTxId));
-      setDistOrders((prev) => prev.filter((d) => d.sourceCrmOrderId !== id));
+    // Xoá luôn đơn Hợp tác phân phối tự sinh ra từ đơn CRM này (nếu có) — tránh còn sót lại
+    // 1 bên mà không rõ đơn gốc đã bị xoá.
+    if (setDistOrders && distOrders) {
+      const linkedDist = distOrders.find((d) => d.sourceCrmOrderId === id);
+      if (linkedDist) {
+        if (linkedDist.linkedTxId) setTransactions((prev) => prev.filter((t) => t.id !== linkedDist.linkedTxId));
+        setDistOrders((prev) => prev.filter((d) => d.sourceCrmOrderId !== id));
+      }
     }
     setOrders((prev) => prev.filter((o) => o.id !== id));
-  };
-
-  // ---------- SỬA hồ sơ khách hàng + SỬA đơn hàng (mục VIII, CA 5/6/7) ----------
-  const [editingCustomer, setEditingCustomer] = useState(null);
-  const [editingOrder, setEditingOrder] = useState(null);
-  const [editOrderErr, setEditOrderErr] = useState("");
-  const CUSTOMER_EDIT_FIELDS = ["customerName", "phone", "secondaryPhone", "email", "zalo", "companyName", "taxCode", "invoiceAddress", "address", "source", "note"];
-
-  const startEditCustomer = (order) => {
-    let cust = (customers || []).find((c) => c.id === order.customerId);
-    if (!cust) {
-      // Đơn cũ chưa gắn hồ sơ — tạo hồ sơ từ đơn ngay lúc mở form, không mất dữ liệu đơn.
-      const cid = findOrCreateCustomer(order);
-      setOrders((prev) => prev.map((o) => (o.id === order.id ? { ...o, customerId: cid } : o)));
-      cust = (customers || []).find((c) => c.id === cid) || { id: cid, customerName: order.customerName, phone: order.phone || "", email: order.email || "" };
-    }
-    setEditingCustomer({ secondaryPhone: "", zalo: "", companyName: "", taxCode: "", invoiceAddress: "", address: "", source: "", note: "", assignedSaleEmployeeId: null, ...cust });
-  };
-  const saveCustomer = () => {
-    const old = (customers || []).find((c) => c.id === editingCustomer.id) || {};
-    // Sửa thông tin liên hệ KHÔNG được thay đổi dòng tiền (CA 5) — chỉ ghi auditLog.
-    const audit = diffAudit(old, editingCustomer, CUSTOMER_EDIT_FIELDS, authUser?.email || "");
-    setCustomers((prev) => prev.map((c) => (c.id === editingCustomer.id
-      ? { ...c, ...editingCustomer, updatedAt: new Date().toISOString(), auditLog: [...(c.auditLog || []), ...audit] }
-      : c)));
-    // Đồng bộ tên/SĐT hiển thị trên các đơn của khách này (chỉ thông tin liên hệ, không đụng tiền).
-    setOrders((prev) => prev.map((o) => (o.customerId === editingCustomer.id
-      ? { ...o, customerName: editingCustomer.customerName, phone: editingCustomer.phone, email: editingCustomer.email, customerTaxCode: editingCustomer.taxCode }
-      : o)));
-    setEditingCustomer(null);
-  };
-
-  const startEditOrder = (o) => { setEditOrderErr(""); setEditingOrder({ ...o, amount: String(o.amount), saleEmployeeId: o.saleEmployeeId || "" }); };
-  const saveOrderEdit = () => {
-    const old = orders.find((x) => x.id === editingOrder.id);
-    if (!old) return;
-    const linkedDist = (distOrders || []).find((d) => d.sourceCrmOrderId === editingOrder.id);
-    const newAmount = Number(editingOrder.amount) || 0;
-    const amountChanged = newAmount !== old.amount;
-    // CA 7: đơn đã thuộc hồ sơ quyết toán đã duyệt — chặn sửa số liệu tài chính.
-    if (amountChanged && linkedDist?.settlementId) {
-      setEditOrderErr("Đơn này đã thuộc hồ sơ quyết toán với đối tác — KHÔNG sửa số tiền trực tiếp được. Hủy hồ sơ quyết toán ở tab Hợp tác phân phối (nếu chưa thanh toán) hoặc tạo phiếu điều chỉnh.");
-      return;
-    }
-    // Đơn đã thanh toán + đã ghi Thu: không tự sửa giao dịch đã ghi (mục VIII).
-    if (amountChanged && old.linkedTxId && old.customerPaymentStatus !== "unpaid") {
-      setEditOrderErr("Đơn đã thanh toán và đã ghi Thu — không tự sửa số tiền của giao dịch đã ghi. Xóa đơn và tạo lại đúng số, hoặc tạo giao dịch điều chỉnh/hoàn tiền ở Thu Chi.");
-      return;
-    }
-    const ORDER_EDIT_FIELDS = ["date", "customerName", "saleEmployeeId", "amount", "note", "issuedKeyCode", "receivedAt"];
-    const audit = diffAudit(old, { ...editingOrder, amount: newAmount }, ORDER_EDIT_FIELDS, authUser?.email || "");
-    setOrders((prev) => prev.map((x) => (x.id === editingOrder.id ? {
-      ...x, date: editingOrder.date, customerName: editingOrder.customerName,
-      saleEmployeeId: Number(editingOrder.saleEmployeeId) || x.saleEmployeeId,
-      amount: newAmount, note: editingOrder.note, issuedKeyCode: editingOrder.issuedKeyCode, receivedAt: editingOrder.receivedAt,
-      auditLog: [...(x.auditLog || []), ...audit],
-    } : x)));
-    if (amountChanged) {
-      // CA 6: sửa tiền đơn CHƯA quyết toán → tính lại đơn phân phối liên kết + công nợ chưa trả,
-      // KHÔNG tạo trùng công nợ, KHÔNG tạo trùng giao dịch.
-      if (linkedDist && !linkedDist.settlementId) {
-        setDistOrders((prev) => prev.map((d) => (d.sourceCrmOrderId === editingOrder.id ? { ...d, revenue: newAmount } : d)));
-      }
-      setDebts((prev) => prev.map((d) => (
-        d.sourceModule === "crm" && d.sourceId === editingOrder.id && (d.paidAmount || 0) === 0
-          ? { ...d, amount: newAmount, remainingAmount: newAmount }
-          : d)));
-    }
-    setEditingOrder(null);
   };
   const nameOf = (id) => employees.find((e) => e.id === id)?.name || "—";
   const toggleExpand = (id) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
@@ -8462,10 +6278,6 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
             )}
             <label className="text-xs text-muted flex flex-col gap-1">Số tiền (đ)<MoneyInput value={form.amount} onChange={(v) => setForm({ ...form, amount: v })} /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Ngày nhận tiền<input value={form.receivedAt} onChange={(e) => setForm({ ...form, receivedAt: e.target.value })} placeholder="2026-07-08 10:00" className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-            <label className="flex items-center gap-2 text-xs text-muted col-span-2 mt-4">
-              <input type="checkbox" checked={form.paidNow !== false} onChange={(e) => setForm({ ...form, paidNow: e.target.checked })} />
-              <span>Khách <strong className="text-ink">ĐÃ chuyển tiền thật</strong> — bỏ tick nếu bán chịu: đơn vẫn lưu, KHÔNG ghi Thu, tự tạo "Phải thu khách hàng" bên Công nợ; khi khách trả (được phép trả từng phần) ghi nhận ở tab Công nợ.</span>
-            </label>
             {(() => {
               const p = form.productId ? (inventory || []).find((i) => i.id === Number(form.productId)) : null;
               return p && p.durationMonths > 0 ? (
@@ -8581,10 +6393,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
                         </div>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                      <button onClick={() => startEditOrder(o)} className="text-muted hover:text-ink mr-2" title="Sửa đơn hàng"><Pencil size={13} /></button>
-                      <button onClick={() => removeOrder(o.id)} className="text-muted hover:text-stamp-red"><Trash2 size={14} /></button>
-                    </td>
+                    <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}><button onClick={() => removeOrder(o.id)} className="text-muted hover:text-stamp-red"><Trash2 size={14} /></button></td>
                   </tr>
                   {expanded[o.id] && (
                     <tr className="border-t border-paper-line bg-paper/40">
@@ -8642,7 +6451,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
         const draft = invoiceEdit[activeInvoiceId];
         if (!o || !draft) return null;
         return (
-          <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-6">
+          <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-6" onClick={() => cancelInvoiceEdit(activeInvoiceId)}>
             <div className="bg-white rounded-lg p-5 w-full max-w-md shadow-xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
               <h3 className="ktns-serif font-semibold text-ink mb-1 flex items-center gap-1.5"><FileText size={15} /> Xuất hoá đơn cho khách hàng</h3>
               <div className="bg-paper rounded-md p-3 mb-3 text-xs flex flex-col gap-1">
@@ -8714,88 +6523,6 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
       )}
 
       <p className="text-xs text-muted">* Bấm vào dòng để mở nhật ký chăm sóc khách hàng. Bấm vào badge "Tình trạng hoá đơn" để xuất hoá đơn — bắt buộc đính kèm chứng từ, tự động ghi nhận sang Thu Chi.</p>
-
-      {/* ---------- Overlay SỬA ĐƠN HÀNG (mục VIII) ---------- */}
-      {editingOrder && (
-        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-5 w-full max-w-xl shadow-xl max-h-[88vh] overflow-y-auto" onClick={(ev) => ev.stopPropagation()}>
-            <h3 className="ktns-serif font-semibold text-ink mb-1">Sửa đơn hàng #{String(editingOrder.id).slice(-6)}</h3>
-            <p className="text-xs text-muted mb-3">Sửa thông tin liên hệ không đổi dòng tiền. Sửa SỐ TIỀN chỉ được khi đơn chưa quyết toán/chưa ghi Thu — hệ thống tự tính lại đơn phân phối liên kết và công nợ. Mọi thay đổi đều lưu lịch sử.</p>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="text-xs text-muted flex flex-col gap-1">Ngày đơn<input type="date" value={editingOrder.date} onChange={(e) => setEditingOrder({ ...editingOrder, date: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Khách hàng<input value={editingOrder.customerName} onChange={(e) => setEditingOrder({ ...editingOrder, customerName: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Sale phụ trách
-                <select value={editingOrder.saleEmployeeId} onChange={(e) => setEditingOrder({ ...editingOrder, saleEmployeeId: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
-                  {dealEmployees.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
-                </select>
-              </label>
-              <label className="text-xs text-muted flex flex-col gap-1">Tổng thanh toán (đ)<MoneyInput value={editingOrder.amount} onChange={(v) => setEditingOrder({ ...editingOrder, amount: v })} /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Mã key đã cấp<input value={editingOrder.issuedKeyCode || ""} onChange={(e) => setEditingOrder({ ...editingOrder, issuedKeyCode: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Ngày nhận tiền<input value={editingOrder.receivedAt || ""} onChange={(e) => setEditingOrder({ ...editingOrder, receivedAt: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Ghi chú<input value={editingOrder.note || ""} onChange={(e) => setEditingOrder({ ...editingOrder, note: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-            </div>
-            {editOrderErr && <p className="text-xs text-stamp-red mt-2 bg-stamp-red/10 border border-stamp-red/20 rounded px-3 py-2">{editOrderErr}</p>}
-            {(editingOrder.auditLog || []).length > 0 && (
-              <div className="mt-3 border border-paper-line rounded max-h-32 overflow-y-auto">
-                <div className="px-3 py-1.5 bg-paper text-[10px] font-semibold text-muted uppercase">Lịch sử sửa đổi</div>
-                {(editingOrder.auditLog || []).slice().reverse().map((a, i) => (
-                  <div key={i} className="px-3 py-1 text-[11px] text-muted border-t border-paper-line">
-                    <span className="ktns-mono">{new Date(a.changedAt).toLocaleString("vi-VN")}</span> — {a.changedBy || "?"} sửa <strong className="text-ink">{a.field}</strong>: "{a.oldValue}" → "{a.newValue}"
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="flex gap-2 mt-4 items-center">
-              <button onClick={saveOrderEdit} className="bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">Lưu thay đổi</button>
-              <button onClick={() => { setEditingOrder(null); startEditCustomer(editingOrder); }} className="border border-paper-line text-sm px-4 py-2 rounded-md text-ink hover:border-gold">Sửa hồ sơ khách hàng</button>
-              <button onClick={() => setEditingOrder(null)} className="border border-paper-line text-sm px-4 py-2 rounded-md text-muted ml-auto">Đóng</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ---------- Overlay SỬA HỒ SƠ KHÁCH HÀNG (mục VIII) ---------- */}
-      {editingCustomer && (
-        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-5 w-full max-w-xl shadow-xl max-h-[88vh] overflow-y-auto" onClick={(ev) => ev.stopPropagation()}>
-            <h3 className="ktns-serif font-semibold text-ink mb-1">Sửa hồ sơ khách hàng</h3>
-            <p className="text-xs text-muted mb-3">Chỉ sửa thông tin liên hệ/hóa đơn — KHÔNG ảnh hưởng tiền, kho, công nợ (CA 5). Mọi thay đổi lưu lịch sử.</p>
-            <div className="grid grid-cols-2 gap-3">
-              <label className="text-xs text-muted flex flex-col gap-1">Họ tên<input value={editingCustomer.customerName || ""} onChange={(e) => setEditingCustomer({ ...editingCustomer, customerName: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Số điện thoại<input value={editingCustomer.phone || ""} onChange={(e) => setEditingCustomer({ ...editingCustomer, phone: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Số phụ<input value={editingCustomer.secondaryPhone || ""} onChange={(e) => setEditingCustomer({ ...editingCustomer, secondaryPhone: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Email<input value={editingCustomer.email || ""} onChange={(e) => setEditingCustomer({ ...editingCustomer, email: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Zalo<input value={editingCustomer.zalo || ""} onChange={(e) => setEditingCustomer({ ...editingCustomer, zalo: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Tên công ty<input value={editingCustomer.companyName || ""} onChange={(e) => setEditingCustomer({ ...editingCustomer, companyName: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Mã số thuế<input value={editingCustomer.taxCode || ""} onChange={(e) => setEditingCustomer({ ...editingCustomer, taxCode: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Địa chỉ xuất hóa đơn<input value={editingCustomer.invoiceAddress || ""} onChange={(e) => setEditingCustomer({ ...editingCustomer, invoiceAddress: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Địa chỉ liên hệ<input value={editingCustomer.address || ""} onChange={(e) => setEditingCustomer({ ...editingCustomer, address: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Nguồn khách<input value={editingCustomer.source || ""} onChange={(e) => setEditingCustomer({ ...editingCustomer, source: e.target.value })} placeholder="VD: Ads, giới thiệu..." className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Sale phụ trách
-                <select value={editingCustomer.assignedSaleEmployeeId || ""} onChange={(e) => setEditingCustomer({ ...editingCustomer, assignedSaleEmployeeId: Number(e.target.value) || null })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
-                  <option value="">— Chưa gán —</option>
-                  {saleEmployees.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
-                </select>
-              </label>
-              <label className="text-xs text-muted flex flex-col gap-1">Ghi chú<input value={editingCustomer.note || ""} onChange={(e) => setEditingCustomer({ ...editingCustomer, note: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-            </div>
-            {(editingCustomer.auditLog || []).length > 0 && (
-              <div className="mt-3 border border-paper-line rounded max-h-32 overflow-y-auto">
-                <div className="px-3 py-1.5 bg-paper text-[10px] font-semibold text-muted uppercase">Lịch sử sửa đổi</div>
-                {(editingCustomer.auditLog || []).slice().reverse().map((a, i) => (
-                  <div key={i} className="px-3 py-1 text-[11px] text-muted border-t border-paper-line">
-                    <span className="ktns-mono">{new Date(a.changedAt).toLocaleString("vi-VN")}</span> — {a.changedBy || "?"} sửa <strong className="text-ink">{a.field}</strong>: "{a.oldValue}" → "{a.newValue}"
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="flex gap-2 mt-4">
-              <button onClick={saveCustomer} className="bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">Lưu hồ sơ khách</button>
-              <button onClick={() => setEditingCustomer(null)} className="border border-paper-line text-sm px-4 py-2 rounded-md text-muted">Đóng</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -9387,7 +7114,7 @@ function ChamCong({ employees, setEmployees, unlockedMonths, setUnlockedMonths, 
       </div>
 
       {showUnlockModal && (
-        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50" onClick={() => setShowUnlockModal(false)}>
           <div className="bg-white rounded-lg p-5 w-80 shadow-xl" onClick={(ev) => ev.stopPropagation()}>
             <h3 className="ktns-serif font-semibold text-ink mb-1 flex items-center gap-1.5"><CreditCard size={15} /> Mở khoá sổ tháng {viewMonth}/{viewYear}</h3>
             <p className="text-xs text-muted mb-3">Tháng này đã khoá sổ (quá {LOCK_WINDOW_DAYS} ngày). Nhập mật khẩu giám đốc để mở khoá sửa tạm thời.</p>
@@ -9413,35 +7140,13 @@ function ChamCong({ employees, setEmployees, unlockedMonths, setUnlockedMonths, 
 }
 
 // ---------- Nhân sự ----------
-const DEFAULT_EMPLOYEE_PASSWORD = "domix123@";
-
-function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, reportYear, reportMonth, prefillEmployee, setPrefillEmployee }) {
+function NhanSu({ employees, setEmployees, showForm, setShowForm, reportYear, reportMonth, prefillEmployee, setPrefillEmployee }) {
   const [showInactive, setShowInactive] = useState(false);
   const [expandedResume, setExpandedResume] = useState({});
   const [viewingDoc, setViewingDoc] = useState(null);
-  // Tài khoản đăng nhập (bảng users) — mỗi nhân sự gắn với một email/tài khoản.
-  const [users, setUsers] = useState([]);
-  const [accountMessage, setAccountMessage] = useState("");
-  const [accountError, setAccountError] = useState("");
-  const [accountLoading, setAccountLoading] = useState(false);
-  const isAdmin = authUser?.role === "admin";
   const periodActive = employees.filter((e) => isEmployeeActiveInMonth(e, reportYear, reportMonth));
   const periodInactive = employees.filter((e) => !isEmployeeActiveInMonth(e, reportYear, reportMonth));
   const visibleEmployees = showInactive ? employees : periodActive;
-  const accountForEmail = (email) => users.find((u) => u.email === (email || "").trim().toLowerCase());
-  // Tài khoản CHƯA có hồ sơ nhân sự — liệt kê để admin bổ sung (mọi tài khoản đều phải hiện).
-  const employeeEmailSet = new Set(employees.map((e) => (e.email || "").trim().toLowerCase()).filter(Boolean));
-  const accountsWithoutProfile = users.filter((u) => u.email && !employeeEmailSet.has(u.email));
-
-  const refreshUsers = useCallback(async () => {
-    if (!isAdmin) return;
-    const result = await listUsers();
-    setUsers(result.users || []);
-  }, [isAdmin]);
-
-  useEffect(() => {
-    refreshUsers().catch((err) => setAccountError(err.message || "Không tải được danh sách tài khoản"));
-  }, [refreshUsers]);
 
   const blankForm = {
     name: "", position: "", dept: "", baseSalary: "", bonusTarget: "", kpi: "100", joined: TODAY_STR,
@@ -9455,7 +7160,7 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
     adSpend: "", adRevenue: "", conversions: "", ctr: "",
     salesTarget: "", salesActual: "", dealsClosed: "", leadsHandled: "",
     tasksAssigned: "", tasksCompleted: "", tasksOnTime: "", bugsFixed: "", upsaleValue: "",
-    consecutiveLowKpiMonths: "0", accountRole: "user",
+    consecutiveLowKpiMonths: "0",
   };
   const [form, setForm] = useState(blankForm);
   // Nhận dữ liệu điền sẵn từ Tuyển dụng AI (bấm "Tuyển ngay") — chỉ chạy khi có dữ liệu mới gửi
@@ -9491,57 +7196,16 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
       salesTarget: String(e.salesTarget || 0), salesActual: String(e.salesActual || 0), dealsClosed: String(e.dealsClosed || 0), leadsHandled: String(e.leadsHandled || 0),
       tasksAssigned: String(e.tasksAssigned || 0), tasksCompleted: String(e.tasksCompleted || 0), tasksOnTime: String(e.tasksOnTime || 0), bugsFixed: String(e.bugsFixed || 0), upsaleValue: String(e.upsaleValue || 0),
       consecutiveLowKpiMonths: String(e.consecutiveLowKpiMonths || 0),
-      accountRole: accountForEmail(e.email)?.role || e.accountRole || "user",
     });
     setShowForm(true);
   };
   const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); };
-  // Bổ sung hồ sơ nhân sự cho một tài khoản đã có sẵn (email + quyền được điền trước).
-  const startAddForAccount = (account) => {
-    setEditingId(null);
-    setForm({ ...blankForm, email: account.email, accountRole: account.role || "user" });
-    setShowForm(true);
-  };
 
-  // Tạo/cập nhật tài khoản đăng nhập tương ứng với nhân sự (email = username).
-  const syncEmployeeAccount = async (employee, options = {}) => {
-    if (!isAdmin || !employee.email) return;
-    const email = employee.email.trim().toLowerCase();
-    const existingAccount = accountForEmail(email);
-    const payload = {
-      email,
-      role: employee.accountRole || existingAccount?.role || "user",
-      active: employee.status === "inactive" ? 0 : 1,
-    };
-    if (options.withDefaultPassword || !existingAccount) payload.password = DEFAULT_EMPLOYEE_PASSWORD;
-    const result = await saveUser(payload);
-    setUsers(result.users || []);
-  };
-
-  const setEmployeeAccountActive = async (employee, active) => {
-    if (!isAdmin || !employee?.email || employee.email === authUser?.email) return;
-    const account = accountForEmail(employee.email);
-    const result = await saveUser({
-      email: employee.email.trim().toLowerCase(),
-      role: account?.role || employee.accountRole || "user",
-      active: active ? 1 : 0,
-    });
-    setUsers(result.users || []);
-  };
-
-  const saveEmp = async () => {
-    if (!form.name || !form.baseSalary || !form.email) {
-      setAccountError("Cần nhập họ tên, lương và email đăng nhập cho nhân sự.");
-      return;
-    }
+  const saveEmp = () => {
+    if (!form.name || !form.baseSalary) return;
     const num = (v) => Number(v) || 0;
-    const email = form.email.trim().toLowerCase();
-    const editingEmployee = employees.find((e) => e.id === editingId);
-    const emailChanged = editingEmployee?.email && editingEmployee.email.trim().toLowerCase() !== email;
     const parsed = {
       ...form,
-      email,
-      accountRole: form.accountRole || "user",
       baseSalary: num(form.baseSalary), bonusTarget: num(form.bonusTarget), kpi: num(form.kpi),
       dependents: num(form.dependents), mealAllowance: num(form.mealAllowance) || 730000, attendanceBonus: num(form.attendanceBonus),
       customScore: num(form.customScore),
@@ -9552,53 +7216,22 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
       upsaleValue: num(form.upsaleValue), consecutiveLowKpiMonths: num(form.consecutiveLowKpiMonths),
       resignedDate: form.resignedDate || null,
     };
-    setAccountLoading(true);
-    setAccountError("");
-    setAccountMessage("");
-    try {
-      await syncEmployeeAccount(
-        { ...parsed, status: editingEmployee?.status || "active" },
-        { withDefaultPassword: !editingId || emailChanged || !accountForEmail(email) }
-      );
-    } catch (err) {
-      setAccountLoading(false);
-      setAccountError(err.message || "Không tạo/cập nhật được tài khoản đăng nhập.");
-      return;
-    }
     if (editingId) {
       // Sửa nhân viên có sẵn — giữ nguyên id, trạng thái nghỉ việc, chấm công, thưởng/khấu trừ đã có, chỉ cập nhật các trường trong form.
       setEmployees((prev) => prev.map((e) => (e.id === editingId ? { ...e, ...parsed } : e)));
     } else {
       setEmployees((prev) => [...prev, { ...parsed, id: Date.now(), status: "active", attendance: defaultAttendance(), otherBonus: 0, advance: 0 }]);
     }
-    setAccountLoading(false);
-    setAccountMessage(`Đã lưu nhân sự và đồng bộ tài khoản ${email}. Mật khẩu mặc định cho tài khoản mới là ${DEFAULT_EMPLOYEE_PASSWORD}.`);
     closeForm();
   };
   const [resigningId, setResigningId] = useState(null);
   const [resignDate, setResignDate] = useState(TODAY.toISOString().slice(0, 10));
   const startResign = (id) => { setResigningId(id); setResignDate(TODAY.toISOString().slice(0, 10)); };
-  const confirmResign = async () => {
-    const employee = employees.find((e) => e.id === resigningId);
+  const confirmResign = () => {
     setEmployees((prev) => prev.map((e) => (e.id === resigningId ? { ...e, status: "inactive", resignedDate: resignDate } : e)));
     setResigningId(null);
-    try {
-      await setEmployeeAccountActive(employee, false);
-      if (employee?.email && employee.email !== authUser?.email) setAccountMessage(`Đã khóa tài khoản ${employee.email}.`);
-    } catch (err) {
-      setAccountError(err.message || "Không khóa được tài khoản đăng nhập.");
-    }
   };
-  const reactivate = async (id) => {
-    const employee = employees.find((e) => e.id === id);
-    setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, status: "active", resignedDate: null } : e)));
-    try {
-      await setEmployeeAccountActive({ ...employee, status: "active" }, true);
-      if (employee?.email) setAccountMessage(`Đã mở lại tài khoản ${employee.email}.`);
-    } catch (err) {
-      setAccountError(err.message || "Không mở lại được tài khoản đăng nhập.");
-    }
-  };
+  const reactivate = (id) => setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, status: "active", resignedDate: null } : e)));
   const updateField = (id, field, value) => setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, [field]: Number(value) || 0 } : e)));
   const updateTextField = (id, field, value) => setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, [field]: value } : e)));
 
@@ -9619,37 +7252,12 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
         </div>
       </div>
 
-      {accountMessage && <div className="bg-ledger-green/10 border border-ledger-green/20 rounded-lg px-3 py-2 text-xs text-ledger-green">{accountMessage}</div>}
-      {accountError && <div className="bg-stamp-red/10 border border-stamp-red/20 rounded-lg px-3 py-2 text-xs text-stamp-red">{accountError}</div>}
-
       {showForm && (
-        <div className="fixed inset-0 z-[80] bg-ink/50 backdrop-blur-sm flex items-center justify-center p-3 md:p-5">
-          <div className="bg-white rounded-xl border border-paper-line shadow-2xl w-full max-w-7xl max-h-[94vh] flex flex-col overflow-hidden" onClick={(event) => event.stopPropagation()}>
-            <div className="px-5 md:px-6 py-4 border-b border-paper-line bg-paper/30 flex items-center justify-between gap-4 shrink-0">
-              <div>
-                <h3 className="ktns-serif font-semibold text-ink text-2xl">{editingId ? "Sửa thông tin nhân viên" : "Thêm nhân viên mới"}</h3>
-                <p className="text-xs text-muted mt-1">Thông tin được chia theo từng nhóm; cuộn trong cửa sổ này để nhập đầy đủ hồ sơ.</p>
-              </div>
-              <button className="w-10 h-10 rounded-lg border border-paper-line text-muted hover:text-ink flex items-center justify-center shrink-0" onClick={closeForm}><X size={18} /></button>
-            </div>
-
-            <div className="flex-1 min-h-0 overflow-y-auto ktns-scrollbar p-5 md:p-6">
-          <div className="mb-4 pb-4 border-b border-paper-line">
-            <div className="text-xs font-medium text-ink mb-2 flex items-center gap-1.5"><UserCheck size={13} /> Thông tin đăng nhập</div>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              <label className="text-xs text-muted flex flex-col gap-1 md:col-span-2">Email đăng nhập<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="nhanvien@gmail.com" className="border border-paper-line rounded px-2 py-1.5 text-sm" required /></label>
-              <label className="text-xs text-muted flex flex-col gap-1">Quyền tài khoản
-                <select value={form.accountRole} onChange={(e) => setForm({ ...form, accountRole: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm bg-white">
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
-                </select>
-              </label>
-              <div className="md:col-span-2 xl:col-span-4 text-[11px] text-ink-light bg-paper rounded px-2 py-1.5 flex items-center gap-1.5"><UserCheck size={12} /> Mật khẩu mặc định cho tài khoản mới: <strong className="ktns-mono text-ink">{DEFAULT_EMPLOYEE_PASSWORD}</strong></div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-            <input placeholder="Họ tên" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm md:col-span-2" />
+        <div className="bg-white rounded-lg border border-paper-line p-5 relative">
+          <button className="absolute top-3 right-3 text-muted" onClick={closeForm}><X size={16} /></button>
+          <h3 className="ktns-serif font-semibold text-ink mb-4">{editingId ? "Sửa thông tin nhân viên" : "Nhân viên mới"}</h3>
+          <div className="grid grid-cols-4 gap-3">
+            <input placeholder="Họ tên" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm col-span-2" />
             <input placeholder="Chức vụ" value={form.position} onChange={(e) => setForm({ ...form, position: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" />
             <input placeholder="Phòng ban" value={form.dept} onChange={(e) => setForm({ ...form, dept: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" />
             <label className="text-xs text-muted flex flex-col gap-1">Nhóm vị trí
@@ -9688,18 +7296,18 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
             <label className="text-xs text-muted flex flex-col gap-1">Số người phụ thuộc<input type="number" value={form.dependents} onChange={(e) => setForm({ ...form, dependents: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Phụ cấp ăn trưa (đ)<MoneyInput value={form.mealAllowance} onChange={(v) => setForm({ ...form, mealAllowance: v })} /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Phụ cấp chuyên cần (đ, mất nếu có ngày nghỉ)<MoneyInput value={form.attendanceBonus} onChange={(v) => setForm({ ...form, attendanceBonus: v })} /></label>
-            <div className="md:col-span-2 text-[11px] text-ink-light bg-paper rounded px-2 py-1.5 flex items-center gap-1.5"><CalendarCheck size={12} /> Ngày công chấm ở tab Chấm công sau khi lưu — mặc định làm đủ công.</div>
+            <div className="col-span-2 text-[11px] text-ink-light bg-paper rounded px-2 py-1.5 flex items-center gap-1.5"><CalendarCheck size={12} /> Ngày công chấm ở tab Chấm công sau khi lưu — mặc định làm đủ công.</div>
           </div>
 
           <div className="mt-4 pt-4 border-t border-paper-line">
             <div className="text-xs font-medium text-ink mb-2">Hồ sơ cá nhân — để chuyển lương &amp; liên hệ</div>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-4 gap-3">
               <label className="text-xs text-muted flex flex-col gap-1">Ngày sinh<input type="date" value={form.dob} onChange={(e) => setForm({ ...form, dob: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
               <label className="text-xs text-muted flex flex-col gap-1">Quê quán<input value={form.hometown} onChange={(e) => setForm({ ...form, hometown: e.target.value })} placeholder="VD: Nam Định" className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
               <label className="text-xs text-muted flex flex-col gap-1">Số điện thoại<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="09xxxxxxxx" className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
               <label className="text-xs text-muted flex flex-col gap-1">Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="ten@congty.vn" className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
               <label className="text-xs text-muted flex flex-col gap-1">Ngân hàng<input value={form.bankName} onChange={(e) => setForm({ ...form, bankName: e.target.value })} placeholder="VD: Vietcombank" className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1 md:col-span-2">Số tài khoản<input value={form.bankAccount} onChange={(e) => setForm({ ...form, bankAccount: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
+              <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Số tài khoản<input value={form.bankAccount} onChange={(e) => setForm({ ...form, bankAccount: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
               {editingId && (
                 <label className="text-xs text-muted flex flex-col gap-1">Ngày nghỉ việc (nếu có)<input type="date" value={form.resignedDate} onChange={(e) => setForm({ ...form, resignedDate: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
               )}
@@ -9708,15 +7316,15 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
 
           <div className="mt-4 pt-4 border-t border-paper-line">
             <div className="text-xs font-medium text-ink mb-2">Sơ yếu lý lịch — để dễ kiểm soát hồ sơ</div>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-              <label className="text-xs text-muted flex flex-col gap-1 md:col-span-2">Số CCCD/CMND<input value={form.idNumber} onChange={(e) => setForm({ ...form, idNumber: e.target.value })} placeholder="12 số CCCD" className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
+            <div className="grid grid-cols-4 gap-3">
+              <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Số CCCD/CMND<input value={form.idNumber} onChange={(e) => setForm({ ...form, idNumber: e.target.value })} placeholder="12 số CCCD" className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
               <label className="text-xs text-muted flex flex-col gap-1">Trình độ học vấn
                 <select value={form.education} onChange={(e) => setForm({ ...form, education: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
                   <option>THPT</option><option>Trung cấp</option><option>Cao đẳng</option><option>Đại học</option><option>Sau đại học (Thạc sĩ)</option><option>Tiến sĩ</option>
                 </select>
               </label>
               <label className="text-xs text-muted flex flex-col gap-1">Chuyên ngành<input value={form.major} onChange={(e) => setForm({ ...form, major: e.target.value })} placeholder="VD: Kế toán" className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1 md:col-span-2 xl:col-span-4">Tóm tắt sơ yếu lý lịch / kinh nghiệm
+              <label className="text-xs text-muted flex flex-col gap-1 col-span-4">Tóm tắt sơ yếu lý lịch / kinh nghiệm
                 <textarea value={form.resumeSummary} onChange={(e) => setForm({ ...form, resumeSummary: e.target.value })} placeholder="Trường tốt nghiệp, kinh nghiệm làm việc trước đó, chứng chỉ liên quan..." rows={2} className="border border-paper-line rounded px-2 py-1.5 text-sm resize-none" />
               </label>
               <label className="text-xs text-muted flex flex-col gap-1">Ảnh CCCD mặt trước
@@ -9727,7 +7335,7 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
                 <input type="file" accept="image/*,.pdf" onChange={(e) => handleDocFile(e, "idBackData", "idBackName")} className="border border-paper-line rounded px-2 py-1.5 text-sm bg-white" />
                 {form.idBackName && <span className="text-[11px] text-ledger-green flex items-center gap-1 mt-1"><CheckCircle2 size={11} /> {form.idBackName}</span>}
               </label>
-              <label className="text-xs text-muted flex flex-col gap-1 md:col-span-2">File hồ sơ/sơ yếu lý lịch đính kèm (bản scan/nộp online của ứng viên)
+              <label className="text-xs text-muted flex flex-col gap-1 col-span-2">File hồ sơ/sơ yếu lý lịch đính kèm (bản scan/nộp online của ứng viên)
                 <input type="file" accept="image/*,.pdf" onChange={(e) => handleDocFile(e, "resumeFileData", "resumeFileName")} className="border border-paper-line rounded px-2 py-1.5 text-sm bg-white" />
                 {form.resumeFileName && <span className="text-[11px] text-ledger-green flex items-center gap-1 mt-1"><CheckCircle2 size={11} /> {form.resumeFileName}</span>}
               </label>
@@ -9743,7 +7351,7 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
 
           <div className="mt-4 pt-4 border-t border-paper-line">
             <div className="text-xs font-medium text-ink mb-2">Chỉ số hiệu suất theo vị trí — {ROLE_META[form.roleType].label}</div>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="grid grid-cols-4 gap-3">
               {form.roleType === "ads" && (<>
                 <label className="text-xs text-muted flex flex-col gap-1">Chi phí Ads (đ)<MoneyInput value={form.adSpend} onChange={(v) => setForm({ ...form, adSpend: v })} /></label>
                 <label className="text-xs text-muted flex flex-col gap-1">Doanh thu từ Ads (đ)
@@ -9812,13 +7420,7 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
             </div>
           </div>
 
-            </div>
-
-            <div className="px-5 md:px-6 py-4 border-t border-paper-line bg-paper/30 flex justify-end gap-3 shrink-0">
-              <button onClick={closeForm} disabled={accountLoading} className="border border-paper-line text-ink px-5 py-2.5 rounded-lg text-sm disabled:opacity-50">Hủy</button>
-              <button onClick={saveEmp} disabled={accountLoading} className="bg-ledger-green text-white text-sm px-5 py-2.5 rounded-lg hover:opacity-90 disabled:opacity-60 flex items-center gap-1.5">{accountLoading && <Loader2 size={14} className="animate-spin" />} {accountLoading ? "Đang lưu..." : editingId ? "Cập nhật nhân viên" : "Lưu nhân viên"}</button>
-            </div>
-          </div>
+          <button onClick={saveEmp} className="mt-4 bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">{editingId ? "Cập nhật nhân viên" : "Lưu nhân viên"}</button>
         </div>
       )}
 
@@ -9874,55 +7476,10 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
               <div className="flex items-center justify-between text-[11px] text-muted"><span className="flex items-center gap-1"><CalendarCheck size={11} /> Công tháng {reportMonth}</span><span className="ktns-mono">{monthlyCongFor(e.attendance, reportYear, reportMonth).toFixed(1)}/{standardWorkDaysFor(reportYear, reportMonth)} ngày</span></div>
               <div className="flex items-center justify-between text-[11px] text-muted"><span>Thâm niên</span><span className="ktns-mono">{tenureLabel(months)}</span></div>
 
-              {e.email && (() => {
-                const account = accountForEmail(e.email);
-                return (
-                  <div className="flex flex-col gap-1 text-[11px] border-t border-paper-line pt-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="ktns-mono text-ink truncate">{e.email}</span>
-                      <span className={(account ? (account.active ? "text-ledger-green" : "text-stamp-red") : "text-muted") + " text-[10px] font-medium shrink-0"}>
-                        {account ? (account.active ? "Đang hoạt động" : "Đã khóa") : "Chưa tạo tài khoản"}
-                      </span>
-                    </div>
-                    {isAdmin && (
-                      <div className="flex items-center gap-1.5">
-                        <select
-                          value={account?.role || e.accountRole || "user"}
-                          onChange={async (ev) => {
-                            try {
-                              const result = await saveUser({ email: e.email.trim().toLowerCase(), role: ev.target.value, active: account?.active ?? 1, ...(!account ? { password: DEFAULT_EMPLOYEE_PASSWORD } : {}) });
-                              setUsers(result.users || []);
-                              setAccountMessage(`Đã cập nhật quyền ${ev.target.value} cho ${e.email}.`);
-                            } catch (err) { setAccountError(err.message || "Không cập nhật được quyền tài khoản."); }
-                          }}
-                          className="border border-paper-line rounded px-1.5 py-0.5 text-[11px] text-ink bg-white"
-                        >
-                          <option value="user">User</option>
-                          <option value="admin">Admin</option>
-                        </select>
-                        <button
-                          onClick={async () => {
-                            if (e.email === authUser?.email) { setAccountError("Không thể tự khóa tài khoản đang đăng nhập."); return; }
-                            try {
-                              const active = account ? !account.active : 1;
-                              const result = await saveUser({ email: e.email.trim().toLowerCase(), role: account?.role || e.accountRole || "user", active, ...(!account ? { password: DEFAULT_EMPLOYEE_PASSWORD } : {}) });
-                              setUsers(result.users || []);
-                              setAccountMessage(`${active ? "Đã mở" : "Đã khóa"} tài khoản ${e.email}.`);
-                            } catch (err) { setAccountError(err.message || "Không cập nhật được trạng thái tài khoản."); }
-                          }}
-                          disabled={e.email === authUser?.email}
-                          className="text-[11px] border border-paper-line text-ink px-2 py-0.5 rounded hover:border-gold disabled:opacity-40"
-                        >
-                          {account?.active ? "Khóa" : "Mở"}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-              {(e.phone || e.bankName) && (
+              {(e.phone || e.email || e.bankName) && (
                 <div className="flex flex-col gap-0.5 text-[11px] text-muted border-t border-paper-line pt-1.5">
                   {e.phone && <div className="flex items-center gap-1.5"><Phone size={10} /> <span className="ktns-mono">{e.phone}</span></div>}
+                  {e.email && <div className="flex items-center gap-1.5"><FileText size={10} /> {e.email}</div>}
                   {e.bankName && <div className="flex items-center gap-1.5"><Landmark size={10} /> {e.bankName} · <span className="ktns-mono">{e.bankAccount}</span></div>}
                   {e.hometown && <div className="flex items-center gap-1.5"><MapPin size={10} /> {e.hometown}{e.dob ? ` · sinh ${e.dob.split("-").reverse().join("/")}` : ""}</div>}
                   {e.idNumber && <div className="flex items-center gap-1.5"><CreditCard size={10} /> CCCD <span className="ktns-mono">{e.idNumber}</span></div>}
@@ -9951,25 +7508,10 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
             </div>
           );
         })}
-        {accountsWithoutProfile.map((u) => (
-          <div key={`acc-${u.email}`} className="bg-paper/60 rounded-lg border border-dashed border-paper-line p-4 flex flex-col gap-2.5">
-            <div className="flex justify-between items-start">
-              <div>
-                <div className="font-semibold text-ink-light italic text-sm">Chưa có hồ sơ nhân sự</div>
-                <div className="text-xs text-muted ktns-mono truncate">{u.email}</div>
-              </div>
-              <span className={(u.active ? "text-ledger-green" : "text-stamp-red") + " text-[10px] font-medium"}>{u.active ? "Đang hoạt động" : "Đã khóa"}</span>
-            </div>
-            <div className="text-[11px] text-muted">Tài khoản đăng nhập (quyền: {u.role}) chưa gắn với nhân sự nào — bổ sung hồ sơ để tính lương, chấm công, hiệu suất.</div>
-            <div className="mt-auto">
-              <button onClick={() => startAddForAccount(u)} className="text-xs text-ink font-medium inline-flex items-center gap-1 hover:text-ink-light"><Plus size={11} /> Bổ sung hồ sơ</button>
-            </div>
-          </div>
-        ))}
       </div>
 
       {resigningId && (
-        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50" onClick={() => setResigningId(null)}>
           <div className="bg-white rounded-lg p-5 w-80 shadow-xl" onClick={(ev) => ev.stopPropagation()}>
             <h3 className="ktns-serif font-semibold text-ink mb-1">Xác nhận nghỉ việc</h3>
             <p className="text-xs text-muted mb-3">Dữ liệu các tháng trước ngày này vẫn giữ nguyên. Từ tháng sau ngày nghỉ, người này tự ẩn khỏi Chấm công/Bảng lương/CRM/Hiệu suất.</p>
@@ -10199,9 +7741,6 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
   const [expanded, setExpanded] = useState({});
   const toggleExpand = (id) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
   const updateAdjustment = (id, field, value) => setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, [field]: Number(value) || 0 } : e)));
-  // Drawer chi tiết MỘT nhân sự (mục XI) — overlay rộng thay cho việc kéo ngang bảng.
-  const [detailRowId, setDetailRowId] = useState(null);
-  const detailRow = payrollRows.find((r) => r.id === detailRowId) || null;
 
   const periodKey = `${reportYear}-${reportMonth}`;
   const paymentOf = (employeeId) => payrollPayments.find((p) => p.employeeId === employeeId && p.year === reportYear && p.month === reportMonth);
@@ -10414,10 +7953,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                       );
                     })()}
                   </td>
-                  <td className="px-4 py-2.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                    <button onClick={() => setDetailRowId(r.id)} className="text-[10px] border border-paper-line text-ink px-2 py-1 rounded hover:border-gold mr-1.5" title="Mở bảng chi tiết đầy đủ — không phải kéo ngang">Xem chi tiết</button>
-                    <button onClick={() => toggleExpand(r.id)} className="text-muted align-middle">{expanded[r.id] ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</button>
-                  </td>
+                  <td className="px-4 py-2.5 text-muted">{expanded[r.id] ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</td>
                 </tr>
                 {expanded[r.id] && (
                   <tr className="border-t border-paper-line bg-paper/40">
@@ -10555,7 +8091,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
       <p className="text-xs text-muted">* Mốc doanh số/doanh thu, hệ số lương và hoa hồng lấy đúng theo bảng "Quy định KPI" — chỉnh các hằng số SALE_* và ADS_TIERS trong code nếu công ty đổi chính sách. Thuế TNCN lũy tiến, mức đóng BHXH-BHYT-BHTN có thể thay đổi theo quy định hiện hành — không thay thế tư vấn thuế chính thức.</p>
 
       {bossConfirmTarget && (
-        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-6">
+        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-6" onClick={() => setBossConfirmTarget(null)}>
           <div className="bg-white rounded-lg p-5 w-full max-w-sm shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="ktns-serif font-semibold text-ink mb-1 flex items-center gap-1.5"><UserCheck size={15} /> Sếp xác nhận chi trả</h3>
             <p className="text-xs text-muted mb-3">Xác nhận chi trả lương <strong className="text-charcoal">{fmtVND(bossConfirmTarget.net)}</strong> cho <strong className="text-charcoal">{bossConfirmTarget.name}</strong> — kỳ {reportMonth}/{reportYear}. Kế toán đã duyệt số liệu, cần đúng mật khẩu giám đốc để xác nhận bước cuối.</p>
@@ -10569,91 +8105,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
         </div>
       )}
 
-      {/* ---------- DRAWER CHI TIẾT LƯƠNG MỘT NHÂN SỰ (mục XI, CA 10) ---------- */}
-      {detailRow && (() => {
-        const r = detailRow;
-        const paid = paymentOf(r.id);
-        const approval = approvalOf(r.id);
-        const Row = ({ label, value, strong, red }) => (
-          <div className="flex items-center justify-between gap-4 py-1 border-b border-paper-line/60 last:border-b-0">
-            <span className="text-xs text-muted">{label}</span>
-            <span className={`ktns-mono text-sm ${strong ? "font-semibold text-ink" : red ? "text-stamp-red" : "text-charcoal"}`}>{value}</span>
-          </div>
-        );
-        return (
-          <div className="fixed inset-0 bg-ink/50 flex items-center justify-center z-[80] p-4" onClick={() => setDetailRowId(null)}>
-            <div className="bg-white rounded-xl shadow-2xl flex flex-col overflow-hidden" style={{ width: "90vw", maxWidth: 1400, maxHeight: "90vh" }} onClick={(e) => e.stopPropagation()}>
-              {/* Header cố định */}
-              <div className="shrink-0 px-6 py-4 border-b border-paper-line flex items-center justify-between bg-white">
-                <div>
-                  <h3 className="ktns-serif font-bold text-ink text-lg">{r.name} — chi tiết lương kỳ {reportMonth}/{reportYear}</h3>
-                  <p className="text-xs text-muted mt-0.5">{r.contractLabel} · {ROLE_META[r.roleType]?.label} · {r.dependents || 0} người phụ thuộc · thâm niên {tenureLabel(r.months)}</p>
-                </div>
-                <button onClick={() => setDetailRowId(null)} className="text-muted hover:text-ink w-8 h-8 flex items-center justify-center rounded-md hover:bg-paper"><X size={18} /></button>
-              </div>
-              {/* Thân cuộn độc lập */}
-              <div className="overflow-y-auto px-6 py-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
-                <div className="bg-paper/50 rounded-lg border border-paper-line p-4">
-                  <div className="text-[11px] font-semibold text-ink uppercase mb-2">A. Thông tin nhân sự</div>
-                  <Row label="Họ tên" value={r.name} strong />
-                  <Row label="Chức vụ" value={r.position || ROLE_META[r.roleType]?.label} />
-                  <Row label="Hợp đồng" value={r.contractLabel} />
-                  <Row label="Ngày công" value={`${(r.actualDays ?? 0).toFixed ? r.actualDays.toFixed(1) : r.actualDays}/${r.standardDays ?? "—"}`} />
-                  <Row label="Lương cơ bản niêm yết" value={fmtVND(r.baseSalary)} />
-                </div>
-                <div className="bg-paper/50 rounded-lg border border-paper-line p-4">
-                  <div className="text-[11px] font-semibold text-ink uppercase mb-2">B. Cấu thành thu nhập</div>
-                  {r.usesRevenueModel
-                    ? <Row label="Lương theo doanh số" value={fmtVND(r.mainSalary || 0)} />
-                    : <Row label={`Lương theo ngày công (${fmtVND(r.daySalary || 0)}/ngày)`} value={fmtVND(r.salaryByDays || 0)} />}
-                  {(r.commissionAmount ?? 0) > 0 && <Row label="Hoa hồng" value={fmtVND(r.commissionAmount)} />}
-                  {(r.kpiBonus ?? 0) > 0 && <Row label="Thưởng KPI" value={fmtVND(r.kpiBonus)} />}
-                  {(r.kpiMilestoneBonus ?? 0) > 0 && <Row label={`Thưởng KPI mốc doanh số (${r.kpiMilestonePct}%)`} value={fmtVND(r.kpiMilestoneBonus)} />}
-                  {(r.upsaleBonus ?? 0) > 0 && <Row label="Hoa hồng upsale" value={fmtVND(r.upsaleBonus)} />}
-                  {(r.otherBonus ?? 0) > 0 && <Row label="Thưởng khác" value={fmtVND(r.otherBonus)} />}
-                  <Row label="Phụ cấp ăn trưa" value={fmtVND(r.mealAllowance || 0)} />
-                  <Row label={`Chuyên cần${r.hasAbsence ? " (mất do có ngày nghỉ)" : ""}`} value={r.hasAbsence ? "0đ" : fmtVND(r.attendanceBonus || 0)} />
-                  <Row label="TỔNG THU NHẬP" value={fmtVND(r.grossIncome)} strong />
-                </div>
-                <div className="bg-paper/50 rounded-lg border border-paper-line p-4">
-                  <div className="text-[11px] font-semibold text-ink uppercase mb-2">C. Khấu trừ</div>
-                  <Row label="BHXH-BHYT-BHTN (NV đóng)" value={`-${fmtVND(r.employeeInsurance)}`} red />
-                  <Row label="Giảm trừ gia cảnh" value={`-${fmtVND(r.personalDeduction)}`} />
-                  <Row label="Thuế TNCN" value={`-${fmtVND(r.thueTNCN)}`} red />
-                  {(r.advance ?? 0) > 0 && <Row label="Tạm ứng đã nhận" value={`-${fmtVND(r.advance)}`} red />}
-                  <Row label="THỰC LÃNH" value={fmtVND(r.net)} strong />
-                  <div className="mt-2 pt-2 border-t border-paper-line">
-                    <Row label="BH doanh nghiệp đóng" value={fmtVND(r.employerInsurance)} />
-                    <Row label="Tổng chi phí doanh nghiệp" value={fmtVND(r.employerTotalCost)} />
-                  </div>
-                </div>
-                <div className="bg-paper/50 rounded-lg border border-paper-line p-4">
-                  <div className="text-[11px] font-semibold text-ink uppercase mb-2">D. Thanh toán &amp; duyệt</div>
-                  <Row label="Kế toán duyệt" value={approval ? (approval.accountantApprovedAt || "Đã duyệt") : "Chưa duyệt"} />
-                  <Row label="Giám đốc duyệt" value={approval?.status === "da_duyet_cho_thanh_toan" ? (approval.bossApprovedAt || "Đã xác nhận") : "Chưa xác nhận"} />
-                  <Row label="Đã chi trả" value={paid ? "Rồi" : "Chưa"} strong={!!paid} />
-                  {paid && <Row label="Ngày chi trả" value={paid.paidAt || "—"} />}
-                  {paid && <Row label="Giao dịch Thu Chi liên kết" value={`#${String(paid.linkedTxId || "").slice(-8)}`} />}
-                </div>
-              </div>
-              {/* Footer cố định — thao tác duyệt */}
-              <div className="shrink-0 px-6 py-3.5 border-t border-paper-line bg-paper/60 flex items-center justify-between gap-3">
-                <span className="text-xs text-muted">Thực lãnh kỳ này: <strong className="ktns-mono text-ink text-sm">{fmtVND(r.net)}</strong></span>
-                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                  {paid ? <StampBadge text="ĐÃ CHI TRẢ" gold />
-                    : approval?.status === "da_duyet_cho_thanh_toan" ? <button onClick={() => { togglePaid(r); }} className="text-xs bg-ledger-green text-white px-3 py-2 rounded-md flex items-center gap-1"><CheckCircle2 size={12} /> Đã duyệt đủ — Chi trả ngay</button>
-                    : approval?.status === "cho_sep_xac_nhan" ? <button onClick={() => openBossConfirm(r)} className="text-xs border border-gold text-gold px-3 py-2 rounded-md flex items-center gap-1"><UserCheck size={12} /> Chờ sếp xác nhận</button>
-                    : <button onClick={() => accountantApprove(r)} className="text-xs border border-paper-line text-ink px-3 py-2 rounded-md flex items-center gap-1"><CheckCircle2 size={12} /> Kế toán duyệt</button>}
-                  <button onClick={() => setDetailRowId(null)} className="text-xs border border-paper-line text-muted px-3 py-2 rounded-md">Đóng</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
       {midMonthBossTarget && (
-        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-6">
+        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-6" onClick={() => setMidMonthBossTarget(null)}>
           <div className="bg-white rounded-lg p-5 w-full max-w-sm shadow-xl" onClick={(e) => e.stopPropagation()}>
             <h3 className="ktns-serif font-semibold text-ink mb-1 flex items-center gap-1.5"><UserCheck size={15} /> Sếp xác nhận chi trả giữa tháng</h3>
             <p className="text-xs text-muted mb-3">Xác nhận chi trả <strong className="text-charcoal">{fmtVND(midMonthBossTarget.amount)}</strong> cho <strong className="text-charcoal">{employees.find((e) => e.id === midMonthBossTarget.employeeId)?.name || "—"}</strong> — {midMonthBossTarget.reason}.</p>
@@ -11876,659 +9329,4 @@ Nếu người dùng yêu cầu đưa các điều khoản trên vào hợp đ�
       <p className="text-[11px] text-muted">* Văn bản do AI soạn chỉ mang tính tham khảo, không thay thế tư vấn của luật sư — nên rà soát kỹ trước khi ký kết chính thức, đặc biệt với hợp đồng lao động và hợp đồng giá trị lớn.</p>
     </div>
   );
-}
-
-// ---------- Đăng nhập & phiên làm việc (backend SQLite) ----------
-// ---------- Menu người dùng (avatar góc trên phải) ----------
-function UserMenu({ authUser, onLogout, onOpenSettings }) {
-  const [open, setOpen] = useState(false);
-  const menuRef = useRef(null);
-  const initial = (authUser?.email || "?").trim().charAt(0).toUpperCase();
-
-  // Bấm ra ngoài là tự đóng menu.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  return (
-    <div ref={menuRef} className="relative">
-      <button
-        onClick={() => setOpen((v) => !v)}
-        title={authUser?.email}
-        className={`flex items-center gap-1.5 rounded-full pl-1 pr-2 py-1 border transition-colors ${open ? "border-gold bg-gold/10" : "border-paper-line bg-white hover:border-gold"}`}
-      >
-        <span className="w-7 h-7 rounded-full bg-ink text-white text-xs font-bold flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg, var(--ink), var(--ink-light))" }}>{initial}</span>
-        <ChevronDown size={13} className={`text-muted transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-paper-line rounded-lg shadow-xl overflow-hidden z-50">
-          <div className="px-4 py-3 bg-paper/60 border-b border-paper-line flex items-center gap-3">
-            <span className="w-9 h-9 rounded-full text-white text-sm font-bold flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg, var(--ink), var(--ink-light))" }}>{initial}</span>
-            <div className="min-w-0">
-              <div className="text-xs font-semibold text-ink truncate">{authUser?.email}</div>
-              <span className={`inline-block mt-0.5 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded ${authUser?.role === "admin" ? "bg-gold/15 text-gold" : "bg-ink/5 text-ink-light"}`}>
-                {authUser?.role === "admin" ? "Admin" : "User"}
-              </span>
-            </div>
-          </div>
-          <button
-            onClick={() => { setOpen(false); onOpenSettings(); }}
-            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-ink hover:bg-paper text-left"
-          >
-            <Settings size={15} className="text-muted" /> Cài đặt tài khoản
-          </button>
-          <div className="h-px bg-paper-line" />
-          <button
-            onClick={() => { setOpen(false); onLogout(); }}
-            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-stamp-red hover:bg-stamp-red/5 text-left"
-          >
-            <LogOut size={15} /> Đăng xuất
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------- Chọn kỳ báo cáo (tháng/năm) — dropdown lịch thay cho <select> dài ----------
-function MonthPicker({ year, month, onChange, title }) {
-  const [open, setOpen] = useState(false);
-  const [panelYear, setPanelYear] = useState(year);
-  const ref = useRef(null);
-  const years = [...new Set(MONTH_OPTIONS.map((o) => o.year))].sort((a, b) => a - b);
-  const minYear = years[0];
-  const maxYear = years[years.length - 1];
-  const isCurrent = year === ATT_YEAR && month === ATT_MONTH;
-
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [open]);
-
-  const openPanel = () => { setPanelYear(year); setOpen((v) => !v); };
-  const pick = (m) => { onChange(panelYear, m); setOpen(false); };
-
-  return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={openPanel}
-        title={title}
-        className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs border bg-white transition-colors ${open ? "border-gold" : "border-paper-line hover:border-gold"}`}
-      >
-        <Calendar size={13} className="text-gold" />
-        <span className="ktns-mono text-ink font-medium">Tháng {month}/{year}</span>
-        {isCurrent && <span className="w-1.5 h-1.5 rounded-full bg-ledger-green" title="Đang ở tháng hiện tại" />}
-        <ChevronDown size={13} className={`text-muted transition-transform ${open ? "rotate-180" : ""}`} />
-      </button>
-
-      {open && (
-        <div className="absolute right-0 top-full mt-2 w-60 bg-white border border-paper-line rounded-lg shadow-xl z-50 p-3">
-          <div className="flex items-center justify-between mb-2">
-            <button
-              onClick={() => setPanelYear((y) => Math.max(minYear, y - 1))}
-              disabled={panelYear <= minYear}
-              className="w-7 h-7 rounded-md border border-paper-line flex items-center justify-center text-muted hover:border-gold hover:text-ink disabled:opacity-30"
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <span className="ktns-serif text-sm font-bold text-ink">{panelYear}</span>
-            <button
-              onClick={() => setPanelYear((y) => Math.min(maxYear, y + 1))}
-              disabled={panelYear >= maxYear}
-              className="w-7 h-7 rounded-md border border-paper-line flex items-center justify-center text-muted hover:border-gold hover:text-ink disabled:opacity-30"
-            >
-              <ChevronRight size={14} />
-            </button>
-          </div>
-          <div className="grid grid-cols-3 gap-1.5">
-            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => {
-              const selected = panelYear === year && m === month;
-              const isNow = panelYear === ATT_YEAR && m === ATT_MONTH;
-              return (
-                <button
-                  key={m}
-                  onClick={() => pick(m)}
-                  className={`ktns-mono text-xs rounded-md py-2 transition-colors border ${
-                    selected
-                      ? "bg-ink text-white border-ink font-semibold"
-                      : isNow
-                      ? "border-gold text-gold bg-gold/10 hover:bg-gold/20"
-                      : "border-transparent text-ink hover:bg-paper hover:border-paper-line"
-                  }`}
-                >
-                  T{m}
-                </button>
-              );
-            })}
-          </div>
-          {!isCurrent && (
-            <button
-              onClick={() => { onChange(ATT_YEAR, ATT_MONTH); setOpen(false); }}
-              className="mt-2 w-full text-[11px] text-ink-light hover:text-ink border-t border-paper-line pt-2 text-center"
-            >
-              ↩ Về tháng hiện tại ({ATT_MONTH}/{ATT_YEAR})
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------- Ô mật khẩu có nút mắt hiện/ẩn ----------
-function PasswordField({ label, value, onChange, placeholder, autoComplete }) {
-  const [show, setShow] = useState(false);
-  return (
-    <label className="text-xs text-muted flex flex-col gap-1.5">
-      {label}
-      <div className="relative">
-        <input
-          type={show ? "text" : "password"}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          autoComplete={autoComplete || "new-password"}
-          className="border border-paper-line rounded-md pl-3 pr-11 py-2.5 text-sm w-full text-ink bg-white focus:outline-none"
-          style={{ transition: "border-color 140ms ease" }}
-          onFocus={(e) => (e.target.style.borderColor = "var(--gold)")}
-          onBlur={(e) => (e.target.style.borderColor = "")}
-        />
-        <button
-          type="button"
-          onClick={() => setShow((v) => !v)}
-          tabIndex={-1}
-          aria-label={show ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-          title={show ? "Ẩn mật khẩu" : "Hiện mật khẩu"}
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 w-8 h-8 rounded-md flex items-center justify-center text-muted hover:text-ink hover:bg-paper border-0 bg-transparent cursor-pointer"
-        >
-          {show ? <EyeOff size={16} /> : <Eye size={16} />}
-        </button>
-      </div>
-    </label>
-  );
-}
-
-// ---------- Cài đặt tài khoản — đổi mật khẩu ----------
-function CaiDatTaiKhoan({ authUser }) {
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
-  const initial = (authUser?.email || "?").trim().charAt(0).toUpperCase();
-
-  const submit = async (e) => {
-    e.preventDefault();
-    setError("");
-    setMessage("");
-    if (!currentPassword || !newPassword || !confirmPassword) {
-      setError("Cần nhập đủ mật khẩu hiện tại, mật khẩu mới và xác nhận mật khẩu.");
-      return;
-    }
-    if (newPassword.length < 6) {
-      setError("Mật khẩu mới cần tối thiểu 6 ký tự.");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      setError("Xác nhận mật khẩu không khớp với mật khẩu mới.");
-      return;
-    }
-    if (newPassword === currentPassword) {
-      setError("Mật khẩu mới phải khác mật khẩu hiện tại.");
-      return;
-    }
-    setLoading(true);
-    try {
-      await changePassword(currentPassword, newPassword);
-      setMessage("Đã đổi mật khẩu thành công. Dùng mật khẩu mới cho lần đăng nhập sau.");
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-    } catch (err) {
-      setError(err.message || "Không đổi được mật khẩu.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="max-w-lg flex flex-col gap-4">
-      <div className="bg-white rounded-lg border border-paper-line p-5 flex items-center gap-4">
-        <span className="w-12 h-12 rounded-full text-white text-lg font-bold flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg, var(--ink), var(--ink-light))" }}>{initial}</span>
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-ink truncate">{authUser?.email}</div>
-          <span className={`inline-block mt-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded ${authUser?.role === "admin" ? "bg-gold/15 text-gold" : "bg-ink/5 text-ink-light"}`}>
-            {authUser?.role === "admin" ? "Admin — toàn quyền hệ thống" : "User — quyền nhân viên"}
-          </span>
-        </div>
-      </div>
-
-      <form onSubmit={submit} className="bg-white rounded-lg border border-paper-line p-5 flex flex-col gap-4">
-        <div>
-          <h3 className="ktns-serif font-semibold text-ink flex items-center gap-2"><KeyRound size={16} className="text-gold" /> Đổi mật khẩu</h3>
-          <p className="text-xs text-muted mt-1">Mật khẩu được mã hóa một chiều (PBKDF2) — không ai xem lại được mật khẩu cũ, kể cả admin.</p>
-        </div>
-        <PasswordField label="Mật khẩu hiện tại" value={currentPassword} onChange={setCurrentPassword} placeholder="Nhập mật khẩu đang dùng" autoComplete="current-password" />
-        <PasswordField label="Mật khẩu mới" value={newPassword} onChange={setNewPassword} placeholder="Tối thiểu 6 ký tự" />
-        <PasswordField label="Xác nhận mật khẩu mới" value={confirmPassword} onChange={setConfirmPassword} placeholder="Nhập lại mật khẩu mới" />
-        {error && <div className="text-xs text-stamp-red bg-stamp-red/10 border border-stamp-red/20 rounded-md px-3 py-2">{error}</div>}
-        {message && <div className="text-xs text-ledger-green bg-ledger-green/10 border border-ledger-green/20 rounded-md px-3 py-2">{message}</div>}
-        <button type="submit" disabled={loading} className="bg-ink text-white text-sm font-semibold px-4 py-2.5 rounded-md hover:bg-ink-light disabled:opacity-60 flex items-center justify-center gap-2">
-          {loading && <Loader2 size={14} className="animate-spin" />}
-          {loading ? "Đang đổi mật khẩu..." : "Đổi mật khẩu"}
-        </button>
-      </form>
-    </div>
-  );
-}
-
-function LoginScreen({ onLogin, onRegistered }) {
-  const [mode, setMode] = useState("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const [registerStep, setRegisterStep] = useState("details");
-  const [registerEmail, setRegisterEmail] = useState("");
-  const [registerPassword, setRegisterPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [otp, setOtp] = useState("");
-  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [registerLoading, setRegisterLoading] = useState(false);
-  const [registerMessage, setRegisterMessage] = useState("");
-  const [resendSeconds, setResendSeconds] = useState(0);
-
-  useEffect(() => {
-    if (resendSeconds <= 0) return undefined;
-    const timer = window.setInterval(() => {
-      setResendSeconds((value) => Math.max(value - 1, 0));
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [resendSeconds]);
-
-  const switchMode = (nextMode) => {
-    setMode(nextMode);
-    setError("");
-    setRegisterMessage("");
-  };
-
-  const submitLogin = async (event) => {
-    event.preventDefault();
-    setError("");
-    setLoading(true);
-    try {
-      await onLogin(email.trim(), password);
-    } catch (err) {
-      setError(err.message || "Không đăng nhập được");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const sendOtp = async (event) => {
-    event?.preventDefault?.();
-    setError("");
-    setRegisterMessage("");
-    if (!registerEmail.trim()) {
-      setError("Vui lòng nhập email đăng ký");
-      return;
-    }
-    if (registerPassword.length < 8) {
-      setError("Mật khẩu phải có ít nhất 8 ký tự");
-      return;
-    }
-    if (registerPassword !== confirmPassword) {
-      setError("Mật khẩu xác nhận không khớp");
-      return;
-    }
-    setRegisterLoading(true);
-    try {
-      const result = await requestRegistrationOtp(
-        registerEmail.trim(),
-        registerPassword,
-        confirmPassword
-      );
-      setRegisterStep("otp");
-      setOtp("");
-      setResendSeconds(Number(result.resendAfter) || 60);
-      setRegisterMessage(`Mã OTP đã được gửi tới ${registerEmail.trim()}.`);
-    } catch (err) {
-      setError(err.message || "Không gửi được mã OTP");
-    } finally {
-      setRegisterLoading(false);
-    }
-  };
-
-  const verifyOtp = async (event) => {
-    event.preventDefault();
-    setError("");
-    setRegisterMessage("");
-    if (!/^\d{6}$/.test(otp)) {
-      setError("Vui lòng nhập đủ mã OTP gồm 6 chữ số");
-      return;
-    }
-    setRegisterLoading(true);
-    try {
-      const user = await verifyRegistrationOtp(registerEmail.trim(), otp);
-      onRegistered(user);
-    } catch (err) {
-      setError(err.message || "Không xác thực được mã OTP");
-    } finally {
-      setRegisterLoading(false);
-    }
-  };
-
-  const PasswordToggle = ({ visible, onToggle, label }) => (
-    <button
-      type="button"
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onToggle}
-      aria-pressed={visible}
-      aria-label={visible ? `Ẩn ${label}` : `Hiện ${label}`}
-      title={visible ? `Ẩn ${label}` : `Hiện ${label}`}
-      className="domix-login-eye absolute right-1.5 top-1/2 w-10 h-10 rounded-lg flex items-center justify-center"
-    >
-      {visible ? <EyeOff size={18} /> : <Eye size={18} />}
-    </button>
-  );
-
-  return (
-    <div className="ktns-app domix-login-shell">
-      <GlobalStyle />
-
-      <div className="domix-login-backdrop" aria-hidden="true">
-        <div className="domix-login-backdrop-layer" />
-        <div className="domix-login-backdrop-layer" />
-        <div className="domix-login-backdrop-layer" />
-      </div>
-      <div className="domix-login-noise" aria-hidden="true" />
-
-      <header className="domix-login-topbar relative z-10 px-5 sm:px-8">
-        <div className="max-w-[1280px] mx-auto h-[72px] flex items-center justify-between gap-6">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="domix-login-logo-mark w-10 h-10 rounded-lg flex items-center justify-center font-bold ktns-serif text-lg shrink-0">D</div>
-            <div className="min-w-0">
-              <div className="ktns-serif font-bold text-white text-lg leading-tight tracking-wide">DOMIX</div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-white/[0.45] truncate">Business operation system</div>
-            </div>
-          </div>
-          <div className="hidden sm:flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-white/[0.55] px-3 py-2 rounded-full border border-white/10 bg-white/5">
-            <ShieldCheck size={13} className="text-[#E7C66C]" /> Nội bộ an toàn
-          </div>
-        </div>
-      </header>
-
-      <main className="domix-login-stage relative z-[2]">
-        <section className="domix-login-showcase">
-          <div className="domix-login-eyebrow text-[10px] uppercase font-semibold">Một nền tảng · Toàn bộ vận hành</div>
-          <h1 className="domix-login-heading ktns-serif text-[clamp(34px,4.7vw,67px)] font-bold leading-[1.02] mt-4 max-w-3xl">
-            Điều hành doanh nghiệp<br />trên một không gian duy nhất.
-          </h1>
-          <p className="text-sm text-white/[0.62] leading-relaxed mt-5 max-w-xl">
-            Kế toán, nhân sự, bán hàng, công việc và báo cáo được kết nối thành một luồng vận hành rõ ràng.
-          </p>
-
-          <div className="domix-login-hero-panel" aria-hidden="true">
-            <div className="domix-login-hero-content">
-              <div className="domix-login-hero-badge"><Sparkles size={12} /> Scenic workspace</div>
-              <div className="domix-login-hero-title ktns-serif">Minh Bạch, rõ ràng, giàu sang thịnh vượng.</div>
-              <div className="domix-login-hero-copy">Một không gian làm việc đồng bộ cho số liệu, nhân sự và tiến độ hằng ngày.</div>
-            </div>
-            <div className="domix-login-hero-chips">
-              <div className="domix-login-hero-chip"><strong>Kế toán</strong><span>Thu chi · Báo cáo</span></div>
-              <div className="domix-login-hero-chip"><strong>Nhân sự</strong><span>Hồ sơ · Chấm công</span></div>
-              <div className="domix-login-hero-chip"><strong>Bán hàng</strong><span>CRM · Giao việc</span></div>
-            </div>
-            <div className="domix-login-hero-bar">
-              <div className="domix-login-hero-metric">
-                <label>System flow</label>
-                <strong>All in one</strong>
-              </div>
-              <div className="domix-login-hero-line"><span /></div>
-            </div>
-          </div>
-        </section>
-
-        <form
-          onSubmit={mode === "login" ? submitLogin : (registerStep === "otp" ? verifyOtp : sendOtp)}
-          className="domix-login-card rounded-[22px] p-6 sm:p-8 lg:p-9 flex flex-col gap-5"
-        >
-          <div className="domix-login-panel flex flex-col gap-5">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="domix-login-kicker inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] mb-3">
-                  <Sparkles size={12} /> Secure workspace
-                </div>
-                <h2 className="domix-login-title ktns-serif text-3xl font-bold leading-tight">
-                  {mode === "login" ? "Chào mừng bạn" : (registerStep === "otp" ? "Xác thực email" : "Tạo tài khoản")}
-                </h2>
-                <p className="domix-login-subtitle text-sm mt-2 leading-relaxed">
-                  {mode === "login"
-                    ? "Truy cập nhanh vào không gian làm việc nội bộ của bạn."
-                    : (registerStep === "otp"
-                      ? "Nhập mã OTP đã gửi về email để hoàn tất đăng ký."
-                      : "Tài khoản mới được tạo với quyền User sau khi xác thực OTP.")}
-                </p>
-              </div>
-              <div className="domix-login-icon w-11 h-11 rounded-xl flex items-center justify-center shrink-0">
-                {mode === "login" ? <Building2 size={21} /> : <UserPlus size={21} />}
-              </div>
-            </div>
-
-            <div className="domix-auth-switch">
-              <button type="button" className={mode === "login" ? "active" : ""} onClick={() => switchMode("login")}>Đăng nhập</button>
-              <button type="button" className={mode === "register" ? "active" : ""} onClick={() => switchMode("register")}>Đăng ký</button>
-            </div>
-
-            <div className="domix-login-divider h-px" />
-
-            {mode === "login" ? (
-              <>
-                <label className="domix-login-label text-xs flex flex-col gap-2">
-                  Gmail / Email công ty
-                  <input
-                    id="domix-login-email"
-                    name="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="domix-login-input rounded-lg px-4 py-3 text-sm"
-                    autoComplete="email"
-                    placeholder="ten@gmail.com"
-                    required
-                  />
-                </label>
-
-                <label className="domix-login-label text-xs flex flex-col gap-2">
-                  Mật khẩu
-                  <div className="relative">
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="domix-login-input rounded-lg pl-4 pr-12 py-3 text-sm"
-                      autoComplete="current-password"
-                      placeholder="Nhập mật khẩu"
-                      required
-                    />
-                    <PasswordToggle visible={showPassword} onToggle={() => setShowPassword((value) => !value)} label="mật khẩu" />
-                  </div>
-                </label>
-              </>
-            ) : registerStep === "details" ? (
-              <>
-                <label className="domix-login-label text-xs flex flex-col gap-2">
-                  Email đăng ký
-                  <input
-                    type="email"
-                    value={registerEmail}
-                    onChange={(e) => setRegisterEmail(e.target.value)}
-                    className="domix-login-input rounded-lg px-4 py-3 text-sm"
-                    autoComplete="email"
-                    placeholder="ten@gmail.com"
-                    required
-                  />
-                </label>
-
-                <label className="domix-login-label text-xs flex flex-col gap-2">
-                  Mật khẩu
-                  <div className="relative">
-                    <input
-                      type={showRegisterPassword ? "text" : "password"}
-                      value={registerPassword}
-                      onChange={(e) => setRegisterPassword(e.target.value)}
-                      className="domix-login-input rounded-lg pl-4 pr-12 py-3 text-sm"
-                      autoComplete="new-password"
-                      placeholder="Tối thiểu 8 ký tự"
-                      required
-                    />
-                    <PasswordToggle visible={showRegisterPassword} onToggle={() => setShowRegisterPassword((value) => !value)} label="mật khẩu" />
-                  </div>
-                </label>
-
-                <label className="domix-login-label text-xs flex flex-col gap-2">
-                  Xác nhận mật khẩu
-                  <div className="relative">
-                    <input
-                      type={showConfirmPassword ? "text" : "password"}
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      className="domix-login-input rounded-lg pl-4 pr-12 py-3 text-sm"
-                      autoComplete="new-password"
-                      placeholder="Nhập lại mật khẩu"
-                      required
-                    />
-                    <PasswordToggle visible={showConfirmPassword} onToggle={() => setShowConfirmPassword((value) => !value)} label="mật khẩu xác nhận" />
-                  </div>
-                </label>
-              </>
-            ) : (
-              <>
-                <div className="domix-register-note rounded-lg px-3 py-3 text-xs leading-relaxed">
-                  Mã xác thực đã gửi tới <strong className="text-white">{registerEmail}</strong>. Mã có hiệu lực trong 10 phút.
-                </div>
-                <label className="domix-login-label text-xs flex flex-col gap-2">
-                  Mã OTP
-                  <input
-                    type="text"
-                    value={otp}
-                    onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                    className="domix-login-input domix-otp-input rounded-lg px-4 py-3"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    placeholder="000000"
-                    maxLength={6}
-                    autoFocus
-                    required
-                  />
-                </label>
-                <div className="flex items-center justify-between gap-3 text-xs">
-                  <button
-                    type="button"
-                    className="domix-auth-link inline-flex items-center gap-1"
-                    onClick={() => { setRegisterStep("details"); setOtp(""); setError(""); setRegisterMessage(""); }}
-                  >
-                    <ChevronLeft size={13} /> Sửa email
-                  </button>
-                  <button
-                    type="button"
-                    className="domix-auth-link"
-                    disabled={registerLoading || resendSeconds > 0}
-                    onClick={sendOtp}
-                  >
-                    {resendSeconds > 0 ? `Gửi lại sau ${resendSeconds}s` : "Gửi lại OTP"}
-                  </button>
-                </div>
-              </>
-            )}
-
-            {error && <div className="text-xs text-red-200 bg-red-500/10 border border-red-300/20 rounded-lg px-3 py-2.5">{error}</div>}
-            {registerMessage && mode === "register" && <div className="text-xs text-emerald-100 bg-emerald-500/10 border border-emerald-300/20 rounded-lg px-3 py-2.5">{registerMessage}</div>}
-
-            <button
-              type="submit"
-              disabled={mode === "login" ? loading : registerLoading}
-              className="domix-login-button rounded-lg text-sm font-bold px-4 py-3.5 flex items-center justify-center gap-2"
-            >
-              {(mode === "login" ? loading : registerLoading) && <Loader2 size={15} className="animate-spin" />}
-              <span>
-                {mode === "login"
-                  ? (loading ? "Đang xác thực..." : "Đăng nhập hệ thống")
-                  : (registerLoading
-                    ? "Đang xử lý..."
-                    : (registerStep === "otp" ? "Xác thực và tạo tài khoản" : "Gửi mã OTP"))}
-              </span>
-            </button>
-
-            <div className="domix-login-security rounded-lg px-3 py-3 flex items-start gap-3">
-              <ShieldCheck size={16} className="text-[#E7C66C] shrink-0 mt-0.5" />
-              <div className="domix-login-muted text-[11px] leading-relaxed">
-                {mode === "login"
-                  ? "Phiên đăng nhập được bảo vệ bằng token và tự hết hạn sau 12 giờ."
-                  : "Mật khẩu được mã hóa một chiều. Tài khoản chỉ được tạo sau khi OTP email hợp lệ."}
-              </div>
-            </div>
-          </div>
-        </form>
-      </main>
-    </div>
-  );
-}
-
-export default function App() {
-  const [authUser, setAuthUser] = useState(null);
-  const [authLoading, setAuthLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    getCurrentUser()
-      .then((result) => {
-        if (!cancelled) setAuthUser(result.user);
-      })
-      .catch(() => {
-        if (!cancelled) setAuthUser(null);
-      })
-      .finally(() => {
-        if (!cancelled) setAuthLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, []);
-
-  const handleLogin = async (email, password) => {
-    const user = await login(email, password);
-    setAuthUser(user);
-  };
-
-  const handleRegistered = (user) => {
-    setAuthUser(user);
-  };
-
-  const handleLogout = async () => {
-    await logout();
-    setAuthUser(null);
-  };
-
-  if (authLoading) {
-    return (
-      <div className="ktns-app min-h-screen flex items-center justify-center bg-paper text-sm text-muted">
-        Đang kiểm tra phiên đăng nhập...
-      </div>
-    );
-  }
-
-  if (!authUser) {
-    return <LoginScreen onLogin={handleLogin} onRegistered={handleRegistered} />;
-  }
-
-  return <DomixApp authUser={authUser} onLogout={handleLogout} />;
 }

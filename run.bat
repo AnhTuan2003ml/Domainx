@@ -1,15 +1,24 @@
 @echo off
 setlocal
 
-cd /d "%~dp0"
-
 set "HOST=0.0.0.0"
 set "PORT=8000"
+set "APP_DIR=%~dp0"
 
 echo.
 echo ================================
 echo   DOMIX - start frontend/backend
 echo ================================
+echo.
+
+echo [1/5] Chuyen den thu muc chua run.bat...
+cd /d "%APP_DIR%"
+if errorlevel 1 (
+  echo [ERROR] Khong cd duoc vao thu muc: "%APP_DIR%"
+  pause
+  exit /b 1
+)
+echo Thu muc hien tai: %CD%
 echo.
 
 where python >nul 2>nul
@@ -28,7 +37,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo [1/4] Cai Python dependencies...
+echo [2/5] Cai Python dependencies...
 python -m pip install -r requirements.txt
 if errorlevel 1 (
   echo [ERROR] pip install -r requirements.txt that bai.
@@ -37,7 +46,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/4] Kiem tra/cai frontend dependencies...
+echo [3/5] Kiem tra/cai frontend dependencies...
 if not exist "node_modules" (
   call npm.cmd install
   if errorlevel 1 (
@@ -50,7 +59,7 @@ if not exist "node_modules" (
 )
 
 echo.
-echo [3/4] Build frontend React/Vite vao thu muc dist...
+echo [4/5] Build frontend React/Vite vao thu muc dist...
 call npm.cmd run build
 if errorlevel 1 (
   echo [ERROR] Build frontend that bai.
@@ -59,7 +68,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [4/4] Chay Python backend va serve luon frontend da build...
+echo [5/5] Chay Python backend va serve luon frontend da build...
 echo.
 echo Mo tren may nay:      http://127.0.0.1:%PORT%
 echo Mo tu may khac LAN:   http://IP_MAY_CHU:%PORT%

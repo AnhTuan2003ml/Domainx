@@ -9,7 +9,48 @@ from urllib.parse import parse_qs, unquote, urlparse
 from config import DEFAULT_DB_PATH, DIST_DIR
 from db.schema import init_db
 from db.state_store import read_state, write_state
-from services import auth_service, chat_service, user_service
+from services import auth_service, chat_service, employee_service, registration_service, user_service
+
+
+def _task_visible_to_user(task, employee_emails, user):
+    if not isinstance(task, dict):
+        return False
+    if task.get("visibility") != "private":
+        return True
+    employee_email = employee_emails.get(str(task.get("employeeId")), "")
+    return employee_email == (user.get("email") or "").strip().lower()
+
+
+def filter_state_for_user(db_path, state, user):
+    if not state or user.get("role") == "admin":
+        return state
+    data = state.get("data")
+    if not isinstance(data, dict):
+        return state
+    filtered_data = dict(data)
+    tasks = data.get("tasks")
+    if isinstance(tasks, list):
+        employee_emails = employee_service.employee_emails_by_id(db_path)
+        filtered_data["tasks"] = [
+            task for task in tasks
+            if _task_visible_to_user(task, employee_emails, user)
+        ]
+    filtered_state = dict(state)
+    filtered_state["data"] = filtered_data
+    return filtered_state
+
+
+def preserve_restricted_state_fields(db_path, incoming_data, user):
+    if user.get("role") == "admin" or not isinstance(incoming_data, dict):
+        return incoming_data
+    existing = read_state(db_path)
+    existing_data = existing.get("data") if existing else None
+    if not isinstance(existing_data, dict):
+        return incoming_data
+    merged = dict(incoming_data)
+    if "tasks" in existing_data:
+        merged["tasks"] = existing_data["tasks"]
+    return merged
 
 
 class DomixHandler(BaseHTTPRequestHandler):
@@ -71,10 +112,17 @@ class DomixHandler(BaseHTTPRequestHandler):
                 return self.send_json(chat_service.group_messages(self.db_path, user, group_id))
             except ValueError as exc:
                 return self.send_json({"error": str(exc)}, 400)
+        if route == "/api/employees":
+            user = self.require_user()
+            if not user:
+                return
+            return self.send_json({"employees": employee_service.list_employees(self.db_path)})
         if route == "/api/data":
-            if not self.require_user():
+            user = self.require_user()
+            if not user:
                 return
             state = read_state(self.db_path)
+            state = filter_state_for_user(self.db_path, state, user)
             return self.send_json(state or {"data": None, "updatedAt": None})
         if route.startswith("/api/"):
             return self.send_error(404, "Not found")
@@ -94,6 +142,36 @@ class DomixHandler(BaseHTTPRequestHandler):
             )
             if not result:
                 return self.send_json({"error": "Sai tài khoản hoặc mật khẩu"}, 401)
+            return self.send_json(result)
+        if route == "/api/auth/register/request-otp":
+            data = self.read_json()
+            if data is None:
+                return
+            try:
+                result = registration_service.request_registration_otp(
+                    self.db_path,
+                    data.get("email", ""),
+                    data.get("password", ""),
+                    data.get("confirmPassword", ""),
+                )
+            except ValueError as exc:
+                return self.send_json({"error": str(exc)}, 400)
+            except Exception as exc:
+                print(f"[OTP EMAIL ERROR] {exc}")
+                return self.send_json({"error": "Không gửi được OTP. Vui lòng kiểm tra cấu hình email gửi mã."}, 503)
+            return self.send_json(result)
+        if route == "/api/auth/register/verify":
+            data = self.read_json()
+            if data is None:
+                return
+            try:
+                result = registration_service.verify_registration_otp(
+                    self.db_path,
+                    data.get("email", ""),
+                    data.get("otp", ""),
+                )
+            except ValueError as exc:
+                return self.send_json({"error": str(exc)}, 400)
             return self.send_json(result)
         if route == "/api/auth/logout":
             auth_service.logout(self.db_path, self.bearer_token())
@@ -265,23 +343,37 @@ class DomixHandler(BaseHTTPRequestHandler):
         if data is None:
             return
         email = (data.get("email") or "").strip().lower()
-        if email == user["email"]:
-            return self.send_json({"error": "Không thể xóa tài khoản admin đang đăng nhập"}, 400)
+        deleted_current_user = email == user["email"]
         try:
             user_service.delete_user(self.db_path, email)
         except ValueError as exc:
             return self.send_json({"error": str(exc)}, 400)
-        return self.send_json({"ok": True, "users": user_service.list_users(self.db_path)})
+        return self.send_json({"ok": True, "users": user_service.list_users(self.db_path), "deletedCurrentUser": deleted_current_user})
 
     def do_PUT(self):
-        if self.path != "/api/data":
+        route = urlparse(self.path).path
+        if route == "/api/employees":
+            user = self.require_user({"admin", "user"})
+            if not user:
+                return
+            data = self.read_json()
+            if data is None:
+                return
+            try:
+                employees = employee_service.replace_all(self.db_path, data.get("employees", []))
+            except ValueError as exc:
+                return self.send_json({"error": str(exc)}, 400)
+            return self.send_json({"ok": True, "employees": employees})
+        if route != "/api/data":
             self.send_error(404, "Not found")
             return
-        if not self.require_user({"admin", "user"}):
+        user = self.require_user({"admin", "user"})
+        if not user:
             return
         data = self.read_json()
         if data is None:
             return
+        data = preserve_restricted_state_fields(self.db_path, data, user)
         write_state(self.db_path, data)
         self.send_json({"ok": True})
 

@@ -26,3 +26,9 @@ data/*.sqlite3-*
 *.sw?
 
 __pycache__/
+
+# Local secrets and runtime environment
+.env
+.env.*
+*.zip
+*.exe

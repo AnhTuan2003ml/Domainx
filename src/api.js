@@ -30,6 +30,22 @@ export async function login(email, password) {
   return result.user;
 }
 
+export async function requestRegistrationOtp(email, password, confirmPassword) {
+  return requestJson("/api/auth/register/request-otp", {
+    method: "POST",
+    body: JSON.stringify({ email, password, confirmPassword }),
+  });
+}
+
+export async function verifyRegistrationOtp(email, otp) {
+  const result = await requestJson("/api/auth/register/verify", {
+    method: "POST",
+    body: JSON.stringify({ email, otp }),
+  });
+  localStorage.setItem(TOKEN_KEY, result.token);
+  return result.user;
+}
+
 export async function logout() {
   try {
     await requestJson("/api/auth/logout", { method: "POST" });
@@ -50,6 +66,24 @@ export async function saveAppData(data) {
   return requestJson("/api/data", {
     method: "PUT",
     body: JSON.stringify(data),
+  });
+}
+
+export async function listEmployees() {
+  return requestJson("/api/employees");
+}
+
+export async function saveEmployees(employees) {
+  return requestJson("/api/employees", {
+    method: "PUT",
+    body: JSON.stringify({ employees }),
+  });
+}
+
+export async function deleteEmployee(employeeId) {
+  return requestJson("/api/employees", {
+    method: "DELETE",
+    body: JSON.stringify({ employeeId }),
   });
 }
 

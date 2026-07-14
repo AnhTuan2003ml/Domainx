@@ -1,4 +1,5 @@
 from db.connection import configure_database, connect
+from db.employee_store import create_employees_table
 
 
 def init_db(db_path):
@@ -36,6 +37,22 @@ def init_db(db_path):
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS registration_otps (
+                email TEXT PRIMARY KEY,
+                otp_hash TEXT NOT NULL,
+                pending_password_hash TEXT NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0,
+                expires_at TEXT NOT NULL,
+                last_sent_at TEXT NOT NULL,
+                request_count INTEGER NOT NULL DEFAULT 1,
+                window_started_at TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_registration_otps_expires ON registration_otps(expires_at)")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS chat_messages (
@@ -96,7 +113,9 @@ def init_db(db_path):
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_group_messages ON chat_group_messages(group_id, created_at)")
+        create_employees_table(conn)
         conn.execute("DELETE FROM sessions WHERE expires_at <= datetime('now')")
+        conn.execute("DELETE FROM registration_otps WHERE expires_at <= datetime('now')")
     migrate_users_schema(db_path)
     migrate_chat_schema(db_path)
     remove_non_email_users(db_path)
