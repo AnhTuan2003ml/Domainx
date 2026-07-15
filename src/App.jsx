@@ -81,15 +81,6 @@ import {
   Search,
   Sun,
   Moon,
-  Info,
-  MoreHorizontal,
-  Smile,
-  CheckCheck,
-  UsersRound,
-  Mail,
-  PanelRightOpen,
-  ArrowLeft,
-  SlidersHorizontal,
 } from "lucide-react";
 import {
   BarChart,
@@ -315,6 +306,125 @@ const TRANSLATIONS = {
     preview_label: "ตัวอย่าง — จะแสดงในแถบด้านข้างและในสัญญา",
   },
 };
+
+
+// ---------- Hộp thoại xác nhận dùng chung — thay toàn bộ alert/confirm mặc định của trình duyệt. ----------
+const DOMIX_DIALOG_EVENT = "domix:dialog";
+
+function openDomixDialog(config) {
+  if (typeof window === "undefined") return Promise.resolve(config?.kind === "notice");
+  return new Promise((resolve) => {
+    window.dispatchEvent(new CustomEvent(DOMIX_DIALOG_EVENT, {
+      detail: {
+        kind: config?.kind || "confirm",
+        title: config?.title || (config?.kind === "notice" ? "Thông báo" : "Xác nhận thao tác"),
+        message: String(config?.message || ""),
+        confirmLabel: config?.confirmLabel || (config?.kind === "notice" ? "Đã hiểu" : "Xác nhận"),
+        cancelLabel: config?.cancelLabel || "Hủy",
+        tone: config?.tone || "default",
+        resolve,
+      },
+    }));
+  });
+}
+
+function confirmOverlay(message, options = {}) {
+  return openDomixDialog({ ...options, kind: "confirm", message });
+}
+
+function noticeOverlay(message, options = {}) {
+  return openDomixDialog({ ...options, kind: "notice", message });
+}
+
+function DomixDialogHost() {
+  const [dialog, setDialog] = useState(null);
+  const queueRef = useRef([]);
+  const confirmRef = useRef(null);
+
+  const showNext = useCallback(() => {
+    setDialog((current) => {
+      if (current || queueRef.current.length === 0) return current;
+      return queueRef.current.shift();
+    });
+  }, []);
+
+  useEffect(() => {
+    const onDialog = (event) => {
+      queueRef.current.push(event.detail);
+      setDialog((current) => current || queueRef.current.shift());
+    };
+    window.addEventListener(DOMIX_DIALOG_EVENT, onDialog);
+    return () => window.removeEventListener(DOMIX_DIALOG_EVENT, onDialog);
+  }, []);
+
+  useEffect(() => {
+    if (!dialog) return;
+    const timer = window.setTimeout(() => confirmRef.current?.focus(), 30);
+    return () => window.clearTimeout(timer);
+  }, [dialog]);
+
+  const finish = (accepted) => {
+    if (!dialog) return;
+    const resolver = dialog.resolve;
+    setDialog(null);
+    resolver(Boolean(accepted));
+    window.setTimeout(showNext, 0);
+  };
+
+  if (!dialog) return null;
+  const destructive = dialog.tone === "danger";
+
+  return (
+    <div className="ktns-app fixed inset-0 z-[10000] flex items-center justify-center p-4" role="presentation">
+      <div className="absolute inset-0 bg-[#07101f]/20" aria-hidden="true" />
+      <section
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="domix-dialog-title"
+        aria-describedby="domix-dialog-message"
+        className="relative w-full max-w-[430px] overflow-hidden rounded-[20px] border border-paper-line bg-white shadow-[0_24px_70px_rgba(7,16,31,0.24)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="px-6 pt-6 pb-5">
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div>
+              <div className={`mb-2 h-1 w-12 rounded-full ${destructive ? "bg-stamp-red" : "bg-gold"}`} />
+              <h2 id="domix-dialog-title" className="ktns-serif text-[21px] font-bold leading-tight text-ink">{dialog.title}</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => finish(false)}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-paper-line bg-paper text-muted hover:border-ink/20 hover:bg-white hover:text-ink"
+              aria-label="Đóng hộp thoại"
+            >
+              <X size={17} />
+            </button>
+          </div>
+          <p id="domix-dialog-message" className="whitespace-pre-line text-sm leading-6 text-muted">{dialog.message}</p>
+        </div>
+        <div className="flex items-center justify-end gap-3 border-t border-paper-line bg-paper/70 px-6 py-4">
+          {dialog.kind !== "notice" && (
+            <button
+              type="button"
+              onClick={() => finish(false)}
+              className="rounded-xl border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-muted hover:border-ink/20 hover:text-ink"
+            >
+              {dialog.cancelLabel}
+            </button>
+          )}
+          <button
+            ref={confirmRef}
+            type="button"
+            onClick={() => finish(true)}
+            className={`rounded-xl px-5 py-2.5 text-sm font-bold text-white shadow-sm ${destructive ? "bg-stamp-red hover:brightness-95" : "bg-ink hover:bg-ink-light"}`}
+          >
+            {dialog.confirmLabel}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
 
 // ---------- Style tokens ----------
 const GlobalStyle = () => (
@@ -1042,6 +1152,122 @@ const GlobalStyle = () => (
     .ktns-app.dark ::-webkit-scrollbar-thumb:hover { background: #6B7280; }
     .ktns-app.dark ::-webkit-scrollbar-track { background: #12151C; }
     .ktns-app.dark .stamp-ring { mix-blend-mode: normal; }
+
+    /* Chat giao việc: chế độ tối riêng, dịu mắt và giữ độ tương phản của từng lớp nội dung. */
+    .ktns-app.dark .domix-task-chat {
+      background: #101620 !important;
+      border-color: #2B3546 !important;
+      box-shadow: 0 24px 70px rgba(0,0,0,.34) !important;
+    }
+    .ktns-app.dark .domix-chat-list {
+      background: rgba(20, 27, 39, .96) !important;
+      border-color: #2B3546 !important;
+    }
+    .ktns-app.dark .domix-chat-main {
+      background:
+        radial-gradient(circle at 78% 12%, rgba(77, 101, 151, .16), transparent 30%),
+        linear-gradient(145deg, #111823 0%, #0F151F 58%, #141923 100%) !important;
+    }
+    .ktns-app.dark .domix-chat-header,
+    .ktns-app.dark .domix-chat-composer {
+      background: rgba(18, 25, 36, .90) !important;
+      border-color: #2B3546 !important;
+      backdrop-filter: blur(18px);
+    }
+    .ktns-app.dark .domix-chat-primary { color: #F3F5FA !important; }
+    .ktns-app.dark .domix-chat-secondary { color: #AEB9CD !important; }
+    .ktns-app.dark .domix-chat-muted { color: #8793A7 !important; }
+    .ktns-app.dark .domix-chat-search {
+      background: #111824 !important;
+      border-color: #303B4E !important;
+      color: #EEF2F8 !important;
+    }
+    .ktns-app.dark .domix-chat-unread-total,
+    .ktns-app.dark .domix-chat-role-chip,
+    .ktns-app.dark .domix-chat-day-chip {
+      background: #1B2534 !important;
+      border-color: #344157 !important;
+      color: #BFC9D9 !important;
+    }
+    .ktns-app.dark .domix-chat-empty {
+      background: rgba(24, 33, 47, .86) !important;
+      border-color: #303C50 !important;
+      color: #9EABBE !important;
+      box-shadow: 0 18px 44px rgba(0,0,0,.20) !important;
+    }
+    .ktns-app.dark .domix-chat-empty [class*="text-[#"] { color: #DDE5F1 !important; }
+    .ktns-app.dark .domix-chat-tabs { background: #0E141E !important; }
+    .ktns-app.dark .domix-chat-tabs button { color: #8995AA !important; }
+    .ktns-app.dark .domix-chat-tabs button.bg-white {
+      background: #202A3A !important;
+      color: #F4F6FA !important;
+      box-shadow: 0 8px 20px rgba(0,0,0,.20) !important;
+    }
+    .ktns-app.dark .domix-chat-conversation { border-color: transparent !important; }
+    .ktns-app.dark .domix-chat-conversation:hover {
+      background: #182130 !important;
+      border-color: #303C50 !important;
+    }
+    .ktns-app.dark .domix-chat-conversation.is-active {
+      background: linear-gradient(135deg, rgba(52, 75, 118, .72), rgba(32, 45, 67, .92)) !important;
+      border-color: #5A73A3 !important;
+      box-shadow: 0 12px 30px rgba(0,0,0,.24) !important;
+    }
+    .ktns-app.dark .domix-chat-messages { color: #E9EDF5; }
+    .ktns-app.dark .domix-chat-messages > div > div > span,
+    .ktns-app.dark .domix-chat-meta { color: #7F8A9E !important; }
+    .ktns-app.dark .domix-chat-bubble-in {
+      background: #202A39 !important;
+      border-color: #344258 !important;
+      color: #EAF0F8 !important;
+      box-shadow: 0 10px 26px rgba(0,0,0,.20) !important;
+    }
+    .ktns-app.dark .domix-chat-bubble-out {
+      background: linear-gradient(135deg, #304B7B, #263C66) !important;
+      color: #FFFFFF !important;
+      box-shadow: 0 12px 30px rgba(15, 31, 60, .35) !important;
+    }
+    .ktns-app.dark .domix-chat-task-card {
+      background: #192230 !important;
+      border-color: #344156 !important;
+      box-shadow: 0 18px 45px rgba(0,0,0,.28) !important;
+    }
+    .ktns-app.dark .domix-chat-task-card > div { border-color: #303B4E !important; }
+    .ktns-app.dark .domix-chat-task-card [class*="text-[#263854]"],
+    .ktns-app.dark .domix-chat-task-card [class*="text-[#34445e]"] { color: #EDF2FA !important; }
+    .ktns-app.dark .domix-chat-task-card [class*="text-[#8d857a]"],
+    .ktns-app.dark .domix-chat-task-card [class*="text-[#9a9389]"] { color: #8D99AD !important; }
+    .ktns-app.dark .domix-chat-task-card [class*="bg-[#f3f6fb]"] {
+      background: #131B27 !important;
+      color: #BAC4D5 !important;
+    }
+    .ktns-app.dark .domix-chat-composer-box {
+      background: #151D29 !important;
+      border-color: #344157 !important;
+      box-shadow: 0 16px 38px rgba(0,0,0,.25) !important;
+    }
+    .ktns-app.dark .domix-chat-input {
+      background: transparent !important;
+      color: #EDF2F8 !important;
+      border: 0 !important;
+      box-shadow: none !important;
+    }
+    .ktns-app.dark .domix-chat-input::placeholder { color: #778397 !important; }
+    .ktns-app.dark .domix-chat-task-plus {
+      background: linear-gradient(145deg, #385783, #293F68) !important;
+      color: #FFFFFF !important;
+      box-shadow: 0 10px 24px rgba(0,0,0,.24) !important;
+    }
+    .ktns-app.dark .domix-chat-task-plus:hover { transform: translateY(-1px) scale(1.03); }
+    .ktns-app.dark .domix-chat-modal {
+      background: #151C27 !important;
+      border-color: #344157 !important;
+      color: #EAF0F8 !important;
+    }
+    .ktns-app.dark .domix-chat-modal > div { border-color: #303B4E !important; }
+    .ktns-app.dark .domix-chat-modal label { color: #DCE4F1 !important; }
+    .ktns-app.dark .domix-chat-modal [class*="bg-white"] { background: #1B2432 !important; }
+    .ktns-app.dark .domix-chat-modal [class*="text-[#"] { color: #DDE5F1 !important; }
 
     /* Hiệu ứng cực quang + sao nhấp nháy cho Dark Mode — nhẹ nhàng, không cản trở đọc nội dung,
        chỉ để mắt dễ chịu khi làm việc lâu buổi tối. Đặt cố định phía sau toàn bộ nội dung. */
@@ -2273,7 +2499,6 @@ function DomixApp({ authUser, onLogout }) {
   const [debts, setDebts] = useState(initialDebts);
   const [inventory, setInventory] = useState(initialInventory);
   const [tasks, setTasks] = useState(initialTasks);
-  const [taskViewRequest, setTaskViewRequest] = useState(null);
   const [chatUnread, setChatUnread] = useState(0);
   const [lang, setLang] = useState("vi");
   const [company, setCompany] = useState(DEFAULT_COMPANY);
@@ -2959,16 +3184,9 @@ function DomixApp({ authUser, onLogout }) {
           {tab === "hoptac" && <HopTacPhanPhoi partners={distributionPartners} setPartners={setDistributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} setTransactions={setTransactions} transactions={transactions} company={company} inventory={inventory} setInventory={setInventory} reportYear={reportYear} reportMonth={reportMonth} orders={orders} employees={activeEmployees} authUser={authUser} allEmployees={employees} debts={debts} setDebts={setDebts} settlements={distributionSettlements} setSettlements={setDistributionSettlements} moveStock={moveStock} payDebt={payDebt} />}
           {tab === "kho" && <KhoHang inventory={inventory} setInventory={setInventory} orders={orders} distOrders={distributionOrders} distPartners={distributionPartners} moveStock={moveStock} stockMovements={stockMovements} authUser={authUser} />}
           {tab === "taisan" && <TaiSanCoDinh assets={fixedAssets} setAssets={setFixedAssets} setTransactions={setTransactions} reportYear={reportYear} reportMonth={reportMonth} />}
-          {tab === "giaoviec" && <GiaoViec authUser={authUser} tasks={tasks} setTasks={setTasks} employees={activeEmployees} orders={orders} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} openRequest={taskViewRequest} />}
+          {tab === "giaoviec" && <GiaoViec authUser={authUser} tasks={tasks} setTasks={setTasks} employees={activeEmployees} orders={orders} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} />}
           {tab === "hotro" && <HoTroKhachHang cases={supportCases} setCases={setSupportCases} employees={activeEmployees} orders={orders} setOrders={setOrders} />}
-          {tab === "chat" && <ChatPage authUser={authUser} onUnreadChange={setChatUnread} onOpenTasks={(task = null) => {
-            setTaskViewRequest(task ? {
-              date: task.date || "",
-              description: task.description || "",
-              requestedAt: Date.now(),
-            } : { date: "", description: "", requestedAt: Date.now() });
-            setTab("giaoviec");
-          }} />}
+          {tab === "chat" && <ChatPage authUser={authUser} onUnreadChange={setChatUnread} employees={employees} setTasks={setTasks} />}
           {tab === "crm" && <DoanhThuCRM orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} revenueByEmployee={revenueByEmployee} setTransactions={setTransactions} transactions={transactions} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} authUser={authUser} debts={debts} setDebts={setDebts} />}
           {tab === "marketing" && <MarketingDaily logs={marketingLogs} setLogs={setMarketingLogs} employees={activeEmployees} marketingByEmployee={marketingByEmployee} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setPages={setMarketingPages} orders={orders} inventory={inventory} />}
           {tab === "nhansu" && <NhanSu authUser={authUser} employees={employees} setEmployees={setEmployees} showForm={showEmpForm} setShowForm={setShowEmpForm} reportYear={reportYear} reportMonth={reportMonth} prefillEmployee={prefillEmployee} setPrefillEmployee={setPrefillEmployee} />}
@@ -4007,7 +4225,7 @@ function VonGop({ contributions, setContributions, company, setCompany, totalCon
 
       {showForm && (
         <div className="bg-white rounded-lg border border-paper-line p-5 relative">
-          <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={() => { if ((form.contributorName || form.value) && !window.confirm("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?")) return; setShowForm(false); }}><X size={16} /></button>
+          <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={async () => { if ((form.contributorName || form.value) && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setShowForm(false); }}><X size={16} /></button>
           <h3 className="ktns-serif font-semibold text-ink mb-4">Ghi nhận góp vốn</h3>
           <div className="grid grid-cols-4 gap-3">
             <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Người/tổ chức góp vốn<input value={form.contributorName} onChange={(e) => setForm({ ...form, contributorName: e.target.value })} placeholder="Tên thành viên/cổ đông" className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
@@ -4269,11 +4487,11 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
     setOrderForm({ date: TODAY_STR, productId: "", productName: "", quantity: "1", partnerId: partners[0]?.id || "", revenue: "", vatRate: 8, issuedKeyCode: "", endCustomerName: "", note: "" });
     setShowOrderForm(false);
   };
-  const removeDistOrder = (id) => {
+  const removeDistOrder = async (id) => {
     const o = distOrders.find((x) => x.id === id);
     // Đơn đã thuộc hồ sơ quyết toán: không được xóa âm thầm — phải hủy hồ sơ trước (mục VIII/X).
     if (o?.settlementId) {
-      window.alert("Đơn này đã thuộc hồ sơ quyết toán. Hủy hồ sơ quyết toán trước rồi mới xóa được đơn.");
+      await noticeOverlay("Đơn này đã thuộc hồ sơ quyết toán. Hủy hồ sơ quyết toán trước rồi mới xóa được đơn.", { title: "Không thể xóa đơn" });
       return;
     }
     if (o?.linkedTxId) setTransactions((prev) => prev.filter((t) => t.id !== o.linkedTxId));
@@ -4505,10 +4723,10 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
   };
 
   // HỦY hồ sơ: chỉ khi chưa có đồng nào được thanh toán — nhả các đơn về "chờ quyết toán".
-  const cancelSettlementAction = (s) => {
+  const cancelSettlementAction = async (s) => {
     if (!mayApproveSettlement) return;
-    if ((s.paidAmount || 0) > 0) { window.alert("Hồ sơ đã có thanh toán — xóa các lần thanh toán ở tab Công nợ trước rồi mới hủy được."); return; }
-    if (!window.confirm(`Hủy hồ sơ ${s.settlementCode}? Các đơn trong hồ sơ sẽ trở về trạng thái chờ quyết toán.`)) return;
+    if ((s.paidAmount || 0) > 0) { await noticeOverlay("Hồ sơ đã có thanh toán — xóa các lần thanh toán ở tab Công nợ trước rồi mới hủy được.", { title: "Không thể hủy hồ sơ" }); return; }
+    if (!(await confirmOverlay(`Hủy hồ sơ ${s.settlementCode}? Các đơn trong hồ sơ sẽ trở về trạng thái chờ quyết toán.`, { title: "Hủy hồ sơ quyết toán", confirmLabel: "Hủy hồ sơ", tone: "danger" }))) return;
     setSettlements((prev) => prev.map((x) => (x.id === s.id ? { ...x, status: "cancelled" } : x)));
     const ids = new Set(s.orderIds);
     setDistOrders((prev) => prev.map((o) => (ids.has(o.id) ? { ...o, settlementId: null, settlementStatus: "awaiting_settlement" } : o)));
@@ -5244,9 +5462,9 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
         const label = p?.partnerRole === "nhuong_quyen" ? "phí nhượng quyền" : "hoa hồng";
         // Đóng khung có kiểm tra — đã nhập số hoá đơn/đính kèm ảnh mà đóng ngang thì phải hỏi lại,
         // tránh mất công nhập giống lỗi đã sửa bên CRM.
-        const closeInvoiceModal = () => {
+        const closeInvoiceModal = async () => {
           const hasUnsavedInput = invoiceDraft.invoiceNo || invoiceDraft.attachmentData;
-          if (hasUnsavedInput && !window.confirm("Bạn đã nhập thông tin hoá đơn nhưng chưa bấm Lưu — đóng lại sẽ MẤT hết thông tin vừa nhập. Vẫn muốn đóng?")) return;
+          if (hasUnsavedInput && !(await confirmOverlay("Bạn đã nhập thông tin hoá đơn nhưng chưa bấm Lưu — đóng lại sẽ MẤT hết thông tin vừa nhập. Vẫn muốn đóng?", { title: "Thông tin hóa đơn chưa lưu", confirmLabel: "Đóng form", tone: "danger" }))) return;
           setActiveInvoiceOrderId(null);
         };
         return (
@@ -5400,7 +5618,7 @@ function HopDong({ contracts, setContracts, partners, employees }) {
           </div>
           <div className="flex gap-2 mt-3">
             <button onClick={addContract} className="bg-ledger-green text-white text-sm px-3 py-1.5 rounded-md">Lưu</button>
-            <button onClick={() => { if ((form.name || form.partyName) && !window.confirm("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?")) return; setShowForm(false); }} className="border border-paper-line text-sm px-3 py-1.5 rounded-md text-muted">Huỷ</button>
+            <button onClick={async () => { if ((form.name || form.partyName) && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setShowForm(false); }} className="border border-paper-line text-sm px-3 py-1.5 rounded-md text-muted">Huỷ</button>
           </div>
         </div>
       )}
@@ -5509,18 +5727,18 @@ function CongNo({ debts, setDebts, setTransactions, transactions, distributionOr
     if (r?.error) { setPayErr(r.error); return; }
     setPayingDebt(null);
   };
-  const deletePayment = (d, paymentId) => {
-    if (!window.confirm("Xóa lần thanh toán này? Giao dịch Thu Chi liên kết sẽ bị xóa và công nợ trở lại đúng số còn nợ.")) return;
+  const deletePayment = async (d, paymentId) => {
+    if (!(await confirmOverlay("Xóa lần thanh toán này? Giao dịch Thu Chi liên kết sẽ bị xóa và công nợ trở lại đúng số còn nợ.", { title: "Xóa lần thanh toán", confirmLabel: "Xóa thanh toán", tone: "danger" }))) return;
     const r = unpayDebt(d.id, paymentId);
-    if (r?.error) window.alert(r.error);
+    if (r?.error) await noticeOverlay(r.error, { title: "Không thể xóa thanh toán" });
   };
-  const removeDebt = (id) => {
+  const removeDebt = async (id) => {
     const d = debts.find((x) => x.id === id);
     if (d && (d.paidAmount || 0) > 0) {
-      window.alert("Khoản nợ này đã có thanh toán — xóa từng lần thanh toán trước (để đảo giao dịch Thu Chi), rồi mới xóa được khoản nợ.");
+      await noticeOverlay("Khoản nợ này đã có thanh toán — xóa từng lần thanh toán trước (để đảo giao dịch Thu Chi), rồi mới xóa được khoản nợ.", { title: "Không thể xóa công nợ" });
       return;
     }
-    if (!window.confirm("Xóa khoản công nợ này?")) return;
+    if (!(await confirmOverlay("Xóa khoản công nợ này?", { title: "Xóa khoản công nợ", confirmLabel: "Xóa công nợ", tone: "danger" }))) return;
     setDebts((prev) => prev.filter((x) => x.id !== id));
   };
 
@@ -5616,7 +5834,7 @@ function CongNo({ debts, setDebts, setTransactions, transactions, distributionOr
 
       {showForm && (
         <div className="bg-white rounded-lg border border-paper-line p-5 relative">
-          <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={() => { if ((form.partner || form.amount) && !window.confirm("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?")) return; setShowForm(false); }}><X size={16} /></button>
+          <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={async () => { if ((form.partner || form.amount) && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setShowForm(false); }}><X size={16} /></button>
           <h3 className="ktns-serif font-semibold text-ink mb-4">Khoản công nợ mới</h3>
           <div className="grid grid-cols-4 gap-3">
             <label className="text-xs text-muted flex flex-col gap-1">Loại
@@ -5866,7 +6084,7 @@ function TaiSanCoDinh({ assets, setAssets, setTransactions, reportYear, reportMo
           )}
           <div className="flex gap-2 mt-3">
             <button onClick={addAsset} className="bg-ledger-green text-white text-sm px-3 py-1.5 rounded-md">Lưu</button>
-            <button onClick={() => { if ((form.name || form.cost) && !window.confirm("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?")) return; setShowForm(false); }} className="border border-paper-line text-sm px-3 py-1.5 rounded-md text-muted">Huỷ</button>
+            <button onClick={async () => { if ((form.name || form.cost) && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setShowForm(false); }} className="border border-paper-line text-sm px-3 py-1.5 rounded-md text-muted">Huỷ</button>
           </div>
         </div>
       )}
@@ -6029,7 +6247,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
 
       {showForm && (
         <div className="bg-white rounded-lg border border-paper-line p-5 relative">
-          <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={() => { if (form.name && !window.confirm("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?")) return; setShowForm(false); }}><X size={16} /></button>
+          <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={async () => { if (form.name && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setShowForm(false); }}><X size={16} /></button>
           <h3 className="ktns-serif font-semibold text-ink mb-4">{form.groupName ? `Gói mới cho "${form.groupName}"` : "Sản phẩm mới"}</h3>
           <div className="grid grid-cols-4 gap-3">
             <label className="text-xs text-muted flex flex-col gap-1">Mã SKU<input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="SP-006" className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
@@ -6380,7 +6598,7 @@ function exportTasksExcel(tasks, employees, orders, marketingLogs) {
 
 // ---------- Hỗ trợ khách hàng — tránh nhiều người cùng hỗ trợ 1 khách, biết ai đang bận ----------
 // ---------- Tin nhắn công ty — đồng bộ SQLite backend, có chat cá nhân và nhóm ----------
-function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
+function ChatPage({ authUser, onUnreadChange, employees = [], setTasks }) {
   const isAdmin = authUser?.role === "admin";
   const [mode, setMode] = useState("direct");
   const [contacts, setContacts] = useState([]);
@@ -6389,112 +6607,41 @@ function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
   const [selectedGroupId, setSelectedGroupId] = useState("");
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [showInfo, setShowInfo] = useState(true);
-  const [showConversationMenu, setShowConversationMenu] = useState(false);
-  const [mobilePane, setMobilePane] = useState("list");
   const [showGroupForm, setShowGroupForm] = useState(false);
-  const [groupMemberSearch, setGroupMemberSearch] = useState("");
   const [groupForm, setGroupForm] = useState({ id: null, name: "", memberEmails: [] });
+  const [showTaskForm, setShowTaskForm] = useState(false);
+  const [taskForm, setTaskForm] = useState({
+    date: GIAOVIEC_TODAY,
+    employeeId: "",
+    targetType: "khac",
+    targetValue: "",
+    description: "",
+    visibility: "private",
+  });
   const scrollRef = useRef(null);
-  const composerRef = useRef(null);
-  const searchRef = useRef(null);
 
-  const displayName = useCallback((email = "") => {
-    const local = String(email).split("@")[0] || "Người dùng";
-    return local
-      .replace(/[._-]+/g, " ")
-      .replace(/\b\w/g, (char) => char.toUpperCase());
-  }, []);
-
-  const initialsOf = useCallback((value = "") => {
-    const words = displayName(value).split(/\s+/).filter(Boolean);
-    return (words.length > 1 ? `${words[0][0]}${words[words.length - 1][0]}` : words[0]?.slice(0, 2) || "U").toUpperCase();
-  }, [displayName]);
-
-  const avatarColor = useCallback((value = "") => {
-    const palette = ["#77A7F4", "#75C4A3", "#E1B96F", "#A995F5", "#E59B86", "#6FBAC6"];
-    const score = String(value).split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
-    return palette[score % palette.length];
-  }, []);
-
-  const roleLabel = useCallback((role) => role === "admin" ? "Quản trị viên" : "Nhân viên", []);
-
-  const formatListTime = useCallback((value) => {
-    if (!value) return "";
-    const date = new Date(String(value).replace(" ", "T") + (String(value).includes("Z") ? "" : "Z"));
-    if (Number.isNaN(date.getTime())) return "";
-    const now = new Date();
-    if (date.toDateString() === now.toDateString()) return date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
-    const yesterday = new Date(now); yesterday.setDate(now.getDate() - 1);
-    if (date.toDateString() === yesterday.toDateString()) return "Hôm qua";
-    return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
-  }, []);
-
-  const formatMessageTime = useCallback((value) => {
-    if (!value) return "";
-    const date = new Date(String(value).replace(" ", "T") + (String(value).includes("Z") ? "" : "Z"));
-    if (Number.isNaN(date.getTime())) return "";
-    return date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
-  }, []);
-
-  const parseTaskMessage = useCallback((body = "") => {
-    if (!String(body).startsWith("Bạn được giao việc mới.")) return null;
-    const fields = {};
-    String(body).split("\n").slice(1).forEach((line) => {
-      const index = line.indexOf(":");
-      if (index > -1) fields[line.slice(0, index).trim()] = line.slice(index + 1).trim();
-    });
-    return {
-      date: fields["Ngày"] || "—",
-      visibility: fields["Chế độ"] || "Riêng tư",
-      type: fields["Loại"] || "Công việc",
-      target: fields["Chỉ tiêu"] || "",
-      description: fields["Nội dung"] || "Bạn có một công việc mới cần xử lý.",
-    };
-  }, []);
-
-  const directContacts = useMemo(() => (
-    isAdmin ? contacts : contacts.filter((contact) => contact.lastMessage || Number(contact.unreadCount) > 0)
-  ), [contacts, isAdmin]);
-
-  const normalizedSearch = searchTerm.trim().toLowerCase();
-  const visibleContacts = useMemo(() => directContacts.filter((contact) => {
-    if (!normalizedSearch) return true;
-    return [contact.email, contact.role, contact.lastMessage, displayName(contact.email)]
-      .some((value) => String(value || "").toLowerCase().includes(normalizedSearch));
-  }), [directContacts, normalizedSearch, displayName]);
-  const visibleGroups = useMemo(() => groups.filter((group) => {
-    if (!normalizedSearch) return true;
-    return [group.name, group.lastMessage, ...(group.members || []).map((member) => member.email)]
-      .some((value) => String(value || "").toLowerCase().includes(normalizedSearch));
-  }), [groups, normalizedSearch]);
-
+  const directContacts = isAdmin
+    ? contacts
+    : contacts.filter((contact) => contact.lastMessage || Number(contact.unreadCount) > 0);
   const selectedContact = directContacts.find((contact) => contact.email === selectedEmail);
   const selectedGroup = groups.find((group) => String(group.id) === String(selectedGroupId));
   const groupMembers = selectedGroup?.members || [];
-  const selectedTitle = mode === "group" ? (selectedGroup?.name || "Chọn nhóm") : (selectedContact ? displayName(selectedContact.email) : "Chọn người nhận");
-  const selectedSubtitle = mode === "group"
-    ? `${groupMembers.length} thành viên`
-    : selectedContact ? roleLabel(selectedContact.role) : "Bắt đầu một cuộc trao đổi";
-  const selectedAvatarKey = mode === "group" ? selectedGroup?.name : selectedContact?.email;
-  const hasDestination = mode === "direct" ? !!selectedEmail : !!selectedGroupId;
-  const taskMessages = useMemo(() => messages.map((message) => ({ message, task: parseTaskMessage(message.body) })).filter((item) => item.task), [messages, parseTaskMessage]);
-  const relatedGroups = useMemo(() => {
-    if (mode === "group") return groups.filter((group) => String(group.id) !== String(selectedGroupId)).slice(0, 3);
-    if (!selectedEmail) return [];
-    return groups.filter((group) => (group.members || []).some((member) => member.email === selectedEmail)).slice(0, 3);
-  }, [groups, mode, selectedEmail, selectedGroupId]);
-
-  const directUnread = contacts.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0);
-  const groupUnread = groups.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0);
 
   const loadLists = useCallback(async () => {
     const [directResult, groupResult] = await Promise.all([fetchChatConversations(), fetchChatGroups()]);
-    const nextContacts = directResult.contacts || [];
-    const nextGroups = groupResult.groups || [];
+    const rawContacts = directResult.contacts || [];
+    const rawGroups = groupResult.groups || [];
+    // Không hiện badge chưa đọc cho đúng cuộc trò chuyện đang mở, kể cả khi polling danh sách
+    // về trước lệnh đánh dấu đã đọc trên server vài mili giây.
+    const nextContacts = rawContacts.map((contact) => (
+      mode === "direct" && contact.email === selectedEmail ? { ...contact, unreadCount: 0 } : contact
+    ));
+    const nextGroups = rawGroups.map((group) => (
+      mode === "group" && String(group.id) === String(selectedGroupId) ? { ...group, unreadCount: 0 } : group
+    ));
     setContacts(nextContacts);
     setGroups(nextGroups);
     const unread = nextContacts.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0)
@@ -6521,17 +6668,40 @@ function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
     }
   }, [isAdmin, mode, onUnreadChange, selectedEmail, selectedGroupId]);
 
+  const markCurrentRead = useCallback(async () => {
+    if (mode === "direct" && selectedEmail) {
+      setContacts((current) => current.map((contact) => (
+        contact.email === selectedEmail ? { ...contact, unreadCount: 0 } : contact
+      )));
+      const result = await markChatRead(selectedEmail);
+      onUnreadChange?.(Number(result.unread) || 0);
+      return result;
+    }
+    if (mode === "group" && selectedGroupId) {
+      setGroups((current) => current.map((group) => (
+        String(group.id) === String(selectedGroupId) ? { ...group, unreadCount: 0 } : group
+      )));
+      const result = await markChatGroupRead(selectedGroupId);
+      onUnreadChange?.(Number(result.unread) || 0);
+      return result;
+    }
+    return null;
+  }, [mode, selectedEmail, selectedGroupId, onUnreadChange]);
+
   const loadMessages = useCallback(async () => {
     if (mode === "direct") {
       if (!selectedEmail) { setMessages([]); return; }
       const result = await fetchChatMessages(selectedEmail);
       setMessages(result.messages || []);
+      // Cuộc trò chuyện đang mở luôn được xem là đã đọc, kể cả tin mới đến trong lúc đang chat.
+      await markCurrentRead();
       return;
     }
     if (!selectedGroupId) { setMessages([]); return; }
     const result = await fetchChatGroupMessages(selectedGroupId);
     setMessages(result.messages || []);
-  }, [mode, selectedEmail, selectedGroupId]);
+    await markCurrentRead();
+  }, [mode, selectedEmail, selectedGroupId, markCurrentRead]);
 
   useEffect(() => {
     loadLists().catch((err) => setError(err.message || "Không tải được danh sách tin nhắn"));
@@ -6547,24 +6717,12 @@ function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
   }, [loadMessages, mode, selectedEmail, selectedGroupId]);
 
   useEffect(() => {
-    if (mode === "direct" && selectedEmail) {
-      markChatRead(selectedEmail).then((result) => onUnreadChange?.(Number(result.unread) || 0)).catch(() => {});
-    }
-    if (mode === "group" && selectedGroupId) {
-      markChatGroupRead(selectedGroupId).then((result) => onUnreadChange?.(Number(result.unread) || 0)).catch(() => {});
-    }
-  }, [mode, selectedEmail, selectedGroupId, onUnreadChange]);
+    markCurrentRead().catch(() => {});
+  }, [markCurrentRead]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages]);
-
-  useEffect(() => {
-    const textarea = composerRef.current;
-    if (!textarea) return;
-    textarea.style.height = "auto";
-    textarea.style.height = `${Math.min(Math.max(textarea.scrollHeight, 44), 120)}px`;
-  }, [input]);
 
   const selectDirect = async (email) => {
     setMode("direct");
@@ -6572,8 +6730,8 @@ function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
     setSelectedGroupId("");
     setMessages([]);
     setError("");
-    setMobilePane("chat");
     try {
+      setContacts((current) => current.map((contact) => contact.email === email ? { ...contact, unreadCount: 0 } : contact));
       const result = await markChatRead(email);
       onUnreadChange?.(Number(result.unread) || 0);
       await loadLists();
@@ -6588,8 +6746,8 @@ function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
     setSelectedEmail("");
     setMessages([]);
     setError("");
-    setMobilePane("chat");
     try {
+      setGroups((current) => current.map((group) => String(group.id) === String(groupId) ? { ...group, unreadCount: 0 } : group));
       const result = await markChatGroupRead(groupId);
       onUnreadChange?.(Number(result.unread) || 0);
       await loadLists();
@@ -6604,7 +6762,8 @@ function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
     setError("");
     if (nextMode === "direct") {
       setSelectedGroupId("");
-      setSelectedEmail(directContacts[0]?.email || "");
+      const first = directContacts[0];
+      setSelectedEmail(first?.email || "");
     } else {
       setSelectedEmail("");
       setSelectedGroupId(groups[0] ? String(groups[0].id) : "");
@@ -6613,15 +6772,18 @@ function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
 
   const send = async () => {
     const body = input.trim();
-    if (!body || loading || !hasDestination) return;
+    if (!body || loading) return;
+    if (mode === "direct" && !selectedEmail) return;
+    if (mode === "group" && !selectedGroupId) return;
     setLoading(true);
     setError("");
     try {
       if (mode === "group") await sendChatGroupMessage(selectedGroupId, body);
       else await sendChatMessage(selectedEmail, body);
       setInput("");
-      await Promise.all([loadMessages(), loadLists()]);
-      composerRef.current?.focus();
+      await loadMessages();
+      await markCurrentRead();
+      await loadLists();
     } catch (err) {
       setError(err.message || "Không gửi được tin nhắn");
     } finally {
@@ -6631,7 +6793,6 @@ function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
 
   const openCreateGroup = () => {
     setGroupForm({ id: null, name: "", memberEmails: [] });
-    setGroupMemberSearch("");
     setShowGroupForm(true);
   };
 
@@ -6642,8 +6803,6 @@ function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
       name: selectedGroup.name,
       memberEmails: groupMembers.map((member) => member.email).filter((email) => email !== authUser?.email),
     });
-    setGroupMemberSearch("");
-    setShowConversationMenu(false);
     setShowGroupForm(true);
   };
 
@@ -6669,7 +6828,6 @@ function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
         setMode("group");
         setSelectedEmail("");
         setSelectedGroupId(String(result.groupId));
-        setMobilePane("chat");
       }
       setShowGroupForm(false);
       await loadLists();
@@ -6682,7 +6840,7 @@ function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
 
   const removeGroup = async () => {
     if (!isAdmin || !selectedGroup || loading) return;
-    if (!window.confirm(`Xóa nhóm "${selectedGroup.name}"?`)) return;
+    if (!(await confirmOverlay(`Xóa nhóm "${selectedGroup.name}"?`, { title: "Xóa nhóm chat", confirmLabel: "Xóa nhóm", tone: "danger" }))) return;
     setLoading(true);
     setError("");
     try {
@@ -6690,8 +6848,6 @@ function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
       setGroups(result.groups || []);
       setSelectedGroupId("");
       setMessages([]);
-      setShowConversationMenu(false);
-      setMobilePane("list");
       await loadLists();
     } catch (err) {
       setError(err.message || "Không xóa được nhóm chat");
@@ -6701,7 +6857,8 @@ function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
   };
 
   const removeMessage = async (message) => {
-    if (!isAdmin || !message || !window.confirm("Xóa tin nhắn này?")) return;
+    if (!isAdmin || !message) return;
+    if (!(await confirmOverlay("Xóa tin nhắn này?", { title: "Xóa tin nhắn", confirmLabel: "Xóa tin nhắn", tone: "danger" }))) return;
     setError("");
     try {
       if (mode === "group") await deleteChatGroupMessage(message.id);
@@ -6712,128 +6869,196 @@ function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
     }
   };
 
-  const filteredGroupFormContacts = contacts.filter((contact) => {
-    if (contact.email === authUser?.email) return false;
-    const term = groupMemberSearch.trim().toLowerCase();
-    return !term || contact.email.toLowerCase().includes(term) || displayName(contact.email).toLowerCase().includes(term);
+  const employeeForEmail = (email) => employees.find((employee) => (
+    String(employee.email || "").trim().toLowerCase() === String(email || "").trim().toLowerCase()
+  ));
+
+  const taskTypesForEmployee = (employeeId) => {
+    const employee = employees.find((item) => item.id === Number(employeeId));
+    return ROLE_TASK_TYPES[employee?.roleType] || ["khac"];
+  };
+
+  const openTaskAssignment = () => {
+    if (!isAdmin || mode !== "direct" || !selectedEmail) return;
+    const employee = employeeForEmail(selectedEmail);
+    if (!employee) {
+      setError(`Tài khoản ${selectedEmail} chưa liên kết với hồ sơ nhân sự nên chưa thể giao việc.`);
+      return;
+    }
+    const types = taskTypesForEmployee(employee.id);
+    setTaskForm({
+      date: GIAOVIEC_TODAY,
+      employeeId: employee.id,
+      targetType: types[0] || "khac",
+      targetValue: "",
+      description: "",
+      visibility: "private",
+    });
+    setError("");
+    setShowTaskForm(true);
+  };
+
+  const saveTaskFromChat = async () => {
+    if (!isAdmin || !setTasks || !taskForm.employeeId || !taskForm.description.trim() || loading) return;
+    const employee = employees.find((item) => item.id === Number(taskForm.employeeId));
+    if (!employee?.email) {
+      setError("Hồ sơ nhân sự chưa có email đăng nhập.");
+      return;
+    }
+    const newTask = {
+      ...taskForm,
+      id: Date.now(),
+      employeeId: Number(taskForm.employeeId),
+      targetValue: Number(taskForm.targetValue) || 0,
+      description: taskForm.description.trim(),
+      doneManual: false,
+      visibility: taskForm.visibility === "public" ? "public" : "private",
+      createdByEmail: authUser?.email || "",
+    };
+    setLoading(true);
+    setError("");
+    try {
+      setTasks((current) => [...current, newTask]);
+      const targetLabel = TASK_TYPES[newTask.targetType]?.label || newTask.targetType;
+      const targetLine = newTask.targetType === "khac" ? "" : `
+Chỉ tiêu: ${newTask.targetValue} ${TASK_TYPES[newTask.targetType]?.unit || ""}`;
+      await sendChatMessage(
+        employee.email,
+        `Bạn được giao việc mới.
+Ngày: ${newTask.date}
+Chế độ: ${newTask.visibility === "public" ? "Công khai" : "Riêng tư"}
+Loại: ${targetLabel}${targetLine}
+Nội dung: ${newTask.description}`
+      );
+      setShowTaskForm(false);
+      await loadMessages();
+      await markCurrentRead();
+      await loadLists();
+    } catch (err) {
+      setTasks((current) => current.filter((task) => task.id !== newTask.id));
+      setError(err.message || "Không giao được công việc.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const hasDestination = mode === "direct" ? !!selectedEmail : !!selectedGroupId;
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const visibleDirectContacts = directContacts.filter((contact) => {
+    if (!normalizedSearch) return true;
+    return [contact.email, contact.role, contact.lastMessage]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(normalizedSearch));
   });
-
-  const renderAvatar = (key, size = "w-11 h-11", textSize = "text-sm") => (
-    <div className={`${size} ${textSize} rounded-full shrink-0 text-white font-semibold flex items-center justify-center ring-2 ring-white shadow-sm`} style={{ backgroundColor: avatarColor(key) }}>
-      {initialsOf(key)}
-    </div>
-  );
-
-  const renderTaskCard = (task, mine) => (
-    <div className={`w-[min(520px,76vw)] rounded-2xl border overflow-hidden shadow-sm ${mine ? "bg-white text-ink border-white/30" : "bg-white text-ink border-paper-line"}`}>
-      <div className="px-4 py-3 border-b border-paper-line flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 font-semibold text-sm"><ClipboardList size={16} className="text-ink" /> Công việc mới</div>
-        <span className="text-[10px] font-semibold px-2 py-1 rounded-full bg-stamp-red/10 text-stamp-red">Cần xử lý</span>
-      </div>
-      <div className="p-4 flex gap-4">
-        <div className="w-14 h-14 rounded-xl bg-ink text-white flex items-center justify-center shrink-0 shadow-md"><Briefcase size={24} /></div>
-        <div className="min-w-0 flex-1">
-          <div className="font-semibold text-[15px] leading-snug">{task.description}</div>
-          <div className="mt-3 grid sm:grid-cols-2 gap-x-5 gap-y-2 text-xs text-muted">
-            <div><span className="block text-[10px] uppercase tracking-wide text-muted/70">Ngày thực hiện</span><strong className="text-ink font-medium">{task.date}</strong></div>
-            <div><span className="block text-[10px] uppercase tracking-wide text-muted/70">Loại công việc</span><strong className="text-ink font-medium">{task.type}</strong></div>
-            {task.target && <div className="sm:col-span-2"><span className="block text-[10px] uppercase tracking-wide text-muted/70">Chỉ tiêu</span><strong className="text-ink font-medium">{task.target}</strong></div>}
-          </div>
-          <button onClick={() => onOpenTasks?.(task)} className="mt-4 w-full sm:w-auto bg-ink text-white rounded-lg px-4 py-2.5 text-xs font-semibold inline-flex items-center justify-center gap-2 hover:bg-ink-light">
-            Xem công việc <ChevronRight size={14} />
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-
-  const conversationList = mode === "direct" ? visibleContacts : visibleGroups;
+  const visibleGroups = groups.filter((group) => {
+    if (!normalizedSearch) return true;
+    return [group.name, group.lastMessage, ...(group.members || []).map((member) => member.email)]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(normalizedSearch));
+  });
+  const displayRole = (role) => (role === "admin" ? "Quản trị viên" : "Thành viên");
+  const initialsOf = (value = "") => {
+    const base = String(value).split("@")[0].replace(/[^a-zA-Z0-9À-ỹ]+/g, " ").trim();
+    if (!base) return "NV";
+    const parts = base.split(/\s+/).filter(Boolean);
+    return (parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}` : base.slice(0, 2)).toUpperCase();
+  };
+  const parseTaskMessage = (body = "") => {
+    if (!String(body).startsWith("Bạn được giao việc mới.")) return null;
+    const task = {};
+    String(body).split("\n").slice(1).forEach((line) => {
+      const separator = line.indexOf(":");
+      if (separator < 0) return;
+      const key = line.slice(0, separator).trim();
+      const value = line.slice(separator + 1).trim();
+      if (key === "Ngày") task.date = value;
+      if (key === "Chế độ") task.visibility = value;
+      if (key === "Loại") task.type = value;
+      if (key === "Chỉ tiêu") task.target = value;
+      if (key === "Nội dung") task.description = value;
+    });
+    return task;
+  };
 
   return (
-    <div className={`relative h-[calc(100vh-174px)] min-h-[620px] grid grid-cols-1 lg:grid-cols-[320px_minmax(0,1fr)] ${showInfo ? "2xl:grid-cols-[320px_minmax(0,1fr)_300px]" : ""} gap-0 bg-white border border-paper-line rounded-2xl overflow-hidden shadow-[0_18px_45px_rgba(27,42,74,0.08)]`}>
-      <section className={`${mobilePane === "chat" ? "hidden lg:flex" : "flex"} min-h-0 flex-col bg-white border-r border-paper-line`}>
-        <div className="px-5 pt-5 pb-4">
-          <div className="flex items-center justify-between gap-3">
+    <div className="domix-task-chat h-[calc(100vh-190px)] min-h-[600px] overflow-hidden rounded-[28px] border border-[#ddd7cc] bg-[#f7f4ee] shadow-[0_18px_55px_rgba(41,52,72,0.08)] grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)]">
+      <section className="domix-chat-list min-h-0 flex flex-col border-b xl:border-b-0 xl:border-r border-[#e5dfd5] bg-white/80 backdrop-blur-sm">
+        <div className="px-6 pt-6 pb-4">
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <h2 className="ktns-serif text-2xl font-semibold text-ink">Tin nhắn</h2>
-              <p className="text-[11px] text-muted mt-1">Trao đổi công việc tập trung và rõ ràng.</p>
+              <h2 className="domix-chat-primary ktns-serif text-[26px] font-semibold leading-tight text-[#213354]">Trao đổi công việc</h2>
+              <p className="domix-chat-muted mt-1.5 text-[12px] leading-relaxed text-[#777168]">Nơi giao việc, phản hồi và cập nhật tiến độ.</p>
             </div>
-            <div className="relative w-11 h-11 rounded-xl bg-ink text-white flex items-center justify-center shadow-lg shadow-ink/15">
-              <MessageCircle size={20} />
-              {(directUnread + groupUnread) > 0 && <span className="absolute -right-2 -top-2 min-w-5 h-5 px-1 rounded-full bg-stamp-red text-white text-[10px] font-bold flex items-center justify-center ring-2 ring-white">{directUnread + groupUnread > 99 ? "99+" : directUnread + groupUnread}</span>}
+            <div className="domix-chat-unread-total rounded-full border border-[#ded8ce] bg-[#faf8f4] px-3 py-1.5 text-[11px] font-semibold text-[#52617a]">
+              {contacts.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0)
+                + groups.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0)} chưa đọc
             </div>
           </div>
 
-          <div className="mt-4 flex gap-2">
-            <div className="relative flex-1">
-              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-              <input ref={searchRef} value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Tìm người, nhóm, tin nhắn..." className="w-full h-10 pl-9 pr-3 rounded-xl border border-paper-line bg-paper/45 text-xs text-ink placeholder:text-muted focus:bg-white" />
-            </div>
-            <button onClick={() => setSearchTerm("")} title="Xóa bộ lọc" className="w-10 h-10 rounded-xl border border-paper-line text-muted hover:text-ink hover:bg-paper flex items-center justify-center"><SlidersHorizontal size={16} /></button>
-          </div>
+          <input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Tìm người, nhóm hoặc nội dung..."
+            className="domix-chat-search mt-5 w-full rounded-2xl border border-[#e4ddd3] bg-[#fbfaf7] px-4 py-3 text-sm text-[#263750] placeholder:text-[#aaa49b] focus:bg-white"
+          />
 
-          <div className="mt-4 flex items-center gap-2">
-            <div className="grid grid-cols-2 gap-1 p-1 rounded-xl bg-paper flex-1">
-              <button onClick={() => switchMode("direct")} className={`relative h-9 rounded-lg text-xs font-semibold ${mode === "direct" ? "bg-ink text-white shadow" : "text-muted hover:text-ink"}`}>
-                Cá nhân
-                {directUnread > 0 && <span className={`ml-1.5 inline-flex min-w-4 h-4 px-1 rounded-full items-center justify-center text-[9px] ${mode === "direct" ? "bg-white text-ink" : "bg-stamp-red text-white"}`}>{directUnread > 99 ? "99+" : directUnread}</span>}
-              </button>
-              <button onClick={() => switchMode("group")} className={`relative h-9 rounded-lg text-xs font-semibold ${mode === "group" ? "bg-ink text-white shadow" : "text-muted hover:text-ink"}`}>
-                Nhóm
-                {groupUnread > 0 && <span className={`ml-1.5 inline-flex min-w-4 h-4 px-1 rounded-full items-center justify-center text-[9px] ${mode === "group" ? "bg-white text-ink" : "bg-stamp-red text-white"}`}>{groupUnread > 99 ? "99+" : groupUnread}</span>}
-              </button>
-            </div>
-            {isAdmin && <button onClick={openCreateGroup} title="Tạo nhóm" className="h-11 px-3 rounded-xl border border-gold/45 text-gold bg-gold/5 text-xs font-semibold flex items-center gap-1.5 hover:bg-gold/10"><Plus size={14} /> Nhóm</button>}
+          <div className="domix-chat-tabs mt-3 grid grid-cols-2 rounded-2xl bg-[#f1eee8] p-1">
+            <button onClick={() => switchMode("direct")} className={`relative rounded-xl px-3 py-2.5 text-sm font-semibold ${mode === "direct" ? "bg-white text-[#213354] shadow-sm" : "text-[#777168] hover:text-[#213354]"}`}>
+              Cá nhân
+              {contacts.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0) > 0 && <span className="ml-2 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-[#d95b56] px-1 text-[10px] text-white">{contacts.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0)}</span>}
+            </button>
+            <button onClick={() => switchMode("group")} className={`relative rounded-xl px-3 py-2.5 text-sm font-semibold ${mode === "group" ? "bg-white text-[#213354] shadow-sm" : "text-[#777168] hover:text-[#213354]"}`}>
+              Nhóm
+              {groups.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0) > 0 && <span className="ml-2 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-[#d95b56] px-1 text-[10px] text-white">{groups.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0)}</span>}
+            </button>
           </div>
         </div>
 
-        <div className="h-px bg-paper-line" />
-        <div className="ktns-scrollbar flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-2">
-          {conversationList.length === 0 && (
-            <div className="px-5 py-12 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-paper text-muted mx-auto flex items-center justify-center"><MessageCircle size={24} /></div>
-              <div className="mt-4 text-sm font-semibold text-ink">Không tìm thấy cuộc trò chuyện</div>
-              <p className="mt-1 text-xs text-muted">Thử từ khóa khác hoặc bắt đầu một cuộc trò chuyện mới.</p>
-            </div>
-          )}
+        {mode === "group" && isAdmin && (
+          <div className="px-6 pb-4 flex flex-wrap gap-2">
+            <button onClick={openCreateGroup} className="rounded-full bg-[#2f6f4f] px-4 py-2 text-xs font-semibold text-white">Tạo nhóm</button>
+            <button onClick={openEditGroup} disabled={!selectedGroup} className="rounded-full border border-[#dcd5ca] bg-white px-4 py-2 text-xs font-semibold text-[#42516a] disabled:opacity-40">Sửa nhóm</button>
+            <button onClick={removeGroup} disabled={!selectedGroup || loading} className="rounded-full border border-[#e8c8c5] bg-[#fff8f7] px-4 py-2 text-xs font-semibold text-[#bd4d48] disabled:opacity-40">Xóa nhóm</button>
+          </div>
+        )}
 
-          {mode === "direct" && visibleContacts.map((contact) => {
+        <div className="ktns-scrollbar flex-1 min-h-0 overflow-y-auto px-4 pb-5 space-y-2">
+          {mode === "direct" && visibleDirectContacts.length === 0 && (
+            <div className="domix-chat-empty mx-2 rounded-2xl bg-[#faf8f4] px-5 py-10 text-center text-sm leading-relaxed text-[#8a847b]">{isAdmin ? "Chưa có tài khoản phù hợp." : "Chưa có cuộc trao đổi công việc nào."}</div>
+          )}
+          {mode === "direct" && visibleDirectContacts.map((contact) => {
             const active = selectedEmail === contact.email;
             return (
-              <button key={contact.email} onClick={() => selectDirect(contact.email)} className={`group relative w-full rounded-xl border p-3 text-left flex gap-3 transition-all ${active ? "bg-[#EEF4FF] border-[#AFCBFA] shadow-[0_8px_22px_rgba(43,90,170,0.08)]" : "bg-white border-transparent hover:border-paper-line hover:bg-paper/45"}`}>
-                <div className="relative">
-                  {renderAvatar(contact.email)}
-                  <span className="absolute right-0 bottom-0 w-3 h-3 rounded-full bg-[#30B36B] border-2 border-white" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="font-semibold text-sm text-ink truncate">{displayName(contact.email)}</div>
-                    <span className="text-[10px] text-muted shrink-0">{formatListTime(contact.lastAt)}</span>
-                  </div>
-                  <div className="text-[10px] text-muted mt-0.5 truncate">{roleLabel(contact.role)}</div>
-                  <div className="mt-1.5 flex items-center justify-between gap-2">
-                    <p className="text-xs text-muted truncate">{contact.lastMessage || "Bắt đầu cuộc trò chuyện"}</p>
-                    {Number(contact.unreadCount) > 0 && <span className="min-w-5 h-5 px-1 rounded-full bg-stamp-red text-white text-[10px] font-bold flex items-center justify-center shrink-0">{contact.unreadCount > 99 ? "99+" : contact.unreadCount}</span>}
+              <button key={contact.email} onClick={() => selectDirect(contact.email)} className={`domix-chat-conversation group relative w-full rounded-[20px] border px-3.5 py-3.5 text-left ${active ? "is-active " : ""}${active ? "border-[#b9cdf4] bg-[#edf3ff] shadow-[0_9px_24px_rgba(77,111,172,0.10)]" : "border-transparent bg-transparent hover:border-[#e6dfd5] hover:bg-white"}`}>
+                <div className="flex items-center gap-3">
+                  <div className={`h-11 w-11 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${active ? "bg-[#7ea8ef] text-white" : "bg-[#e8edf5] text-[#536681]"}`}>{initialsOf(contact.email)}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="domix-chat-primary truncate text-sm font-semibold text-[#243653]">{contact.email}</div>
+                      {Number(contact.unreadCount) > 0 && <span className="min-w-5 h-5 shrink-0 rounded-full bg-[#d95b56] px-1.5 text-[10px] font-bold text-white flex items-center justify-center">{contact.unreadCount}</span>}
+                    </div>
+                    <div className="domix-chat-muted mt-0.5 text-[11px] text-[#8a847b]">{displayRole(contact.role)}</div>
+                    <div className="domix-chat-secondary mt-1 truncate text-xs text-[#727d8e]">{contact.lastMessage || "Bắt đầu trao đổi về công việc"}</div>
                   </div>
                 </div>
               </button>
             );
           })}
 
+          {mode === "group" && visibleGroups.length === 0 && <div className="domix-chat-empty mx-2 rounded-2xl bg-[#faf8f4] px-5 py-10 text-center text-sm text-[#8a847b]">Chưa có nhóm trao đổi phù hợp.</div>}
           {mode === "group" && visibleGroups.map((group) => {
             const active = String(group.id) === String(selectedGroupId);
             return (
-              <button key={group.id} onClick={() => selectGroup(group.id)} className={`group relative w-full rounded-xl border p-3 text-left flex gap-3 transition-all ${active ? "bg-[#EEF4FF] border-[#AFCBFA] shadow-[0_8px_22px_rgba(43,90,170,0.08)]" : "bg-white border-transparent hover:border-paper-line hover:bg-paper/45"}`}>
-                <div className="w-11 h-11 rounded-full bg-gradient-to-br from-ink to-[#41699E] text-white flex items-center justify-center shrink-0 ring-2 ring-white shadow-sm"><UsersRound size={18} /></div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="font-semibold text-sm text-ink truncate">{group.name}</div>
-                    <span className="text-[10px] text-muted shrink-0">{formatListTime(group.lastAt)}</span>
-                  </div>
-                  <div className="text-[10px] text-muted mt-0.5">{group.members?.length || 0} thành viên</div>
-                  <div className="mt-1.5 flex items-center justify-between gap-2">
-                    <p className="text-xs text-muted truncate">{group.lastMessage || "Chưa có tin nhắn"}</p>
-                    {Number(group.unreadCount) > 0 && <span className="min-w-5 h-5 px-1 rounded-full bg-stamp-red text-white text-[10px] font-bold flex items-center justify-center shrink-0">{group.unreadCount > 99 ? "99+" : group.unreadCount}</span>}
+              <button key={group.id} onClick={() => selectGroup(group.id)} className={`domix-chat-conversation relative w-full rounded-[20px] border px-3.5 py-3.5 text-left ${active ? "is-active " : ""}${active ? "border-[#b9cdf4] bg-[#edf3ff] shadow-[0_9px_24px_rgba(77,111,172,0.10)]" : "border-transparent bg-transparent hover:border-[#e6dfd5] hover:bg-white"}`}>
+                <div className="flex items-center gap-3">
+                  <div className={`h-11 w-11 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${active ? "bg-[#7ea8ef] text-white" : "bg-[#efe7d6] text-[#7c6742]"}`}>{initialsOf(group.name)}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="domix-chat-primary truncate text-sm font-semibold text-[#243653]">{group.name}</div>
+                      {Number(group.unreadCount) > 0 && <span className="min-w-5 h-5 shrink-0 rounded-full bg-[#d95b56] px-1.5 text-[10px] font-bold text-white flex items-center justify-center">{group.unreadCount}</span>}
+                    </div>
+                    <div className="domix-chat-muted mt-0.5 text-[11px] text-[#8a847b]">{group.members?.length || 0} thành viên</div>
+                    <div className="domix-chat-secondary mt-1 truncate text-xs text-[#727d8e]">{group.lastMessage || "Trao đổi chung về công việc"}</div>
                   </div>
                 </div>
               </button>
@@ -6842,249 +7067,196 @@ function ChatPage({ authUser, onUnreadChange, onOpenTasks }) {
         </div>
       </section>
 
-      <section className={`${mobilePane === "list" ? "hidden lg:flex" : "flex"} min-h-0 flex-col bg-[#FBFCFE]`}>
-        <div className="h-[74px] px-4 sm:px-5 border-b border-paper-line bg-white flex items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center gap-3 min-w-0">
-            <button onClick={() => setMobilePane("list")} className="lg:hidden w-9 h-9 rounded-lg border border-paper-line text-muted flex items-center justify-center"><ArrowLeft size={17} /></button>
-            <div className="relative">
-              {mode === "group"
-                ? <div className="w-11 h-11 rounded-full bg-gradient-to-br from-ink to-[#41699E] text-white flex items-center justify-center ring-2 ring-white shadow-sm"><UsersRound size={18} /></div>
-                : renderAvatar(selectedAvatarKey || "user")}
-              {hasDestination && mode === "direct" && <span className="absolute right-0 bottom-0 w-3 h-3 rounded-full bg-[#30B36B] border-2 border-white" />}
-            </div>
+      <section className="domix-chat-main min-h-0 flex flex-col bg-[linear-gradient(145deg,#fbfcff_0%,#f5f7fb_55%,#f8f6f1_100%)]">
+        <div className="domix-chat-header border-b border-[#e5dfd5] bg-white/72 px-6 py-4 backdrop-blur-sm flex items-center justify-between gap-4">
+          <div className="min-w-0 flex items-center gap-3">
+            {hasDestination && <div className="h-11 w-11 shrink-0 rounded-full bg-[#87acf0] text-white flex items-center justify-center text-xs font-bold">{initialsOf(mode === "group" ? selectedGroup?.name : selectedContact?.email)}</div>}
             <div className="min-w-0">
-              <h3 className="font-semibold text-[15px] text-ink truncate">{selectedTitle}</h3>
-              <p className="text-[11px] text-muted mt-0.5 truncate">{selectedSubtitle}</p>
+              <h2 className="domix-chat-primary truncate text-[17px] font-semibold text-[#213354]">{mode === "group" ? (selectedGroup?.name || "Chọn nhóm trao đổi") : (selectedContact?.email || "Chọn người trao đổi")}</h2>
+              <p className="domix-chat-muted mt-0.5 truncate text-[12px] text-[#7d786f]">{mode === "group" && selectedGroup ? `${groupMembers.length} thành viên · Trao đổi về công việc` : hasDestination ? "Trao đổi giao việc và cập nhật tiến độ" : "Chọn cuộc trò chuyện ở bên trái"}</p>
             </div>
           </div>
-
-          <div className="flex items-center gap-2 shrink-0">
-            <button onClick={() => searchRef.current?.focus()} title="Tìm kiếm" className="w-9 h-9 rounded-xl border border-paper-line bg-white text-muted hover:text-ink hover:shadow-sm flex items-center justify-center"><Search size={16} /></button>
-            <button onClick={() => setShowInfo((value) => !value)} title="Thông tin cuộc trò chuyện" className={`w-9 h-9 rounded-xl border flex items-center justify-center ${showInfo ? "bg-ink text-white border-ink" : "bg-white text-muted border-paper-line hover:text-ink"}`}><Info size={16} /></button>
-            {isAdmin && mode === "group" && selectedGroup && (
-              <div className="relative">
-                <button onClick={() => setShowConversationMenu((value) => !value)} title="Quản trị nhóm" className="w-9 h-9 rounded-xl border border-paper-line bg-white text-muted hover:text-ink flex items-center justify-center"><MoreHorizontal size={17} /></button>
-                {showConversationMenu && (
-                  <div className="absolute right-0 top-11 z-30 w-44 rounded-xl border border-paper-line bg-white shadow-xl p-1.5">
-                    <button onClick={openEditGroup} className="w-full px-3 py-2 rounded-lg text-left text-xs text-ink hover:bg-paper flex items-center gap-2"><Pencil size={14} /> Sửa nhóm</button>
-                    <button onClick={removeGroup} className="w-full px-3 py-2 rounded-lg text-left text-xs text-stamp-red hover:bg-stamp-red/5 flex items-center gap-2"><Trash2 size={14} /> Xóa nhóm</button>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
+          {mode === "group" && selectedGroup && isAdmin && <button onClick={openEditGroup} className="shrink-0 rounded-full border border-[#ddd6cb] bg-white px-4 py-2 text-xs font-semibold text-[#46546a]">Quản lý nhóm</button>}
+          {mode === "direct" && selectedContact && <span className="domix-chat-role-chip shrink-0 rounded-full bg-[#eef2f8] px-3 py-1.5 text-[11px] font-semibold text-[#60708a]">{displayRole(selectedContact.role)}</span>}
         </div>
 
-        {hasDestination && (
-          <div className="px-4 sm:px-5 py-3 border-b border-paper-line bg-white/95 flex items-center gap-2 overflow-x-auto ktns-scrollbar-hidden shrink-0">
-            <span className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-[#EEF4FF] text-[#315EA8] px-3 py-2 text-[11px] font-medium"><MessageCircle size={13} /> {messages.length} tin nhắn</span>
-            <span className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-[#FFF5E6] text-[#A36717] px-3 py-2 text-[11px] font-medium"><ClipboardList size={13} /> {taskMessages.length} việc được giao</span>
-            <span className="shrink-0 inline-flex items-center gap-2 rounded-lg bg-[#EAF7EF] text-[#288253] px-3 py-2 text-[11px] font-medium"><CheckCircle2 size={13} /> {mode === "group" ? `${groupMembers.length} thành viên` : "Đang hoạt động"}</span>
-          </div>
-        )}
-
-        <div ref={scrollRef} className="ktns-scrollbar flex-1 min-h-0 overflow-y-auto px-4 sm:px-7 py-6 bg-[radial-gradient(circle_at_top_left,rgba(58,102,170,0.06),transparent_32%),linear-gradient(180deg,#FBFCFE,#F8FAFD)]">
+        <div ref={scrollRef} className="domix-chat-messages ktns-scrollbar flex-1 min-h-0 overflow-y-auto px-5 sm:px-8 py-7">
           {!hasDestination && (
-            <div className="h-full flex items-center justify-center text-center">
-              <div className="max-w-sm">
-                <div className="w-20 h-20 rounded-3xl bg-white border border-paper-line shadow-sm text-ink mx-auto flex items-center justify-center"><MessageCircle size={32} /></div>
-                <h3 className="mt-5 ktns-serif text-2xl font-semibold text-ink">Chọn một cuộc trò chuyện</h3>
-                <p className="mt-2 text-sm text-muted leading-relaxed">Trao đổi với đồng nghiệp hoặc nhóm làm việc trong một không gian rõ ràng và tập trung.</p>
+            <div className="h-full flex items-center justify-center">
+              <div className="domix-chat-empty max-w-sm rounded-[28px] border border-white bg-white/70 px-8 py-10 text-center shadow-[0_18px_50px_rgba(38,58,91,0.07)] backdrop-blur-sm">
+                <div className="ktns-serif text-2xl font-semibold text-[#263854]">Bắt đầu trao đổi công việc</div>
+                <p className="mt-3 text-sm leading-6 text-[#7d786f]">Chọn một người hoặc nhóm để giao việc, phản hồi và cập nhật tiến độ trong cùng một luồng.</p>
               </div>
             </div>
           )}
 
-          {hasDestination && messages.length === 0 && (
-            <div className="h-full flex items-center justify-center text-center">
-              <div className="max-w-sm">
-                <div className="w-16 h-16 rounded-2xl bg-white border border-paper-line shadow-sm text-ink mx-auto flex items-center justify-center"><Send size={24} /></div>
-                <h3 className="mt-4 text-lg font-semibold text-ink">Bắt đầu cuộc trao đổi</h3>
-                <p className="mt-1 text-sm text-muted">Gửi tin nhắn đầu tiên để bắt đầu làm việc cùng nhau.</p>
-              </div>
-            </div>
-          )}
-
-          {hasDestination && messages.length > 0 && (
-            <>
-              <div className="flex items-center justify-center mb-6"><span className="rounded-full bg-white border border-paper-line px-3 py-1.5 text-[10px] text-muted shadow-sm">Hôm nay</span></div>
+          {hasDestination && (
+            <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col">
+              <div className="mb-6 flex justify-center"><span className="domix-chat-day-chip rounded-full bg-white/75 px-4 py-1.5 text-[11px] font-medium text-[#8a847b] shadow-sm">Trao đổi công việc</span></div>
+              {messages.length === 0 && <div className="domix-chat-empty m-auto rounded-2xl bg-white/70 px-6 py-5 text-center text-sm text-[#8a847b]">Chưa có nội dung. Hãy bắt đầu bằng công việc cần trao đổi.</div>}
               <div className="space-y-4">
                 {messages.map((message) => {
                   const mine = message.senderEmail === authUser?.email;
-                  const time = formatMessageTime(message.createdAt);
+                  const time = message.createdAt ? new Date(message.createdAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "";
                   const task = parseTaskMessage(message.body);
-                  const senderName = displayName(message.senderEmail);
                   return (
-                    <div key={message.id} className={`group flex items-end gap-2.5 ${mine ? "justify-end" : "justify-start"}`}>
-                      {!mine && (
-                        <div className="relative mb-5">
-                          {renderAvatar(message.senderEmail, "w-8 h-8", "text-[10px]")}
-                          <span className="absolute right-0 bottom-0 w-2.5 h-2.5 rounded-full bg-[#30B36B] border-2 border-white" />
-                        </div>
-                      )}
-                      <div className={`relative max-w-[82%] sm:max-w-[74%] ${mine ? "items-end" : "items-start"} flex flex-col`}>
-                        {mode === "group" && !mine && <div className="mb-1.5 px-1 text-[10px] font-semibold text-[#4F6886]">{senderName}</div>}
-                        {task ? renderTaskCard(task, mine) : (
-                          <div className={`relative px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap shadow-sm ${mine ? "bg-ink text-white rounded-br-md" : "bg-[#E7EEF8] text-[#17314F] border border-[#CFDCEB] rounded-bl-md"}`}>
-                            {message.body}
+                    <div key={message.id} className={`flex items-end gap-2.5 ${mine ? "justify-end" : "justify-start"}`}>
+                      {!mine && <div className="mb-5 h-8 w-8 shrink-0 rounded-full bg-[#a9c3ee] text-white flex items-center justify-center text-[10px] font-bold">{initialsOf(message.senderEmail)}</div>}
+                      <div className={`group relative min-w-0 ${task ? "w-full max-w-[620px]" : "max-w-[78%]"}`}>
+                        {mode === "group" && !mine && <div className="mb-1.5 px-1 text-[10px] font-semibold text-[#70809a]">{message.senderEmail}</div>}
+                        {task ? (
+                          <div className="domix-chat-task-card overflow-hidden rounded-[24px] border border-[#ded8cd] bg-white shadow-[0_16px_40px_rgba(45,62,90,0.08)]">
+                            <div className="flex items-center justify-between gap-4 border-b border-[#eee8df] px-5 py-4">
+                              <div>
+                                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8d857a]">Nhiệm vụ được giao</div>
+                                <div className="mt-1 text-base font-semibold text-[#263854]">{task.description || "Công việc mới"}</div>
+                              </div>
+                              <span className="rounded-full bg-[#fff1ee] px-3 py-1.5 text-[11px] font-semibold text-[#c05b52]">Cần xử lý</span>
+                            </div>
+                            <div className="grid gap-4 px-5 py-5 sm:grid-cols-3">
+                              <div><div className="text-[10px] uppercase tracking-wider text-[#9a9389]">Ngày thực hiện</div><div className="mt-1 text-sm font-semibold text-[#34445e]">{task.date || "Chưa đặt"}</div></div>
+                              <div><div className="text-[10px] uppercase tracking-wider text-[#9a9389]">Loại công việc</div><div className="mt-1 text-sm font-semibold text-[#34445e]">{task.type || "Công việc khác"}</div></div>
+                              <div><div className="text-[10px] uppercase tracking-wider text-[#9a9389]">Chế độ</div><div className="mt-1 text-sm font-semibold text-[#34445e]">{task.visibility || "Riêng tư"}</div></div>
+                            </div>
+                            {task.target && <div className="mx-5 mb-5 rounded-2xl bg-[#f3f6fb] px-4 py-3 text-sm text-[#52617a]"><span className="font-semibold">Chỉ tiêu:</span> {task.target}</div>}
+                          </div>
+                        ) : (
+                          <div className={`rounded-[22px] px-4 py-3 text-sm leading-relaxed shadow-[0_8px_22px_rgba(40,57,84,0.06)] ${mine ? "domix-chat-bubble-out rounded-br-md bg-[#263b63] text-white" : "domix-chat-bubble-in rounded-bl-md border border-[#dce4ef] bg-white text-[#30425f]"}`}>
+                            <div className="whitespace-pre-wrap">{message.body}</div>
                           </div>
                         )}
-                        <div className={`mt-1.5 px-1 flex items-center gap-1 text-[10px] ${mine ? "text-muted justify-end" : "text-muted"}`}>
-                          {time}
-                          {mine && <CheckCheck size={13} className="text-[#4D7FC4]" />}
+                        <div className={`domix-chat-meta mt-1.5 flex items-center gap-2 px-1 text-[10px] text-[#989188] ${mine ? "justify-end" : "justify-start"}`}>
+                          {time && <span>{time}</span>}
+                          {mine && <span>Đã gửi</span>}
+                          {isAdmin && <button onClick={() => removeMessage(message)} className="ml-1 font-semibold text-[#b45b56] opacity-0 transition-opacity group-hover:opacity-100">Xóa</button>}
                         </div>
-                        {isAdmin && (
-                          <button onClick={() => removeMessage(message)} title="Xóa tin nhắn" className={`absolute top-0 ${mine ? "-left-10" : "-right-10"} w-8 h-8 rounded-full border border-paper-line bg-white text-muted hover:text-stamp-red shadow-sm opacity-0 group-hover:opacity-100 flex items-center justify-center`}><Trash2 size={13} /></button>
-                        )}
                       </div>
                     </div>
                   );
                 })}
               </div>
-            </>
+            </div>
           )}
         </div>
 
-        <div className="px-3 sm:px-5 py-4 border-t border-paper-line bg-white shrink-0">
-          {error && <div className="mb-3 text-xs text-stamp-red bg-stamp-red/10 border border-stamp-red/20 rounded-lg px-3 py-2">{error}</div>}
-          <div className="rounded-2xl border border-paper-line bg-white shadow-[0_8px_24px_rgba(27,42,74,0.06)] p-2 flex items-end gap-2">
-            <button type="button" onClick={() => { if (isAdmin) onOpenTasks?.(); else composerRef.current?.focus(); }} title={isAdmin ? "Giao công việc" : "Soạn tin nhắn"} className="w-10 h-10 rounded-full bg-ink text-white flex items-center justify-center shrink-0 hover:bg-ink-light"><Plus size={18} /></button>
-            <textarea ref={composerRef} value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }} disabled={!hasDestination || loading} rows={1} placeholder={hasDestination ? "Nhập tin nhắn..." : "Chọn nơi nhận trước"} className="ktns-scrollbar flex-1 min-h-10 max-h-[120px] resize-none border-0 bg-transparent px-2 py-2.5 text-sm text-ink placeholder:text-muted focus:shadow-none disabled:text-muted" />
-            <button type="button" disabled title="Đính kèm sẽ được bổ sung sau" className="w-9 h-9 rounded-full text-muted/45 flex items-center justify-center shrink-0 cursor-not-allowed"><Paperclip size={17} /></button>
-            <button type="button" title="Thêm biểu cảm" onClick={() => { setInput((value) => `${value}🙂`); composerRef.current?.focus(); }} className="w-9 h-9 rounded-full text-muted hover:text-ink hover:bg-paper flex items-center justify-center shrink-0"><Smile size={17} /></button>
-            <button onClick={send} disabled={!hasDestination || !input.trim() || loading} title="Gửi tin nhắn" className="w-11 h-11 rounded-full bg-ink text-white flex items-center justify-center shrink-0 shadow-lg shadow-ink/20 hover:bg-ink-light disabled:opacity-35 disabled:shadow-none"><Send size={18} /></button>
+        <div className="domix-chat-composer border-t border-[#e5dfd5] bg-white/78 px-4 sm:px-6 py-4 backdrop-blur-sm">
+          {error && <div className="mx-auto mb-3 max-w-4xl rounded-2xl border border-[#efcfcb] bg-[#fff7f6] px-4 py-2.5 text-xs text-[#b6534d]">{error}</div>}
+          <div className="mx-auto max-w-4xl">
+            <div className="domix-chat-composer-box flex items-end gap-3 rounded-[24px] border border-[#ddd6ca] bg-white p-2.5 shadow-[0_12px_32px_rgba(39,55,82,0.07)] focus-within:border-[#b8c9e8]">
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={openTaskAssignment}
+                  disabled={mode !== "direct" || !selectedEmail || loading}
+                  title={mode === "direct" && selectedEmail ? "Giao việc cho người đang chat" : "Chọn một người để giao việc"}
+                  className="domix-chat-task-plus h-11 w-11 shrink-0 rounded-[18px] bg-[#263b63] text-xl font-light text-white shadow-sm disabled:bg-[#c9ced8] disabled:text-white"
+                >
+                  +
+                </button>
+              )}
+              <textarea
+                value={input}
+                onChange={(event) => setInput(event.target.value)}
+                onInput={(event) => { event.currentTarget.style.height = "auto"; event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 132)}px`; }}
+                onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }}
+                disabled={!hasDestination || loading}
+                rows={1}
+                placeholder={hasDestination ? "Trao đổi về công việc..." : "Chọn cuộc trò chuyện trước"}
+                className="domix-chat-input ktns-scrollbar max-h-[132px] min-h-[44px] flex-1 resize-none border-0 bg-transparent px-3 py-3 text-sm leading-5 text-[#263854] placeholder:text-[#aaa49b] focus:shadow-none disabled:text-[#aaa49b]"
+              />
+              <button onClick={send} disabled={!hasDestination || !input.trim() || loading} className="h-11 shrink-0 rounded-[18px] bg-[#263b63] px-6 text-sm font-semibold text-white shadow-sm disabled:bg-[#c9ced8] disabled:text-white">{loading ? "Đang gửi" : "Gửi"}</button>
+            </div>
+            <div className="mt-2 px-3 text-[10px] text-[#9a9389]">Enter để gửi · Shift + Enter để xuống dòng</div>
           </div>
-          <div className="mt-2 px-2 text-[10px] text-muted">Enter để gửi · Shift + Enter để xuống dòng</div>
         </div>
       </section>
 
-      {showInfo && <div onClick={() => setShowInfo(false)} className="fixed inset-0 z-40 bg-ink/20 backdrop-blur-[2px] 2xl:hidden" />}
-      <aside className={`${showInfo ? "flex" : "hidden"} fixed top-4 bottom-4 right-4 z-50 w-[min(320px,calc(100vw-32px))] 2xl:static 2xl:z-auto 2xl:w-auto min-h-0 flex-col bg-white border border-paper-line 2xl:border-y-0 2xl:border-r-0 rounded-2xl 2xl:rounded-none shadow-2xl 2xl:shadow-none overflow-hidden`}>
-        <div className="h-[74px] px-5 border-b border-paper-line flex items-center justify-between shrink-0">
-          <h3 className="font-semibold text-ink">Thông tin</h3>
-          <button onClick={() => setShowInfo(false)} className="w-9 h-9 rounded-xl border border-paper-line text-muted hover:text-ink flex items-center justify-center"><X size={16} /></button>
-        </div>
-        <div className="ktns-scrollbar flex-1 min-h-0 overflow-y-auto p-4 space-y-4 bg-[#FCFDFE]">
-          <div className="rounded-2xl border border-paper-line bg-white p-5 text-center shadow-sm">
-            <div className="relative w-fit mx-auto">
-              {mode === "group"
-                ? <div className="w-16 h-16 rounded-full bg-gradient-to-br from-ink to-[#41699E] text-white flex items-center justify-center ring-4 ring-[#EEF4FF]"><UsersRound size={26} /></div>
-                : renderAvatar(selectedAvatarKey || "user", "w-16 h-16", "text-xl")}
-              {hasDestination && mode === "direct" && <span className="absolute right-0 bottom-1 w-4 h-4 rounded-full bg-[#30B36B] border-[3px] border-white" />}
-            </div>
-            <div className="mt-3 font-semibold text-ink">{selectedTitle}</div>
-            <div className="mt-1 text-xs text-muted">{selectedSubtitle}</div>
-            {mode === "direct" && selectedContact && (
-              <div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-muted"><Mail size={13} /> <span className="truncate">{selectedContact.email}</span></div>
-            )}
-          </div>
-
-          {mode === "direct" && selectedContact && (
-            <div className="rounded-2xl border border-paper-line bg-white p-4 shadow-sm">
-              <div className="text-xs font-semibold text-ink">Thông tin tài khoản</div>
-              <div className="mt-3 space-y-3 text-xs">
-                <div className="flex items-center justify-between gap-3"><span className="text-muted">Vai trò</span><strong className="font-medium text-ink">{roleLabel(selectedContact.role)}</strong></div>
-                <div className="flex items-center justify-between gap-3"><span className="text-muted">Trạng thái</span><strong className="font-medium text-[#288253] inline-flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-[#30B36B]" /> Hoạt động</strong></div>
-              </div>
-            </div>
-          )}
-
-          {mode === "group" && selectedGroup && (
-            <div className="rounded-2xl border border-paper-line bg-white p-4 shadow-sm">
-              <div className="flex items-center justify-between gap-3"><div className="text-xs font-semibold text-ink">Thành viên</div><span className="text-[10px] text-muted">{groupMembers.length} người</span></div>
-              <div className="mt-3 space-y-3">
-                {groupMembers.slice(0, 8).map((member) => (
-                  <div key={member.email} className="flex items-center gap-3">
-                    {renderAvatar(member.email, "w-8 h-8", "text-[10px]")}
-                    <div className="min-w-0"><div className="text-xs font-medium text-ink truncate">{displayName(member.email)}</div><div className="text-[10px] text-muted truncate">{member.email}</div></div>
-                  </div>
-                ))}
-              </div>
-              {isAdmin && <button onClick={openEditGroup} className="mt-4 w-full rounded-lg border border-paper-line text-xs text-ink px-3 py-2.5 hover:bg-paper">Quản lý thành viên</button>}
-            </div>
-          )}
-
-          <div className="rounded-2xl border border-paper-line bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3"><div className="text-xs font-semibold text-ink">Nhóm liên quan</div><span className="text-[10px] text-muted">{relatedGroups.length}</span></div>
-            <div className="mt-3 space-y-2">
-              {relatedGroups.length === 0 && <div className="text-xs text-muted py-2">Chưa có nhóm liên quan.</div>}
-              {relatedGroups.map((group) => (
-                <button key={group.id} onClick={() => selectGroup(group.id)} className="w-full flex items-center gap-3 rounded-xl p-2 hover:bg-paper text-left">
-                  <div className="w-9 h-9 rounded-full bg-[#EEF4FF] text-[#315EA8] flex items-center justify-center"><UsersRound size={15} /></div>
-                  <div className="min-w-0"><div className="text-xs font-medium text-ink truncate">{group.name}</div><div className="text-[10px] text-muted">{group.members?.length || 0} thành viên</div></div>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-paper-line bg-white p-4 shadow-sm">
-            <div className="flex items-center justify-between gap-3"><div className="text-xs font-semibold text-ink">Công việc gần nhất</div><button onClick={onOpenTasks} className="text-[10px] text-[#315EA8]">Xem tất cả</button></div>
-            <div className="mt-3 space-y-3">
-              {taskMessages.length === 0 && <div className="text-xs text-muted py-2">Chưa có công việc được gửi trong cuộc trò chuyện.</div>}
-              {taskMessages.slice(-3).reverse().map(({ message, task }) => (
-                <button key={message.id} onClick={() => onOpenTasks?.(task)} className="w-full text-left rounded-xl border border-paper-line p-3 hover:border-[#AFCBFA] hover:bg-[#F7FAFF]">
-                  <div className="text-xs font-medium text-ink line-clamp-2">{task.description}</div>
-                  <div className="mt-2 flex items-center justify-between gap-2 text-[10px] text-muted"><span>{task.date}</span><span className="rounded-full bg-stamp-red/10 text-stamp-red px-2 py-1">Cần xử lý</span></div>
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </aside>
-
       {showGroupForm && isAdmin && (
-        <div className="fixed inset-0 z-[90] bg-ink/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-paper-line shadow-2xl w-full max-w-2xl max-h-[88vh] flex flex-col overflow-hidden" onClick={(event) => event.stopPropagation()}>
-            <div className="px-6 py-5 border-b border-paper-line flex items-center justify-between gap-4">
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#17243a]/45 p-4 backdrop-blur-sm">
+          <div className="domix-chat-modal flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[28px] border border-white/70 bg-[#fbfaf7] shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4 border-b border-[#e7e0d6] px-6 py-5">
               <div>
-                <h3 className="ktns-serif text-2xl font-semibold text-ink">{groupForm.id ? "Sửa nhóm chat" : "Tạo nhóm chat"}</h3>
-                <p className="text-xs text-muted mt-1">Tạo không gian trao đổi theo phòng ban, dự án hoặc đội nhóm.</p>
+                <h3 className="ktns-serif text-2xl font-semibold text-[#243653]">{groupForm.id ? "Sửa nhóm trao đổi" : "Tạo nhóm trao đổi"}</h3>
+                <p className="mt-1 text-xs text-[#837d74]">Nhóm dùng để giao việc và cập nhật tiến độ chung.</p>
               </div>
-              <button onClick={() => setShowGroupForm(false)} className="w-10 h-10 rounded-xl border border-paper-line text-muted hover:text-ink flex items-center justify-center"><X size={17} /></button>
+              <button onClick={() => setShowGroupForm(false)} className="rounded-full border border-[#ddd6cb] bg-white px-4 py-2 text-xs font-semibold text-[#59667a]">Đóng</button>
             </div>
-
-            <div className="p-6 overflow-y-auto ktns-scrollbar">
-              <label className="flex flex-col gap-2 text-xs font-semibold text-ink">
+            <div className="ktns-scrollbar overflow-y-auto p-6">
+              <label className="flex flex-col gap-2 text-sm font-semibold text-[#2c3d58]">
                 Tên nhóm
-                <input value={groupForm.name} onChange={(event) => setGroupForm({ ...groupForm, name: event.target.value })} placeholder="VD: Nhóm triển khai dự án ABC" className="h-11 border border-paper-line rounded-xl px-4 text-sm font-normal" />
+                <input value={groupForm.name} onChange={(event) => setGroupForm({ ...groupForm, name: event.target.value })} placeholder="Ví dụ: Kinh doanh tuần này" className="rounded-2xl border border-[#dfd8ce] bg-white px-4 py-3 text-sm font-normal" />
               </label>
-
-              {groupForm.memberEmails.length > 0 && (
-                <div className="mt-5">
-                  <div className="text-xs font-semibold text-ink mb-2">Đã chọn {groupForm.memberEmails.length} thành viên</div>
-                  <div className="flex flex-wrap gap-2">
-                    {groupForm.memberEmails.map((email) => (
-                      <button key={email} onClick={() => toggleMember(email)} className="inline-flex items-center gap-2 rounded-full bg-[#EEF4FF] text-[#315EA8] px-3 py-1.5 text-[11px]">
-                        {initialsOf(email)} · {displayName(email)} <X size={12} />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-5">
-                <div className="flex items-center justify-between gap-3 mb-2"><div className="text-xs font-semibold text-ink">Chọn thành viên</div><span className="text-[10px] text-muted">Tài khoản đang hoạt động</span></div>
-                <div className="relative mb-3">
-                  <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-                  <input value={groupMemberSearch} onChange={(event) => setGroupMemberSearch(event.target.value)} placeholder="Tìm theo tên hoặc email..." className="w-full h-10 pl-9 pr-3 rounded-xl border border-paper-line bg-paper/45 text-xs" />
-                </div>
-                <div className="border border-paper-line rounded-xl divide-y divide-paper-line max-h-72 overflow-y-auto ktns-scrollbar">
-                  {filteredGroupFormContacts.map((contact) => {
-                    const checked = groupForm.memberEmails.includes(contact.email);
-                    return (
-                      <label key={contact.email} className={`flex items-center gap-3 px-4 py-3 cursor-pointer ${checked ? "bg-[#F3F7FF]" : "hover:bg-paper/50"}`}>
-                        <input type="checkbox" checked={checked} onChange={() => toggleMember(contact.email)} />
-                        {renderAvatar(contact.email, "w-9 h-9", "text-[11px]")}
-                        <div className="min-w-0 flex-1"><div className="text-sm font-medium text-ink truncate">{displayName(contact.email)}</div><div className="text-[10px] text-muted truncate">{contact.email} · {roleLabel(contact.role)}</div></div>
-                      </label>
-                    );
-                  })}
+              <div className="mt-6">
+                <div className="mb-3 text-sm font-semibold text-[#2c3d58]">Thành viên</div>
+                <div className="ktns-scrollbar max-h-80 overflow-y-auto rounded-2xl border border-[#e2dbd1] bg-white divide-y divide-[#eee8df]">
+                  {contacts.filter((contact) => contact.email !== authUser?.email).map((contact) => (
+                    <label key={contact.email} className="flex cursor-pointer items-center gap-3 px-4 py-3.5 hover:bg-[#faf8f4]">
+                      <input type="checkbox" checked={groupForm.memberEmails.includes(contact.email)} onChange={() => toggleMember(contact.email)} />
+                      <div className="h-9 w-9 shrink-0 rounded-full bg-[#e8edf5] text-[#536681] flex items-center justify-center text-[10px] font-bold">{initialsOf(contact.email)}</div>
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-[#2c3d58]">{contact.email}</div>
+                        <div className="mt-0.5 text-[10px] text-[#918a80]">{displayRole(contact.role)}</div>
+                      </div>
+                    </label>
+                  ))}
                 </div>
               </div>
             </div>
+            <div className="flex justify-end gap-2 border-t border-[#e7e0d6] bg-white/70 px-6 py-4">
+              <button onClick={() => setShowGroupForm(false)} className="rounded-full border border-[#ddd6cb] bg-white px-5 py-2.5 text-sm font-semibold text-[#53617a]">Hủy</button>
+              <button onClick={saveGroup} disabled={!groupForm.name.trim() || loading} className="rounded-full bg-[#2f6f4f] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{groupForm.id ? "Lưu thay đổi" : "Tạo nhóm"}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
-            <div className="px-6 py-4 border-t border-paper-line bg-paper/30 flex justify-end gap-2 shrink-0">
-              <button onClick={() => setShowGroupForm(false)} className="border border-paper-line bg-white text-ink px-5 py-2.5 rounded-xl text-sm">Hủy</button>
-              <button onClick={saveGroup} disabled={!groupForm.name.trim() || loading} className="bg-ink text-white px-5 py-2.5 rounded-xl text-sm disabled:opacity-40">{groupForm.id ? "Lưu thay đổi" : "Tạo nhóm"}</button>
+      {showTaskForm && isAdmin && (
+        <div className="fixed inset-0 z-[95] flex items-center justify-center bg-[#0d1420]/55 p-4 backdrop-blur-sm">
+          <div className="domix-chat-modal flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-white/60 bg-[#fbfaf7] shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4 border-b border-[#e7e0d6] px-6 py-5">
+              <div>
+                <h3 className="domix-chat-primary ktns-serif text-2xl font-semibold text-[#243653]">Giao việc ngay trong chat</h3>
+                <p className="domix-chat-muted mt-1 text-xs text-[#837d74]">Người nhận: {employees.find((item) => item.id === Number(taskForm.employeeId))?.name || selectedEmail}</p>
+              </div>
+              <button onClick={() => setShowTaskForm(false)} className="rounded-full border border-[#ddd6cb] bg-white px-4 py-2 text-xs font-semibold text-[#59667a]">Đóng</button>
+            </div>
+
+            <div className="ktns-scrollbar overflow-y-auto p-6 space-y-5">
+              {error && <div className="rounded-2xl border border-[#efcfcb] bg-[#fff7f6] px-4 py-3 text-xs text-[#b6534d]">{error}</div>}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <label className="flex flex-col gap-2 text-sm font-semibold text-[#2c3d58]">
+                  Ngày thực hiện
+                  <input type="date" value={taskForm.date} onChange={(event) => setTaskForm({ ...taskForm, date: event.target.value })} className="rounded-2xl border border-[#dfd8ce] bg-white px-4 py-3 text-sm font-normal" />
+                </label>
+                <label className="flex flex-col gap-2 text-sm font-semibold text-[#2c3d58]">
+                  Chế độ
+                  <select value={taskForm.visibility} onChange={(event) => setTaskForm({ ...taskForm, visibility: event.target.value })} className="rounded-2xl border border-[#dfd8ce] bg-white px-4 py-3 text-sm font-normal">
+                    <option value="private">Riêng tư</option>
+                    <option value="public">Công khai</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-2 text-sm font-semibold text-[#2c3d58] sm:col-span-2">
+                  Loại công việc
+                  <select value={taskForm.targetType} onChange={(event) => setTaskForm({ ...taskForm, targetType: event.target.value, targetValue: "" })} className="rounded-2xl border border-[#dfd8ce] bg-white px-4 py-3 text-sm font-normal">
+                    {taskTypesForEmployee(taskForm.employeeId).map((typeId) => <option key={typeId} value={typeId}>{TASK_TYPES[typeId]?.label || typeId}</option>)}
+                  </select>
+                </label>
+                {taskForm.targetType !== "khac" && (
+                  <label className="flex flex-col gap-2 text-sm font-semibold text-[#2c3d58] sm:col-span-2">
+                    Chỉ tiêu ({TASK_TYPES[taskForm.targetType]?.unit || ""})
+                    <input type="number" min="0" value={taskForm.targetValue} onChange={(event) => setTaskForm({ ...taskForm, targetValue: event.target.value })} className="rounded-2xl border border-[#dfd8ce] bg-white px-4 py-3 text-sm font-normal" />
+                  </label>
+                )}
+              </div>
+              <label className="flex flex-col gap-2 text-sm font-semibold text-[#2c3d58]">
+                Nội dung công việc
+                <textarea value={taskForm.description} onChange={(event) => setTaskForm({ ...taskForm, description: event.target.value })} rows={5} placeholder="Nhập công việc cần thực hiện và kết quả mong muốn..." className="resize-none rounded-2xl border border-[#dfd8ce] bg-white px-4 py-3 text-sm font-normal" />
+              </label>
+            </div>
+
+            <div className="flex justify-end gap-2 border-t border-[#e7e0d6] bg-white/70 px-6 py-4">
+              <button onClick={() => setShowTaskForm(false)} className="rounded-full border border-[#ddd6cb] bg-white px-5 py-2.5 text-sm font-semibold text-[#53617a]">Hủy</button>
+              <button onClick={saveTaskFromChat} disabled={!taskForm.description.trim() || loading} className="rounded-full bg-[#2f6f4f] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{loading ? "Đang giao..." : "Giao việc"}</button>
             </div>
           </div>
         </div>
@@ -7188,7 +7360,7 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders }) {
         <div className="bg-white rounded-lg border border-paper-line p-4 relative">
           <button
             className="absolute top-3 right-3 text-muted hover:text-ink"
-            onClick={() => { if ((form.customerName || form.phone) && !window.confirm("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?")) return; setShowForm(false); }}
+            onClick={async () => { if ((form.customerName || form.phone) && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setShowForm(false); }}
           ><X size={16} /></button>
           <h3 className="ktns-serif font-semibold text-ink mb-4">Bắt đầu ca hỗ trợ mới</h3>
           <div className="grid grid-cols-2 gap-3">
@@ -7326,13 +7498,12 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders }) {
   );
 }
 
-function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs, reportYear, reportMonth, openRequest }) {
+function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs, reportYear, reportMonth }) {
   const isAdmin = authUser?.role === "admin";
   const currentEmail = (authUser?.email || "").trim().toLowerCase();
   const [showForm, setShowForm] = useState(false);
-  const [filterDate, setFilterDate] = useState(openRequest?.date || GIAOVIEC_TODAY);
+  const [filterDate, setFilterDate] = useState(GIAOVIEC_TODAY);
   const [viewMonthMode, setViewMonthMode] = useState(false);
-  const [focusedTaskDescription, setFocusedTaskDescription] = useState(openRequest?.description || "");
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const firstEmp = employees[0];
@@ -7344,13 +7515,6 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
     description: "",
     visibility: "private",
   });
-
-  useEffect(() => {
-    if (!openRequest?.requestedAt) return;
-    if (openRequest.date) setFilterDate(openRequest.date);
-    setViewMonthMode(false);
-    setFocusedTaskDescription(openRequest.description || "");
-  }, [openRequest]);
 
   const availableTypes = (empId) => {
     const emp = employees.find((employee) => employee.id === Number(empId));
@@ -7439,9 +7603,6 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
     const status = evaluateTaskStatus(task, progress.value);
     return { ...task, progress, status };
   }).sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
-  const normalizedFocusedDescription = focusedTaskDescription.trim().toLowerCase();
-  const isFocusedTask = (task) => normalizedFocusedDescription
-    && String(task.description || "").trim().toLowerCase() === normalizedFocusedDescription;
   const warnCount = rows.filter((row) => row.status === "canh_bao").length;
   const doneCount = rows.filter((row) => row.status === "dat").length;
   const unassigned = isAdmin ? employees.filter((employee) => !filtered.some((task) => task.employeeId === employee.id)) : [];
@@ -7456,19 +7617,13 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
       </div>
 
       {notice && <div className="bg-ledger-green/10 border border-ledger-green/20 rounded-lg px-3 py-2 text-xs text-ledger-green">{notice}</div>}
-      {focusedTaskDescription && (
-        <div className="bg-[#EEF4FF] border border-[#B9D1FF] rounded-lg px-3 py-2.5 text-xs text-[#244F92] flex items-start gap-2">
-          <MessageCircle size={14} className="shrink-0 mt-0.5" />
-          <span>Đang hiển thị công việc mở từ Tin nhắn ngày <strong>{filterDate}</strong>: {focusedTaskDescription}</span>
-        </div>
-      )}
 
       <div className="flex justify-between items-center flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={() => { setViewMonthMode((value) => !value); setFocusedTaskDescription(""); }} className={`text-xs px-3 py-2 rounded-md border flex items-center gap-1.5 ${viewMonthMode ? "bg-ink text-white border-ink" : "border-paper-line text-ink-light"}`}>
+          <button onClick={() => setViewMonthMode((value) => !value)} className={`text-xs px-3 py-2 rounded-md border flex items-center gap-1.5 ${viewMonthMode ? "bg-ink text-white border-ink" : "border-paper-line text-ink-light"}`}>
             <CalendarCheck size={12} /> {viewMonthMode ? `Xem cả kỳ ${reportMonth}/${reportYear}` : "Xem theo ngày"}
           </button>
-          {!viewMonthMode && <input type="date" value={filterDate} onChange={(event) => { setFilterDate(event.target.value); setFocusedTaskDescription(""); }} className="border border-paper-line rounded-md px-3 py-2 text-sm ktns-mono" />}
+          {!viewMonthMode && <input type="date" value={filterDate} onChange={(event) => setFilterDate(event.target.value)} className="border border-paper-line rounded-md px-3 py-2 text-sm ktns-mono" />}
         </div>
         <div className="flex gap-2">
           <button onClick={() => exportTasksExcel(permittedTasks, employees, orders, marketingLogs)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md">
@@ -7568,7 +7723,7 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
             <tbody>
               {rows.length === 0 && <tr><td colSpan={isAdmin ? 7 : 6} className="px-4 py-6 text-center text-xs text-muted">Chưa có công việc phù hợp.</td></tr>}
               {rows.map((row) => (
-                <tr key={row.id} className={`border-t border-paper-line transition-colors ${row.status === "canh_bao" ? "ktns-warn-row" : ""} ${isFocusedTask(row) ? "bg-[#EEF4FF] ring-2 ring-inset ring-[#7EABFA]" : ""}`}>
+                <tr key={row.id} className={`border-t border-paper-line ${row.status === "canh_bao" ? "ktns-warn-row" : ""}`}>
                   <td className="px-4 py-2"><div className="font-medium">{nameOf(row.employeeId)}</div><div className="text-[11px] text-muted">{ROLE_META[employees.find((employee) => employee.id === row.employeeId)?.roleType]?.label}</div></td>
                   <td className="px-4 py-2 text-xs text-muted max-w-sm">{row.description}</td>
                   <td className="px-4 py-2 text-right ktns-mono text-xs">{row.targetType === "khac" ? "—" : `${row.targetValue} ${TASK_TYPES[row.targetType].unit}`}</td>
@@ -7866,10 +8021,10 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
   };
   // Trước khi xoá bản nháp, kiểm tra xem người dùng đã NHẬP GÌ CHƯA (số hoá đơn, đính kèm) —
   // nếu có mà bấm Huỷ/bấm ra ngoài, phải hỏi lại chứ không âm thầm xoá mất công đã nhập.
-  const cancelInvoiceEdit = (id) => {
+  const cancelInvoiceEdit = async (id, skipConfirm = false) => {
     const draft = invoiceEdit[id];
     const hasUnsavedInput = draft && (draft.invoiceNo || draft.attachmentData);
-    if (hasUnsavedInput && !window.confirm("Bạn đã nhập thông tin hoá đơn nhưng chưa bấm Lưu — đóng lại sẽ MẤT hết thông tin vừa nhập. Vẫn muốn đóng?")) {
+    if (!skipConfirm && hasUnsavedInput && !(await confirmOverlay("Bạn đã nhập thông tin hoá đơn nhưng chưa bấm Lưu — đóng lại sẽ MẤT hết thông tin vừa nhập. Vẫn muốn đóng?", { title: "Thông tin hóa đơn chưa lưu", confirmLabel: "Đóng form", tone: "danger" }))) {
       return;
     }
     setInvoiceEdit((p) => { const n = { ...p }; delete n[id]; return n; });
@@ -7905,20 +8060,20 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
       invoiceAttachmentData: draft.attachmentData, invoiceAttachmentName: draft.attachmentName, invoiceAttachmentType: draft.attachmentType,
       linkedTxId,
     } : o)));
-    cancelInvoiceEdit(id);
+    cancelInvoiceEdit(id, true);
   };
   const revertToPending = (id) => {
     const order = orders.find((o) => o.id === id);
     if (order?.linkedTxId) setTransactions((prev) => prev.filter((t) => t.id !== order.linkedTxId));
     setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, invoiceStatus: "pending", invoiceNo: "", invoiceDate: "", invoiceAttachmentData: "", invoiceAttachmentName: "", linkedTxId: null } : o)));
-    cancelInvoiceEdit(id);
+    cancelInvoiceEdit(id, true);
   };
-  const removeOrder = (id) => {
+  const removeOrder = async (id) => {
     const order = orders.find((o) => o.id === id);
     const linkedDist = (distOrders || []).find((d) => d.sourceCrmOrderId === id);
     // Đơn đã nằm trong hồ sơ quyết toán đã duyệt: KHÔNG xóa âm thầm (CA 7) — hủy hồ sơ trước.
     if (linkedDist?.settlementId) {
-      window.alert("Đơn này đã thuộc hồ sơ quyết toán với đối tác. Hủy hồ sơ quyết toán ở tab Hợp tác phân phối trước, rồi mới xóa được đơn.");
+      await noticeOverlay("Đơn này đã thuộc hồ sơ quyết toán với đối tác. Hủy hồ sơ quyết toán ở tab Hợp tác phân phối trước, rồi mới xóa được đơn.", { title: "Không thể xóa đơn" });
       return;
     }
     if (order?.linkedTxId) setTransactions((prev) => prev.filter((t) => t.id !== order.linkedTxId));
@@ -8425,9 +8580,9 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
         <div className="bg-white rounded-lg border border-paper-line p-5 relative">
           <button
             className="absolute top-3 right-3 text-muted hover:text-ink"
-            onClick={() => {
+            onClick={async () => {
               const hasInput = form.customerName || form.phone || form.amount;
-              if (hasInput && !window.confirm("Bạn đã nhập thông tin đơn hàng nhưng chưa bấm Lưu — đóng lại sẽ MẤT hết thông tin vừa nhập. Vẫn muốn đóng?")) return;
+              if (hasInput && !(await confirmOverlay("Bạn đã nhập thông tin đơn hàng nhưng chưa bấm Lưu — đóng lại sẽ MẤT hết thông tin vừa nhập. Vẫn muốn đóng?", { title: "Đơn hàng chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return;
               setShowForm(false);
             }}
           ><X size={16} /></button>
@@ -9126,7 +9281,7 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
 
       {showForm && (
         <div className="bg-white rounded-lg border border-paper-line p-5 relative">
-          <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={() => { if (form.customersReached && !window.confirm("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?")) return; setShowForm(false); }}><X size={16} /></button>
+          <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={async () => { if (form.customersReached && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setShowForm(false); }}><X size={16} /></button>
           <h3 className="ktns-serif font-semibold text-ink mb-4">Ghi nhận hiệu suất ngày</h3>
           <div className="grid grid-cols-4 gap-3">
             <label className="text-xs text-muted flex flex-col gap-1">Ngày<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
@@ -12518,17 +12673,23 @@ export default function App() {
     setAuthUser(null);
   };
 
+  let screen;
   if (authLoading) {
-    return (
+    screen = (
       <div className="ktns-app min-h-screen flex items-center justify-center bg-paper text-sm text-muted">
         Đang kiểm tra phiên đăng nhập...
       </div>
     );
+  } else if (!authUser) {
+    screen = <LoginScreen onLogin={handleLogin} onRegistered={handleRegistered} />;
+  } else {
+    screen = <DomixApp authUser={authUser} onLogout={handleLogout} />;
   }
 
-  if (!authUser) {
-    return <LoginScreen onLogin={handleLogin} onRegistered={handleRegistered} />;
-  }
-
-  return <DomixApp authUser={authUser} onLogout={handleLogout} />;
+  return (
+    <>
+      {screen}
+      <DomixDialogHost />
+    </>
+  );
 }

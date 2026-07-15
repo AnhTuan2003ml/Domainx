@@ -146,6 +146,19 @@ def send_message(db_path, sender_id, recipient_email, body):
     if recipient["id"] == sender_id:
         raise ValueError("Không thể tự nhắn cho chính mình")
     with connect(db_path) as conn:
+        # Khi người dùng trả lời, các tin trước đó của đúng người nhận được xem là đã đọc.
+        # Điều này ngăn badge chưa đọc còn treo dù người dùng đang ở trong luồng và vừa phản hồi.
+        conn.execute(
+            """
+            UPDATE chat_messages
+            SET read_at = CURRENT_TIMESTAMP
+            WHERE sender_id = ?
+              AND recipient_id = ?
+              AND read_at IS NULL
+              AND deleted_at IS NULL
+            """,
+            (recipient["id"], sender_id),
+        )
         cursor = conn.execute(
             "INSERT INTO chat_messages (sender_id, recipient_id, body) VALUES (?, ?, ?)",
             (sender_id, recipient["id"], body),
@@ -383,6 +396,17 @@ def send_group_message(db_path, user_id, group_id, body):
         cursor = conn.execute(
             "INSERT INTO chat_group_messages (group_id, sender_id, body) VALUES (?, ?, ?)",
             (group_id, user_id, body),
+        )
+        # Gửi phản hồi trong nhóm đồng nghĩa người dùng đã đọc toàn bộ luồng đến tin vừa gửi.
+        conn.execute(
+            """
+            INSERT INTO chat_group_reads (group_id, user_id, last_read_at, last_read_message_id)
+            VALUES (?, ?, CURRENT_TIMESTAMP, ?)
+            ON CONFLICT(group_id, user_id) DO UPDATE SET
+                last_read_at = CURRENT_TIMESTAMP,
+                last_read_message_id = excluded.last_read_message_id
+            """,
+            (group_id, user_id, cursor.lastrowid),
         )
         row = conn.execute(
             """
