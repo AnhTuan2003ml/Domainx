@@ -18,6 +18,8 @@ import {
   Send,
   Plus,
   CheckCircle2,
+  Check,
+  CheckCheck,
   AlertTriangle,
   Clock,
   TrendingUp,
@@ -375,8 +377,8 @@ function DomixDialogHost() {
   const destructive = dialog.tone === "danger";
 
   return (
-    <div className="ktns-app fixed inset-0 z-[10000] flex items-center justify-center p-4" role="presentation">
-      <div className="absolute inset-0 bg-[#07101f]/20" aria-hidden="true" />
+    <div className="ktns-app fixed inset-y-0 left-60 right-0 z-[10000] flex items-center justify-center p-4" role="presentation" style={{ background: "transparent" }}>
+      <div className="absolute inset-0 bg-transparent" aria-hidden="true" />
       <section
         role="alertdialog"
         aria-modal="true"
@@ -2482,11 +2484,20 @@ function quarterOf(month) { return Math.ceil(month / 3); }
 function quarterMonths(year, quarter) { return [1, 2, 3].map((i) => ({ year, month: (quarter - 1) * 3 + i })); }
 
 // ---------- Main App ----------
+const DOMIX_THEME_STORAGE_KEY = "domix_theme_mode";
+
 function DomixApp({ authUser, onLogout }) {
   const [tab, setTab] = useState("dashboard");
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
-  const [darkMode, setDarkMode] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem(DOMIX_THEME_STORAGE_KEY) === "dark";
+    } catch {
+      return false;
+    }
+  });
   const [transactions, setTransactions] = useState(initialTransactions);
   const [employees, setEmployees] = useState(initialEmployees);
   const [orders, setOrders] = useState(initialOrders);
@@ -2648,6 +2659,14 @@ function DomixApp({ authUser, onLogout }) {
     if (data.distributionSettlements) setDistributionSettlements(data.distributionSettlements);
     if (data.stockMovements) setStockMovements(data.stockMovements);
   }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DOMIX_THEME_STORAGE_KEY, darkMode ? "dark" : "light");
+    } catch {
+      // Trình duyệt có thể chặn localStorage; bỏ qua để app vẫn hoạt động bình thường.
+    }
+  }, [darkMode]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3139,7 +3158,7 @@ function DomixApp({ authUser, onLogout }) {
                 <AlertTriangle size={13} /> {totals.missing} {t("missing_invoice_tx")}
               </div>
             )}
-            <UserMenu authUser={authUser} onLogout={onLogout} onOpenSettings={() => setTab("taikhoan")} />
+            <UserMenu authUser={authUser} employees={employees} onLogout={onLogout} onOpenSettings={() => setTab("taikhoan")} />
           </div>
         </header>
 
@@ -3186,7 +3205,7 @@ function DomixApp({ authUser, onLogout }) {
           {tab === "taisan" && <TaiSanCoDinh assets={fixedAssets} setAssets={setFixedAssets} setTransactions={setTransactions} reportYear={reportYear} reportMonth={reportMonth} />}
           {tab === "giaoviec" && <GiaoViec authUser={authUser} tasks={tasks} setTasks={setTasks} employees={activeEmployees} orders={orders} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} />}
           {tab === "hotro" && <HoTroKhachHang cases={supportCases} setCases={setSupportCases} employees={activeEmployees} orders={orders} setOrders={setOrders} />}
-          {tab === "chat" && <ChatPage authUser={authUser} onUnreadChange={setChatUnread} employees={employees} setTasks={setTasks} />}
+          {tab === "chat" && <ChatPage authUser={authUser} onUnreadChange={setChatUnread} employees={employees} tasks={tasks} setTasks={setTasks} setTab={setTab} />}
           {tab === "crm" && <DoanhThuCRM orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} revenueByEmployee={revenueByEmployee} setTransactions={setTransactions} transactions={transactions} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} authUser={authUser} debts={debts} setDebts={setDebts} />}
           {tab === "marketing" && <MarketingDaily logs={marketingLogs} setLogs={setMarketingLogs} employees={activeEmployees} marketingByEmployee={marketingByEmployee} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setPages={setMarketingPages} orders={orders} inventory={inventory} />}
           {tab === "nhansu" && <NhanSu authUser={authUser} employees={employees} setEmployees={setEmployees} showForm={showEmpForm} setShowForm={setShowEmpForm} reportYear={reportYear} reportMonth={reportMonth} prefillEmployee={prefillEmployee} setPrefillEmployee={setPrefillEmployee} />}
@@ -3198,7 +3217,7 @@ function DomixApp({ authUser, onLogout }) {
           {tab === "hoachdinh" && <HoachDinhNganSach prevSnapshot={prevSnapshot} prevPeriod={prevPeriod} roleGroupStats={roleGroupStats} company={company} />}
           {tab === "ai" && <TroLyAI totals={totals} transactions={transactions} setTransactions={setTransactions} orders={orders} employees={effectiveActiveEmployees} payrollRows={payrollRows} totalPayroll={totalPayroll} totalEmployerCost={totalEmployerCost} />}
           {tab === "phaply" && <TroLyPhapLy employees={activeEmployees} setEmployees={setEmployees} company={company} />}
-          {tab === "taikhoan" && <CaiDatTaiKhoan authUser={authUser} />}
+          {tab === "taikhoan" && <CaiDatTaiKhoan authUser={authUser} employees={employees} setEmployees={setEmployees} />}
         </div>
       </main>
 
@@ -6598,9 +6617,90 @@ function exportTasksExcel(tasks, employees, orders, marketingLogs) {
 
 // ---------- Hỗ trợ khách hàng — tránh nhiều người cùng hỗ trợ 1 khách, biết ai đang bận ----------
 // ---------- Tin nhắn công ty — đồng bộ SQLite backend, có chat cá nhân và nhóm ----------
-function ChatPage({ authUser, onUnreadChange, employees = [], setTasks }) {
+
+function normalizeAccountEmail(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+function employeeProfileForEmail(employees = [], email = "") {
+  const normalized = normalizeAccountEmail(email);
+  return (employees || []).find((employee) => normalizeAccountEmail(employee.email) === normalized) || null;
+}
+
+function accountDisplayName(employee, email = "") {
+  return employee?.name?.trim() || String(email || "").trim() || "Nhân viên";
+}
+
+function accountPositionLabel(employee, accountRole = "user") {
+  return employee?.position?.trim()
+    || ROLE_META[employee?.roleType]?.label
+    || (accountRole === "admin" ? "Quản trị viên" : "Nhân viên");
+}
+
+function accountInitials(value = "") {
+  const source = String(value || "").split("@")[0].replace(/[^a-zA-Z0-9À-ỹ]+/g, " ").trim();
+  if (!source) return "NV";
+  const parts = source.split(/\s+/).filter(Boolean);
+  return (parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}` : source.slice(0, 2)).toUpperCase();
+}
+
+function AccountAvatar({ employee, email = "", name = "", className = "h-11 w-11", textClassName = "text-xs" }) {
+  const label = accountDisplayName(employee, name || email);
+  return (
+    <div className={`${className} shrink-0 overflow-hidden rounded-full bg-[linear-gradient(135deg,#78a5f2,#4f76c6)] text-white flex items-center justify-center font-bold ring-1 ring-white/20`} title={label}>
+      {employee?.avatarData ? (
+        <img src={employee.avatarData} alt={`Ảnh đại diện ${label}`} className="h-full w-full object-cover" />
+      ) : (
+        <span className={textClassName}>{accountInitials(label)}</span>
+      )}
+    </div>
+  );
+}
+
+function resizeAvatarFile(file, targetSize = 480) {
+  return new Promise((resolve, reject) => {
+    if (!file || !String(file.type || "").startsWith("image/")) {
+      reject(new Error("Chỉ chấp nhận tệp ảnh JPG, PNG hoặc WEBP."));
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      reject(new Error("Ảnh đại diện không được vượt quá 5 MB."));
+      return;
+    }
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Không đọc được tệp ảnh."));
+    reader.onload = () => {
+      const image = new Image();
+      image.onerror = () => reject(new Error("Tệp ảnh không hợp lệ."));
+      image.onload = () => {
+        const side = Math.min(image.naturalWidth, image.naturalHeight);
+        const sx = Math.max(0, (image.naturalWidth - side) / 2);
+        const sy = Math.max(0, (image.naturalHeight - side) / 2);
+        const canvas = document.createElement("canvas");
+        canvas.width = targetSize;
+        canvas.height = targetSize;
+        const context = canvas.getContext("2d");
+        if (!context) {
+          reject(new Error("Trình duyệt không hỗ trợ xử lý ảnh."));
+          return;
+        }
+        context.drawImage(image, sx, sy, side, side, 0, 0, targetSize, targetSize);
+        resolve({
+          data: canvas.toDataURL("image/jpeg", 0.88),
+          name: String(file.name || "avatar.jpg").replace(/\.[^.]+$/, "") + ".jpg",
+          type: "image/jpeg",
+        });
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTasks, setTab }) {
   const isAdmin = authUser?.role === "admin";
   const [mode, setMode] = useState("direct");
+  const [listFilter, setListFilter] = useState("all");
   const [contacts, setContacts] = useState([]);
   const [groups, setGroups] = useState([]);
   const [selectedEmail, setSelectedEmail] = useState("");
@@ -6623,10 +6723,12 @@ function ChatPage({ authUser, onUnreadChange, employees = [], setTasks }) {
   });
   const scrollRef = useRef(null);
 
+  const employeeForEmail = (email) => employeeProfileForEmail(employees, email);
   const directContacts = isAdmin
     ? contacts
     : contacts.filter((contact) => contact.lastMessage || Number(contact.unreadCount) > 0);
   const selectedContact = directContacts.find((contact) => contact.email === selectedEmail);
+  const selectedEmployee = employeeForEmail(selectedEmail);
   const selectedGroup = groups.find((group) => String(group.id) === String(selectedGroupId));
   const groupMembers = selectedGroup?.members || [];
 
@@ -6869,10 +6971,6 @@ function ChatPage({ authUser, onUnreadChange, employees = [], setTasks }) {
     }
   };
 
-  const employeeForEmail = (email) => employees.find((employee) => (
-    String(employee.email || "").trim().toLowerCase() === String(email || "").trim().toLowerCase()
-  ));
-
   const taskTypesForEmployee = (employeeId) => {
     const employee = employees.find((item) => item.id === Number(employeeId));
     return ROLE_TASK_TYPES[employee?.roleType] || ["khac"];
@@ -6943,26 +7041,6 @@ Nội dung: ${newTask.description}`
   };
 
   const hasDestination = mode === "direct" ? !!selectedEmail : !!selectedGroupId;
-  const normalizedSearch = searchQuery.trim().toLowerCase();
-  const visibleDirectContacts = directContacts.filter((contact) => {
-    if (!normalizedSearch) return true;
-    return [contact.email, contact.role, contact.lastMessage]
-      .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(normalizedSearch));
-  });
-  const visibleGroups = groups.filter((group) => {
-    if (!normalizedSearch) return true;
-    return [group.name, group.lastMessage, ...(group.members || []).map((member) => member.email)]
-      .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(normalizedSearch));
-  });
-  const displayRole = (role) => (role === "admin" ? "Quản trị viên" : "Thành viên");
-  const initialsOf = (value = "") => {
-    const base = String(value).split("@")[0].replace(/[^a-zA-Z0-9À-ỹ]+/g, " ").trim();
-    if (!base) return "NV";
-    const parts = base.split(/\s+/).filter(Boolean);
-    return (parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}` : base.slice(0, 2)).toUpperCase();
-  };
   const parseTaskMessage = (body = "") => {
     if (!String(body).startsWith("Bạn được giao việc mới.")) return null;
     const task = {};
@@ -6979,156 +7057,266 @@ Nội dung: ${newTask.description}`
     });
     return task;
   };
+  const previewMessage = (body = "") => {
+    const task = parseTaskMessage(body);
+    if (task) return `Công việc: ${task.description || task.type || "Công việc mới"}`;
+    return String(body || "").replace(/\s+/g, " ").trim();
+  };
+  const conversationTime = (value) => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const now = new Date();
+    if (date.toDateString() === now.toDateString()) {
+      return date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
+    }
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    if (date.toDateString() === yesterday.toDateString()) return "Hôm qua";
+    return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
+  };
+  const normalizedSearch = searchQuery.trim().toLowerCase();
+  const visibleDirectContacts = directContacts.filter((contact) => {
+    if (!normalizedSearch) return true;
+    const profile = employeeForEmail(contact.email);
+    return [contact.email, contact.role, contact.lastMessage, profile?.name, profile?.position, profile?.dept, ROLE_META[profile?.roleType]?.label]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(normalizedSearch));
+  });
+  const visibleGroups = groups.filter((group) => {
+    if (!normalizedSearch) return true;
+    return [group.name, group.lastMessage, ...(group.members || []).flatMap((member) => {
+      const profile = employeeForEmail(member.email);
+      return [member.email, profile?.name, profile?.position];
+    })]
+      .filter(Boolean)
+      .some((value) => String(value).toLowerCase().includes(normalizedSearch));
+  });
+
+  const unreadDirectTotal = contacts.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0);
+  const unreadGroupTotal = groups.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0);
+  const totalUnread = unreadDirectTotal + unreadGroupTotal;
+  const conversationItems = [
+    ...visibleDirectContacts.map((contact) => ({ type: "direct", key: `direct-${contact.email}`, item: contact, at: contact.lastAt || "" })),
+    ...visibleGroups.map((group) => ({ type: "group", key: `group-${group.id}`, item: group, at: group.lastAt || group.createdAt || "" })),
+  ]
+    .filter((entry) => listFilter === "group" ? entry.type === "group" : listFilter === "unread" ? Number(entry.item.unreadCount) > 0 : true)
+    .sort((a, b) => new Date(b.at || 0).getTime() - new Date(a.at || 0).getTime());
+
+  const selectedEmployeeTasks = selectedEmployee
+    ? (tasks || []).filter((task) => Number(task.employeeId) === Number(selectedEmployee.id))
+    : [];
+  const selectedCompletedCount = selectedEmployeeTasks.filter((task) => task.doneManual).length;
+  const selectedOverdueCount = selectedEmployeeTasks.filter((task) => !task.doneManual && task.date && task.date < GIAOVIEC_TODAY).length;
+  const selectedDoingCount = selectedEmployeeTasks.filter((task) => !task.doneManual && (!task.date || task.date >= GIAOVIEC_TODAY)).length;
+
+  const acknowledgeTask = async (task) => {
+    if (!task || loading || !hasDestination) return;
+    const body = `Đã nhận việc: ${task.description || task.type || "Công việc mới"}`;
+    setLoading(true);
+    setError("");
+    try {
+      if (mode === "group") await sendChatGroupMessage(selectedGroupId, body);
+      else await sendChatMessage(selectedEmail, body);
+      await loadMessages();
+      await markCurrentRead();
+      await loadLists();
+    } catch (err) {
+      setError(err.message || "Không xác nhận được công việc.");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <div className="domix-task-chat h-[calc(100vh-190px)] min-h-[600px] overflow-hidden rounded-[28px] border border-[#ddd7cc] bg-[#f7f4ee] shadow-[0_18px_55px_rgba(41,52,72,0.08)] grid grid-cols-1 xl:grid-cols-[320px_minmax(0,1fr)]">
-      <section className="domix-chat-list min-h-0 flex flex-col border-b xl:border-b-0 xl:border-r border-[#e5dfd5] bg-white/80 backdrop-blur-sm">
-        <div className="px-6 pt-6 pb-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="domix-chat-primary ktns-serif text-[26px] font-semibold leading-tight text-[#213354]">Trao đổi công việc</h2>
-              <p className="domix-chat-muted mt-1.5 text-[12px] leading-relaxed text-[#777168]">Nơi giao việc, phản hồi và cập nhật tiến độ.</p>
-            </div>
-            <div className="domix-chat-unread-total rounded-full border border-[#ded8ce] bg-[#faf8f4] px-3 py-1.5 text-[11px] font-semibold text-[#52617a]">
-              {contacts.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0)
-                + groups.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0)} chưa đọc
+    <div className="domix-task-chat grid h-[calc(100vh-190px)] min-h-[650px] grid-cols-1 overflow-hidden rounded-[26px] border border-[#223b66] bg-[radial-gradient(circle_at_top_left,rgba(47,105,255,0.17),transparent_28%),linear-gradient(180deg,#07111f_0%,#0b1730_100%)] shadow-[0_28px_85px_rgba(2,8,23,0.42)] xl:grid-cols-[380px_minmax(0,1fr)]">
+      <section className="flex min-h-0 flex-col border-b border-[#1c3154] bg-[linear-gradient(180deg,rgba(8,17,32,0.98),rgba(10,24,47,0.98))] xl:border-b-0 xl:border-r">
+        <div className="border-b border-[#183052] px-5 pb-5 pt-6">
+          <div className="text-[24px] font-bold tracking-wide text-[#f4c76a]">DOMIX</div>
+          <div className="mt-1 text-sm text-[#dce8ff]">Trao đổi công việc</div>
+
+          <div className="mt-5 rounded-[18px] border border-[#2a426d] bg-[#0c1a31] px-4 py-3">
+            <div className="flex items-center gap-3 text-[#91a8cf]">
+              <Search size={17} className="shrink-0" />
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Tìm người, nhóm hoặc nội dung..."
+                className="w-full border-0 bg-transparent p-0 text-sm text-white placeholder:text-[#768db5] focus:outline-none focus:ring-0"
+              />
             </div>
           </div>
 
-          <input
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="Tìm người, nhóm hoặc nội dung..."
-            className="domix-chat-search mt-5 w-full rounded-2xl border border-[#e4ddd3] bg-[#fbfaf7] px-4 py-3 text-sm text-[#263750] placeholder:text-[#aaa49b] focus:bg-white"
-          />
-
-          <div className="domix-chat-tabs mt-3 grid grid-cols-2 rounded-2xl bg-[#f1eee8] p-1">
-            <button onClick={() => switchMode("direct")} className={`relative rounded-xl px-3 py-2.5 text-sm font-semibold ${mode === "direct" ? "bg-white text-[#213354] shadow-sm" : "text-[#777168] hover:text-[#213354]"}`}>
-              Cá nhân
-              {contacts.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0) > 0 && <span className="ml-2 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-[#d95b56] px-1 text-[10px] text-white">{contacts.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0)}</span>}
-            </button>
-            <button onClick={() => switchMode("group")} className={`relative rounded-xl px-3 py-2.5 text-sm font-semibold ${mode === "group" ? "bg-white text-[#213354] shadow-sm" : "text-[#777168] hover:text-[#213354]"}`}>
-              Nhóm
-              {groups.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0) > 0 && <span className="ml-2 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-[#d95b56] px-1 text-[10px] text-white">{groups.reduce((sum, item) => sum + (Number(item.unreadCount) || 0), 0)}</span>}
-            </button>
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            <button onClick={() => setListFilter("all")} className={`rounded-[15px] border px-3 py-2.5 text-sm font-semibold transition ${listFilter === "all" ? "border-[#315ba8] bg-[#234a8e] text-white" : "border-[#263e68] bg-white/[0.03] text-[#a7b9d8] hover:bg-white/[0.06]"}`}>Tất cả</button>
+            <button onClick={() => setListFilter("unread")} className={`rounded-[15px] border px-3 py-2.5 text-sm font-semibold transition ${listFilter === "unread" ? "border-[#315ba8] bg-[#234a8e] text-white" : "border-[#263e68] bg-white/[0.03] text-[#a7b9d8] hover:bg-white/[0.06]"}`}>Chưa đọc {totalUnread > 0 && <span className="ml-1 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-[#3f7cff] px-1 text-[10px] text-white">{totalUnread > 99 ? "99+" : totalUnread}</span>}</button>
+            <button onClick={() => setListFilter("group")} className={`rounded-[15px] border px-3 py-2.5 text-sm font-semibold transition ${listFilter === "group" ? "border-[#315ba8] bg-[#234a8e] text-white" : "border-[#263e68] bg-white/[0.03] text-[#a7b9d8] hover:bg-white/[0.06]"}`}>Nhóm</button>
           </div>
         </div>
 
-        {mode === "group" && isAdmin && (
-          <div className="px-6 pb-4 flex flex-wrap gap-2">
-            <button onClick={openCreateGroup} className="rounded-full bg-[#2f6f4f] px-4 py-2 text-xs font-semibold text-white">Tạo nhóm</button>
-            <button onClick={openEditGroup} disabled={!selectedGroup} className="rounded-full border border-[#dcd5ca] bg-white px-4 py-2 text-xs font-semibold text-[#42516a] disabled:opacity-40">Sửa nhóm</button>
-            <button onClick={removeGroup} disabled={!selectedGroup || loading} className="rounded-full border border-[#e8c8c5] bg-[#fff8f7] px-4 py-2 text-xs font-semibold text-[#bd4d48] disabled:opacity-40">Xóa nhóm</button>
+        <div className="ktns-scrollbar flex-1 min-h-0 overflow-y-auto">
+          {conversationItems.length === 0 && <div className="mx-4 mt-4 rounded-[20px] border border-dashed border-[#29426e] bg-white/[0.03] px-5 py-10 text-center text-sm text-[#8ea7d2]">Chưa có cuộc trò chuyện phù hợp.</div>}
+          {conversationItems.map((entry) => {
+            if (entry.type === "direct") {
+              const contact = entry.item;
+              const profile = employeeForEmail(contact.email);
+              const displayName = accountDisplayName(profile, contact.email);
+              const positionLabel = accountPositionLabel(profile, contact.role);
+              const unreadCount = Number(contact.unreadCount) || 0;
+              const active = mode === "direct" && selectedEmail === contact.email;
+              return (
+                <button key={entry.key} onClick={() => selectDirect(contact.email)} className={`w-full border-b border-[#183052] px-5 py-4 text-left transition ${active ? "bg-[linear-gradient(90deg,rgba(45,91,179,0.40),rgba(18,39,76,0.26))]" : "hover:bg-white/[0.04]"}`}>
+                  <div className="flex items-start gap-3.5">
+                    <div className="relative shrink-0">
+                      <AccountAvatar employee={profile} email={contact.email} name={displayName} className="h-12 w-12" textClassName="text-xs" />
+                      {contact.active && <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-[#0b1730] bg-[#39cf72]" />}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className={`truncate text-[15px] ${unreadCount > 0 ? "font-bold text-white" : "font-semibold text-[#edf4ff]"}`}>{displayName}</div>
+                        <span className="shrink-0 text-[11px] text-[#9cb0d1]">{conversationTime(contact.lastAt)}</span>
+                      </div>
+                      <div className="mt-0.5 truncate text-xs text-[#a5b7d5]">{positionLabel}</div>
+                      <div className="mt-2 flex items-center gap-2">
+                        <div className={`min-w-0 flex-1 truncate text-sm ${unreadCount > 0 ? "font-semibold text-[#dce8ff]" : "text-[#aebfda]"}`}>{previewMessage(contact.lastMessage) || "Bắt đầu trao đổi công việc"}</div>
+                        {unreadCount > 0 && <span className="inline-flex min-w-6 h-6 shrink-0 items-center justify-center rounded-full bg-[#3f7cff] px-1.5 text-[11px] font-bold text-white shadow-[0_8px_20px_rgba(63,124,255,0.42)]">{unreadCount > 99 ? "99+" : unreadCount}</span>}
+                      </div>
+                    </div>
+                  </div>
+                </button>
+              );
+            }
+            const group = entry.item;
+            const unreadCount = Number(group.unreadCount) || 0;
+            const active = mode === "group" && String(group.id) === String(selectedGroupId);
+            return (
+              <button key={entry.key} onClick={() => selectGroup(group.id)} className={`w-full border-b border-[#183052] px-5 py-4 text-left transition ${active ? "bg-[linear-gradient(90deg,rgba(45,91,179,0.40),rgba(18,39,76,0.26))]" : "hover:bg-white/[0.04]"}`}>
+                <div className="flex items-start gap-3.5">
+                  <AccountAvatar name={group.name} className="h-12 w-12 bg-[linear-gradient(135deg,#7b4cc8,#4e2d94)]" textClassName="text-xs" />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className={`truncate text-[15px] ${unreadCount > 0 ? "font-bold text-white" : "font-semibold text-[#edf4ff]"}`}>{group.name}</div>
+                      <span className="shrink-0 text-[11px] text-[#9cb0d1]">{conversationTime(group.lastAt)}</span>
+                    </div>
+                    <div className="mt-0.5 text-xs text-[#a5b7d5]">{group.members?.length || 0} thành viên</div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <div className={`min-w-0 flex-1 truncate text-sm ${unreadCount > 0 ? "font-semibold text-[#dce8ff]" : "text-[#aebfda]"}`}>{previewMessage(group.lastMessage) || "Trao đổi chung về công việc"}</div>
+                      {unreadCount > 0 && <span className="inline-flex min-w-6 h-6 shrink-0 items-center justify-center rounded-full bg-[#3f7cff] px-1.5 text-[11px] font-bold text-white">{unreadCount > 99 ? "99+" : unreadCount}</span>}
+                    </div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {isAdmin && (
+          <div className="border-t border-[#183052] p-4">
+            <button onClick={openCreateGroup} className="w-full rounded-[16px] border border-[#2b456f] bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white hover:bg-white/[0.07]">+ Tạo nhóm mới</button>
+          </div>
+        )}
+      </section>
+
+      <section className="flex min-h-0 flex-col bg-[radial-gradient(circle_at_top_left,rgba(65,119,255,0.09),transparent_26%),linear-gradient(180deg,#0a162b_0%,#07111f_100%)]">
+        <div className="border-b border-[#1d3155] bg-white/[0.02] px-6 py-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="min-w-0 flex items-center gap-4">
+              {hasDestination && (
+                <div className="relative shrink-0">
+                  <AccountAvatar
+                    employee={mode === "direct" ? selectedEmployee : null}
+                    email={mode === "direct" ? selectedContact?.email : ""}
+                    name={mode === "group" ? selectedGroup?.name : accountDisplayName(selectedEmployee, selectedContact?.email)}
+                    className="h-16 w-16"
+                    textClassName="text-sm"
+                  />
+                  {mode === "direct" && selectedContact?.active && <span className="absolute bottom-0 right-0 h-4 w-4 rounded-full border-2 border-[#0a162b] bg-[#39cf72]" />}
+                </div>
+              )}
+              <div className="min-w-0">
+                <h2 className="truncate text-[22px] font-semibold text-white">{mode === "group" ? (selectedGroup?.name || "Chọn nhóm") : (hasDestination ? accountDisplayName(selectedEmployee, selectedContact?.email) : "Chọn người trao đổi")}</h2>
+                <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[#a8bbdb]">
+                  <span>{mode === "group" && selectedGroup ? `${groupMembers.length} thành viên` : hasDestination ? accountPositionLabel(selectedEmployee, selectedContact?.role) : "Chọn cuộc trò chuyện bên trái"}</span>
+                  {mode === "direct" && selectedEmployee?.dept && <span className="rounded-full bg-[#103154] px-3 py-1 text-xs text-[#cce0ff]">{selectedEmployee.dept}</span>}
+                </div>
+              </div>
+            </div>
+            {hasDestination && (
+              <div className="flex items-center gap-3">
+                {mode === "direct" && <button onClick={() => setTab?.("giaoviec")} className="rounded-[15px] bg-[#2f69ff] px-5 py-3 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(47,105,255,0.36)] hover:bg-[#3a75ff]">Xem công việc</button>}
+                {mode === "group" && isAdmin && <button onClick={openEditGroup} className="flex h-11 w-11 items-center justify-center rounded-[15px] border border-[#2b456f] bg-white/[0.04] text-xl text-white hover:bg-white/[0.08]">⋮</button>}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {mode === "direct" && hasDestination && (
+          <div className="flex flex-wrap items-center gap-3 border-b border-[#1d3155] bg-white/[0.015] px-6 py-3">
+            <span className="rounded-full bg-[#11284b] px-4 py-2 text-sm font-semibold text-[#82adff]">{selectedDoingCount} đang làm</span>
+            <span className="rounded-full bg-[#2f1823] px-4 py-2 text-sm font-semibold text-[#ff7f8f]">{selectedOverdueCount} quá hạn</span>
+            <span className="rounded-full bg-[#162335] px-4 py-2 text-sm font-semibold text-[#b8c5d9]">{selectedCompletedCount} đã hoàn thành</span>
           </div>
         )}
 
-        <div className="ktns-scrollbar flex-1 min-h-0 overflow-y-auto px-4 pb-5 space-y-2">
-          {mode === "direct" && visibleDirectContacts.length === 0 && (
-            <div className="domix-chat-empty mx-2 rounded-2xl bg-[#faf8f4] px-5 py-10 text-center text-sm leading-relaxed text-[#8a847b]">{isAdmin ? "Chưa có tài khoản phù hợp." : "Chưa có cuộc trao đổi công việc nào."}</div>
-          )}
-          {mode === "direct" && visibleDirectContacts.map((contact) => {
-            const active = selectedEmail === contact.email;
-            return (
-              <button key={contact.email} onClick={() => selectDirect(contact.email)} className={`domix-chat-conversation group relative w-full rounded-[20px] border px-3.5 py-3.5 text-left ${active ? "is-active " : ""}${active ? "border-[#b9cdf4] bg-[#edf3ff] shadow-[0_9px_24px_rgba(77,111,172,0.10)]" : "border-transparent bg-transparent hover:border-[#e6dfd5] hover:bg-white"}`}>
-                <div className="flex items-center gap-3">
-                  <div className={`h-11 w-11 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${active ? "bg-[#7ea8ef] text-white" : "bg-[#e8edf5] text-[#536681]"}`}>{initialsOf(contact.email)}</div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="domix-chat-primary truncate text-sm font-semibold text-[#243653]">{contact.email}</div>
-                      {Number(contact.unreadCount) > 0 && <span className="min-w-5 h-5 shrink-0 rounded-full bg-[#d95b56] px-1.5 text-[10px] font-bold text-white flex items-center justify-center">{contact.unreadCount}</span>}
-                    </div>
-                    <div className="domix-chat-muted mt-0.5 text-[11px] text-[#8a847b]">{displayRole(contact.role)}</div>
-                    <div className="domix-chat-secondary mt-1 truncate text-xs text-[#727d8e]">{contact.lastMessage || "Bắt đầu trao đổi về công việc"}</div>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-
-          {mode === "group" && visibleGroups.length === 0 && <div className="domix-chat-empty mx-2 rounded-2xl bg-[#faf8f4] px-5 py-10 text-center text-sm text-[#8a847b]">Chưa có nhóm trao đổi phù hợp.</div>}
-          {mode === "group" && visibleGroups.map((group) => {
-            const active = String(group.id) === String(selectedGroupId);
-            return (
-              <button key={group.id} onClick={() => selectGroup(group.id)} className={`domix-chat-conversation relative w-full rounded-[20px] border px-3.5 py-3.5 text-left ${active ? "is-active " : ""}${active ? "border-[#b9cdf4] bg-[#edf3ff] shadow-[0_9px_24px_rgba(77,111,172,0.10)]" : "border-transparent bg-transparent hover:border-[#e6dfd5] hover:bg-white"}`}>
-                <div className="flex items-center gap-3">
-                  <div className={`h-11 w-11 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${active ? "bg-[#7ea8ef] text-white" : "bg-[#efe7d6] text-[#7c6742]"}`}>{initialsOf(group.name)}</div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="domix-chat-primary truncate text-sm font-semibold text-[#243653]">{group.name}</div>
-                      {Number(group.unreadCount) > 0 && <span className="min-w-5 h-5 shrink-0 rounded-full bg-[#d95b56] px-1.5 text-[10px] font-bold text-white flex items-center justify-center">{group.unreadCount}</span>}
-                    </div>
-                    <div className="domix-chat-muted mt-0.5 text-[11px] text-[#8a847b]">{group.members?.length || 0} thành viên</div>
-                    <div className="domix-chat-secondary mt-1 truncate text-xs text-[#727d8e]">{group.lastMessage || "Trao đổi chung về công việc"}</div>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="domix-chat-main min-h-0 flex flex-col bg-[linear-gradient(145deg,#fbfcff_0%,#f5f7fb_55%,#f8f6f1_100%)]">
-        <div className="domix-chat-header border-b border-[#e5dfd5] bg-white/72 px-6 py-4 backdrop-blur-sm flex items-center justify-between gap-4">
-          <div className="min-w-0 flex items-center gap-3">
-            {hasDestination && <div className="h-11 w-11 shrink-0 rounded-full bg-[#87acf0] text-white flex items-center justify-center text-xs font-bold">{initialsOf(mode === "group" ? selectedGroup?.name : selectedContact?.email)}</div>}
-            <div className="min-w-0">
-              <h2 className="domix-chat-primary truncate text-[17px] font-semibold text-[#213354]">{mode === "group" ? (selectedGroup?.name || "Chọn nhóm trao đổi") : (selectedContact?.email || "Chọn người trao đổi")}</h2>
-              <p className="domix-chat-muted mt-0.5 truncate text-[12px] text-[#7d786f]">{mode === "group" && selectedGroup ? `${groupMembers.length} thành viên · Trao đổi về công việc` : hasDestination ? "Trao đổi giao việc và cập nhật tiến độ" : "Chọn cuộc trò chuyện ở bên trái"}</p>
-            </div>
-          </div>
-          {mode === "group" && selectedGroup && isAdmin && <button onClick={openEditGroup} className="shrink-0 rounded-full border border-[#ddd6cb] bg-white px-4 py-2 text-xs font-semibold text-[#46546a]">Quản lý nhóm</button>}
-          {mode === "direct" && selectedContact && <span className="domix-chat-role-chip shrink-0 rounded-full bg-[#eef2f8] px-3 py-1.5 text-[11px] font-semibold text-[#60708a]">{displayRole(selectedContact.role)}</span>}
-        </div>
-
-        <div ref={scrollRef} className="domix-chat-messages ktns-scrollbar flex-1 min-h-0 overflow-y-auto px-5 sm:px-8 py-7">
+        <div ref={scrollRef} className="ktns-scrollbar flex-1 min-h-0 overflow-y-auto px-5 py-6 sm:px-8">
           {!hasDestination && (
-            <div className="h-full flex items-center justify-center">
-              <div className="domix-chat-empty max-w-sm rounded-[28px] border border-white bg-white/70 px-8 py-10 text-center shadow-[0_18px_50px_rgba(38,58,91,0.07)] backdrop-blur-sm">
-                <div className="ktns-serif text-2xl font-semibold text-[#263854]">Bắt đầu trao đổi công việc</div>
-                <p className="mt-3 text-sm leading-6 text-[#7d786f]">Chọn một người hoặc nhóm để giao việc, phản hồi và cập nhật tiến độ trong cùng một luồng.</p>
+            <div className="flex h-full items-center justify-center">
+              <div className="max-w-md rounded-[26px] border border-[#223b63] bg-white/[0.035] px-8 py-10 text-center shadow-[0_20px_60px_rgba(2,8,22,0.32)]">
+                <div className="text-2xl font-semibold text-white">Chọn một cuộc trò chuyện</div>
+                <p className="mt-3 text-sm leading-6 text-[#9eb2d7]">Trao đổi, giao việc và cập nhật tiến độ trong cùng một luồng.</p>
               </div>
             </div>
           )}
 
           {hasDestination && (
-            <div className="mx-auto flex min-h-full w-full max-w-4xl flex-col">
-              <div className="mb-6 flex justify-center"><span className="domix-chat-day-chip rounded-full bg-white/75 px-4 py-1.5 text-[11px] font-medium text-[#8a847b] shadow-sm">Trao đổi công việc</span></div>
-              {messages.length === 0 && <div className="domix-chat-empty m-auto rounded-2xl bg-white/70 px-6 py-5 text-center text-sm text-[#8a847b]">Chưa có nội dung. Hãy bắt đầu bằng công việc cần trao đổi.</div>}
-              <div className="space-y-4">
+            <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col">
+              <div className="mb-6 flex justify-center"><span className="rounded-full border border-[#233b62] bg-white/[0.04] px-4 py-2 text-[11px] font-medium text-[#a8bbdb]">Hôm nay, {new Date().toLocaleDateString("vi-VN")}</span></div>
+              {messages.length === 0 && <div className="m-auto rounded-[20px] border border-dashed border-[#29426e] bg-white/[0.03] px-6 py-5 text-center text-sm text-[#9eb2d7]">Chưa có nội dung trao đổi.</div>}
+              <div className="space-y-6">
                 {messages.map((message) => {
                   const mine = message.senderEmail === authUser?.email;
                   const time = message.createdAt ? new Date(message.createdAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "";
                   const task = parseTaskMessage(message.body);
+                  const senderEmployee = employeeForEmail(message.senderEmail);
                   return (
-                    <div key={message.id} className={`flex items-end gap-2.5 ${mine ? "justify-end" : "justify-start"}`}>
-                      {!mine && <div className="mb-5 h-8 w-8 shrink-0 rounded-full bg-[#a9c3ee] text-white flex items-center justify-center text-[10px] font-bold">{initialsOf(message.senderEmail)}</div>}
-                      <div className={`group relative min-w-0 ${task ? "w-full max-w-[620px]" : "max-w-[78%]"}`}>
-                        {mode === "group" && !mine && <div className="mb-1.5 px-1 text-[10px] font-semibold text-[#70809a]">{message.senderEmail}</div>}
+                    <div key={message.id} className={`group flex items-end gap-3 ${mine ? "justify-end" : "justify-start"}`}>
+                      {!mine && <AccountAvatar employee={senderEmployee} email={message.senderEmail} className="mb-5 h-10 w-10" textClassName="text-[10px]" />}
+                      <div className={`min-w-0 ${task ? "w-full max-w-[690px]" : "max-w-[78%]"}`}>
+                        {mode === "group" && !mine && <div className="mb-1.5 px-1 text-[11px] font-medium text-[#86a5d6]">{accountDisplayName(senderEmployee, message.senderEmail)}</div>}
                         {task ? (
-                          <div className="domix-chat-task-card overflow-hidden rounded-[24px] border border-[#ded8cd] bg-white shadow-[0_16px_40px_rgba(45,62,90,0.08)]">
-                            <div className="flex items-center justify-between gap-4 border-b border-[#eee8df] px-5 py-4">
+                          <div className="overflow-hidden rounded-[23px] border border-[#2e58a7] bg-[linear-gradient(180deg,rgba(13,29,57,0.96),rgba(7,18,36,0.98))] shadow-[0_20px_48px_rgba(2,8,23,0.42)]">
+                            <div className="flex items-center justify-between gap-4 border-b border-[#1b3763] px-6 py-5">
                               <div>
-                                <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8d857a]">Nhiệm vụ được giao</div>
-                                <div className="mt-1 text-base font-semibold text-[#263854]">{task.description || "Công việc mới"}</div>
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5e9cff]">Công việc được giao</div>
+                                <div className="mt-3 text-[18px] font-semibold leading-snug text-white">{task.description || "Công việc mới"}</div>
                               </div>
-                              <span className="rounded-full bg-[#fff1ee] px-3 py-1.5 text-[11px] font-semibold text-[#c05b52]">Cần xử lý</span>
+                              <span className="rounded-full bg-[#76551f] px-4 py-2 text-xs font-semibold text-[#ffe1a1]">Cần xử lý</span>
                             </div>
-                            <div className="grid gap-4 px-5 py-5 sm:grid-cols-3">
-                              <div><div className="text-[10px] uppercase tracking-wider text-[#9a9389]">Ngày thực hiện</div><div className="mt-1 text-sm font-semibold text-[#34445e]">{task.date || "Chưa đặt"}</div></div>
-                              <div><div className="text-[10px] uppercase tracking-wider text-[#9a9389]">Loại công việc</div><div className="mt-1 text-sm font-semibold text-[#34445e]">{task.type || "Công việc khác"}</div></div>
-                              <div><div className="text-[10px] uppercase tracking-wider text-[#9a9389]">Chế độ</div><div className="mt-1 text-sm font-semibold text-[#34445e]">{task.visibility || "Riêng tư"}</div></div>
+                            <div className="grid gap-4 px-6 py-5 sm:grid-cols-4">
+                              <div><div className="text-[10px] uppercase tracking-wider text-[#8197bd]">Ngày thực hiện</div><div className="mt-2 text-[15px] font-semibold text-white">{task.date || "Chưa đặt"}</div></div>
+                              <div><div className="text-[10px] uppercase tracking-wider text-[#8197bd]">Loại công việc</div><div className="mt-2 text-[15px] font-semibold text-[#8eb4ff]">{task.type || "Công việc khác"}</div></div>
+                              <div><div className="text-[10px] uppercase tracking-wider text-[#8197bd]">Chỉ tiêu</div><div className="mt-2 text-[15px] font-semibold text-[#75e19a]">{task.target || "—"}</div></div>
+                              <div><div className="text-[10px] uppercase tracking-wider text-[#8197bd]">Chế độ</div><div className="mt-2 text-[15px] font-semibold text-white">{task.visibility || "Riêng tư"}</div></div>
                             </div>
-                            {task.target && <div className="mx-5 mb-5 rounded-2xl bg-[#f3f6fb] px-4 py-3 text-sm text-[#52617a]"><span className="font-semibold">Chỉ tiêu:</span> {task.target}</div>}
+                            <div className="flex flex-wrap gap-3 border-t border-[#1b3763] px-6 py-5">
+                              <button type="button" onClick={() => setTab?.("giaoviec")} className="rounded-[15px] border border-[#476cae] bg-white/[0.03] px-5 py-3 text-sm font-semibold text-white hover:bg-white/[0.07]">Xem công việc</button>
+                              {!mine && <button type="button" onClick={() => acknowledgeTask(task)} disabled={loading} className="rounded-[15px] bg-[#2f69ff] px-5 py-3 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(47,105,255,0.34)] disabled:opacity-50">Đã nhận việc</button>}
+                            </div>
                           </div>
                         ) : (
-                          <div className={`rounded-[22px] px-4 py-3 text-sm leading-relaxed shadow-[0_8px_22px_rgba(40,57,84,0.06)] ${mine ? "domix-chat-bubble-out rounded-br-md bg-[#263b63] text-white" : "domix-chat-bubble-in rounded-bl-md border border-[#dce4ef] bg-white text-[#30425f]"}`}>
+                          <div className={`rounded-[19px] px-5 py-3.5 text-[15px] leading-relaxed shadow-[0_16px_36px_rgba(2,8,23,0.20)] ${mine ? "rounded-br-md bg-[linear-gradient(135deg,#2859d8,#356dff)] text-white" : "rounded-bl-md border border-[#263f67] bg-[linear-gradient(180deg,rgba(255,255,255,0.085),rgba(255,255,255,0.045))] text-[#edf4ff]"}`}>
                             <div className="whitespace-pre-wrap">{message.body}</div>
                           </div>
                         )}
-                        <div className={`domix-chat-meta mt-1.5 flex items-center gap-2 px-1 text-[10px] text-[#989188] ${mine ? "justify-end" : "justify-start"}`}>
+                        <div className={`mt-2 flex items-center gap-1.5 px-1 text-[11px] ${mine ? "justify-end text-[#8db6ff]" : "justify-start text-[#8ea7d2]"}`}>
                           {time && <span>{time}</span>}
-                          {mine && <span>Đã gửi</span>}
-                          {isAdmin && <button onClick={() => removeMessage(message)} className="ml-1 font-semibold text-[#b45b56] opacity-0 transition-opacity group-hover:opacity-100">Xóa</button>}
+                          {mine && mode === "direct" && (
+                            <span className={`inline-flex items-center ${message.readAt ? "text-[#6fb5ff]" : "text-[#9eb2d7]"}`} title={message.readAt ? "Đã xem" : "Đã gửi"}>
+                              {message.readAt ? <CheckCheck size={16} strokeWidth={2.4} /> : <Check size={15} strokeWidth={2.2} />}
+                            </span>
+                          )}
+                          {mine && mode === "group" && <span className="inline-flex items-center text-[#9eb2d7]" title="Đã gửi"><Check size={15} strokeWidth={2.2} /></span>}
+                          {isAdmin && <button onClick={() => removeMessage(message)} className="ml-1 text-[#f19b95] opacity-0 transition-opacity group-hover:opacity-100">Xóa</button>}
                         </div>
                       </div>
                     </div>
@@ -7139,19 +7327,18 @@ Nội dung: ${newTask.description}`
           )}
         </div>
 
-        <div className="domix-chat-composer border-t border-[#e5dfd5] bg-white/78 px-4 sm:px-6 py-4 backdrop-blur-sm">
-          {error && <div className="mx-auto mb-3 max-w-4xl rounded-2xl border border-[#efcfcb] bg-[#fff7f6] px-4 py-2.5 text-xs text-[#b6534d]">{error}</div>}
-          <div className="mx-auto max-w-4xl">
-            <div className="domix-chat-composer-box flex items-end gap-3 rounded-[24px] border border-[#ddd6ca] bg-white p-2.5 shadow-[0_12px_32px_rgba(39,55,82,0.07)] focus-within:border-[#b8c9e8]">
+        <div className="border-t border-[#1d3155] bg-[linear-gradient(180deg,rgba(10,22,43,0.88),rgba(7,17,31,0.96))] px-5 py-5 sm:px-8">
+          {error && <div className="mx-auto mb-3 max-w-5xl rounded-2xl border border-[#5b2730] bg-[#32171d]/90 px-4 py-2.5 text-xs text-[#ffb6ae]">{error}</div>}
+          <div className="mx-auto max-w-5xl">
+            <div className="flex items-end gap-3 rounded-[22px] border border-[#29426e] bg-[#091326] p-2.5 shadow-[0_15px_40px_rgba(2,8,23,0.30)] focus-within:border-[#4475ce]">
               {isAdmin && (
                 <button
                   type="button"
                   onClick={openTaskAssignment}
                   disabled={mode !== "direct" || !selectedEmail || loading}
                   title={mode === "direct" && selectedEmail ? "Giao việc cho người đang chat" : "Chọn một người để giao việc"}
-                  className="domix-chat-task-plus h-11 w-11 shrink-0 rounded-[18px] bg-[#263b63] text-xl font-light text-white shadow-sm disabled:bg-[#c9ced8] disabled:text-white"
-                >
-                  +
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] bg-[linear-gradient(135deg,#8cb6ff,#4d86ff)] text-[30px] font-light text-[#0a1730] shadow-[0_12px_30px_rgba(74,130,255,0.35)] disabled:opacity-40"
+                >+
                 </button>
               )}
               <textarea
@@ -7161,16 +7348,15 @@ Nội dung: ${newTask.description}`
                 onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); send(); } }}
                 disabled={!hasDestination || loading}
                 rows={1}
-                placeholder={hasDestination ? "Trao đổi về công việc..." : "Chọn cuộc trò chuyện trước"}
-                className="domix-chat-input ktns-scrollbar max-h-[132px] min-h-[44px] flex-1 resize-none border-0 bg-transparent px-3 py-3 text-sm leading-5 text-[#263854] placeholder:text-[#aaa49b] focus:shadow-none disabled:text-[#aaa49b]"
+                placeholder={hasDestination ? "Nhập tin nhắn..." : "Chọn cuộc trò chuyện trước"}
+                className="ktns-scrollbar max-h-[132px] min-h-[48px] flex-1 resize-none border-0 bg-transparent px-3 py-3 text-sm leading-6 text-white placeholder:text-[#7289ad] focus:outline-none focus:ring-0 disabled:text-[#7289ad]"
               />
-              <button onClick={send} disabled={!hasDestination || !input.trim() || loading} className="h-11 shrink-0 rounded-[18px] bg-[#263b63] px-6 text-sm font-semibold text-white shadow-sm disabled:bg-[#c9ced8] disabled:text-white">{loading ? "Đang gửi" : "Gửi"}</button>
+              <button onClick={send} disabled={!hasDestination || !input.trim() || loading} className="h-12 shrink-0 rounded-[16px] bg-[#2f69ff] px-6 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(47,105,255,0.34)] disabled:bg-[#41516d] disabled:text-[#9eb2d7]">{loading ? "Đang gửi" : "Gửi"}</button>
             </div>
-            <div className="mt-2 px-3 text-[10px] text-[#9a9389]">Enter để gửi · Shift + Enter để xuống dòng</div>
+            <div className="mt-2 px-2 text-[11px] text-[#7f95bb]">Enter để gửi · Shift + Enter để xuống dòng</div>
           </div>
         </div>
       </section>
-
       {showGroupForm && isAdmin && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-[#17243a]/45 p-4 backdrop-blur-sm">
           <div className="domix-chat-modal flex max-h-[88vh] w-full max-w-xl flex-col overflow-hidden rounded-[28px] border border-white/70 bg-[#fbfaf7] shadow-2xl" onClick={(event) => event.stopPropagation()}>
@@ -7189,16 +7375,19 @@ Nội dung: ${newTask.description}`
               <div className="mt-6">
                 <div className="mb-3 text-sm font-semibold text-[#2c3d58]">Thành viên</div>
                 <div className="ktns-scrollbar max-h-80 overflow-y-auto rounded-2xl border border-[#e2dbd1] bg-white divide-y divide-[#eee8df]">
-                  {contacts.filter((contact) => contact.email !== authUser?.email).map((contact) => (
-                    <label key={contact.email} className="flex cursor-pointer items-center gap-3 px-4 py-3.5 hover:bg-[#faf8f4]">
-                      <input type="checkbox" checked={groupForm.memberEmails.includes(contact.email)} onChange={() => toggleMember(contact.email)} />
-                      <div className="h-9 w-9 shrink-0 rounded-full bg-[#e8edf5] text-[#536681] flex items-center justify-center text-[10px] font-bold">{initialsOf(contact.email)}</div>
-                      <div className="min-w-0">
-                        <div className="truncate text-sm font-medium text-[#2c3d58]">{contact.email}</div>
-                        <div className="mt-0.5 text-[10px] text-[#918a80]">{displayRole(contact.role)}</div>
-                      </div>
-                    </label>
-                  ))}
+                  {contacts.filter((contact) => contact.email !== authUser?.email).map((contact) => {
+                    const profile = employeeForEmail(contact.email);
+                    return (
+                      <label key={contact.email} className="flex cursor-pointer items-center gap-3 px-4 py-3.5 hover:bg-[#faf8f4]">
+                        <input type="checkbox" checked={groupForm.memberEmails.includes(contact.email)} onChange={() => toggleMember(contact.email)} />
+                        <AccountAvatar employee={profile} email={contact.email} className="h-9 w-9" textClassName="text-[9px]" />
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-medium text-[#2c3d58]">{accountDisplayName(profile, contact.email)}</div>
+                          <div className="mt-0.5 truncate text-[10px] text-[#918a80]">{accountPositionLabel(profile, contact.role)}</div>
+                        </div>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -12035,10 +12224,12 @@ Nếu người dùng yêu cầu đưa các điều khoản trên vào hợp đ�
 
 // ---------- Đăng nhập & phiên làm việc (backend SQLite) ----------
 // ---------- Menu người dùng (avatar góc trên phải) ----------
-function UserMenu({ authUser, onLogout, onOpenSettings }) {
+function UserMenu({ authUser, employees = [], onLogout, onOpenSettings }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
-  const initial = (authUser?.email || "?").trim().charAt(0).toUpperCase();
+  const profile = employeeProfileForEmail(employees, authUser?.email);
+  const displayName = accountDisplayName(profile, authUser?.email);
+  const positionLabel = accountPositionLabel(profile, authUser?.role);
 
   // Bấm ra ngoài là tự đóng menu.
   useEffect(() => {
@@ -12055,19 +12246,18 @@ function UserMenu({ authUser, onLogout, onOpenSettings }) {
         title={authUser?.email}
         className={`flex items-center gap-1.5 rounded-full pl-1 pr-2 py-1 border transition-colors ${open ? "border-gold bg-gold/10" : "border-paper-line bg-white hover:border-gold"}`}
       >
-        <span className="w-7 h-7 rounded-full bg-ink text-white text-xs font-bold flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg, var(--ink), var(--ink-light))" }}>{initial}</span>
+        <AccountAvatar employee={profile} email={authUser?.email} name={displayName} className="h-7 w-7" textClassName="text-[9px]" />
         <ChevronDown size={13} className={`text-muted transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
         <div className="absolute right-0 top-full mt-2 w-64 bg-white border border-paper-line rounded-lg shadow-xl overflow-hidden z-50">
           <div className="px-4 py-3 bg-paper/60 border-b border-paper-line flex items-center gap-3">
-            <span className="w-9 h-9 rounded-full text-white text-sm font-bold flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg, var(--ink), var(--ink-light))" }}>{initial}</span>
+            <AccountAvatar employee={profile} email={authUser?.email} name={displayName} className="h-10 w-10" textClassName="text-[10px]" />
             <div className="min-w-0">
-              <div className="text-xs font-semibold text-ink truncate">{authUser?.email}</div>
-              <span className={`inline-block mt-0.5 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded ${authUser?.role === "admin" ? "bg-gold/15 text-gold" : "bg-ink/5 text-ink-light"}`}>
-                {authUser?.role === "admin" ? "Admin" : "User"}
-              </span>
+              <div className="text-sm font-semibold text-ink truncate">{displayName}</div>
+              <div className="mt-0.5 truncate text-[11px] text-muted">{positionLabel}</div>
+              <div className="mt-0.5 truncate text-[10px] text-muted/80">{authUser?.email}</div>
             </div>
           </div>
           <button
@@ -12210,14 +12400,59 @@ function PasswordField({ label, value, onChange, placeholder, autoComplete }) {
 }
 
 // ---------- Cài đặt tài khoản — đổi mật khẩu ----------
-function CaiDatTaiKhoan({ authUser }) {
+function CaiDatTaiKhoan({ authUser, employees = [], setEmployees }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
-  const initial = (authUser?.email || "?").trim().charAt(0).toUpperCase();
+  const [avatarLoading, setAvatarLoading] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
+  const [avatarMessage, setAvatarMessage] = useState("");
+  const avatarInputRef = useRef(null);
+  const profile = employeeProfileForEmail(employees, authUser?.email);
+  const displayName = accountDisplayName(profile, authUser?.email);
+  const positionLabel = accountPositionLabel(profile, authUser?.role);
+
+  const handleAvatarFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !profile || !setEmployees) return;
+    setAvatarError("");
+    setAvatarMessage("");
+    setAvatarLoading(true);
+    try {
+      const avatar = await resizeAvatarFile(file);
+      setEmployees((current) => current.map((employee) => (
+        employee.id === profile.id
+          ? { ...employee, avatarData: avatar.data, avatarName: avatar.name, avatarType: avatar.type }
+          : employee
+      )));
+      setAvatarMessage("Đã cập nhật ảnh đại diện. Ảnh sẽ được dùng trong chat và menu tài khoản.");
+    } catch (err) {
+      setAvatarError(err.message || "Không cập nhật được ảnh đại diện.");
+    } finally {
+      setAvatarLoading(false);
+    }
+  };
+
+  const removeAvatar = async () => {
+    if (!profile?.avatarData || !setEmployees) return;
+    const confirmed = await confirmOverlay("Xóa ảnh đại diện hiện tại? Hệ thống sẽ quay về avatar chữ cái.", {
+      title: "Xóa ảnh đại diện",
+      confirmLabel: "Xóa ảnh",
+      tone: "danger",
+    });
+    if (!confirmed) return;
+    setEmployees((current) => current.map((employee) => (
+      employee.id === profile.id
+        ? { ...employee, avatarData: "", avatarName: "", avatarType: "" }
+        : employee
+    )));
+    setAvatarError("");
+    setAvatarMessage("Đã xóa ảnh đại diện.");
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -12254,18 +12489,39 @@ function CaiDatTaiKhoan({ authUser }) {
   };
 
   return (
-    <div className="max-w-lg flex flex-col gap-4">
-      <div className="bg-white rounded-lg border border-paper-line p-5 flex items-center gap-4">
-        <span className="w-12 h-12 rounded-full text-white text-lg font-bold flex items-center justify-center shrink-0" style={{ background: "linear-gradient(135deg, var(--ink), var(--ink-light))" }}>{initial}</span>
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-ink truncate">{authUser?.email}</div>
-          <span className={`inline-block mt-1 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded ${authUser?.role === "admin" ? "bg-gold/15 text-gold" : "bg-ink/5 text-ink-light"}`}>
-            {authUser?.role === "admin" ? "Admin — toàn quyền hệ thống" : "User — quyền nhân viên"}
-          </span>
+    <div className="max-w-3xl flex flex-col gap-5">
+      <section className="bg-white rounded-xl border border-paper-line p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-5">
+          <AccountAvatar employee={profile} email={authUser?.email} name={displayName} className="h-24 w-24" textClassName="text-2xl" />
+          <div className="min-w-0 flex-1">
+            <div className="text-lg font-semibold text-ink truncate">{displayName}</div>
+            <div className="mt-1 text-sm text-muted truncate">{positionLabel}</div>
+            <div className="mt-1 text-xs text-muted truncate">{authUser?.email}</div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <input ref={avatarInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={handleAvatarFile} className="hidden" />
+              <button
+                type="button"
+                onClick={() => avatarInputRef.current?.click()}
+                disabled={!profile || avatarLoading}
+                className="rounded-lg bg-ink px-4 py-2.5 text-sm font-semibold text-white hover:bg-ink-light disabled:opacity-40"
+              >
+                {avatarLoading ? "Đang xử lý ảnh..." : profile?.avatarData ? "Đổi ảnh đại diện" : "Tải ảnh đại diện"}
+              </button>
+              {profile?.avatarData && (
+                <button type="button" onClick={removeAvatar} className="rounded-lg border border-stamp-red/30 bg-white px-4 py-2.5 text-sm font-semibold text-stamp-red hover:bg-stamp-red/5">Xóa ảnh</button>
+              )}
+            </div>
+            <p className="mt-3 text-[11px] leading-relaxed text-muted">Ảnh JPG, PNG hoặc WEBP, tối đa 5 MB. Hệ thống tự cắt vuông và thu nhỏ ảnh để chat tải nhanh hơn.</p>
+          </div>
         </div>
-      </div>
+        {!profile && (
+          <div className="mt-4 rounded-lg border border-gold/30 bg-gold/10 px-4 py-3 text-xs text-ink-light">Tài khoản này chưa liên kết với hồ sơ nhân sự. Admin cần bổ sung đúng email tại mục Nhân sự trước khi tải avatar.</div>
+        )}
+        {avatarError && <div className="mt-4 text-xs text-stamp-red bg-stamp-red/10 border border-stamp-red/20 rounded-md px-3 py-2">{avatarError}</div>}
+        {avatarMessage && <div className="mt-4 text-xs text-ledger-green bg-ledger-green/10 border border-ledger-green/20 rounded-md px-3 py-2">{avatarMessage}</div>}
+      </section>
 
-      <form onSubmit={submit} className="bg-white rounded-lg border border-paper-line p-5 flex flex-col gap-4">
+      <form onSubmit={submit} className="bg-white rounded-xl border border-paper-line p-6 flex flex-col gap-4">
         <div>
           <h3 className="ktns-serif font-semibold text-ink flex items-center gap-2"><KeyRound size={16} className="text-gold" /> Đổi mật khẩu</h3>
           <p className="text-xs text-muted mt-1">Mật khẩu được mã hóa một chiều (PBKDF2) — không ai xem lại được mật khẩu cũ, kể cả admin.</p>

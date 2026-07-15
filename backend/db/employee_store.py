@@ -73,6 +73,10 @@ FIELD_SPEC = [
     ("resumeFileData", "resume_file_data", "text"),
     ("resumeFileName", "resume_file_name", "text"),
     ("resumeFileType", "resume_file_type", "text"),
+    # Ảnh đại diện tài khoản nhân viên (data URL đã được frontend thu nhỏ trước khi lưu).
+    ("avatarData", "avatar_data", "text"),
+    ("avatarName", "avatar_name", "text"),
+    ("avatarType", "avatar_type", "text"),
     # Chấm công là map lồng nhau -> lưu JSON trong một cột riêng
     ("attendance", "attendance", "json"),
 ]
@@ -101,6 +105,14 @@ def create_employees_table(conn):
     # Email rỗng lưu thành NULL để nhân sự thêm nhanh (chưa có email) không đụng
     # ràng buộc UNIQUE — chỉ email THẬT mới phải duy nhất. Dòng UPDATE + DROP dưới
     # đây migrate DB cũ (từng lưu '' và dùng index UNIQUE toàn cột).
+    # Migrate DB đang dùng: CREATE TABLE IF NOT EXISTS không tự bổ sung cột mới.
+    # Mỗi lần khởi động, tự thêm các cột trong FIELD_SPEC còn thiếu để bản vá có thể
+    # ghi đè trực tiếp mà không cần người dùng chạy lệnh migrate thủ công.
+    existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(employees)").fetchall()}
+    for _, db_col, kind in FIELD_SPEC:
+        if db_col not in existing_columns:
+            conn.execute(f"ALTER TABLE employees ADD COLUMN {db_col} {_SQL_TYPE[kind]}")
+
     conn.execute("UPDATE employees SET email = NULL WHERE email = ''")
     conn.execute("DROP INDEX IF EXISTS idx_employees_email")
     conn.execute(
