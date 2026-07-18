@@ -17,7 +17,17 @@ async function requestJson(path, options = {}) {
     },
   });
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(data.error || `Lỗi API (${response.status})`);
+  if (response.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    if (!path.startsWith("/api/auth/login") && !path.startsWith("/api/auth/register") && !path.startsWith("/api/auth/forgot-password")) {
+      window.dispatchEvent(new CustomEvent("domix:auth-expired"));
+    }
+  }
+  if (!response.ok) {
+    const error = new Error(data.error || `Lỗi API (${response.status})`);
+    error.status = response.status;
+    throw error;
+  }
   return data;
 }
 
@@ -46,6 +56,22 @@ export async function verifyRegistrationOtp(email, otp) {
   return result.user;
 }
 
+export async function requestPasswordResetOtp(email) {
+  return requestJson("/api/auth/forgot-password/request-otp", {
+    method: "POST",
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function resetPasswordWithOtp(email, otp, newPassword, confirmPassword) {
+  const result = await requestJson("/api/auth/forgot-password/reset", {
+    method: "POST",
+    body: JSON.stringify({ email, otp, newPassword, confirmPassword }),
+  });
+  localStorage.setItem(TOKEN_KEY, result.token);
+  return result.user;
+}
+
 export async function logout() {
   try {
     await requestJson("/api/auth/logout", { method: "POST" });
@@ -60,6 +86,30 @@ export async function getCurrentUser() {
 
 export async function loadAppData() {
   return requestJson("/api/data");
+}
+
+export async function loadAppFields(fields = [], options = {}) {
+  const names = Array.from(new Set((fields || []).filter(Boolean)));
+  const path = appendQuery("/api/data/fields", {
+    names: names.join(","),
+    force: options.force ? 1 : undefined,
+  });
+  return requestJson(path, { cache: "no-store" });
+}
+
+export async function saveAppFields(data) {
+  return requestJson("/api/data/fields", {
+    method: "PUT",
+    body: JSON.stringify({ data }),
+  });
+}
+
+export async function fetchPayrollWorkflow() {
+  return requestJson("/api/payroll/workflow");
+}
+
+export async function fetchTasks() {
+  return requestJson("/api/tasks", { cache: "no-store" });
 }
 
 export async function saveAppData(data) {
@@ -110,19 +160,32 @@ export async function fetchChatConversations() {
 }
 
 export async function fetchChatUnread() {
-  return requestJson("/api/chat/unread");
+  return requestJson("/api/chat/unread", { cache: "no-store" });
 }
 
-export async function fetchChatMessages(peerEmail) {
-  return requestJson(`/api/chat/messages?peer=${encodeURIComponent(peerEmail)}`);
+function appendQuery(path, params) {
+  const query = new URLSearchParams();
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== "") query.set(key, String(value));
+  });
+  const text = query.toString();
+  return text ? `${path}?${text}` : path;
+}
+
+export async function fetchChatMessages(peerEmail, options = {}) {
+  return requestJson(appendQuery("/api/chat/messages", { peer: peerEmail, ...options }));
+}
+
+export async function fetchChatReadReceipts(peerEmail, options = {}) {
+  return requestJson(appendQuery("/api/chat/messages/read-receipts", { peer: peerEmail, ...options }));
 }
 
 export async function fetchChatGroups() {
   return requestJson("/api/chat/groups");
 }
 
-export async function fetchChatGroupMessages(groupId) {
-  return requestJson(`/api/chat/group-messages?groupId=${encodeURIComponent(groupId)}`);
+export async function fetchChatGroupMessages(groupId, options = {}) {
+  return requestJson(appendQuery("/api/chat/group-messages", { groupId, ...options }));
 }
 
 export async function sendChatMessage(recipientEmail, body) {
@@ -146,10 +209,24 @@ export async function deleteChatMessage(messageId) {
   });
 }
 
+export async function clearChatConversation(peerEmail) {
+  return requestJson("/api/chat/messages/clear", {
+    method: "POST",
+    body: JSON.stringify({ peerEmail }),
+  });
+}
+
 export async function deleteChatGroupMessage(messageId) {
   return requestJson("/api/chat/group-messages/delete", {
     method: "POST",
     body: JSON.stringify({ messageId }),
+  });
+}
+
+export async function clearChatGroupConversation(groupId) {
+  return requestJson("/api/chat/group-messages/clear", {
+    method: "POST",
+    body: JSON.stringify({ groupId }),
   });
 }
 

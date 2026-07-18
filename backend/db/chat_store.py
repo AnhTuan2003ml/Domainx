@@ -2,14 +2,35 @@ from db.connection import connect
 from db import user_store
 
 
+def _utc_iso(value):
+    """Chuẩn hóa mốc thời gian SQLite UTC sang ISO-8601 có hậu tố Z.
+
+    SQLite CURRENT_TIMESTAMP trả về ``YYYY-MM-DD HH:MM:SS`` nhưng đây là UTC.
+    Nếu gửi nguyên chuỗi, trình duyệt sẽ hiểu nhầm là giờ địa phương và hiển thị
+    lệch 7 giờ tại Việt Nam.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith(("Z", "z")):
+        return text[:-1] + "Z"
+    # Chuỗi đã có offset múi giờ thì giữ nguyên.
+    tail = text[10:] if len(text) > 10 else ""
+    if "+" in tail or "-" in tail:
+        return text.replace(" ", "T", 1)
+    return text.replace(" ", "T", 1) + "Z"
+
+
 def _message_from_row(row):
     return {
         "id": row["id"],
         "senderEmail": row["sender_email"],
         "recipientEmail": row["recipient_email"],
         "body": row["body"],
-        "readAt": row["read_at"],
-        "createdAt": row["created_at"],
+        "readAt": _utc_iso(row["read_at"]),
+        "createdAt": _utc_iso(row["created_at"]),
     }
 
 
@@ -19,7 +40,7 @@ def _group_message_from_row(row):
         "groupId": row["group_id"],
         "senderEmail": row["sender_email"],
         "body": row["body"],
-        "createdAt": row["created_at"],
+        "createdAt": _utc_iso(row["created_at"]),
     }
 
 
@@ -99,20 +120,49 @@ def list_conversations(db_path, user_id):
             "role": row["role"],
             "active": bool(row["active"]),
             "lastMessage": row["last_body"] or "",
-            "lastAt": row["last_at"],
+            "lastAt": _utc_iso(row["last_at"]),
             "unreadCount": row["unread_count"],
         }
         for row in rows
     ]
 
 
-def list_messages(db_path, user_id, peer_email, limit=100):
+def _clamp_limit(limit, default=40, maximum=100):
+    try:
+        value = int(limit)
+    except (TypeError, ValueError):
+        return default
+    return max(1, min(value, maximum))
+
+
+def _clean_cursor(value):
+    try:
+        cursor = int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+    return max(0, cursor)
+
+
+def list_messages(db_path, user_id, peer_email, limit=40, before_id=0, after_id=0):
     peer = user_store.get_user_by_email(db_path, peer_email, active_only=True)
     if not peer:
         raise ValueError("Không tìm thấy người nhận")
+    limit = _clamp_limit(limit)
+    before_id = _clean_cursor(before_id)
+    after_id = _clean_cursor(after_id)
+    cursor_clause = ""
+    cursor_params = []
+    order = "DESC"
+    if after_id:
+        cursor_clause = " AND m.id > ?"
+        cursor_params.append(after_id)
+        order = "ASC"
+    elif before_id:
+        cursor_clause = " AND m.id < ?"
+        cursor_params.append(before_id)
     with connect(db_path) as conn:
         rows = conn.execute(
-            """
+            f"""
             SELECT
                 m.id,
                 sender.username AS sender_email,
@@ -126,12 +176,43 @@ def list_messages(db_path, user_id, peer_email, limit=100):
             WHERE m.deleted_at IS NULL
               AND ((m.sender_id = ? AND m.recipient_id = ?)
                 OR (m.sender_id = ? AND m.recipient_id = ?))
-            ORDER BY m.id DESC
+              {cursor_clause}
+            ORDER BY m.id {order}
             LIMIT ?
             """,
-            (user_id, peer["id"], peer["id"], user_id, limit),
+            (user_id, peer["id"], peer["id"], user_id, *cursor_params, limit + 1),
         ).fetchall()
-    return [_message_from_row(row) for row in reversed(rows)]
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    if order == "DESC":
+        rows = list(reversed(rows))
+    return {
+        "messages": [_message_from_row(row) for row in rows],
+        "hasMoreOlder": bool(has_more and not after_id),
+    }
+
+
+def list_read_receipts(db_path, user_id, peer_email, after_id=0):
+    peer = user_store.get_user_by_email(db_path, peer_email, active_only=True)
+    if not peer:
+        raise ValueError("Không tìm thấy người nhận")
+    after_id = _clean_cursor(after_id)
+    with connect(db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT id, read_at
+            FROM chat_messages
+            WHERE sender_id = ?
+              AND recipient_id = ?
+              AND read_at IS NOT NULL
+              AND deleted_at IS NULL
+              AND id > ?
+            ORDER BY id ASC
+            LIMIT 100
+            """,
+            (user_id, peer["id"], after_id),
+        ).fetchall()
+    return [{"id": row["id"], "readAt": _utc_iso(row["read_at"])} for row in rows]
 
 
 def send_message(db_path, sender_id, recipient_email, body):
@@ -193,6 +274,25 @@ def delete_message(db_path, user_id, message_id, is_admin=False):
         if not is_admin:
             raise ValueError("Chỉ admin mới có quyền xóa tin nhắn")
         conn.execute("UPDATE chat_messages SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", (message_id,))
+
+
+def clear_conversation(db_path, user_id, peer_email, is_admin=False):
+    if not is_admin:
+        raise ValueError("Chỉ admin mới có quyền xóa lịch sử trò chuyện")
+    peer = user_store.get_user_by_email(db_path, peer_email, active_only=True)
+    if not peer:
+        raise ValueError("Không tìm thấy cuộc trò chuyện")
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE chat_messages
+            SET deleted_at = CURRENT_TIMESTAMP
+            WHERE deleted_at IS NULL
+              AND ((sender_id = ? AND recipient_id = ?)
+                OR (sender_id = ? AND recipient_id = ?))
+            """,
+            (user_id, peer["id"], peer["id"], user_id),
+        )
 
 
 def mark_read(db_path, user_id, peer_email=""):
@@ -306,9 +406,9 @@ def list_groups(db_path, user_id):
                 "id": row["id"],
                 "name": row["name"],
                 "createdByEmail": row["created_by_email"],
-                "createdAt": row["created_at"],
+                "createdAt": _utc_iso(row["created_at"]),
                 "lastMessage": row["last_body"] or "",
-                "lastAt": row["last_at"],
+                "lastAt": _utc_iso(row["last_at"]),
                 "unreadCount": row["unread_count"],
                 "members": members,
             })
@@ -362,11 +462,24 @@ def delete_group(db_path, group_id):
         conn.execute("UPDATE chat_groups SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", (group_id,))
 
 
-def list_group_messages(db_path, user_id, group_id, limit=150):
+def list_group_messages(db_path, user_id, group_id, limit=40, before_id=0, after_id=0):
+    limit = _clamp_limit(limit)
+    before_id = _clean_cursor(before_id)
+    after_id = _clean_cursor(after_id)
+    cursor_clause = ""
+    cursor_params = []
+    order = "DESC"
+    if after_id:
+        cursor_clause = " AND m.id > ?"
+        cursor_params.append(after_id)
+        order = "ASC"
+    elif before_id:
+        cursor_clause = " AND m.id < ?"
+        cursor_params.append(before_id)
     with connect(db_path) as conn:
         _ensure_group_member(conn, group_id, user_id)
         rows = conn.execute(
-            """
+            f"""
             SELECT
                 m.id,
                 m.group_id,
@@ -377,12 +490,20 @@ def list_group_messages(db_path, user_id, group_id, limit=150):
             JOIN users sender ON sender.id = m.sender_id
             WHERE m.group_id = ?
               AND m.deleted_at IS NULL
-            ORDER BY m.id DESC
+              {cursor_clause}
+            ORDER BY m.id {order}
             LIMIT ?
             """,
-            (group_id, limit),
+            (group_id, *cursor_params, limit + 1),
         ).fetchall()
-    return [_group_message_from_row(row) for row in reversed(rows)]
+    has_more = len(rows) > limit
+    rows = rows[:limit]
+    if order == "DESC":
+        rows = list(reversed(rows))
+    return {
+        "messages": [_group_message_from_row(row) for row in rows],
+        "hasMoreOlder": bool(has_more and not after_id),
+    }
 
 
 def send_group_message(db_path, user_id, group_id, body):
@@ -466,3 +587,29 @@ def delete_group_message(db_path, user_id, message_id, is_admin=False):
         if not is_admin:
             raise ValueError("Chỉ admin mới có quyền xóa tin nhắn")
         conn.execute("UPDATE chat_group_messages SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?", (message_id,))
+
+
+def clear_group_conversation(db_path, user_id, group_id, is_admin=False):
+    if not is_admin:
+        raise ValueError("Chỉ admin mới có quyền xóa lịch sử trò chuyện")
+    with connect(db_path) as conn:
+        _ensure_group_member(conn, group_id, user_id)
+        conn.execute(
+            """
+            UPDATE chat_group_messages
+            SET deleted_at = CURRENT_TIMESTAMP
+            WHERE group_id = ?
+              AND deleted_at IS NULL
+            """,
+            (group_id,),
+        )
+        conn.execute(
+            """
+            INSERT INTO chat_group_reads (group_id, user_id, last_read_at, last_read_message_id)
+            VALUES (?, ?, CURRENT_TIMESTAMP, 0)
+            ON CONFLICT(group_id, user_id) DO UPDATE SET
+                last_read_at = CURRENT_TIMESTAMP,
+                last_read_message_id = 0
+            """,
+            (group_id, user_id),
+        )

@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { changePassword, createChatGroup, deleteChatGroup, deleteChatGroupMessage, deleteChatMessage, fetchChatConversations, fetchChatGroupMessages, fetchChatGroups, fetchChatMessages, fetchChatUnread, getCurrentUser, listEmployees, listUsers, loadAppData, login, logout, markChatGroupRead, markChatRead, requestRegistrationOtp, saveAppData, saveEmployees, saveUser, sendChatGroupMessage, sendChatMessage, updateChatGroupMembers, verifyRegistrationOtp } from "./api";
+import { changePassword, clearChatConversation, clearChatGroupConversation, createChatGroup, deleteChatGroup, deleteChatGroupMessage, deleteChatMessage, deleteEmployee, fetchChatConversations, fetchChatGroupMessages, fetchChatGroups, fetchChatMessages, fetchChatReadReceipts, fetchChatUnread, fetchPayrollWorkflow, fetchTasks, getCurrentUser, listEmployees, listUsers, loadAppFields, login, logout, markChatGroupRead, markChatRead, requestPasswordResetOtp, requestRegistrationOtp, resetPasswordWithOtp, saveAppData, saveAppFields, saveEmployees, saveUser, sendChatGroupMessage, sendChatMessage, updateChatGroupMembers, verifyRegistrationOtp } from "./api";
 import {
   roundVND, normalizePartner, normalizeDistributionOrder, normalizeDebt,
   calculateDistributionFinancials, eligibleOrdersForSettlement, buildSettlementDraft,
@@ -66,6 +66,7 @@ import {
   Settings,
   Globe,
   PieChart,
+  BarChart3,
   Calculator,
   Headphones,
   Crown,
@@ -83,25 +84,22 @@ import {
   Search,
   Sun,
   Moon,
+  Volume2,
+  VolumeX,
+  BellRing,
 } from "lucide-react";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-  ComposedChart,
-  Line,
-  Area,
-} from "recharts";
 import * as XLSX from "xlsx";
 
 const TODAY = new Date(); // ngày thật của máy đang chạy app — Chấm công/khoá sổ luôn tự quét đúng theo ngày hôm nay, không còn cố định ngày demo nữa
 const TODAY_STR = TODAY.toISOString().slice(0, 10); // "YYYY-MM-DD" của hôm nay thật — dùng làm giá trị mặc định cho mọi ô ngày trong các form
 // Ngày đầy đủ kèm thứ trong tuần, luôn tính từ TODAY thật (không hardcode) — hiện ở đầu trang.
+function toLocalDateTimeInputValue(value = new Date()) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 16);
+}
+
 function formatFullDateToday(lang) {
   const weekdays = {
     vi: ["Chủ Nhật", "Thứ Hai", "Thứ Ba", "Thứ Tư", "Thứ Năm", "Thứ Sáu", "Thứ Bảy"],
@@ -137,6 +135,45 @@ const DEFAULT_COMPANY = {
   directorPassword: "GIAMDOC2026",
   establishedDate: "",
   registeredCharterCapital: 0,
+  taskReminderIntervalHours: 5,
+};
+
+// Dữ liệu vận hành được chia theo từng khu vực để không tải toàn bộ DB ngay khi mở ứng dụng.
+// Mỗi tab/bảng chỉ yêu cầu đúng nhóm dữ liệu nó cần; dữ liệu đã tải được giữ trong phiên.
+const ALL_APP_DATA_FIELDS = [
+  "transactions", "orders", "marketingLogs", "debts", "inventory", "tasks", "lang", "company",
+  "unlockedMonths", "capitalContributions", "distributionPartners", "distributionOrders",
+  "payrollPayments", "kpiTiers", "cvReviews", "marketingPages", "contracts", "fixedAssets",
+  "leads", "supportCases", "announcements", "chatMessages", "payrollApprovals",
+  "midMonthRequests", "customers", "distributionSettlements", "stockMovements",
+];
+
+const TAB_DEFAULT_FIELDS = {
+  dashboard: [],
+  settings: ["company", "announcements"],
+  "task-reminder-settings": ["company"],
+  thuchi: [],
+  congno: [],
+  hopdong: ["contracts", "distributionPartners"],
+  vongop: ["capitalContributions", "company"],
+  hoptac: [],
+  kho: [],
+  taisan: ["fixedAssets", "transactions"],
+  giaoviec: ["tasks"],
+  hotro: [],
+  chat: ["tasks"],
+  crm: [],
+  marketing: [],
+  nhansu: [],
+  tuyendung: [],
+  chamcong: ["unlockedMonths", "company"],
+  hieusuat: [],
+  luong: [],
+  quy: [],
+  hoachdinh: [],
+  ai: ["transactions", "orders", "kpiTiers"],
+  phaply: ["company"],
+  taikhoan: [],
 };
 
 // Vốn góp — hình thức góp vốn hợp pháp theo Điều 34 Luật Doanh nghiệp 2020.
@@ -459,16 +496,87 @@ const GlobalStyle = () => (
       outline: none; border-color: var(--gold) !important;
       box-shadow: 0 0 0 3px color-mix(in srgb, var(--gold) 18%, transparent);
     }
+    /* Form thêm/sửa dùng chung: luôn nổi trên giao diện, không chen vào giữa danh sách. */
+    .ktns-app:has(.domix-inline-form-modal)::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: 84;
+      background: transparent;
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      pointer-events: none;
+    }
+    .domix-inline-form-modal {
+      position: fixed !important;
+      left: 50% !important;
+      top: 50% !important;
+      z-index: 85 !important;
+      width: min(1120px, calc(100vw - 48px)) !important;
+      max-height: 90vh !important;
+      overflow: auto !important;
+      transform: translate(-50%, -50%) !important;
+      margin: 0 !important;
+      border-radius: 18px !important;
+      background: #fff !important;
+      border: 1px solid rgba(184, 145, 43, 0.28) !important;
+      box-shadow: 0 28px 80px rgba(7, 16, 31, 0.30), 0 0 0 1px rgba(255,255,255,0.75) inset !important;
+      animation: ktnsModalPop 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+      pointer-events: auto !important;
+      isolation: isolate;
+    }
+    .domix-inline-form-modal input,
+    .domix-inline-form-modal select,
+    .domix-inline-form-modal textarea,
+    .domix-inline-form-modal button,
+    .domix-inline-form-modal label {
+      pointer-events: auto !important;
+    }
+    .ktns-app.dark .domix-inline-form-modal {
+      background: #172033 !important;
+      border-color: rgba(255,255,255,0.12) !important;
+      color: #eef3fb;
+    }
+    /* Danh sách dữ liệu: thống nhất dạng bảng để quét, đối chiếu và kiểm soát nhanh. */
+    .domix-db-table-shell {
+      overflow: auto;
+      border: 1px solid var(--paper-line);
+      border-radius: 14px;
+      background: #fff;
+      box-shadow: 0 10px 28px rgba(27, 42, 74, 0.05);
+    }
+    .domix-db-table { width: 100%; min-width: 1080px; border-collapse: separate; border-spacing: 0; }
+    .domix-db-table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--paper);
+      color: var(--muted);
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: .07em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      border-bottom: 1px solid var(--paper-line);
+    }
+    .domix-db-table tbody td { border-bottom: 1px solid var(--paper-line); vertical-align: top; }
+    .domix-db-table tbody tr:last-child td { border-bottom: 0; }
+    .domix-db-table tbody tr:hover { background: color-mix(in srgb, var(--paper) 70%, white); }
+    .ktns-app.dark .domix-db-table-shell { background: #151d2d; border-color: rgba(255,255,255,.1); }
+    .ktns-app.dark .domix-db-table thead th { background: #1b2538; color: #aebbd0; border-color: rgba(255,255,255,.08); }
+    .ktns-app.dark .domix-db-table tbody td { border-color: rgba(255,255,255,.07); }
+    .ktns-app.dark .domix-db-table tbody tr:hover { background: rgba(255,255,255,.035); }
     /* Modal nền kính mờ (glassmorphism) — sang trọng hơn hẳn nền tối phẳng, dùng chung cho cả 13
        khung popup trong app (Xác nhận, Hoá đơn, Xoá...) — sửa 1 chỗ, áp dụng khắp nơi ngay. */
     .ktns-app [class*="bg-ink/40"] { backdrop-filter: blur(6px) saturate(1.1); -webkit-backdrop-filter: blur(6px) saturate(1.1); animation: ktnsFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
     .ktns-app [class*="bg-ink/40"] > div { animation: ktnsModalPop 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
     @keyframes ktnsModalPop { from { opacity: 0; transform: scale(0.94) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
     @keyframes ktnsFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-    /* Ticker chạy chữ đầu trang — lời chào theo giờ, thông báo công ty đã duyệt, tên nhân viên
-       đang bị cảnh báo hiệu suất. Nhân đôi nội dung + dịch chuyển đúng 50% để chạy liền mạch. */
-    @keyframes ktnsTickerScroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }
-    .ktns-ticker { animation: ktnsTickerScroll 28s linear infinite; }
+    /* Ticker chạy chữ đầu trang — chữ ĐI VÀO từ mép phải màn hình rồi chạy hết sang mép trái
+       (kiểu marquee cổ điển), không hiện sẵn giữa màn hình: padding-left 100% đẩy nội dung ra
+       ngoài mép phải lúc bắt đầu, translateX(-100%) kéo toàn bộ (gồm phần đệm) thoát hẳn mép trái. */
+    @keyframes ktnsTickerScroll { from { transform: translateX(0); } to { transform: translateX(-100%); } }
+    .ktns-ticker { padding-left: 100%; animation: ktnsTickerScroll 30s linear infinite; will-change: transform; }
     .ktns-ticker:hover { animation-play-state: paused; }
     .domix-login-shell {
       position: relative;
@@ -1170,8 +1278,7 @@ const GlobalStyle = () => (
         radial-gradient(circle at 78% 12%, rgba(77, 101, 151, .16), transparent 30%),
         linear-gradient(145deg, #111823 0%, #0F151F 58%, #141923 100%) !important;
     }
-    .ktns-app.dark .domix-chat-header,
-    .ktns-app.dark .domix-chat-composer {
+    .ktns-app.dark .domix-chat-header {
       background: rgba(18, 25, 36, .90) !important;
       border-color: #2B3546 !important;
       backdrop-filter: blur(18px);
@@ -1180,9 +1287,19 @@ const GlobalStyle = () => (
     .ktns-app.dark .domix-chat-secondary { color: #AEB9CD !important; }
     .ktns-app.dark .domix-chat-muted { color: #8793A7 !important; }
     .ktns-app.dark .domix-chat-search {
-      background: #111824 !important;
-      border-color: #303B4E !important;
+      background: rgba(255,255,255,.04) !important;
+      border-color: rgba(111,139,186,.34) !important;
       color: #EEF2F8 !important;
+    }
+    .ktns-app.dark .domix-chat-search-input {
+      background: transparent !important;
+      background-color: transparent !important;
+      border: 0 !important;
+      box-shadow: none !important;
+      color: #EDF2F8 !important;
+    }
+    .ktns-app.dark .domix-chat-search-input::placeholder {
+      color: #778397 !important;
     }
     .ktns-app.dark .domix-chat-unread-total,
     .ktns-app.dark .domix-chat-role-chip,
@@ -1243,10 +1360,15 @@ const GlobalStyle = () => (
       background: #131B27 !important;
       color: #BAC4D5 !important;
     }
+    .ktns-app.dark .domix-chat-composer {
+      background: linear-gradient(180deg, rgba(7,17,31,0), rgba(7,17,31,.42)) !important;
+      border-color: transparent !important;
+      box-shadow: none !important;
+    }
     .ktns-app.dark .domix-chat-composer-box {
-      background: #151D29 !important;
-      border-color: #344157 !important;
-      box-shadow: 0 16px 38px rgba(0,0,0,.25) !important;
+      background: rgba(255,255,255,.055) !important;
+      border-color: rgba(111,139,186,.30) !important;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 14px 35px rgba(2,8,23,.18) !important;
     }
     .ktns-app.dark .domix-chat-input {
       background: transparent !important;
@@ -1568,6 +1690,63 @@ const ROLE_META = {
   quan_ly: { label: "Quản lý / Ban giám đốc", icon: Crown },
   khac: { label: "Khác (tự nhập ở ô Chức vụ bên dưới)", icon: UserCog },
 };
+
+// Quyền nghiệp vụ theo nhóm vị trí. users.role vẫn chỉ có admin/accountant/user;
+// quyền dưới đây quyết định nhân viên user được mở thêm tab nào và được thao tác đến đâu.
+const POSITION_ACCESS_META = {
+  ads: {
+    tabs: ["marketing", "kho"], marketingWrite: true,
+    inventoryScope: "assigned", inventoryWrite: true,
+    summary: "Ghi nhận/cập nhật Marketing hằng ngày; xem và sửa sản phẩm được phân công.",
+  },
+  sale: {
+    tabs: ["crm", "marketing", "kho", "hotro"], marketingWrite: true,
+    inventoryScope: "assigned", inventoryWrite: true,
+    summary: "Quản lý đơn CRM của mình; cập nhật Marketing hằng ngày; sửa sản phẩm được phân công.",
+  },
+  ky_thuat: {
+    tabs: ["crm", "kho", "hotro"], inventoryScope: "assigned", inventoryWrite: true,
+    summary: "Xử lý hỗ trợ/upsale và sửa sản phẩm được phân công.",
+  },
+  it: {
+    tabs: ["kho"], inventoryScope: "assigned", inventoryWrite: true,
+    summary: "Chỉ xem và sửa sản phẩm được giao phụ trách.",
+  },
+  ke_toan: {
+    tabs: [], inventoryScope: "all", inventoryWrite: true,
+    summary: "Tài khoản được đồng bộ thành quyền Kế toán và có toàn quyền vận hành.",
+  },
+  nhan_su: {
+    tabs: ["nhansu", "tuyendung", "chamcong", "hieusuat"], inventoryScope: "none",
+    summary: "Theo dõi nhân sự, tuyển dụng, chấm công và hiệu suất; không truy cập tài chính.",
+  },
+  van_hanh: {
+    tabs: ["kho", "hopdong", "hotro"], inventoryScope: "assigned", inventoryWrite: true,
+    summary: "Theo dõi vận hành và sửa sản phẩm được phân công.",
+  },
+  cskh: {
+    tabs: ["kho", "hotro"], inventoryScope: "all-read", inventoryWrite: false,
+    summary: "Xem toàn bộ kho để tư vấn khách hàng; không được thay đổi kho.",
+  },
+  quan_ly: {
+    tabs: ["dashboard", "crm", "marketing", "kho", "hopdong", "hotro", "nhansu", "hieusuat"],
+    inventoryScope: "all-read", inventoryWrite: false,
+    summary: "Xem báo cáo vận hành tổng hợp; các thay đổi nhạy cảm vẫn dành cho Admin/Kế toán.",
+  },
+  khac: {
+    tabs: [], inventoryScope: "none", inventoryWrite: false,
+    summary: "Chỉ dùng chức năng cá nhân; quyền bổ sung cần Admin đổi nhóm vị trí.",
+  },
+};
+
+function positionAccessFor(employee, accountRole = "user") {
+  const role = normalizeAccountRole(accountRole);
+  if (role === "admin" || role === "accountant") {
+    return { full: true, tabs: [], marketingWrite: true, inventoryScope: "all", inventoryWrite: true };
+  }
+  const roleType = employee?.roleType || "khac";
+  return { full: false, roleType, ...(POSITION_ACCESS_META[roleType] || POSITION_ACCESS_META.khac) };
+}
 
 const initialTransactions = [
 // Giao dịch Thu liên kết trực tiếp với initialOrders ở trên (đồng bộ 2 chiều CRM ↔ Thu Chi) — 41 giao dịch.
@@ -1894,15 +2073,20 @@ function saleTieredCommission(revenue) {
   return commission;
 }
 function evaluateSaleComp(revenue, baseSalary) {
-  // ĐÃ SỬA theo yêu cầu: nhân viên chính thức nhận ĐỦ lương cơ bản (không còn bị giảm còn 70%
-  // nếu doanh số thấp như trước) — lương thật sự tính theo NGÀY CÔNG THỰC TẾ (nghỉ ngày nào trừ
-  // lương ngày đó, xử lý chung ở computePayroll qua salaryByDays), KHÔNG còn phụ thuộc doanh số.
-  // Doanh số chỉ còn quyết định phần HOA HỒNG THƯỞNG THÊM (đạt từ 100 triệu trở lên), tách hẳn
-  // khỏi lương cứng — đúng tinh thần "đạt KPI thì có thưởng thêm", không phải "không đạt thì bị trừ".
+  // Quy tắc công ty: dưới 100 triệu áp 70% lương cứng; từ 100 triệu nhận đủ lương
+  // và cộng hoa hồng lũy tiến, mỗi mốc 100 triệu tăng thêm 0,6%, không giới hạn.
   if (revenue < SALE_KPI_TARGET) {
-    return { rate: 1, statusLabel: revenue < SALE_LOW_THRESHOLD ? "Dưới 50 triệu — vẫn nhận đủ lương cơ bản theo ngày công, chưa có hoa hồng thêm" : "50–100 triệu — chưa đạt mốc hoa hồng, vẫn nhận đủ lương cơ bản theo ngày công", fixedSalary: null, commission: 0, bonus: 0 };
+    return {
+      rate: SALE_LOW_RATE,
+      statusLabel: revenue < SALE_LOW_THRESHOLD
+        ? "Dưới 50 triệu — hưởng 70% lương cứng, chưa có hoa hồng"
+        : "Từ 50 đến dưới 100 triệu — hưởng 70% lương cứng, chưa có hoa hồng",
+      fixedSalary: null,
+      commission: 0,
+      bonus: 0,
+    };
   }
-  return { rate: 1, statusLabel: "Đạt mốc doanh số 100tr+ — lương cơ bản theo ngày công + hoa hồng lũy tiến thêm", fixedSalary: null, commission: saleTieredCommission(revenue), bonus: 0 };
+  return { rate: SALE_FULL_RATE, statusLabel: "Từ 100 triệu — đủ lương cứng + hoa hồng lũy tiến", fixedSalary: null, commission: saleTieredCommission(revenue), bonus: 0 };
 }
 
 // ② MARKETING - THƯỞNG THEO DOANH THU (ngưỡng & hoa hồng khác Sale, có thêm "thưởng thêm" cố định)
@@ -1916,11 +2100,8 @@ const ADS_TIERS = [
 ];
 const ADS_KPI_TARGET = 200000000; // chỉ tiêu tối thiểu Marketing/tháng/người (theo "Quy định KPI đề xuất")
 function evaluateAdsComp(revenue, baseSalary) {
-  // ĐÃ SỬA đồng bộ với Sale: lương cơ bản không còn bị giảm còn 70% nếu doanh thu thấp — luôn
-  // nhận đủ lương cơ bản theo ngày công thực tế (tính ở computePayroll qua salaryByDays). Hoa
-  // hồng/thưởng thêm theo bậc doanh thu vẫn giữ nguyên, chỉ là khoản CỘNG THÊM khi đạt mốc.
   const tier = ADS_TIERS.find((t) => revenue < t.max) || ADS_TIERS[ADS_TIERS.length - 1];
-  return { rate: 1, statusLabel: tier.label, fixedSalary: null, commission: revenue * tier.commissionRate, bonus: tier.bonus };
+  return { rate: tier.rate, statusLabel: tier.label, fixedSalary: null, commission: revenue * tier.commissionRate, bonus: tier.bonus };
 }
 
 // ③ HỖ TRỢ KỸ THUẬT - HOA HỒNG UPSALE: 7% trên giá trị đơn upsale tự chốt cho khách hiện hữu
@@ -1979,7 +2160,7 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
     const standardDays = standardWorkDaysFor(year, month);
     return {
       contractType: e.contractType || "chinh_thuc", contractLabel: contract.label, probationRate: 1, periodYear: year, periodMonth: month,
-      months, standardDays, actualDays: 0, daySalary: e.baseSalary / standardDays, salaryByDays: 0, kpiBonus: 0, seniorityAllowance: 0, mealAllowance: 0, otherBonus: 0, advance: 0, attendanceBonus: 0, hasAbsence: false, kpiMilestoneBonus: 0, kpiMilestonePct: 0, kpiMilestoneNetRevenue: 0, grossIncome: 0,
+      months, standardDays, actualDays: 0, daySalary: (Number(e.dailySalary) > 0 ? Number(e.dailySalary) : e.baseSalary / standardDays), salaryByDays: 0, kpiBonus: 0, seniorityAllowance: 0, mealAllowance: 0, otherBonus: 0, advance: 0, attendanceBonus: 0, hasAbsence: false, kpiMilestoneBonus: 0, kpiMilestonePct: 0, kpiMilestoneNetRevenue: 0, grossIncome: 0,
       usesRevenueModel: e.roleType === "sale" || e.roleType === "ads", mainSalary: 0, commission: 0, compBonus: 0, techUpsale: 0, compStatusLabel: "Tháng chưa bắt đầu — chưa có dữ liệu", compRate: null, revenueUsed: 0,
       bhxhNV: 0, bhytNV: 0, bhtnNV: 0, employeeInsurance: 0,
       bhxhDN: 0, bhytDN: 0, bhtnDN: 0, bhtnldBnnDN: 0, employerInsurance: 0,
@@ -1990,7 +2171,7 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
 
   const standardDays = standardWorkDaysFor(year, month);
   const actualDays = monthlyCongFor(e.attendance, year, month);
-  const daySalary = e.baseSalary / standardDays;
+  const daySalary = Number(e.dailySalary) > 0 ? Number(e.dailySalary) : e.baseSalary / standardDays;
   const salaryByDays = daySalary * actualDays;
   const seniorityRate = contract.hasSeniority ? (months >= 24 ? 0.04 : months >= 12 ? 0.02 : 0) : 0;
   const hasAbsence = hasAbsenceInMonth(e.attendance, year, month);
@@ -2355,15 +2536,15 @@ function RangeModePicker({ rangeMode, setRangeMode, rangeFrom, setRangeFrom, ran
         <CalendarCheck size={12} /> {label} <ChevronRight size={11} className={`transition-transform ${show ? "rotate-90" : ""}`} />
       </button>
       {show && (
-        <div className="absolute top-full left-0 mt-1 bg-white border border-paper-line rounded-md shadow-lg p-3 z-20 w-64">
+        <div className="absolute top-full right-0 mt-1 w-[min(26rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] bg-white border border-paper-line rounded-md shadow-lg p-3 z-20">
           <button onClick={() => { setRangeMode("month"); setShow(false); }} className={`w-full text-left text-xs px-2 py-1.5 rounded ${rangeMode === "month" ? "bg-paper font-medium" : "hover:bg-paper"}`}>Cả tháng {reportMonth}/{reportYear}</button>
           <button onClick={() => { setRangeMode("all"); setShow(false); }} className={`w-full text-left text-xs px-2 py-1.5 rounded ${rangeMode === "all" ? "bg-paper font-medium" : "hover:bg-paper"}`}>Toàn bộ lịch sử</button>
           <div className={`px-2 py-1.5 rounded ${rangeMode === "custom" ? "bg-paper" : ""}`}>
-            <button onClick={() => setRangeMode("custom")} className={`text-xs mb-1.5 ${rangeMode === "custom" ? "font-medium" : ""}`}>Tuỳ chỉnh khoảng ngày</button>
-            <div className="flex items-center gap-1">
-              <input type="date" value={rangeFrom} onChange={(e) => { setRangeFrom(e.target.value); setRangeMode("custom"); }} className="border border-paper-line rounded px-1.5 py-1 text-[11px] flex-1" />
+            <button onClick={() => setRangeMode("custom")} className={`text-xs mb-2 ${rangeMode === "custom" ? "font-medium" : ""}`}>Tuỳ chỉnh khoảng ngày</button>
+            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+              <input type="date" value={rangeFrom} onChange={(e) => { setRangeFrom(e.target.value); setRangeMode("custom"); }} className="min-w-0 w-full border border-paper-line rounded px-2 py-1.5 text-xs" />
               <span className="text-muted text-[10px]">→</span>
-              <input type="date" value={rangeTo} onChange={(e) => { setRangeTo(e.target.value); setRangeMode("custom"); }} className="border border-paper-line rounded px-1.5 py-1 text-[11px] flex-1" />
+              <input type="date" value={rangeTo} onChange={(e) => { setRangeTo(e.target.value); setRangeMode("custom"); }} className="min-w-0 w-full border border-paper-line rounded px-2 py-1.5 text-xs" />
             </div>
           </div>
         </div>
@@ -2387,6 +2568,146 @@ function KpiCard({ icon: Icon, label, value, tone, sub }) {
     </div>
   );
 }
+
+function DataLoadingPanel({ title = "Đang tải dữ liệu", error = "", onRetry }) {
+  return (
+    <div className="min-h-[260px] rounded-xl border border-paper-line bg-white flex items-center justify-center p-8">
+      <div className="max-w-md text-center">
+        {error ? <AlertTriangle size={28} className="mx-auto text-stamp-red" /> : <Loader2 size={28} className="mx-auto animate-spin text-[#4f7ee8]" />}
+        <div className="mt-3 text-sm font-semibold text-ink">{error ? "Không tải được dữ liệu" : title}</div>
+        <div className="mt-1 text-xs text-muted">{error || "Chỉ nhóm dữ liệu của bảng đang chọn được lấy từ cơ sở dữ liệu."}</div>
+        {error && onRetry && <button type="button" onClick={onRetry} className="mt-4 rounded-md bg-ink px-4 py-2 text-xs font-semibold text-white">Thử tải lại</button>}
+      </div>
+    </div>
+  );
+}
+
+function useLazyTableData(activeView, viewFields, ensureDataFields, areDataFieldsReady, areDataFieldsLoading) {
+  const fields = viewFields?.[activeView] || [];
+  useEffect(() => {
+    if (ensureDataFields) ensureDataFields(fields);
+  }, [activeView, ensureDataFields, JSON.stringify(fields)]);
+  return {
+    fields,
+    ready: areDataFieldsReady ? areDataFieldsReady(fields) : true,
+    loading: areDataFieldsLoading ? areDataFieldsLoading(fields) : false,
+  };
+}
+
+function SectionViewSwitcher({ value, onChange, options }) {
+  const [stickyTop, setStickyTop] = useState(0);
+
+  useEffect(() => {
+    const stickyShell = document.querySelector("[data-domix-sticky-shell]");
+    if (!stickyShell) return undefined;
+
+    const updateStickyTop = () => {
+      setStickyTop(Math.ceil(stickyShell.getBoundingClientRect().height));
+    };
+
+    updateStickyTop();
+    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateStickyTop) : null;
+    resizeObserver?.observe(stickyShell);
+    window.addEventListener("resize", updateStickyTop);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateStickyTop);
+    };
+  }, []);
+
+  return (
+    <div className="sticky z-20" style={{ top: stickyTop }}>
+      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.max(1, options.length)}, minmax(0, 1fr))` }}>
+        {options.map((option) => {
+          const active = value === option.id;
+          const Icon = option.icon || Layers;
+          return (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => onChange(option.id)}
+              className={`min-h-[46px] min-w-0 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all duration-150 ${active ? "border-[#5f8df8] bg-[linear-gradient(180deg,#315ba5,#26457b)] text-white shadow-[0_8px_20px_rgba(49,91,165,0.35)]" : "border-[#29364f] bg-[#141c2a] text-[#ccd6e5] hover:border-[#40619c] hover:bg-[#192438] hover:text-white"}`}
+              title={option.label}
+            >
+              <span className="flex min-w-0 items-center justify-center gap-2">
+                <Icon size={14} className="shrink-0" />
+                <span className="truncate">{option.label}</span>
+                {option.count !== undefined && (
+                  <span className={`inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] ktns-mono ${active ? "bg-white/18 text-white" : "bg-[#1f2a3d] text-[#9db0cd]"}`}>{option.count}</span>
+                )}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+// Biểu đồ SVG thuần — không dùng thư viện có Function("return this")/eval nên tương thích CSP nghiêm ngặt.
+function MonthlyFinanceChart({ data, incomeLabel, expenseLabel, millionLabel }) {
+  const rows = Array.isArray(data) ? data : [];
+  const width = 860;
+  const height = 260;
+  const pad = { top: 18, right: 22, bottom: 38, left: 56 };
+  const plotW = width - pad.left - pad.right;
+  const plotH = height - pad.top - pad.bottom;
+  const values = rows.flatMap((item) => [Number(item?.thu) || 0, Number(item?.chi) || 0, Number(item?.net) || 0]);
+  const minValue = Math.min(0, ...values);
+  const maxValue = Math.max(1, ...values);
+  const span = Math.max(1, maxValue - minValue);
+  const yOf = (value) => pad.top + ((maxValue - Number(value || 0)) / span) * plotH;
+  const zeroY = yOf(0);
+  const stepX = rows.length > 0 ? plotW / rows.length : plotW;
+  const barWidth = Math.max(8, Math.min(24, stepX * 0.22));
+  const netPoints = rows.map((item, index) => {
+    const x = pad.left + stepX * index + stepX / 2;
+    return `${x},${yOf(item.net)}`;
+  }).join(" ");
+  const gridValues = Array.from({ length: 5 }, (_, index) => maxValue - (span * index) / 4);
+
+  return (
+    <div className="w-full overflow-x-auto" role="img" aria-label="Biểu đồ thu, chi và lợi nhuận theo tháng">
+      <svg viewBox={`0 0 ${width} ${height}`} className="w-full min-w-[620px] h-[260px]" preserveAspectRatio="xMidYMid meet">
+        {gridValues.map((value, index) => {
+          const y = yOf(value);
+          return (
+            <g key={`grid-${index}`}>
+              <line x1={pad.left} y1={y} x2={width - pad.right} y2={y} stroke="var(--paper-line)" strokeDasharray="3 3" />
+              <text x={pad.left - 8} y={y + 4} textAnchor="end" fontSize="11" fill="var(--muted)">{Math.round(value)}</text>
+            </g>
+          );
+        })}
+        <line x1={pad.left} y1={zeroY} x2={width - pad.right} y2={zeroY} stroke="var(--paper-line)" />
+        {rows.map((item, index) => {
+          const centerX = pad.left + stepX * index + stepX / 2;
+          const thuY = yOf(item.thu);
+          const chiY = yOf(item.chi);
+          const thuH = Math.abs(zeroY - thuY);
+          const chiH = Math.abs(zeroY - chiY);
+          return (
+            <g key={item.month || index}>
+              <rect x={centerX - barWidth - 2} y={Math.min(zeroY, thuY)} width={barWidth} height={Math.max(1, thuH)} rx="3" fill="var(--ledger-green)">
+                <title>{`${item.month}: ${incomeLabel} ${item.thu} ${millionLabel}`}</title>
+              </rect>
+              <rect x={centerX + 2} y={Math.min(zeroY, chiY)} width={barWidth} height={Math.max(1, chiH)} rx="3" fill="var(--stamp-red)">
+                <title>{`${item.month}: ${expenseLabel} ${item.chi} ${millionLabel}`}</title>
+              </rect>
+              <text x={centerX} y={height - 14} textAnchor="middle" fontSize="11" fill="var(--muted)">{item.month}</text>
+            </g>
+          );
+        })}
+        {rows.length > 0 && <polyline points={netPoints} fill="none" stroke="var(--gold)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />}
+        {rows.map((item, index) => {
+          const x = pad.left + stepX * index + stepX / 2;
+          const y = yOf(item.net);
+          return <circle key={`net-${item.month || index}`} cx={x} cy={y} r="4" fill="var(--gold)"><title>{`${item.month}: Lợi nhuận ròng ${item.net} ${millionLabel}`}</title></circle>;
+        })}
+      </svg>
+    </div>
+  );
+}
+
 // Ô nhập tiền thông minh — vừa hiện số đã format sống ngay dưới ô (đỡ đếm nhầm số 0),
 // vừa gợi ý các mức x1.000/x10.000/x100.000... để bấm chọn thay vì tự gõ hết số 0.
 function MoneyInput({ value, onChange, placeholder, className, disabled }) {
@@ -2485,9 +2806,168 @@ function quarterMonths(year, quarter) { return [1, 2, 3].map((i) => ({ year, mon
 
 // ---------- Main App ----------
 const DOMIX_THEME_STORAGE_KEY = "domix_theme_mode";
+const DOMIX_TASK_SEEN_STORAGE_PREFIX = "domix_task_seen_v1:";
+
+const DOMIX_TASK_SOUND_STORAGE_PREFIX = "domix_task_sound_v2:";
+const DOMIX_TASK_PERIODIC_REMINDER_STORAGE_PREFIX = "domix_task_periodic_reminder_v1:";
+let domixTaskAudioContext = null;
+
+function taskSoundStorageKey(email = "") {
+  return `${DOMIX_TASK_SOUND_STORAGE_PREFIX}${String(email || "").trim().toLowerCase()}`;
+}
+
+function readTaskSoundEnabled(email = "") {
+  if (typeof window === "undefined" || !email) return true;
+  try {
+    const saved = window.localStorage.getItem(taskSoundStorageKey(email));
+    return saved !== "0";
+  } catch {
+    return true;
+  }
+}
+
+function writeTaskSoundEnabled(email = "", enabled = true) {
+  if (typeof window === "undefined" || !email) return;
+  try {
+    window.localStorage.setItem(taskSoundStorageKey(email), enabled ? "1" : "0");
+  } catch {
+    // Trình duyệt chặn localStorage: chỉ giữ trạng thái trong phiên hiện tại.
+  }
+}
+
+function taskPeriodicReminderStorageKey(email = "") {
+  return `${DOMIX_TASK_PERIODIC_REMINDER_STORAGE_PREFIX}${String(email || "").trim().toLowerCase()}`;
+}
+
+function readTaskPeriodicReminderAt(email = "") {
+  if (typeof window === "undefined" || !email) return 0;
+  try {
+    const value = Number(window.localStorage.getItem(taskPeriodicReminderStorageKey(email)) || 0);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function writeTaskPeriodicReminderAt(email = "", timestamp = Date.now()) {
+  if (typeof window === "undefined" || !email) return;
+  try {
+    window.localStorage.setItem(taskPeriodicReminderStorageKey(email), String(timestamp));
+  } catch {
+    // Trình duyệt chặn localStorage: chu kỳ vẫn hoạt động trong lần mở hiện tại.
+  }
+}
+
+function clearTaskPeriodicReminderAt(email = "") {
+  if (typeof window === "undefined" || !email) return;
+  try {
+    window.localStorage.removeItem(taskPeriodicReminderStorageKey(email));
+  } catch {
+    // Không làm hỏng giao diện nếu trình duyệt chặn lưu cục bộ.
+  }
+}
+
+function getTaskAudioContext() {
+  if (typeof window === "undefined") return null;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  try {
+    if (!domixTaskAudioContext || domixTaskAudioContext.state === "closed") domixTaskAudioContext = new AudioContextClass();
+    return domixTaskAudioContext;
+  } catch {
+    return null;
+  }
+}
+
+function unlockTaskAlertSound() {
+  const context = getTaskAudioContext();
+  if (!context) return false;
+  if (context.state === "suspended") context.resume().catch(() => {});
+  return context.state === "running";
+}
+
+function playTaskAlertSound() {
+  const context = getTaskAudioContext();
+  if (!context) return false;
+  // Trình duyệt thường khóa Web Audio cho tới khi người dùng bấm vào trang.
+  // Không đánh dấu đã phát khi context chưa chạy; App sẽ giữ cảnh báo và phát lại sau lần bấm đầu tiên.
+  if (context.state !== "running") {
+    context.resume().catch(() => {});
+    return false;
+  }
+  try {
+    const now = context.currentTime;
+    const masterGain = context.createGain();
+    masterGain.gain.setValueAtTime(0.8, now);
+    masterGain.connect(context.destination);
+
+    const playChimeTone = (startAt, frequency, duration = 0.34, volume = 0.2) => {
+      const fundamental = context.createOscillator();
+      const shimmer = context.createOscillator();
+      const toneGain = context.createGain();
+      const shimmerGain = context.createGain();
+
+      fundamental.type = "sine";
+      shimmer.type = "sine";
+      fundamental.frequency.setValueAtTime(frequency, startAt);
+      fundamental.frequency.exponentialRampToValueAtTime(frequency * 0.994, startAt + duration);
+      shimmer.frequency.setValueAtTime(frequency * 2.01, startAt);
+
+      toneGain.gain.setValueAtTime(0.0001, startAt);
+      toneGain.gain.exponentialRampToValueAtTime(volume, startAt + 0.008);
+      toneGain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+
+      shimmerGain.gain.setValueAtTime(0.0001, startAt);
+      shimmerGain.gain.exponentialRampToValueAtTime(volume * 0.22, startAt + 0.006);
+      shimmerGain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration * 0.68);
+
+      fundamental.connect(toneGain);
+      shimmer.connect(shimmerGain);
+      toneGain.connect(masterGain);
+      shimmerGain.connect(masterGain);
+      fundamental.start(startAt);
+      shimmer.start(startAt);
+      fundamental.stop(startAt + duration + 0.04);
+      shimmer.stop(startAt + duration + 0.04);
+    };
+
+    // Chuông ba nốt ngắn, sáng và trong theo phong cách thông báo iPhone.
+    // Âm được tổng hợp bằng Web Audio nên không phụ thuộc file âm thanh ngoài.
+    playChimeTone(now + 0.02, 1046.5, 0.28, 0.22);
+    playChimeTone(now + 0.16, 1318.5, 0.3, 0.2);
+    playChimeTone(now + 0.3, 1568.0, 0.42, 0.18);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function taskSeenStorageKey(email = "") {
+  return `${DOMIX_TASK_SEEN_STORAGE_PREFIX}${String(email || "").trim().toLowerCase()}`;
+}
+
+function readSeenTaskIds(email = "") {
+  if (typeof window === "undefined" || !email) return new Set();
+  try {
+    const raw = JSON.parse(window.localStorage.getItem(taskSeenStorageKey(email)) || "[]");
+    return new Set(Array.isArray(raw) ? raw.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function writeSeenTaskIds(email = "", ids = []) {
+  if (typeof window === "undefined" || !email) return;
+  try {
+    const values = Array.from(ids, String).slice(-2000);
+    window.localStorage.setItem(taskSeenStorageKey(email), JSON.stringify(values));
+  } catch {
+    // Trình duyệt có thể chặn localStorage; badge vẫn hoạt động trong phiên hiện tại.
+  }
+}
 
 function DomixApp({ authUser, onLogout }) {
-  const [tab, setTab] = useState("dashboard");
+  const [tab, setTab] = useState(() => defaultTabForRole(authUser?.role));
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
   const [darkMode, setDarkMode] = useState(() => {
@@ -2511,8 +2991,20 @@ function DomixApp({ authUser, onLogout }) {
   const [inventory, setInventory] = useState(initialInventory);
   const [tasks, setTasks] = useState(initialTasks);
   const [chatUnread, setChatUnread] = useState(0);
+  const [seenTaskIds, setSeenTaskIds] = useState(() => readSeenTaskIds(authUser?.email));
+  const [taskRealtimeNotice, setTaskRealtimeNotice] = useState(null);
+  const [taskSummaryVisible, setTaskSummaryVisible] = useState(false);
+  const [taskSoundEnabled, setTaskSoundEnabled] = useState(() => readTaskSoundEnabled(authUser?.email));
+  const taskNoticeTimerRef = useRef(null);
+  const taskSummaryTimerRef = useRef(null);
+  const taskSoundPendingRef = useRef(false);
   const [lang, setLang] = useState("vi");
   const [company, setCompany] = useState(DEFAULT_COMPANY);
+  const [tickerNow, setTickerNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => setTickerNow(Date.now()), 15000);
+    return () => window.clearInterval(timer);
+  }, []);
   const [unlockedMonths, setUnlockedMonths] = useState(new Set());
   const [capitalContributions, setCapitalContributions] = useState([]);
   const [distributionPartners, setDistributionPartners] = useState([
@@ -2564,7 +3056,7 @@ function DomixApp({ authUser, onLogout }) {
 
   ]);
   const [payrollPayments, setPayrollPayments] = useState([]);
-  // Duyệt lương 2 bước: Kế toán duyệt → Sếp xác nhận (bằng mật khẩu giám đốc) → mới cho phép chi
+  // Xét duyệt lương có lưu vết: nếu có kế toán thì Kế toán rà soát → Sếp duyệt → quay lại Kế toán chi trả
   // trả. Áp dụng cho CẢ lương cuối tháng bình thường LẪN yêu cầu lương giữa tháng (nghỉ việc giữa
   // chừng cần thanh toán sớm, không đợi tới cuối tháng).
   const [payrollApprovals, setPayrollApprovals] = useState([]);
@@ -2608,7 +3100,23 @@ function DomixApp({ authUser, onLogout }) {
   // riêng trong DB và đồng bộ qua /api/employees (mỗi email = một tài khoản đăng nhập).
   const hasLoadedDbData = useRef(false);
   const hasLoadedEmployees = useRef(false);
-  const canWriteData = authUser?.role === "admin" || authUser?.role === "user";
+  const skipNextAppDataSaveRef = useRef(false);
+  const applyingRemotePayrollRef = useRef(false);
+  const payrollLocalMutationUntilRef = useRef(0);
+  const payrollWorkflowUpdatedAtRef = useRef("");
+  const applyingRemoteTasksRef = useRef(false);
+  const tasksLocalMutationUntilRef = useRef(0);
+  const tasksUpdatedAtRef = useRef("");
+  const taskNotificationReadyRef = useRef(false);
+  const knownAssignedTaskIdsRef = useRef(new Set());
+  const loadedDataFieldsRef = useRef(new Set());
+  const lastPersistedFieldJsonRef = useRef({});
+  const inFlightFieldLoadsRef = useRef(new Map());
+  const [dbReady, setDbReady] = useState(false);
+  const [dataFieldVersion, setDataFieldVersion] = useState(0);
+  const [loadingDataFields, setLoadingDataFields] = useState(new Set());
+  const [dataLoadError, setDataLoadError] = useState("");
+  const canWriteData = Boolean(authUser);
 
   const appDataSnapshot = useMemo(() => ({
     transactions, orders, marketingLogs, debts, inventory, tasks, lang, company,
@@ -2624,41 +3132,106 @@ function DomixApp({ authUser, onLogout }) {
     chatMessages, payrollApprovals, midMonthRequests,
     customers, distributionSettlements, stockMovements,
   ]);
+  const appDataSnapshotRef = useRef(appDataSnapshot);
+  appDataSnapshotRef.current = appDataSnapshot;
   const initialAppDataSnapshot = useRef(null);
   if (!initialAppDataSnapshot.current) initialAppDataSnapshot.current = appDataSnapshot;
 
-  const applyAppData = useCallback((rawData) => {
-    // Migration mục XIII: chuẩn hóa dữ liệu cũ (đối tác, đơn phân phối, công nợ, khách hàng)
-    // NGAY KHI LOAD — không xóa/không đổi id, chỉ bổ sung trường mới + migrationNote.
-    const data = migrateAppData(rawData);
-    if (data.transactions) setTransactions(data.transactions);
-    if (data.orders) setOrders(data.orders);
-    if (data.marketingLogs) setMarketingLogs(data.marketingLogs);
-    if (data.debts) setDebts(data.debts);
-    if (data.inventory) setInventory(data.inventory);
-    if (data.tasks) setTasks(data.tasks);
-    if (data.lang) setLang(data.lang);
-    if (data.company) setCompany(data.company);
-    if (Array.isArray(data.unlockedMonths)) setUnlockedMonths(new Set(data.unlockedMonths));
-    if (data.capitalContributions) setCapitalContributions(data.capitalContributions);
-    if (data.distributionPartners) setDistributionPartners(data.distributionPartners);
-    if (data.distributionOrders) setDistributionOrders(data.distributionOrders);
-    if (data.payrollPayments) setPayrollPayments(data.payrollPayments);
-    if (data.kpiTiers) setKpiTiers(data.kpiTiers);
-    if (data.cvReviews) setCvReviews(data.cvReviews);
-    if (data.marketingPages) setMarketingPages(data.marketingPages);
-    if (data.contracts) setContracts(data.contracts);
-    if (data.fixedAssets) setFixedAssets(data.fixedAssets);
-    if (data.leads) setLeads(data.leads);
-    if (data.supportCases) setSupportCases(data.supportCases);
-    if (data.announcements) setAnnouncements(data.announcements);
-    if (data.chatMessages) setChatMessages(data.chatMessages);
-    if (data.payrollApprovals) setPayrollApprovals(data.payrollApprovals);
-    if (data.midMonthRequests) setMidMonthRequests(data.midMonthRequests);
-    if (data.customers) setCustomers(data.customers);
-    if (data.distributionSettlements) setDistributionSettlements(data.distributionSettlements);
-    if (data.stockMovements) setStockMovements(data.stockMovements);
+  const resetLazyAppData = useCallback(() => {
+    setTransactions([]); setOrders([]); setMarketingLogs([]); setDebts([]); setInventory([]); setTasks([]);
+    setCapitalContributions([]); setDistributionPartners([]); setDistributionOrders([]); setPayrollPayments([]);
+    setKpiTiers([]); setCvReviews([]); setMarketingPages([]); setContracts([]); setFixedAssets([]);
+    setLeads([]); setSupportCases([]); setChatMessages([]); setPayrollApprovals([]); setMidMonthRequests([]);
+    setCustomers([]); setDistributionSettlements([]); setStockMovements([]);
   }, []);
+
+  const markDataFieldsLoaded = useCallback((data, markPersisted = true) => {
+    const keys = Object.keys(data || {}).filter((key) => ALL_APP_DATA_FIELDS.includes(key));
+    if (keys.length === 0) return;
+    keys.forEach((key) => {
+      loadedDataFieldsRef.current.add(key);
+      if (markPersisted) lastPersistedFieldJsonRef.current[key] = JSON.stringify(data[key]);
+    });
+    setDataFieldVersion((value) => value + 1);
+  }, []);
+
+  const applyAppData = useCallback((rawData, options = {}) => {
+    if (!rawData || typeof rawData !== "object") return;
+    const requestedKeys = new Set(Object.keys(rawData));
+    // Migration cần một số bảng liên quan để chuẩn hóa. Ghép với dữ liệu đang có nhưng chỉ
+    // cập nhật lại đúng các trường vừa được máy chủ trả về, không làm rỗng trường chưa tải.
+    const data = migrateAppData({ ...appDataSnapshotRef.current, ...rawData });
+    const has = (key) => requestedKeys.has(key);
+    if (has("transactions")) setTransactions(data.transactions || []);
+    if (has("orders")) setOrders(data.orders || []);
+    if (has("marketingLogs")) setMarketingLogs(data.marketingLogs || []);
+    if (has("debts")) setDebts(data.debts || []);
+    if (has("inventory")) setInventory(data.inventory || []);
+    if (has("tasks")) setTasks(data.tasks || []);
+    if (has("lang")) setLang(data.lang || "vi");
+    if (has("company")) setCompany(data.company || DEFAULT_COMPANY);
+    if (has("unlockedMonths")) setUnlockedMonths(new Set(Array.isArray(data.unlockedMonths) ? data.unlockedMonths : []));
+    if (has("capitalContributions")) setCapitalContributions(data.capitalContributions || []);
+    if (has("distributionPartners")) setDistributionPartners(data.distributionPartners || []);
+    if (has("distributionOrders")) setDistributionOrders(data.distributionOrders || []);
+    if (has("payrollPayments")) setPayrollPayments(data.payrollPayments || []);
+    if (has("kpiTiers")) setKpiTiers(data.kpiTiers || []);
+    if (has("cvReviews")) setCvReviews(data.cvReviews || []);
+    if (has("marketingPages")) setMarketingPages(data.marketingPages || []);
+    if (has("contracts")) setContracts(data.contracts || []);
+    if (has("fixedAssets")) setFixedAssets(data.fixedAssets || []);
+    if (has("leads")) setLeads(data.leads || []);
+    if (has("supportCases")) setSupportCases(data.supportCases || []);
+    if (has("announcements")) setAnnouncements(data.announcements || []);
+    if (has("chatMessages")) setChatMessages(data.chatMessages || []);
+    if (has("payrollApprovals")) setPayrollApprovals(data.payrollApprovals || []);
+    if (has("midMonthRequests")) setMidMonthRequests(data.midMonthRequests || []);
+    if (has("customers")) setCustomers(data.customers || []);
+    if (has("distributionSettlements")) setDistributionSettlements(data.distributionSettlements || []);
+    if (has("stockMovements")) setStockMovements(data.stockMovements || []);
+    const persistedData = Object.fromEntries([...requestedKeys].filter((key) => ALL_APP_DATA_FIELDS.includes(key)).map((key) => [key, data[key]]));
+    markDataFieldsLoaded(persistedData, options.markPersisted !== false);
+  }, [markDataFieldsLoaded]);
+
+  const ensureDataFields = useCallback(async (fields, options = {}) => {
+    const requested = Array.from(new Set((fields || []).filter((field) => ALL_APP_DATA_FIELDS.includes(field))));
+    const needed = options.force ? requested : requested.filter((field) => !loadedDataFieldsRef.current.has(field));
+    if (needed.length === 0) return true;
+    const requestKey = [...needed].sort().join(",");
+    if (inFlightFieldLoadsRef.current.has(requestKey)) return inFlightFieldLoadsRef.current.get(requestKey);
+    setLoadingDataFields((previous) => new Set([...previous, ...needed]));
+    setDataLoadError("");
+    const promise = loadAppFields(needed, { force: options.force })
+      .then((result) => {
+        if (result.exists === false) {
+          return saveAppData(initialAppDataSnapshot.current).then(() => {
+            markDataFieldsLoaded(initialAppDataSnapshot.current, true);
+            return true;
+          });
+        }
+        skipNextAppDataSaveRef.current = true;
+        applyAppData(result.data || {}, { markPersisted: true });
+        return true;
+      })
+      .catch((error) => {
+        setDataLoadError(error.message || "Không tải được dữ liệu từ máy chủ.");
+        console.warn("Không tải được nhóm dữ liệu:", needed, error);
+        return false;
+      })
+      .finally(() => {
+        inFlightFieldLoadsRef.current.delete(requestKey);
+        setLoadingDataFields((previous) => {
+          const next = new Set(previous);
+          needed.forEach((field) => next.delete(field));
+          return next;
+        });
+      });
+    inFlightFieldLoadsRef.current.set(requestKey, promise);
+    return promise;
+  }, [applyAppData, markDataFieldsLoaded]);
+
+  const areDataFieldsReady = useCallback((fields) => (fields || []).every((field) => loadedDataFieldsRef.current.has(field)), [dataFieldVersion]);
+  const areDataFieldsLoading = useCallback((fields) => (fields || []).some((field) => loadingDataFields.has(field)), [loadingDataFields]);
 
   useEffect(() => {
     try {
@@ -2670,28 +3243,155 @@ function DomixApp({ authUser, onLogout }) {
 
   useEffect(() => {
     let cancelled = false;
-    loadAppData()
+    const coreFields = ["lang", "company", "announcements", "unlockedMonths"];
+    loadAppFields(coreFields)
       .then((result) => {
         if (cancelled) return;
-        if (result.data) applyAppData(result.data);
-        else saveAppData(initialAppDataSnapshot.current).catch((err) => console.warn("Không seed được dữ liệu vào DB:", err));
-        hasLoadedDbData.current = true;
+        payrollWorkflowUpdatedAtRef.current = result.updatedAt || "";
+        tasksUpdatedAtRef.current = result.updatedAt || "";
+        if (result.exists === false) {
+          return saveAppData(initialAppDataSnapshot.current).then(() => {
+            if (cancelled) return;
+            markDataFieldsLoaded(initialAppDataSnapshot.current, true);
+          });
+        }
+        resetLazyAppData();
+        applyAppData(result.data || {}, { markPersisted: true });
       })
       .catch((err) => {
-        hasLoadedDbData.current = true;
         console.warn("Không kết nối được DOMIX API, đang dùng dữ liệu mặc định trong trình duyệt:", err);
+        markDataFieldsLoaded(initialAppDataSnapshot.current, false);
+      })
+      .finally(() => {
+        if (cancelled) return;
+        hasLoadedDbData.current = true;
+        setDbReady(true);
       });
     return () => { cancelled = true; };
-  }, [applyAppData]);
+  }, [applyAppData, markDataFieldsLoaded, resetLazyAppData]);
 
   useEffect(() => {
-    if (!canWriteData) return;
-    if (!hasLoadedDbData.current) return;
+    if (!dbReady) return;
+    ensureDataFields(TAB_DEFAULT_FIELDS[tab] || []);
+  }, [tab, dbReady, ensureDataFields]);
+
+  useEffect(() => {
+    if (!canWriteData || !hasLoadedDbData.current) return;
+    if (skipNextAppDataSaveRef.current) {
+      skipNextAppDataSaveRef.current = false;
+      return;
+    }
+    const changed = {};
+    loadedDataFieldsRef.current.forEach((field) => {
+      const value = appDataSnapshot[field];
+      const serialized = JSON.stringify(value);
+      if (lastPersistedFieldJsonRef.current[field] !== serialized) changed[field] = value;
+    });
+    const changedFields = Object.keys(changed);
+    if (changedFields.length === 0) return;
     const timer = window.setTimeout(() => {
-      saveAppData(appDataSnapshot).catch((err) => console.warn("Không lưu được dữ liệu vào DB:", err));
+      saveAppFields(changed)
+        .then((result) => {
+          const saved = result.data && typeof result.data === "object" ? result.data : changed;
+          const differs = Object.keys(saved).some((field) => JSON.stringify(saved[field]) !== JSON.stringify(appDataSnapshotRef.current[field]));
+          if (differs) {
+            skipNextAppDataSaveRef.current = true;
+            applyAppData(saved, { markPersisted: true });
+          } else {
+            markDataFieldsLoaded(saved, true);
+          }
+        })
+        .catch((err) => console.warn("Không lưu được dữ liệu vào DB:", err));
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [appDataSnapshot, canWriteData]);
+  }, [appDataSnapshot, canWriteData, applyAppData, markDataFieldsLoaded]);
+
+  // Khi một tài khoản thao tác xét duyệt lương, tạm ngừng nhận bản polling cũ trong lúc
+  // dữ liệu mới đang được debounce lưu lên SQLite. Khi dữ liệu đến từ polling thì không
+  // ghi ngược lại toàn bộ app_state, tránh vòng lặp và tránh đè dữ liệu của người khác.
+  useEffect(() => {
+    if (!hasLoadedDbData.current) return;
+    if (applyingRemotePayrollRef.current) {
+      applyingRemotePayrollRef.current = false;
+      return;
+    }
+    payrollLocalMutationUntilRef.current = Date.now() + 1800;
+  }, [payrollApprovals, midMonthRequests, payrollPayments]);
+
+  const refreshPayrollWorkflow = useCallback(async () => {
+    if (!hasLoadedDbData.current) return;
+    // Không tải toàn bộ hai loại hồ sơ lương ở nền. Chỉ bật polling workflow sau khi
+    // người dùng đã chủ động mở cả các nhóm dữ liệu liên quan trong trang Bảng lương.
+    if (!["payrollApprovals", "midMonthRequests", "payrollPayments"].every((field) => loadedDataFieldsRef.current.has(field))) return;
+    if (Date.now() < payrollLocalMutationUntilRef.current) return;
+    try {
+      const result = await fetchPayrollWorkflow();
+      const updatedAt = result.updatedAt || "";
+      payrollWorkflowUpdatedAtRef.current = updatedAt;
+      const nextApprovals = Array.isArray(result.payrollApprovals) ? result.payrollApprovals : [];
+      const nextMidMonth = Array.isArray(result.midMonthRequests) ? result.midMonthRequests : [];
+      const nextPayments = Array.isArray(result.payrollPayments) ? result.payrollPayments : [];
+      const changed = JSON.stringify(nextApprovals) !== JSON.stringify(payrollApprovals)
+        || JSON.stringify(nextMidMonth) !== JSON.stringify(midMonthRequests)
+        || JSON.stringify(nextPayments) !== JSON.stringify(payrollPayments);
+      if (!changed) return;
+      applyingRemotePayrollRef.current = true;
+      skipNextAppDataSaveRef.current = true;
+      setPayrollApprovals(nextApprovals);
+      setMidMonthRequests(nextMidMonth);
+      setPayrollPayments(nextPayments);
+    } catch {
+      // Mất kết nối ngắn hạn: giữ nguyên dữ liệu đang có, lần polling sau sẽ thử lại.
+    }
+  }, [payrollApprovals, midMonthRequests, payrollPayments, dataFieldVersion]);
+
+  useEffect(() => {
+    const timer = window.setInterval(refreshPayrollWorkflow, 2000);
+    return () => window.clearInterval(timer);
+  }, [refreshPayrollWorkflow]);
+
+  useEffect(() => {
+    if (!hasLoadedDbData.current) return;
+    if (applyingRemoteTasksRef.current) {
+      applyingRemoteTasksRef.current = false;
+      return;
+    }
+    tasksLocalMutationUntilRef.current = Date.now() + 1800;
+  }, [tasks]);
+
+  const refreshTasksRealtime = useCallback(async () => {
+    if (!hasLoadedDbData.current) return;
+    if (Date.now() < tasksLocalMutationUntilRef.current) return;
+    try {
+      const result = await fetchTasks();
+      const updatedAt = result.updatedAt || "";
+      const nextTasks = Array.isArray(result.tasks) ? result.tasks : [];
+      // SQLite CURRENT_TIMESTAMP chỉ chính xác đến giây. Không được bỏ qua chỉ vì updatedAt
+      // giống nhau: hai thao tác giao việc trong cùng một giây vẫn phải cập nhật realtime.
+      const unchanged = JSON.stringify(nextTasks) === JSON.stringify(tasks);
+      tasksUpdatedAtRef.current = updatedAt;
+      if (unchanged) return;
+      applyingRemoteTasksRef.current = true;
+      skipNextAppDataSaveRef.current = true;
+      setTasks(nextTasks);
+    } catch {
+      // Mất kết nối ngắn hạn: giữ nguyên danh sách hiện có, lần polling sau thử lại.
+    }
+  }, [tasks]);
+
+  useEffect(() => {
+    refreshTasksRealtime();
+    const timer = window.setInterval(refreshTasksRealtime, 1000);
+    const refreshOnFocus = () => refreshTasksRealtime();
+    const refreshOnVisible = () => { if (document.visibilityState === "visible") refreshTasksRealtime(); };
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
+    };
+  }, [refreshTasksRealtime]);
 
   // Nhân sự: nạp từ bảng employees khi vào app, ghi đè (debounce) khi có thay đổi.
   const refreshEmployees = useCallback(async () => {
@@ -2806,20 +3506,26 @@ function DomixApp({ authUser, onLogout }) {
     return r;
   };
 
-  // Xuất/Nhập TOÀN BỘ dữ liệu ra file — kênh sao lưu thủ công bên cạnh SQLite backend.
-  const exportAllData = () => {
-    const snapshot = {
-      _meta: { exportedAt: new Date().toISOString(), appName: "DOMIX", version: 1 },
-      transactions, employees, orders, marketingLogs, debts, inventory, tasks, lang, company,
-      capitalContributions, distributionPartners, distributionOrders, payrollPayments, kpiTiers,
-      cvReviews, marketingPages, contracts, fixedAssets, leads, supportCases, announcements, chatMessages, payrollApprovals, midMonthRequests,
-      customers, distributionSettlements, stockMovements,
-    };
-    const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = `DOMIX_saoluu_${TODAY.toISOString().slice(0, 10)}.json`; a.click();
-    URL.revokeObjectURL(url);
+  // Xuất/Nhập TOÀN BỘ dữ liệu ra file — khi giao diện đang tải lười từng bảng,
+  // thao tác sao lưu phải chủ động lấy đủ mọi nhóm dữ liệu từ DB trước khi tạo file.
+  const exportAllData = async () => {
+    try {
+      const result = await loadAppFields(ALL_APP_DATA_FIELDS, { force: true });
+      const remoteData = result?.exists === false ? appDataSnapshotRef.current : (result?.data || {});
+      const data = migrateAppData({ ...appDataSnapshotRef.current, ...remoteData });
+      const snapshot = {
+        _meta: { exportedAt: new Date().toISOString(), appName: "DOMIX", version: 2 },
+        ...Object.fromEntries(ALL_APP_DATA_FIELDS.map((field) => [field, data[field]])),
+        employees,
+      };
+      const blob = new Blob([JSON.stringify(snapshot, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `DOMIX_saoluu_${TODAY.toISOString().slice(0, 10)}.json`; a.click();
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      await noticeOverlay(error.message || "Không thể tải đủ dữ liệu để sao lưu.", { title: "Sao lưu thất bại" });
+    }
   };
   const importAllData = (jsonText) => {
     try {
@@ -2851,6 +3557,10 @@ function DomixApp({ authUser, onLogout }) {
       if (data.customers) setCustomers(data.customers);
       if (data.distributionSettlements) setDistributionSettlements(data.distributionSettlements);
       if (data.stockMovements) setStockMovements(data.stockMovements);
+      const importedFields = Object.fromEntries(ALL_APP_DATA_FIELDS
+        .filter((field) => Object.prototype.hasOwnProperty.call(data, field))
+        .map((field) => [field, data[field]]));
+      markDataFieldsLoaded(importedFields, false);
       return { ok: true, exportedAt: data._meta?.exportedAt };
     } catch (err) {
       return { ok: false, error: err.message };
@@ -2988,7 +3698,247 @@ function DomixApp({ authUser, onLogout }) {
     return groups;
   }, [prevSnapshot]);
 
-  const navGroups = [
+  const payrollCurrentEmployee = employeeForAuthUser(employees, authUser);
+  const payrollActiveAccountants = employees.filter((employee) => (
+    (normalizeAccountRole(employee.accountRole) === "accountant" || employeeIsAccountant(employee)) && String(employee.email || "").trim()
+  ));
+  const payrollHasAccountant = payrollActiveAccountants.length > 0;
+  const payrollCurrentIsBoss = isAdminRole(authUser?.role);
+  const payrollCurrentIsAccountant = !payrollCurrentIsBoss && (isAccountantRole(authUser?.role) || employeeIsAccountant(payrollCurrentEmployee));
+
+  const myAssignedTasks = useMemo(() => {
+    if (!payrollCurrentEmployee) return [];
+    return (tasks || []).filter((task) => Number(task.employeeId) === Number(payrollCurrentEmployee.id));
+  }, [tasks, payrollCurrentEmployee]);
+
+  // Admin chỉ quản trị/cấu hình chu kỳ, không bị kiểm tra và không nhận chuông nhắc việc.
+  // Mọi tài khoản khác chỉ được nhắc khi chính họ có hồ sơ nhân sự và được giao việc.
+  const taskReminderEligible = Boolean(payrollCurrentEmployee && !payrollCurrentIsBoss);
+  const ownAssignedTasks = useMemo(() => {
+    if (!taskReminderEligible) return [];
+    return myAssignedTasks;
+  }, [myAssignedTasks, taskReminderEligible]);
+
+  const pendingAssignedTasks = useMemo(() => (
+    ownAssignedTasks.filter((task) => {
+      if (task?.doneManual || task?.completionStatus === "submitted") return false;
+      const progress = computeTaskProgress(task, orders, marketingLogs);
+      return evaluateTaskStatus(task, progress.value) !== "dat";
+    })
+  ), [ownAssignedTasks, orders, marketingLogs]);
+  const pendingAssignedTaskCount = pendingAssignedTasks.length;
+  const overdueAssignedTaskCount = useMemo(() => (
+    pendingAssignedTasks.filter((task) => task?.date && task.date < TODAY_STR).length
+  ), [pendingAssignedTasks]);
+  const taskReminderIntervalHours = useMemo(() => {
+    const configured = Number(company?.taskReminderIntervalHours);
+    if (!Number.isFinite(configured)) return 5;
+    return Math.min(168, Math.max(1, Math.round(configured)));
+  }, [company?.taskReminderIntervalHours]);
+
+  const closeTaskRealtimeNotice = useCallback(() => {
+    if (taskNoticeTimerRef.current) window.clearTimeout(taskNoticeTimerRef.current);
+    taskNoticeTimerRef.current = null;
+    setTaskRealtimeNotice(null);
+  }, []);
+
+  const showTaskReminder = useCallback((notice, duration = 3000) => {
+    if (taskNoticeTimerRef.current) window.clearTimeout(taskNoticeTimerRef.current);
+    setTaskRealtimeNotice(notice);
+    taskNoticeTimerRef.current = window.setTimeout(() => {
+      setTaskRealtimeNotice(null);
+      taskNoticeTimerRef.current = null;
+    }, Math.max(500, Number(duration) || 3000));
+  }, []);
+
+  const closeTaskSummary = useCallback(() => {
+    if (taskSummaryTimerRef.current) window.clearTimeout(taskSummaryTimerRef.current);
+    taskSummaryTimerRef.current = null;
+    setTaskSummaryVisible(false);
+  }, []);
+
+  useEffect(() => {
+    if (taskSummaryTimerRef.current) window.clearTimeout(taskSummaryTimerRef.current);
+    if (!taskReminderEligible || pendingAssignedTaskCount <= 0) {
+      setTaskSummaryVisible(false);
+      taskSummaryTimerRef.current = null;
+      return undefined;
+    }
+    setTaskSummaryVisible(true);
+    taskSummaryTimerRef.current = window.setTimeout(() => {
+      setTaskSummaryVisible(false);
+      taskSummaryTimerRef.current = null;
+    }, 3000);
+    return () => {
+      if (taskSummaryTimerRef.current) window.clearTimeout(taskSummaryTimerRef.current);
+      taskSummaryTimerRef.current = null;
+    };
+  }, [taskReminderEligible, pendingAssignedTaskCount, overdueAssignedTaskCount]);
+
+  useEffect(() => () => {
+    if (taskNoticeTimerRef.current) window.clearTimeout(taskNoticeTimerRef.current);
+    if (taskSummaryTimerRef.current) window.clearTimeout(taskSummaryTimerRef.current);
+  }, []);
+
+  useEffect(() => {
+    if (!taskSoundEnabled) return undefined;
+    const unlock = () => {
+      unlockTaskAlertSound();
+      window.setTimeout(() => {
+        if (!taskSoundPendingRef.current) return;
+        if (playTaskAlertSound()) taskSoundPendingRef.current = false;
+      }, 90);
+    };
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, [taskSoundEnabled]);
+
+  const unreadAssignedTaskIds = useMemo(() => (
+    ownAssignedTasks
+      .map((task) => String(task.id))
+      .filter((id) => !seenTaskIds.has(id))
+  ), [ownAssignedTasks, seenTaskIds]);
+
+  const markAssignedTasksSeen = useCallback((ids) => {
+    const normalized = (ids || []).map(String).filter(Boolean);
+    if (!normalized.length) return;
+    setSeenTaskIds((current) => {
+      const next = new Set(current);
+      normalized.forEach((id) => next.add(id));
+      writeSeenTaskIds(authUser?.email, next);
+      return next;
+    });
+  }, [authUser?.email]);
+
+  useEffect(() => {
+    setSeenTaskIds(readSeenTaskIds(authUser?.email));
+    setTaskSoundEnabled(readTaskSoundEnabled(authUser?.email));
+    taskNotificationReadyRef.current = false;
+    knownAssignedTaskIdsRef.current = new Set();
+  }, [authUser?.email]);
+
+  useEffect(() => {
+    if (!hasLoadedDbData.current || !taskReminderEligible) return;
+    const currentIds = new Set(ownAssignedTasks.map((task) => String(task.id)));
+    if (!taskNotificationReadyRef.current) {
+      knownAssignedTaskIdsRef.current = currentIds;
+      taskNotificationReadyRef.current = true;
+      return;
+    }
+    const newTasks = ownAssignedTasks.filter((task) => !knownAssignedTaskIdsRef.current.has(String(task.id)));
+    knownAssignedTaskIdsRef.current = currentIds;
+    if (!newTasks.length) return;
+    const newest = newTasks[newTasks.length - 1];
+    // Việc mới có thể báo ngay nhưng KHÔNG đặt lại chu kỳ nhắc tổng hợp.
+    if (taskSoundEnabled) taskSoundPendingRef.current = !playTaskAlertSound();
+    showTaskReminder({
+      count: newTasks.length,
+      title: newTasks.length > 1 ? `${newTasks.length} công việc mới` : "Bạn vừa được giao việc mới",
+      text: newest.description || "Công việc mới",
+      subtitle: "Bấm để mở Giao việc",
+      tone: "new",
+    }, 3000);
+  }, [ownAssignedTasks, taskReminderEligible, authUser?.email, taskSoundEnabled, showTaskReminder]);
+
+  useEffect(() => {
+    if (!hasLoadedDbData.current || !taskReminderEligible || !authUser?.email) return undefined;
+
+    if (pendingAssignedTasks.length === 0) {
+      clearTaskPeriodicReminderAt(authUser.email);
+      return undefined;
+    }
+
+    const intervalMs = taskReminderIntervalHours * 60 * 60 * 1000;
+    const checkAndRemind = () => {
+      const now = Date.now();
+      const lastAggregateReminderAt = readTaskPeriodicReminderAt(authUser.email);
+
+      // Khi bắt đầu có việc tồn, chỉ khởi tạo mốc chu kỳ. Không báo tổng hợp ngay.
+      if (lastAggregateReminderAt <= 0) {
+        writeTaskPeriodicReminderAt(authUser.email, now);
+        return;
+      }
+      if (now - lastAggregateReminderAt < intervalMs) return;
+
+      // Đây là mốc nhắc tổng hợp chung của tài khoản, không phụ thuộc thời điểm tạo từng việc.
+      writeTaskPeriodicReminderAt(authUser.email, now);
+      if (taskSoundEnabled) taskSoundPendingRef.current = !playTaskAlertSound();
+
+      const overdueCount = pendingAssignedTasks.filter((task) => task?.date && task.date < TODAY_STR).length;
+      showTaskReminder({
+        count: pendingAssignedTasks.length,
+        title: `Bạn còn ${pendingAssignedTasks.length} công việc chưa hoàn thành`,
+        text: overdueCount > 0
+          ? `Trong đó có ${overdueCount} công việc đã quá hạn. Vui lòng cập nhật tiến độ.`
+          : `Hệ thống vừa tổng hợp lại toàn bộ công việc đang chờ của bạn.`,
+        subtitle: `Thông báo tổng hợp tiếp theo sau ${taskReminderIntervalHours} giờ · Bấm để mở Giao việc`,
+        tone: overdueCount > 0 ? "overdue" : "due",
+      }, 3000);
+    };
+
+    const firstCheckTimer = window.setTimeout(checkAndRemind, 1200);
+    const repeatCheckTimer = window.setInterval(checkAndRemind, 60 * 1000);
+    return () => {
+      window.clearTimeout(firstCheckTimer);
+      window.clearInterval(repeatCheckTimer);
+    };
+  }, [pendingAssignedTasks, taskReminderEligible, authUser?.email, taskReminderIntervalHours, taskSoundEnabled, showTaskReminder]);
+
+  useEffect(() => {
+    if (tab !== "giaoviec" || unreadAssignedTaskIds.length === 0) return;
+    // Giống tab Tin nhắn: khi người dùng đã mở tab và danh sách đã render thì đánh dấu đã xem.
+    const timer = window.setTimeout(() => markAssignedTasksSeen(unreadAssignedTaskIds), 1200);
+    return () => window.clearTimeout(timer);
+  }, [tab, unreadAssignedTaskIds, markAssignedTasksSeen]);
+
+  const payrollActionSummary = useMemo(() => {
+    const periodApprovals = (payrollApprovals || []).filter((approval) => (
+      Number(approval.year) === Number(reportYear) && Number(approval.month) === Number(reportMonth)
+    ));
+    const periodMidMonth = (midMonthRequests || []).filter((request) => {
+      const date = new Date(request.date);
+      return date.getFullYear() === Number(reportYear) && date.getMonth() + 1 === Number(reportMonth) && !request.paid;
+    });
+    let monthly = 0;
+    let midmonth = 0;
+    if (payrollCurrentIsBoss) {
+      monthly = periodApprovals.filter((approval) => approval.status === "cho_sep_xac_nhan").length;
+      midmonth = periodMidMonth.filter((request) => request.status === "cho_sep_xac_nhan").length;
+    } else if (payrollHasAccountant && payrollCurrentIsAccountant) {
+      monthly = periodApprovals.filter((approval) => approval.status === "cho_ke_toan_duyet").length;
+      midmonth = periodMidMonth.filter((request) => request.status === "cho_ke_toan_duyet").length;
+    } else if (payrollCurrentEmployee) {
+      const ownRow = payrollRows.find((row) => Number(row.id) === Number(payrollCurrentEmployee.id));
+      const ownApproval = periodApprovals.find((approval) => Number(approval.employeeId) === Number(payrollCurrentEmployee.id));
+      const ownPaid = payrollPayments.some((payment) => (
+        Number(payment.employeeId) === Number(payrollCurrentEmployee.id)
+        && Number(payment.year) === Number(reportYear)
+        && Number(payment.month) === Number(reportMonth)
+      ));
+      monthly = ownRow && !ownPaid && (!ownApproval || ownApproval.status === "tra_ve_nhan_vien") ? 1 : 0;
+      midmonth = periodMidMonth.filter((request) => (
+        Number(request.employeeId) === Number(payrollCurrentEmployee.id)
+        && request.status === "tra_ve_nhan_vien"
+      )).length;
+    }
+    return { monthly, midmonth, total: monthly + midmonth };
+  }, [payrollApprovals, midMonthRequests, payrollPayments, payrollRows, payrollCurrentEmployee, payrollCurrentIsBoss, payrollCurrentIsAccountant, payrollHasAccountant, reportYear, reportMonth]);
+  const payrollActionCount = payrollActionSummary.total;
+  const taskReviewCount = useMemo(() => {
+    if (!payrollCurrentIsBoss && !payrollCurrentIsAccountant) return 0;
+    return (tasks || []).filter((task) => !task.doneManual && task.completionStatus === "submitted").length;
+  }, [tasks, payrollCurrentIsBoss, payrollCurrentIsAccountant]);
+  const taskBadgeCount = payrollCurrentIsBoss
+    ? taskReviewCount
+    : payrollCurrentIsAccountant
+      ? taskReviewCount + unreadAssignedTaskIds.length
+      : unreadAssignedTaskIds.length;
+
+  const allNavGroups = [
     { label: lang === "vi" ? "Tổng quan" : "Overview", items: [
       { id: "dashboard", label: t("nav_dashboard"), icon: LayoutDashboard },
     ]},
@@ -3022,10 +3972,34 @@ function DomixApp({ authUser, onLogout }) {
     { label: lang === "vi" ? "Trợ lý & Hệ thống" : "Assistants & System", items: [
       { id: "ai", label: t("nav_ai"), icon: Bot },
       { id: "phaply", label: t("nav_phaply"), icon: Scale },
+      { id: "task-reminder-settings", label: "Cấu hình nhắc việc", icon: BellRing },
       { id: "settings", label: t("nav_settings"), icon: Settings },
     ]},
   ];
+  const effectiveAccountRole = useMemo(() => {
+    if (isAdminRole(authUser?.role)) return "admin";
+    if (isAccountantRole(authUser?.role)) return "accountant";
+    const linkedEmployee = employeeForAuthUser(employees, authUser);
+    return employeeIsAccountant(linkedEmployee) ? "accountant" : "user";
+  }, [authUser, employees]);
+  const effectiveAuthUser = useMemo(() => ({ ...authUser, role: effectiveAccountRole }), [authUser, effectiveAccountRole]);
+  const positionAccess = useMemo(
+    () => positionAccessFor(payrollCurrentEmployee, effectiveAccountRole),
+    [payrollCurrentEmployee, effectiveAccountRole]
+  );
+  const allowedTabIds = useMemo(
+    () => new Set(allowedTabsForRole(effectiveAccountRole, payrollCurrentEmployee)),
+    [effectiveAccountRole, payrollCurrentEmployee]
+  );
+  const navGroups = allNavGroups
+    .map((group) => ({ ...group, items: group.items.filter((item) => allowedTabIds.has(item.id)) }))
+    .filter((group) => group.items.length > 0);
   const nav = navGroups.flatMap((g) => g.items);
+  const activeTabAllowed = allowedTabIds.has(tab);
+
+  useEffect(() => {
+    if (!activeTabAllowed) setTab(defaultTabForRole(effectiveAccountRole, payrollCurrentEmployee));
+  }, [activeTabAllowed, effectiveAccountRole, payrollCurrentEmployee]);
 
   // Cmd+K / Ctrl+K mở bảng tìm nhanh — chuẩn thao tác của mọi SaaS hiện đại (Linear, Notion, Vercel...).
   useEffect(() => {
@@ -3043,10 +4017,78 @@ function DomixApp({ authUser, onLogout }) {
   const paletteMatches = paletteQuery
     ? nav.filter((n) => n.label.toLowerCase().includes(paletteQuery.toLowerCase()))
     : nav;
+  const activeTabRequiredFields = activeTabAllowed ? (TAB_DEFAULT_FIELDS[tab] || []) : [];
+  const activeTabDataReady = dbReady && areDataFieldsReady(activeTabRequiredFields);
+  const activeTabDataLoading = !activeTabDataReady && areDataFieldsLoading(activeTabRequiredFields);
 
   return (
     <div className={`ktns-app h-screen w-full flex overflow-hidden ${darkMode ? "dark" : ""}`}>
       <GlobalStyle />
+
+      {taskReminderEligible && pendingAssignedTaskCount > 0 && taskSummaryVisible && (
+        <div
+          className={`fixed right-5 top-4 z-[121] min-w-[235px] max-w-[320px] rounded-xl border text-white shadow-2xl transition-all ${overdueAssignedTaskCount > 0 ? "border-[#d85650]/70 bg-[#3a171d]" : "border-[#4f7ee8]/60 bg-[#132443]"}`}
+          role="status"
+          aria-live="polite"
+        >
+          <button
+            type="button"
+            onClick={() => { setTab("giaoviec"); closeTaskSummary(); }}
+            className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 pr-11 text-left transition-all hover:-translate-y-0.5 ${overdueAssignedTaskCount > 0 ? "hover:bg-[#4a1d24]" : "hover:bg-[#19305a]"}`}
+            title="Bấm để mở danh sách công việc"
+          >
+            <span className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${overdueAssignedTaskCount > 0 ? "bg-[#a92f2b]" : "bg-[#315fae]"}`}>
+              <BellRing size={18} />
+              <span className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[#111827] bg-[#d85650] px-1 text-[9px] font-black">{pendingAssignedTaskCount > 99 ? "99+" : pendingAssignedTaskCount}</span>
+            </span>
+            <span className="min-w-0">
+              <span className="block text-[11px] font-semibold uppercase tracking-wide text-[#a9c4ff]">Nhắc hoàn thành công việc</span>
+              <span className="mt-0.5 block text-sm font-bold">Còn {pendingAssignedTaskCount} việc đang chờ làm</span>
+              <span className="mt-0.5 block text-[10px] text-[#bdc9dd]">{overdueAssignedTaskCount > 0 ? `${overdueAssignedTaskCount} việc đã quá hạn · Tổng hợp mỗi ${taskReminderIntervalHours} giờ` : `Tổng hợp và nhắc mỗi ${taskReminderIntervalHours} giờ · Bấm để mở Giao việc`}</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={(event) => { event.stopPropagation(); closeTaskSummary(); }}
+            className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+            aria-label="Đóng thông báo"
+            title="Đóng thông báo"
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
+      {taskRealtimeNotice && (
+        <div
+          className="fixed right-5 top-[94px] z-[120] max-w-sm rounded-xl border border-[#4f7ee8]/50 bg-[#132443] text-white shadow-2xl"
+          role="status"
+          aria-live="polite"
+        >
+          <button
+            type="button"
+            onClick={() => { setTab("giaoviec"); closeTaskRealtimeNotice(); }}
+            className="flex w-full items-start gap-3 rounded-xl px-4 py-3 pr-11 text-left transition-colors hover:bg-[#19305a]"
+            title="Mở tab Giao việc"
+          >
+            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#315fae]">{taskRealtimeNotice.tone === "new" ? <ClipboardList size={17} /> : <BellRing size={17} />}</span>
+            <span className="min-w-0">
+              <span className="block text-xs font-bold text-[#9fc0ff]">{taskRealtimeNotice.title || (taskRealtimeNotice.count > 1 ? `${taskRealtimeNotice.count} công việc mới` : "Nhắc việc")}</span>
+              <span className="mt-1 block text-sm text-white">{taskRealtimeNotice.text}</span>
+              <span className="mt-1 block text-[10px] text-[#a9bad8]">{taskRealtimeNotice.subtitle || "Bấm để mở Giao việc"}</span>
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={(event) => { event.stopPropagation(); closeTaskRealtimeNotice(); }}
+            className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-md text-white/70 transition-colors hover:bg-white/10 hover:text-white"
+            aria-label="Đóng thông báo"
+            title="Đóng thông báo"
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
 
       {darkMode && (
         <div className="ktns-aurora-layer">
@@ -3083,13 +4125,39 @@ function DomixApp({ authUser, onLogout }) {
             <option value="th" style={{ color: "#1B2A4A" }}>🇹🇭 ไทย</option>
           </select>
         </div>
-        <div className="px-5 pb-2">
+        <div className="px-5 pb-2 space-y-2">
           <button onClick={() => setDarkMode((v) => !v)} className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-white/5 hover:bg-white/10 transition-colors text-white/70 hover:text-white text-xs">
             <span className="flex items-center gap-2">{darkMode ? <Sun size={13} /> : <Moon size={13} />} {darkMode ? "Chế độ sáng" : "Chế độ tối"}</span>
             <span className={`w-8 h-4 rounded-full relative transition-colors ${darkMode ? "bg-gold" : "bg-white/20"}`}>
               <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${darkMode ? "left-4" : "left-0.5"}`} />
             </span>
           </button>
+          {taskReminderEligible && (
+          <button
+            type="button"
+            onClick={() => {
+              const next = !taskSoundEnabled;
+              setTaskSoundEnabled(next);
+              writeTaskSoundEnabled(authUser?.email, next);
+              if (next) {
+                unlockTaskAlertSound();
+                window.setTimeout(() => {
+                  taskSoundPendingRef.current = !playTaskAlertSound();
+                }, 90);
+                showTaskReminder({ title: "Đã bật âm báo kiểu iPhone", text: `DOMIX sẽ phát chuông khi có việc mới; cứ mỗi ${taskReminderIntervalHours} giờ sẽ đếm và báo tổng số việc chưa hoàn thành.`, subtitle: "Cài đặt âm thanh đã được lưu cho tài khoản này", tone: "due", count: 1 }, 3000);
+              } else {
+                taskSoundPendingRef.current = false;
+              }
+            }}
+            className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-white/5 hover:bg-white/10 transition-colors text-white/70 hover:text-white text-xs"
+            title={`Phát âm thanh khi có việc mới và báo tổng số việc chưa hoàn thành mỗi ${taskReminderIntervalHours} giờ`}
+          >
+            <span className="flex items-center gap-2">{taskSoundEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />} Âm thanh nhắc việc</span>
+            <span className={`w-8 h-4 rounded-full relative transition-colors ${taskSoundEnabled ? "bg-ledger-green" : "bg-white/20"}`}>
+              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${taskSoundEnabled ? "left-4" : "left-0.5"}`} />
+            </span>
+          </button>
+          )}
         </div>
         <button onClick={() => { setShowCommandPalette(true); setPaletteQuery(""); }} className="mx-4 mt-2 mb-1 flex items-center justify-between gap-2 px-3 py-2 rounded-md bg-white/5 hover:bg-white/10 transition-colors text-white/60 hover:text-white text-xs">
           <span className="flex items-center gap-2"><Search size={13} /> Tìm nhanh...</span>
@@ -3109,6 +4177,17 @@ function DomixApp({ authUser, onLogout }) {
                     {n.id === "chat" && chatUnread > 0 && (
                       <span className="ml-auto min-w-5 h-5 px-1 rounded-full bg-stamp-red text-white text-[10px] font-bold flex items-center justify-center border border-white/30">
                         {chatUnread > 99 ? "99+" : chatUnread}
+                      </span>
+                    )}
+                    {n.id === "giaoviec" && taskBadgeCount > 0 && (
+                      <span className={`ml-auto min-w-5 h-5 px-1 rounded-full text-[10px] font-bold flex items-center justify-center border border-white/30 ${payrollCurrentIsBoss || payrollCurrentIsAccountant ? "bg-gold text-ink" : "bg-stamp-red text-white animate-pulse"}`} title={payrollCurrentIsBoss || payrollCurrentIsAccountant ? "Công việc đang chờ kiểm tra" : "Công việc mới được giao chưa xem"}>
+                        {taskBadgeCount > 99 ? "99+" : taskBadgeCount}
+                      </span>
+                    )}
+                    {n.id === "luong" && payrollActionCount > 0 && (
+                      <span className="ml-auto flex items-center gap-1" title={`Lương tháng: ${payrollActionSummary.monthly} · Giữa tháng: ${payrollActionSummary.midmonth}`}>
+                        {payrollActionSummary.monthly > 0 && <span className="h-5 min-w-6 rounded bg-[#315fae] px-1 text-[9px] font-bold text-white flex items-center justify-center">LT {payrollActionSummary.monthly > 9 ? "9+" : payrollActionSummary.monthly}</span>}
+                        {payrollActionSummary.midmonth > 0 && <span className="h-5 min-w-6 rounded bg-gold px-1 text-[9px] font-bold text-ink flex items-center justify-center">GT {payrollActionSummary.midmonth > 9 ? "9+" : payrollActionSummary.midmonth}</span>}
                       </span>
                     )}
                   </button>
@@ -3133,8 +4212,8 @@ function DomixApp({ authUser, onLogout }) {
         </div>
       </aside>
 
-      <main className="flex-1 h-screen ktns-scrollbar overflow-y-auto overflow-x-hidden" style={{ position: "relative", zIndex: 1 }}>
-        <div className="sticky top-0 z-10" style={{ boxShadow: "0 2px 8px rgba(20,20,15,0.05)" }}>
+      <main className={`flex-1 h-screen ktns-scrollbar overflow-x-hidden ${["chat", "marketing"].includes(tab) ? "overflow-hidden flex flex-col" : "overflow-y-auto"}`} style={{ position: "relative", zIndex: 1 }}>
+        <div data-domix-sticky-shell className="sticky top-0 z-30" style={{ boxShadow: "0 2px 8px rgba(20,20,15,0.05)" }}>
         <header className="bg-white border-b border-paper-line px-8 py-4 flex items-center justify-between">
           <div>
             <h1 className="ktns-serif text-xl font-bold text-ink">{nav.find((n) => n.id === tab)?.label || (tab === "taikhoan" ? "Cài đặt tài khoản" : "")}</h1>
@@ -3158,7 +4237,7 @@ function DomixApp({ authUser, onLogout }) {
                 <AlertTriangle size={13} /> {totals.missing} {t("missing_invoice_tx")}
               </div>
             )}
-            <UserMenu authUser={authUser} employees={employees} onLogout={onLogout} onOpenSettings={() => setTab("taikhoan")} />
+            <UserMenu authUser={effectiveAuthUser} employees={employees} onLogout={onLogout} onOpenSettings={() => setTab("taikhoan")} />
           </div>
         </header>
 
@@ -3166,16 +4245,22 @@ function DomixApp({ authUser, onLogout }) {
           // "YYYY-MM-DD HH:MM:SS" -> số phút đã trôi qua kể từ mốc đó tới thực tế bây giờ.
           const minutesSince = (stamp) => {
             if (!stamp) return Infinity;
-            const [d, t] = stamp.split(" ");
-            const [y, mo, da] = d.split("-").map(Number);
-            const [h, mi, s] = t.split(":").map(Number);
-            const then = new Date(y, mo - 1, da, h, mi, s);
-            return (TODAY - then) / 60000;
+            const normalized = String(stamp).includes("T") ? String(stamp) : String(stamp).replace(" ", "T");
+            const then = new Date(normalized);
+            return Number.isNaN(then.getTime()) ? Infinity : (tickerNow - then.getTime()) / 60000;
           };
           const parts = [timeBasedGreeting()];
-          // Thông báo công ty — chỉ chạy tối đa 10 phút kể từ lúc DUYỆT, quá giờ tự tắt khỏi ticker
-          // (vẫn còn trong danh sách quản lý, chỉ là không hiện lên nữa, không cần xoá tay).
-          announcements.filter((a) => a.approved && minutesSince(a.approvedAt) <= 10).forEach((a) => parts.push(`📢 ${a.text}`));
+          // Mỗi thông báo có giờ bắt đầu + thời lượng riêng. Ví dụ đặt 13:30 và 30 phút thì
+          // chỉ chạy từ 13:30 đến 14:00; bản ghi cũ không có cấu hình vẫn dùng 10 phút.
+          announcements.filter((a) => {
+            if (!a.approved) return false;
+            const startRaw = a.startAt || a.approvedAt;
+            if (!startRaw) return false;
+            const start = new Date(String(startRaw).includes("T") ? startRaw : String(startRaw).replace(" ", "T"));
+            if (Number.isNaN(start.getTime())) return false;
+            const durationMinutes = Math.min(1440, Math.max(1, Number(a.durationMinutes) || 10));
+            return tickerNow >= start.getTime() && tickerNow <= start.getTime() + durationMinutes * 60000;
+          }).forEach((a) => parts.push(`📢 ${a.text}`));
           // Cảnh báo hiệu suất — PHẢI được sếp duyệt riêng (xem nút ở Tổng quan), chạy tối đa 30
           // phút kể từ lúc duyệt rồi tự tắt, không tự động chạy ngay khi có người bị cảnh báo nữa.
           if (warnNames && warnNames.length > 0 && minutesSince(perfWarningApprovedAt) <= 30) {
@@ -3186,38 +4271,48 @@ function DomixApp({ authUser, onLogout }) {
             <div className="bg-ink text-white overflow-hidden whitespace-nowrap py-1.5 border-b border-white/10">
               <div className="inline-block ktns-ticker text-xs">
                 <span className="mx-8">{tickerText}</span>
-                <span className="mx-8">{tickerText}</span>
               </div>
             </div>
           );
         })()}
         </div>
 
-        <div className="p-8" key={tab} style={{ animation: "ktnsFadeIn 0.2s ease" }}>
-          {tab === "dashboard" && <Dashboard totals={totals} transactions={transactions} payrollRows={payrollRows} totalPayroll={totalPayroll} activeEmployees={effectiveActiveEmployees} warnCount={warnCount} warnNames={warnNames} cashBalance={cashBalance} totalReceivable={totalReceivable} totalPayable={totalPayable} overdueDebts={overdueDebts} t={t} lang={lang} totalCharterCapitalContributed={totalCharterCapitalContributed} registeredCharterCapital={company.registeredCharterCapital} monthlyChart={monthlyChart} orders={orders} distributionOrders={distributionOrders} cvReviews={cvReviews} masterRanking={masterRanking} inventory={inventory} debts={debts} setTab={setTab} pendingDistRevenue={pendingDistRevenue} contracts={contracts} leads={leads} perfWarningApprovedAt={perfWarningApprovedAt} setPerfWarningApprovedAt={setPerfWarningApprovedAt} announcements={announcements} setAnnouncements={setAnnouncements} totalEmployerCost={totalEmployerCost} />}
-          {tab === "settings" && <CaiDatCongTy company={company} setCompany={setCompany} t={t} lang={lang} exportAllData={exportAllData} importAllData={importAllData} announcements={announcements} setAnnouncements={setAnnouncements} />}
-          {tab === "thuchi" && <ThuChi transactions={transactions} setTransactions={setTransactions} showForm={showTxForm} setShowForm={setShowTxForm} company={company} orders={orders} setOrders={setOrders} reportYear={reportYear} reportMonth={reportMonth} employees={activeEmployees} distributionOrders={distributionOrders} distributionPartners={distributionPartners} />}
-          {tab === "congno" && <CongNo debts={debts} setDebts={setDebts} setTransactions={setTransactions} transactions={transactions} distributionOrders={distributionOrders} distributionPartners={distributionPartners} setTab={setTab} authUser={authUser} allEmployees={employees} payDebt={payDebt} unpayDebt={unpayDebt} customers={customers} />}
+        <div className={tab === "chat" ? "flex-1 min-h-0 p-0 overflow-hidden" : tab === "marketing" ? "flex-1 min-h-0 overflow-hidden p-3 xl:p-4" : "p-8"} key={tab} style={{ animation: "ktnsFadeIn 0.2s ease" }}>
+          {!activeTabAllowed ? (
+            <div className="rounded-xl border border-stamp-red/30 bg-stamp-red/5 p-6 text-sm text-stamp-red">Tài khoản của bạn không có quyền mở khu vực này.</div>
+          ) : !activeTabDataReady ? (
+            <DataLoadingPanel
+              title={activeTabDataLoading ? "Đang tải bảng đang chọn" : "Đang chuẩn bị dữ liệu"}
+              error={dataLoadError}
+              onRetry={() => ensureDataFields(activeTabRequiredFields, { force: true })}
+            />
+          ) : (<>
+          {tab === "dashboard" && <Dashboard totals={totals} transactions={transactions} payrollRows={payrollRows} totalPayroll={totalPayroll} activeEmployees={effectiveActiveEmployees} warnCount={warnCount} warnNames={warnNames} cashBalance={cashBalance} totalReceivable={totalReceivable} totalPayable={totalPayable} overdueDebts={overdueDebts} t={t} lang={lang} totalCharterCapitalContributed={totalCharterCapitalContributed} registeredCharterCapital={company.registeredCharterCapital} monthlyChart={monthlyChart} orders={orders} distributionOrders={distributionOrders} cvReviews={cvReviews} masterRanking={masterRanking} inventory={inventory} debts={debts} setTab={setTab} pendingDistRevenue={pendingDistRevenue} contracts={contracts} leads={leads} perfWarningApprovedAt={perfWarningApprovedAt} setPerfWarningApprovedAt={setPerfWarningApprovedAt} announcements={announcements} setAnnouncements={setAnnouncements} totalEmployerCost={totalEmployerCost} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "settings" && <CaiDatCongTy company={company} setCompany={setCompany} authUser={authUser} t={t} lang={lang} exportAllData={exportAllData} importAllData={importAllData} announcements={announcements} setAnnouncements={setAnnouncements} />}
+          {tab === "task-reminder-settings" && <CauHinhNhacViec company={company} setCompany={setCompany} authUser={effectiveAuthUser} />}
+          {tab === "thuchi" && <ThuChi transactions={transactions} setTransactions={setTransactions} showForm={showTxForm} setShowForm={setShowTxForm} company={company} orders={orders} setOrders={setOrders} reportYear={reportYear} reportMonth={reportMonth} employees={activeEmployees} distributionOrders={distributionOrders} distributionPartners={distributionPartners} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "congno" && <CongNo debts={debts} setDebts={setDebts} setTransactions={setTransactions} transactions={transactions} distributionOrders={distributionOrders} distributionPartners={distributionPartners} setTab={setTab} authUser={effectiveAuthUser} allEmployees={employees} payDebt={payDebt} unpayDebt={unpayDebt} customers={customers} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
           {tab === "hopdong" && <HopDong contracts={contracts} setContracts={setContracts} partners={distributionPartners} employees={activeEmployees} />}
           {tab === "vongop" && <VonGop contributions={capitalContributions} setContributions={setCapitalContributions} company={company} setCompany={setCompany} totalContributed={totalCharterCapitalContributed} />}
-          {tab === "hoptac" && <HopTacPhanPhoi partners={distributionPartners} setPartners={setDistributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} setTransactions={setTransactions} transactions={transactions} company={company} inventory={inventory} setInventory={setInventory} reportYear={reportYear} reportMonth={reportMonth} orders={orders} employees={activeEmployees} authUser={authUser} allEmployees={employees} debts={debts} setDebts={setDebts} settlements={distributionSettlements} setSettlements={setDistributionSettlements} moveStock={moveStock} payDebt={payDebt} />}
-          {tab === "kho" && <KhoHang inventory={inventory} setInventory={setInventory} orders={orders} distOrders={distributionOrders} distPartners={distributionPartners} moveStock={moveStock} stockMovements={stockMovements} authUser={authUser} />}
+          {tab === "hoptac" && <HopTacPhanPhoi partners={distributionPartners} setPartners={setDistributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} setTransactions={setTransactions} transactions={transactions} company={company} inventory={inventory} setInventory={setInventory} reportYear={reportYear} reportMonth={reportMonth} orders={orders} employees={activeEmployees} authUser={effectiveAuthUser} allEmployees={employees} debts={debts} setDebts={setDebts} settlements={distributionSettlements} setSettlements={setDistributionSettlements} moveStock={moveStock} payDebt={payDebt} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "kho" && <KhoHang inventory={inventory} setInventory={setInventory} orders={orders} distOrders={distributionOrders} distPartners={distributionPartners} moveStock={moveStock} stockMovements={stockMovements} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} positionAccess={positionAccess} employees={activeEmployees} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
           {tab === "taisan" && <TaiSanCoDinh assets={fixedAssets} setAssets={setFixedAssets} setTransactions={setTransactions} reportYear={reportYear} reportMonth={reportMonth} />}
-          {tab === "giaoviec" && <GiaoViec authUser={authUser} tasks={tasks} setTasks={setTasks} employees={activeEmployees} orders={orders} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} />}
-          {tab === "hotro" && <HoTroKhachHang cases={supportCases} setCases={setSupportCases} employees={activeEmployees} orders={orders} setOrders={setOrders} />}
-          {tab === "chat" && <ChatPage authUser={authUser} onUnreadChange={setChatUnread} employees={employees} tasks={tasks} setTasks={setTasks} setTab={setTab} />}
-          {tab === "crm" && <DoanhThuCRM orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} revenueByEmployee={revenueByEmployee} setTransactions={setTransactions} transactions={transactions} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} authUser={authUser} debts={debts} setDebts={setDebts} />}
-          {tab === "marketing" && <MarketingDaily logs={marketingLogs} setLogs={setMarketingLogs} employees={activeEmployees} marketingByEmployee={marketingByEmployee} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setPages={setMarketingPages} orders={orders} inventory={inventory} />}
-          {tab === "nhansu" && <NhanSu authUser={authUser} employees={employees} setEmployees={setEmployees} showForm={showEmpForm} setShowForm={setShowEmpForm} reportYear={reportYear} reportMonth={reportMonth} prefillEmployee={prefillEmployee} setPrefillEmployee={setPrefillEmployee} />}
-          {tab === "tuyendung" && <TuyenDungAI cvReviews={cvReviews} setCvReviews={setCvReviews} employees={activeEmployees} masterRanking={masterRanking} company={company} queue={cvQueue} setQueue={setCvQueue} processing={cvProcessing} setProcessing={setCvProcessing} progress={cvProgress} setProgress={setCvProgress} setPrefillEmployee={setPrefillEmployee} setTab={setTab} setShowEmpForm={setShowEmpForm} />}
-          {tab === "chamcong" && <ChamCong employees={employees} setEmployees={setEmployees} unlockedMonths={unlockedMonths} setUnlockedMonths={setUnlockedMonths} company={company} />}
-          {tab === "hieusuat" && <HieuSuat employees={effectiveActiveEmployees} masterRanking={masterRanking} supportCases={supportCases} />}
-          {tab === "luong" && <BangLuong payrollRows={payrollRows} totalPayroll={totalPayroll} setEmployees={setEmployees} reportYear={reportYear} reportMonth={reportMonth} setTransactions={setTransactions} payrollPayments={payrollPayments} setPayrollPayments={setPayrollPayments} company={company} kpiTiers={kpiTiers} setKpiTiers={setKpiTiers} payrollApprovals={payrollApprovals} setPayrollApprovals={setPayrollApprovals} midMonthRequests={midMonthRequests} setMidMonthRequests={setMidMonthRequests} employees={employees} />}
-          {tab === "quy" && <QuarterReport transactions={transactions} orders={orders} marketingLogs={marketingLogs} employees={employees} reportYear={reportYear} reportMonth={reportMonth} />}
-          {tab === "hoachdinh" && <HoachDinhNganSach prevSnapshot={prevSnapshot} prevPeriod={prevPeriod} roleGroupStats={roleGroupStats} company={company} />}
+          {tab === "giaoviec" && <GiaoViec authUser={effectiveAuthUser} tasks={tasks} setTasks={setTasks} employees={activeEmployees} orders={orders} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} realtimeUnreadTaskIds={unreadAssignedTaskIds} />}
+          {tab === "hotro" && <HoTroKhachHang cases={supportCases} setCases={setSupportCases} employees={activeEmployees} orders={orders} setOrders={setOrders} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "chat" && <ChatPage authUser={effectiveAuthUser} onUnreadChange={setChatUnread} employees={employees} tasks={tasks} setTasks={setTasks} setTab={setTab} />}
+          {tab === "crm" && <DoanhThuCRM orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} revenueByEmployee={revenueByEmployee} setTransactions={setTransactions} transactions={transactions} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} authUser={effectiveAuthUser} debts={debts} setDebts={setDebts} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "marketing" && <MarketingDaily logs={marketingLogs} setLogs={setMarketingLogs} employees={activeEmployees} marketingByEmployee={marketingByEmployee} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setPages={setMarketingPages} orders={orders} inventory={inventory} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} positionAccess={positionAccess} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "nhansu" && <NhanSu authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} showForm={showEmpForm} setShowForm={setShowEmpForm} reportYear={reportYear} reportMonth={reportMonth} prefillEmployee={prefillEmployee} setPrefillEmployee={setPrefillEmployee} />}
+          {tab === "tuyendung" && <TuyenDungAI cvReviews={cvReviews} setCvReviews={setCvReviews} employees={activeEmployees} masterRanking={masterRanking} company={company} queue={cvQueue} setQueue={setCvQueue} processing={cvProcessing} setProcessing={setCvProcessing} progress={cvProgress} setProgress={setCvProgress} setPrefillEmployee={setPrefillEmployee} setTab={setTab} setShowEmpForm={setShowEmpForm} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "chamcong" && <ChamCong authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} unlockedMonths={unlockedMonths} setUnlockedMonths={setUnlockedMonths} company={company} />}
+          {tab === "hieusuat" && <HieuSuat employees={effectiveActiveEmployees} masterRanking={masterRanking} supportCases={supportCases} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "luong" && <BangLuong payrollRows={payrollRows} totalPayroll={totalPayroll} setEmployees={setEmployees} reportYear={reportYear} reportMonth={reportMonth} setTransactions={setTransactions} payrollPayments={payrollPayments} setPayrollPayments={setPayrollPayments} company={company} kpiTiers={kpiTiers} setKpiTiers={setKpiTiers} payrollApprovals={payrollApprovals} setPayrollApprovals={setPayrollApprovals} midMonthRequests={midMonthRequests} setMidMonthRequests={setMidMonthRequests} employees={employees} authUser={effectiveAuthUser} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "quy" && <QuarterReport transactions={transactions} orders={orders} marketingLogs={marketingLogs} employees={employees} reportYear={reportYear} reportMonth={reportMonth} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "hoachdinh" && <HoachDinhNganSach prevSnapshot={prevSnapshot} prevPeriod={prevPeriod} roleGroupStats={roleGroupStats} company={company} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
           {tab === "ai" && <TroLyAI totals={totals} transactions={transactions} setTransactions={setTransactions} orders={orders} employees={effectiveActiveEmployees} payrollRows={payrollRows} totalPayroll={totalPayroll} totalEmployerCost={totalEmployerCost} />}
           {tab === "phaply" && <TroLyPhapLy employees={activeEmployees} setEmployees={setEmployees} company={company} />}
-          {tab === "taikhoan" && <CaiDatTaiKhoan authUser={authUser} employees={employees} setEmployees={setEmployees} />}
+          {tab === "taikhoan" && <CaiDatTaiKhoan authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} />}
+          </>)}
         </div>
       </main>
 
@@ -3293,7 +4388,7 @@ function QuickAnnouncementBox({ announcements, setAnnouncements }) {
     const bad = containsProfanity(text);
     if (bad) { setBlockedMsg(`Nội dung chứa từ ngữ không phù hợp ("${bad}") — vui lòng sửa lại trước khi gửi. Đây là thông báo chạy cho cả công ty xem.`); return; }
     setBlockedMsg("");
-    setAnnouncements((prev) => [...prev, { id: Date.now(), text: text.trim(), approved: true, approvedAt: nowStamp(), createdAt: nowStamp() }]);
+    setAnnouncements((prev) => [...prev, { id: Date.now(), text: text.trim(), approved: true, approvedAt: nowStamp(), startAt: toLocalDateTimeInputValue(new Date()), durationMinutes: 30, createdAt: nowStamp() }]);
     setText("");
     setJustSent(true);
     setTimeout(() => setJustSent(false), 3000);
@@ -3311,13 +4406,15 @@ function QuickAnnouncementBox({ announcements, setAnnouncements }) {
           <button key={i} onClick={() => setText(tpl)} className="text-[10px] text-ink-light border border-paper-line rounded-full px-2 py-0.5 hover:border-gold">{tpl.slice(0, 24)}...</button>
         ))}
       </div>
-      {justSent && <p className="text-xs text-ledger-green mt-2 flex items-center gap-1"><CheckCircle2 size={12} /> Đã gửi — đang chạy trên ticker đầu trang (10 phút).</p>}
+      {justSent && <p className="text-xs text-ledger-green mt-2 flex items-center gap-1"><CheckCircle2 size={12} /> Đã gửi — đang chạy trên ticker đầu trang (30 phút).</p>}
       {blockedMsg && <p className="text-xs text-stamp-red mt-2 flex items-center gap-1"><AlertTriangle size={12} /> {blockedMsg}</p>}
     </div>
   );
 }
 
-function Dashboard({ totals, transactions, payrollRows, totalPayroll, activeEmployees, warnCount, warnNames, cashBalance, totalReceivable, totalPayable, overdueDebts, t, lang, totalCharterCapitalContributed, registeredCharterCapital, monthlyChart, orders, distributionOrders, cvReviews, masterRanking, inventory, debts, setTab, pendingDistRevenue, contracts, leads, perfWarningApprovedAt, setPerfWarningApprovedAt, announcements, setAnnouncements, totalEmployerCost }) {
+function Dashboard({ totals, transactions, payrollRows, totalPayroll, activeEmployees, warnCount, warnNames, cashBalance, totalReceivable, totalPayable, overdueDebts, t, lang, totalCharterCapitalContributed, registeredCharterCapital, monthlyChart, orders, distributionOrders, cvReviews, masterRanking, inventory, debts, setTab, pendingDistRevenue, contracts, leads, perfWarningApprovedAt, setPerfWarningApprovedAt, announcements, setAnnouncements, totalEmployerCost, dataLoader }) {
+  const [activeTableView, setActiveTableView] = useState("finance");
+  const lazyTableData = useLazyTableData(activeTableView, { finance: ["transactions", "debts", "capitalContributions", "kpiTiers"], actions: ["orders", "distributionOrders", "inventory", "cvReviews", "debts", "contracts", "transactions", "leads"], recent: ["transactions"] }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   const lowKpi = payrollRows.filter((r) => r.kpi < 80).length;
   const lowKpiNames = payrollRows.filter((r) => r.kpi < 80).map((r) => r.name);
   const [showLowKpiList, setShowLowKpiList] = useState(false);
@@ -3347,10 +4444,29 @@ function Dashboard({ totals, transactions, payrollRows, totalPayroll, activeEmpl
     overdueLeadsCount > 0 && { icon: Phone, text: `${overdueLeadsCount} khách tiềm năng đến hẹn/quá hẹn gọi lại hôm nay`, tab: "crm", tone: "red" },
   ].filter(Boolean);
 
+  if (!lazyTableData.ready) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={[{ id: "finance", label: "Tổng quan tài chính", icon: Wallet }, { id: "actions", label: "Việc cần xử lý", icon: AlertTriangle }, { id: "recent", label: "Giao dịch gần đây", icon: ClipboardList }]} />
+        <DataLoadingPanel title="Đang tải khu vực tổng quan" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <QuickAnnouncementBox announcements={announcements} setAnnouncements={setAnnouncements} />
+      <SectionViewSwitcher
+        value={activeTableView}
+        onChange={setActiveTableView}
+        options={[
+          { id: "finance", label: "Tổng quan tài chính", icon: Wallet },
+          { id: "actions", label: "Việc cần xử lý", icon: AlertTriangle, count: actionItems.length },
+          { id: "recent", label: "Giao dịch gần đây", icon: ClipboardList, count: transactions.length },
+        ]}
+      />
 
+      {activeTableView === "actions" && (<>
       {warnNames && warnNames.length > 0 && (() => {
         const minutesSince = (stamp) => {
           if (!stamp) return Infinity;
@@ -3390,7 +4506,10 @@ function Dashboard({ totals, transactions, payrollRows, totalPayroll, activeEmpl
         </div>
       )}
 
-      <div className="grid grid-cols-4 gap-4">
+      </>)}
+
+      {activeTableView === "finance" && (<>
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <KpiCard icon={Wallet} label={t("kpi_cash")} value={fmtVND(cashBalance)} tone={cashBalance >= 0 ? "up" : "down"} sub={t("kpi_cash_sub_capital")} />
         <KpiCard icon={TrendingUp} label={t("kpi_thu")} value={fmtVND(totals.thu)} tone="up" />
         <KpiCard icon={TrendingDown} label={t("kpi_chi")} value={fmtVND(totals.chi)} tone="down" />
@@ -3418,37 +4537,12 @@ function Dashboard({ totals, transactions, payrollRows, totalPayroll, activeEmpl
               <span className="flex items-center gap-1"><span className="w-2.5 h-0.5 rounded-sm inline-block" style={{ background: "var(--gold)" }} />Lợi nhuận ròng</span>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={260}>
-            <ComposedChart data={monthlyChart} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-              <defs>
-                <linearGradient id="thuGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--ledger-green)" stopOpacity={0.95} />
-                  <stop offset="100%" stopColor="var(--ledger-green)" stopOpacity={0.55} />
-                </linearGradient>
-                <linearGradient id="chiGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--stamp-red)" stopOpacity={0.95} />
-                  <stop offset="100%" stopColor="var(--stamp-red)" stopOpacity={0.55} />
-                </linearGradient>
-                <linearGradient id="netGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--gold)" stopOpacity={0.35} />
-                  <stop offset="100%" stopColor="var(--gold)" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--paper-line)" vertical={false} />
-              <XAxis dataKey="month" tick={{ fontSize: 12, fill: "var(--muted)" }} axisLine={{ stroke: "var(--paper-line)" }} tickLine={false} />
-              <YAxis tick={{ fontSize: 12, fill: "var(--muted)" }} axisLine={false} tickLine={false} />
-              <Tooltip
-                formatter={(v, name) => [`${v} ${t("million_vnd")}`, name]}
-                contentStyle={{ background: "var(--ink)", border: "none", borderRadius: 8, color: "#fff" }}
-                labelStyle={{ color: "#fff", fontWeight: 600 }}
-                itemStyle={{ color: "#fff" }}
-              />
-              <Area type="monotone" dataKey="net" name="Lợi nhuận ròng" stroke="none" fill="url(#netGrad)" />
-              <Bar dataKey="thu" name={t("income_label")} fill="url(#thuGrad)" radius={[4, 4, 0, 0]} maxBarSize={28} />
-              <Bar dataKey="chi" name={t("expense_label")} fill="url(#chiGrad)" radius={[4, 4, 0, 0]} maxBarSize={28} />
-              <Line type="monotone" dataKey="net" name="Lợi nhuận ròng" stroke="var(--gold)" strokeWidth={2.5} dot={{ r: 4, fill: "var(--gold)", strokeWidth: 0 }} activeDot={{ r: 6 }} />
-            </ComposedChart>
-          </ResponsiveContainer>
+          <MonthlyFinanceChart
+            data={monthlyChart}
+            incomeLabel={t("income_label")}
+            expenseLabel={t("expense_label")}
+            millionLabel={t("million_vnd")}
+          />
         </div>
         <div className="bg-white rounded-lg border border-paper-line p-5 flex flex-col gap-3">
           <h3 className="ktns-serif font-semibold text-ink">{t("payroll_link_title")}</h3>
@@ -3476,6 +4570,9 @@ function Dashboard({ totals, transactions, payrollRows, totalPayroll, activeEmpl
         </div>
       </div>
 
+      </>)}
+
+      {activeTableView === "recent" && (
       <div className="bg-white rounded-lg border border-paper-line ktns-ledger-lines">
         <h3 className="ktns-serif font-semibold text-ink px-5 pt-4 pb-2">{t("recent_tx")}</h3>
         <div className="px-5 pb-4">
@@ -3491,6 +4588,7 @@ function Dashboard({ totals, transactions, payrollRows, totalPayroll, activeEmpl
           ))}
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -3500,25 +4598,40 @@ function Dashboard({ totals, transactions, payrollRows, totalPayroll, activeEmpl
 // Tránh ai cũng gõ gì cũng chạy lên đầu trang toàn công ty thấy — phải qua bước duyệt riêng.
 function AnnouncementPanel({ announcements, setAnnouncements }) {
   const [draftText, setDraftText] = useState("");
+  const [draftStartAt, setDraftStartAt] = useState(() => toLocalDateTimeInputValue(new Date()));
+  const [draftDurationMinutes, setDraftDurationMinutes] = useState(30);
   const [blockedMsg, setBlockedMsg] = useState("");
   const addDraft = () => {
     if (!draftText.trim()) return;
     const bad = containsProfanity(draftText);
     if (bad) { setBlockedMsg(`Nội dung chứa từ ngữ không phù hợp ("${bad}") — vui lòng sửa lại trước khi thêm.`); return; }
     setBlockedMsg("");
-    setAnnouncements((prev) => [...prev, { id: Date.now(), text: draftText.trim(), approved: false, createdAt: nowStamp() }]);
+    setAnnouncements((prev) => [...prev, {
+      id: Date.now(), text: draftText.trim(), approved: false, createdAt: nowStamp(),
+      startAt: draftStartAt || toLocalDateTimeInputValue(new Date()),
+      durationMinutes: Math.min(1440, Math.max(1, Number(draftDurationMinutes) || 30)),
+    }]);
     setDraftText("");
   };
-  const toggleApprove = (id) => setAnnouncements((prev) => prev.map((a) => (a.id === id ? { ...a, approved: !a.approved, approvedAt: !a.approved ? nowStamp() : a.approvedAt } : a)));
+  const toggleApprove = (id) => setAnnouncements((prev) => prev.map((a) => (a.id === id ? {
+    ...a,
+    approved: !a.approved,
+    approvedAt: !a.approved ? nowStamp() : a.approvedAt,
+    startAt: a.startAt || toLocalDateTimeInputValue(new Date()),
+    durationMinutes: Math.min(1440, Math.max(1, Number(a.durationMinutes) || 30)),
+  } : a)));
+  const updateAnnouncement = (id, patch) => setAnnouncements((prev) => prev.map((a) => a.id === id ? { ...a, ...patch } : a));
   const removeAnnouncement = (id) => setAnnouncements((prev) => prev.filter((a) => a.id !== id));
 
   return (
     <div className="bg-white rounded-lg border border-paper-line p-5">
       <h3 className="ktns-serif font-semibold text-ink mb-1 flex items-center gap-2"><Megaphone size={16} /> Thông báo chạy chữ đầu trang</h3>
-      <p className="text-xs text-muted mb-3">Ticker đầu trang tự chạy lời chào theo giờ (sáng/trưa/chiều/tối) + tên nhân viên đang bị cảnh báo hiệu suất. Muốn thêm thông báo riêng của công ty (nghỉ lễ, họp, thông báo gấp...) thì gõ ở đây — <strong className="text-charcoal">phải bấm "Duyệt hiển thị" mới thật sự chạy lên ticker</strong>, gõ xong chưa duyệt sẽ nằm ở trạng thái nháp, chưa ai thấy.</p>
-      <div className="flex gap-2 mb-3">
-        <input value={draftText} onChange={(e) => setDraftText(e.target.value)} placeholder="VD: Nghỉ lễ 2/9 cả công ty, họp toàn công ty 15h thứ 6..." className="flex-1 border border-paper-line rounded px-2.5 py-1.5 text-sm" />
-        <button onClick={addDraft} className="text-sm bg-ink text-white px-3.5 py-1.5 rounded-md hover:bg-ink-light flex items-center gap-1"><Plus size={14} /> Thêm nháp</button>
+      <p className="text-xs text-muted mb-3">Mỗi thông báo được đặt giờ bắt đầu và thời lượng chạy riêng. Ví dụ chọn 13:30, thời lượng 30 phút thì ticker chỉ hiển thị trong khoảng 13:30–14:00. Phải bấm <strong className="text-charcoal">Duyệt hiển thị</strong> thì thông báo mới chạy.</p>
+      <div className="grid grid-cols-[minmax(0,1fr)_220px_150px_auto] gap-2 mb-3">
+        <input value={draftText} onChange={(e) => setDraftText(e.target.value)} placeholder="VD: Họp toàn công ty lúc 15h..." className="border border-paper-line rounded px-2.5 py-1.5 text-sm" />
+        <label className="text-[10px] text-muted flex flex-col gap-0.5">Bắt đầu chạy<input type="datetime-local" value={draftStartAt} onChange={(e) => setDraftStartAt(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
+        <label className="text-[10px] text-muted flex flex-col gap-0.5">Thời lượng (phút)<input type="number" min="1" max="1440" value={draftDurationMinutes} onChange={(e) => setDraftDurationMinutes(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
+        <button onClick={addDraft} className="self-end text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light flex items-center gap-1"><Plus size={14} /> Thêm nháp</button>
       </div>
       {blockedMsg && <p className="text-xs text-stamp-red mb-3 flex items-center gap-1"><AlertTriangle size={12} /> {blockedMsg}</p>}
       {announcements.length === 0 ? (
@@ -3528,9 +4641,11 @@ function AnnouncementPanel({ announcements, setAnnouncements }) {
           {announcements.slice().reverse().map((a) => (
             <div key={a.id} className={`flex items-center gap-2 px-3 py-2 rounded-md border ${a.approved ? "border-ledger-green/40 bg-ledger-green/5" : "border-paper-line bg-paper/60"}`}>
               <span className="flex-1 text-sm text-charcoal">{a.text}</span>
+              <label className="text-[9px] text-muted flex flex-col gap-0.5">Bắt đầu<input type="datetime-local" value={a.startAt || toLocalDateTimeInputValue(new Date())} onChange={(e) => updateAnnouncement(a.id, { startAt: e.target.value })} className="w-[190px] border border-paper-line rounded px-1.5 py-1 text-[10px] ktns-mono" /></label>
+              <label className="text-[9px] text-muted flex flex-col gap-0.5">Phút<input type="number" min="1" max="1440" value={a.durationMinutes || 30} onChange={(e) => updateAnnouncement(a.id, { durationMinutes: Math.min(1440, Math.max(1, Number(e.target.value) || 30)) })} className="w-16 border border-paper-line rounded px-1.5 py-1 text-[10px] ktns-mono" /></label>
               <span className="text-[10px] text-muted ktns-mono">{a.createdAt}</span>
               <button onClick={() => toggleApprove(a.id)} className={`text-[11px] px-2.5 py-1 rounded-md ${a.approved ? "bg-ledger-green text-white" : "border border-gold text-gold"}`}>
-                {a.approved ? "Đã duyệt — đang chạy" : "Duyệt hiển thị"}
+                {a.approved ? "Đã duyệt / theo lịch" : "Duyệt hiển thị"}
               </button>
               <button onClick={() => removeAnnouncement(a.id)} className="text-muted hover:text-stamp-red"><Trash2 size={14} /></button>
             </div>
@@ -3541,12 +4656,94 @@ function AnnouncementPanel({ announcements, setAnnouncements }) {
   );
 }
 
-function CaiDatCongTy({ company, setCompany, t, lang, exportAllData, importAllData, announcements, setAnnouncements }) {
+function CauHinhNhacViec({ company, setCompany, authUser }) {
+  const isAdmin = isAdminRole(authUser?.role);
+  const [hours, setHours] = useState(() => Math.min(168, Math.max(1, Math.round(Number(company?.taskReminderIntervalHours) || 5))));
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setHours(Math.min(168, Math.max(1, Math.round(Number(company?.taskReminderIntervalHours) || 5))));
+  }, [company?.taskReminderIntervalHours]);
+
+  const saveReminderInterval = () => {
+    if (!isAdmin) return;
+    const normalized = Math.min(168, Math.max(1, Math.round(Number(hours) || 5)));
+    setHours(normalized);
+    setCompany({ ...(company || DEFAULT_COMPANY), taskReminderIntervalHours: normalized });
+    setSaved(true);
+    window.setTimeout(() => setSaved(false), 2200);
+  };
+
+  if (!isAdmin) {
+    return <div className="max-w-2xl rounded-xl border border-stamp-red/30 bg-stamp-red/5 p-6 text-sm text-stamp-red">Chỉ Admin được phép cấu hình chu kỳ kiểm tra công việc.</div>;
+  }
+
+  return (
+    <div className="max-w-3xl space-y-4">
+      <div className="rounded-xl border border-paper-line bg-white p-5">
+        <div className="mb-4 flex items-start gap-3">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ink text-white"><BellRing size={18} /></span>
+          <div>
+            <h3 className="ktns-serif text-lg font-semibold text-ink">Cấu hình thời gian kiểm tra công việc</h3>
+            <p className="mt-1 text-xs leading-5 text-muted">Admin chỉ thiết lập chu kỳ chung và không nhận thông báo. Cứ đủ chu kỳ, DOMIX chỉ kiểm tra tài khoản đang được giao việc. Người còn việc chưa hoàn thành sẽ nghe âm báo kiểu iPhone và thấy thông báo “Bạn còn X công việc chưa hoàn thành”.</p>
+          </div>
+        </div>
+
+        <div className="rounded-lg border border-paper-line bg-paper/60 p-4">
+          <label className="flex max-w-xs flex-col gap-2 text-xs font-semibold text-ink">
+            Kiểm tra và thông báo lại mỗi
+            <span className="flex items-center gap-2">
+              <input
+                type="number"
+                min="1"
+                max="168"
+                step="1"
+                value={hours}
+                onChange={(e) => setHours(e.target.value)}
+                className="w-28 rounded-md border border-paper-line bg-white px-3 py-2.5 text-sm ktns-mono"
+              />
+              <span className="text-sm">giờ</span>
+            </span>
+          </label>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {[1, 2, 3, 5, 8, 12, 24].map((value) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setHours(value)}
+                className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${Number(hours) === value ? "border-ledger-green bg-ledger-green text-white" : "border-paper-line bg-white text-ink hover:border-gold"}`}
+              >
+                {value} giờ
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-lg border border-paper-line p-3"><div className="text-[10px] font-semibold uppercase tracking-wide text-muted">Đối tượng nhận</div><div className="mt-1 text-sm font-semibold text-ink">Người được giao việc</div></div>
+          <div className="rounded-lg border border-paper-line p-3"><div className="text-[10px] font-semibold uppercase tracking-wide text-muted">Admin</div><div className="mt-1 text-sm font-semibold text-ledger-green">Không kiểm tra, không báo</div></div>
+          <div className="rounded-lg border border-paper-line p-3"><div className="text-[10px] font-semibold uppercase tracking-wide text-muted">Khi không còn việc</div><div className="mt-1 text-sm font-semibold text-ink">Không phát âm thanh</div></div>
+        </div>
+
+        <div className="mt-5 flex items-center gap-3">
+          <button type="button" onClick={saveReminderInterval} className="flex items-center gap-1.5 rounded-md bg-ledger-green px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90"><CheckCircle2 size={15} /> Lưu thời gian kiểm tra</button>
+          {saved && <span className="flex items-center gap-1 text-xs font-semibold text-ledger-green"><CheckCircle2 size={13} /> Đã lưu vào hệ thống</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CaiDatCongTy({ company, setCompany, authUser, t, lang, exportAllData, importAllData, announcements, setAnnouncements }) {
   const [form, setForm] = useState(company);
   const [saved, setSaved] = useState(false);
   const [importMsg, setImportMsg] = useState("");
   const [importErr, setImportErr] = useState("");
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    setForm({ ...DEFAULT_COMPANY, ...(company || {}) });
+  }, [company]);
 
   const handleImportFile = (e) => {
     const file = e.target.files?.[0];
@@ -3566,7 +4763,7 @@ function CaiDatCongTy({ company, setCompany, t, lang, exportAllData, importAllDa
   };
 
   const save = () => {
-    setCompany(form);
+    setCompany({ ...form });
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -3642,7 +4839,13 @@ function CaiDatCongTy({ company, setCompany, t, lang, exportAllData, importAllDa
 }
 
 // ---------- Thu Chi ----------
-function ThuChi({ transactions, setTransactions, showForm, setShowForm, company, orders, setOrders, reportYear, reportMonth, employees, distributionOrders, distributionPartners }) {
+function ThuChi({ transactions, setTransactions, showForm, setShowForm, company, orders, setOrders, reportYear, reportMonth, employees, distributionOrders, distributionPartners, dataLoader }) {
+  const [activeTableView, setActiveTableView] = useState("transactions");
+  const lazyTableData = useLazyTableData(activeTableView, {
+    transactions: ["transactions", "orders", "distributionOrders", "distributionPartners"],
+    vat_output: ["transactions", "orders"],
+    vat_input: ["transactions", "orders"],
+  }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   const blankTx = { date: TODAY_STR, kind: "chi", category: "", desc: "", amount: "", partnerName: "", partnerTaxCode: "", partnerPhone: "", partnerEmail: "", paymentMethod: "chuyen_khoan", invoiceType: "Chưa xác định", invoiceNo: "", vatRate: 8, attachmentData: "", attachmentName: "", attachmentType: "" };
   const [form, setForm] = useState(blankTx);
   const [editingId, setEditingId] = useState(null);
@@ -3661,12 +4864,14 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
   const [filterKind, setFilterKind] = useState("all");
   const [filterStatus, setFilterStatus] = useState("all");
   const [searchText, setSearchText] = useState("");
-  const [showVatDetail, setShowVatDetail] = useState(false);
   const [expandedTxId, setExpandedTxId] = useState(null);
   const inRange = (t) => t.date >= rangeFrom && t.date <= rangeTo;
   const vatOutput = transactions.filter((t) => t.kind === "thu" && VAT_INVOICE_TYPES.includes(t.invoiceType) && inRange(t)).reduce((a, t) => a + splitVAT(t.amount, t.vatRate || 0).vatAmount, 0);
   const vatInput = transactions.filter((t) => t.kind === "chi" && VAT_INVOICE_TYPES.includes(t.invoiceType) && inRange(t)).reduce((a, t) => a + splitVAT(t.amount, t.vatRate || 0).vatAmount, 0);
   const vatPayable = vatOutput - vatInput;
+  const vatTransactions = transactions.filter((t) => VAT_INVOICE_TYPES.includes(t.invoiceType) && inRange(t));
+  const vatOutputRows = vatTransactions.filter((t) => t.kind === "thu");
+  const vatInputRows = vatTransactions.filter((t) => t.kind === "chi");
   const printRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -3818,6 +5023,19 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
     URL.revokeObjectURL(url);
   };
 
+  if (!lazyTableData.ready) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={[
+          { id: "transactions", label: "Danh sách giao dịch", icon: Wallet },
+          { id: "vat_output", label: "VAT đầu ra", icon: TrendingUp },
+          { id: "vat_input", label: "VAT đầu vào", icon: TrendingDown },
+        ]} />
+        <DataLoadingPanel title="Đang tải dữ liệu bảng đã chọn" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div ref={printRef} className="ktns-print-area"></div>
@@ -3828,20 +5046,30 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
         </div>
       )}
 
-      <div className="grid grid-cols-4 gap-4">
+      <div style={{ display: activeTableView === "transactions" ? "grid" : "none" }} className="grid-cols-4 gap-3">
         <KpiCard icon={TrendingUp} label="Tổng thu (đang lọc)" value={fmtVND(sumThu)} tone="up" />
         <KpiCard icon={TrendingDown} label="Tổng chi (đang lọc)" value={fmtVND(sumChi)} tone="down" />
         <KpiCard icon={Wallet} label="Chênh lệch" value={fmtVND(sumThu - sumChi)} tone={sumThu - sumChi >= 0 ? "up" : "down"} />
         <KpiCard icon={AlertTriangle} label="Chờ bổ sung hóa đơn" value={missingCount} tone={missingCount > 0 ? "down" : "up"} />
       </div>
 
-      <div className="flex justify-between items-center flex-wrap gap-2">
-        <p className="text-sm text-muted">Mỗi khoản thu chi đều yêu cầu khai báo <strong>loại hóa đơn</strong> tương ứng để đảm bảo hợp lệ hóa chứng từ.</p>
+      <SectionViewSwitcher
+        value={activeTableView}
+        onChange={setActiveTableView}
+        options={[
+          { id: "transactions", label: "Danh sách giao dịch", icon: Wallet, count: filteredTransactions.length },
+          { id: "vat_output", label: "VAT đầu ra", icon: TrendingUp, count: vatOutputRows.length },
+          { id: "vat_input", label: "VAT đầu vào", icon: TrendingDown, count: vatInputRows.length },
+        ]}
+      />
+
+      <div style={{ display: activeTableView === "transactions" ? "flex" : "none" }} className="justify-between items-center flex-wrap gap-2">
+        <p className="text-xs text-muted">Danh sách giao dịch và chứng từ trong kỳ.</p>
         <button onClick={() => { setForm(blankTx); setEditingId(null); setShowForm(true); }} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light"><Plus size={15} /> Thêm giao dịch</button>
       </div>
 
-      {showForm && (
-        <div className="bg-white rounded-lg border border-paper-line p-5 relative">
+      {showForm && canManageInventory && (
+        <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
           <button className="absolute top-3 right-3 text-muted" onClick={closeForm}><X size={16} /></button>
           <h3 className="ktns-serif font-semibold text-ink mb-2">{isCrmLocked ? "Xử lý hoá đơn cho đơn từ CRM" : editingId ? "Sửa giao dịch" : "Giao dịch mới"}</h3>
           {isCrmLocked && (
@@ -3905,7 +5133,7 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
         <span className="text-[11px] text-muted">{filteredTransactions.length}/{transactions.length} giao dịch</span>
       </div>
 
-      {categoryBreakdown.length > 0 && (
+      {activeTableView === "transactions" && categoryBreakdown.length > 0 && (
         <div className="bg-white rounded-lg border border-paper-line p-4">
           <div className="text-xs font-semibold text-ink uppercase mb-2">Tổng hợp theo danh mục (đang lọc)</div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
@@ -3919,75 +5147,51 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-paper-line p-4">
-        <div className="flex items-center justify-between mb-3">
-          <div className="text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><Landmark size={13} /> Thuế GTGT (VAT) — theo khoảng ngày đã chọn bên dưới</div>
-          <button onClick={() => setShowVatDetail((v) => !v)} className="text-[10px] text-ink-light underline">{showVatDetail ? "Thu gọn" : "Xem chi tiết từng khoản"}</button>
-        </div>
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <div className="text-[11px] text-muted uppercase">Thuế GTGT đầu ra (bán ra)</div>
-            <div className="ktns-mono text-lg font-semibold text-ledger-green">{fmtVND(vatOutput)}</div>
-          </div>
-          <div>
-            <div className="text-[11px] text-muted uppercase">Thuế GTGT đầu vào (mua vào)</div>
-            <div className="ktns-mono text-lg font-semibold text-stamp-red">{fmtVND(vatInput)}</div>
-          </div>
-          <div>
-            <div className="text-[11px] text-muted uppercase">{vatPayable >= 0 ? "Thuế GTGT phải nộp" : "Thuế GTGT được khấu trừ kỳ sau"}</div>
-            <div className={`ktns-mono text-lg font-semibold ${vatPayable >= 0 ? "text-ink" : "text-ledger-green"}`}>{fmtVND(Math.abs(vatPayable))}</div>
-          </div>
-        </div>
-        <p className="text-[10px] text-muted mt-2">* Chỉ tính từ giao dịch có loại hóa đơn GTGT. Thuế phải nộp = Đầu ra − Đầu vào — công thức khai thuế GTGT theo phương pháp khấu trừ. Mức thuế suất 8%/10% có thể thay đổi theo chính sách hiện hành, kiểm tra lại trước khi kê khai chính thức. Giao dịch loại "Thu hộ đối tác (VAT do đối tác chịu)" — VD bán sản phẩm hợp tác phân phối mà đối tác chịu trách nhiệm VAT — <strong className="text-charcoal">cố tình KHÔNG tính vào đây</strong>, vì đó không phải nghĩa vụ VAT của công ty bạn.</p>
-
-        {showVatDetail && (() => {
-          const vatTx = transactions.filter((t) => VAT_INVOICE_TYPES.includes(t.invoiceType) && inRange(t));
-          const outputRows = vatTx.filter((t) => t.kind === "thu");
-          const inputRows = vatTx.filter((t) => t.kind === "chi");
-          const Row = (t) => {
-            const v = splitVAT(t.amount, t.vatRate || 0);
-            return (
-              <tr key={t.id} className="border-t border-paper-line">
-                <td className="px-3 py-1.5 ktns-mono text-[11px] text-muted">{t.date}</td>
-                <td className="px-3 py-1.5 text-xs">{t.category || "—"}</td>
-                <td className="px-3 py-1.5 text-xs">{t.desc}</td>
-                <td className="px-3 py-1.5 text-right ktns-mono text-xs">{fmtVND(t.amount)}</td>
-                <td className="px-3 py-1.5 text-right ktns-mono text-xs text-stamp-red">{fmtVND(v.vatAmount)} ({t.vatRate || 0}%)</td>
-              </tr>
-            );
-          };
+      {["vat_output", "vat_input"].includes(activeTableView) && (() => {
+        const isOutput = activeTableView === "vat_output";
+        const rows = isOutput ? vatOutputRows : vatInputRows;
+        const vatAmount = isOutput ? vatOutput : vatInput;
+        const Row = (t) => {
+          const v = splitVAT(t.amount, t.vatRate || 0);
           return (
-            <div className="mt-4 grid grid-cols-2 gap-4">
-              <div>
-                <div className="text-[11px] font-semibold text-ledger-green uppercase mb-1">Đầu ra — công ty bán ra, xuất VAT cho khách ({outputRows.length})</div>
-                <div className="border border-paper-line rounded overflow-hidden">
-                  <table className="w-full">
-                    <thead><tr className="bg-paper text-left text-[10px] uppercase text-muted"><th className="px-3 py-1.5">Ngày</th><th className="px-3 py-1.5">Danh mục</th><th className="px-3 py-1.5">Mô tả</th><th className="px-3 py-1.5 text-right">Số tiền</th><th className="px-3 py-1.5 text-right">VAT</th></tr></thead>
-                    <tbody>
-                      {outputRows.length === 0 && <tr><td colSpan={5} className="px-3 py-3 text-center text-[11px] text-muted">Chưa có khoản đầu ra nào.</td></tr>}
-                      {outputRows.map(Row)}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-              <div>
-                <div className="text-[11px] font-semibold text-stamp-red uppercase mb-1">Đầu vào — công ty mua vào, có VAT (thuê nhà, mua sắm, ăn uống tiếp khách...) ({inputRows.length})</div>
-                <div className="border border-paper-line rounded overflow-hidden">
-                  <table className="w-full">
-                    <thead><tr className="bg-paper text-left text-[10px] uppercase text-muted"><th className="px-3 py-1.5">Ngày</th><th className="px-3 py-1.5">Danh mục</th><th className="px-3 py-1.5">Mô tả</th><th className="px-3 py-1.5 text-right">Số tiền</th><th className="px-3 py-1.5 text-right">VAT</th></tr></thead>
-                    <tbody>
-                      {inputRows.length === 0 && <tr><td colSpan={5} className="px-3 py-3 text-center text-[11px] text-muted">Chưa có khoản đầu vào nào.</td></tr>}
-                      {inputRows.map(Row)}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
+            <tr key={t.id} className="border-t border-paper-line">
+              <td className="px-3 py-2 ktns-mono text-xs text-muted">{t.date}</td>
+              <td className="px-3 py-2 text-xs">{t.category || "—"}</td>
+              <td className="px-3 py-2 text-xs">{t.desc}</td>
+              <td className="px-3 py-2 text-xs">{t.partnerName || "—"}</td>
+              <td className="px-3 py-2 text-right ktns-mono text-xs">{fmtVND(t.amount)}</td>
+              <td className="px-3 py-2 text-right ktns-mono text-xs text-stamp-red">{fmtVND(v.vatAmount)} ({t.vatRate || 0}%)</td>
+            </tr>
           );
-        })()}
-      </div>
+        };
+        return (
+          <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-3 gap-3">
+              <KpiCard icon={isOutput ? TrendingUp : TrendingDown} label={isOutput ? "VAT đầu ra" : "VAT đầu vào"} value={fmtVND(vatAmount)} tone={isOutput ? "up" : "down"} />
+              <KpiCard icon={Landmark} label={vatPayable >= 0 ? "VAT phải nộp" : "VAT được khấu trừ"} value={fmtVND(Math.abs(vatPayable))} tone={vatPayable >= 0 ? "down" : "up"} />
+              <KpiCard icon={FileText} label="Số chứng từ" value={rows.length} />
+            </div>
+            <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+              <div className={`px-4 py-3 text-xs font-semibold uppercase flex items-center gap-1.5 ${isOutput ? "text-ledger-green" : "text-stamp-red"}`}>
+                {isOutput ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
+                {isOutput ? "VAT đầu ra — công ty bán ra" : "VAT đầu vào — công ty mua vào"}
+              </div>
+              <div className="max-h-[560px] overflow-y-auto">
+                <table className="w-full text-sm">
+                  <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-[10px] uppercase text-muted"><th className="px-3 py-2">Ngày</th><th className="px-3 py-2">Danh mục</th><th className="px-3 py-2">Mô tả</th><th className="px-3 py-2">Đối tác</th><th className="px-3 py-2 text-right">Số tiền</th><th className="px-3 py-2 text-right">VAT</th></tr></thead>
+                  <tbody>
+                    {rows.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-xs text-muted">Chưa có chứng từ phù hợp trong khoảng ngày đã chọn.</td></tr>}
+                    {rows.map(Row)}
+                  </tbody>
+                </table>
+              </div>
+              <p className="px-4 py-2.5 text-[10px] text-muted border-t border-paper-line">Chỉ tính giao dịch có hóa đơn GTGT. Giao dịch thu hộ đối tác mà VAT do đối tác chịu không được tính vào nghĩa vụ VAT của công ty.</p>
+            </div>
+          </div>
+        );
+      })()}
 
-      <div className="bg-white rounded-lg border border-paper-line p-4">
+      <div style={{ display: activeTableView === "transactions" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line p-4">
         <div className="text-xs font-semibold text-ink uppercase mb-2 flex items-center gap-1.5"><Printer size={13} /> In hóa đơn theo khoảng ngày — phục vụ khi cơ quan thuế kiểm tra</div>
         <div className="flex items-end gap-3 flex-wrap">
           <label className="text-xs text-muted flex flex-col gap-1">Từ ngày<input type="date" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
@@ -3998,15 +5202,15 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
         </div>
       </div>
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
-        <div className="max-h-[420px] overflow-y-auto">
+      <div style={{ display: activeTableView === "transactions" ? undefined : "none" }} className="order-2 bg-white rounded-lg border border-paper-line overflow-hidden">
+        <div className="max-h-[520px] overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-4 py-2.5">STT</th><th className="px-4 py-2.5">Ngày</th><th className="px-4 py-2.5">Danh mục</th><th className="px-4 py-2.5">Mô tả</th><th className="px-4 py-2.5">Đối tác</th><th className="px-4 py-2.5 text-right">Số tiền</th><th className="px-4 py-2.5">Loại hóa đơn</th><th className="px-4 py-2.5">Đính kèm</th><th className="px-4 py-2.5">Trạng thái</th><th className="px-4 py-2.5"></th><th className="px-2 py-2.5"></th></tr></thead>
           <tbody>
             {filteredTransactions.length === 0 && (
               <tr><td colSpan={11} className="px-4 py-6 text-center text-xs text-muted">Không có giao dịch nào khớp bộ lọc.</td></tr>
             )}
-            {filteredTransactions.map((t, idx) => ({ ...t, _stt: idx + 1 })).slice().reverse().map((t) => {
+            {filteredTransactions.slice().reverse().map((t, idx) => {
               const missing = t.invoiceType === "Chưa xác định";
               // Chi tiền mặt ≥5 triệu (Nghị định 320/2025/NĐ-CP) có nguy cơ KHÔNG được tính là
               // chi phí hợp lý khi quyết toán thuế TNDN, dù có đủ hoá đơn — cảnh báo ngay tại dòng.
@@ -4034,7 +5238,7 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
               return (
                 <React.Fragment key={t.id}>
                 <tr className={`border-t border-paper-line cursor-pointer hover:bg-paper/40 ${missing || cashRiskFlag ? "ktns-warn-row" : ""}`} onClick={() => setExpandedTxId(isExpanded ? null : t.id)}>
-                  <td className="px-4 py-2.5 ktns-mono text-xs text-muted">{t._stt}</td>
+                  <td className="px-4 py-2.5 ktns-mono text-xs text-muted">{idx + 1}</td>
                   <td className="px-4 py-2.5 ktns-mono text-xs text-muted">{t.date}</td>
                   <td className="px-4 py-2.5">
                     {t.category || "—"}
@@ -4243,7 +5447,7 @@ function VonGop({ contributions, setContributions, company, setCompany, totalCon
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-lg border border-paper-line p-5 relative">
+        <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
           <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={async () => { if ((form.contributorName || form.value) && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setShowForm(false); }}><X size={16} /></button>
           <h3 className="ktns-serif font-semibold text-ink mb-4">Ghi nhận góp vốn</h3>
           <div className="grid grid-cols-4 gap-3">
@@ -4356,7 +5560,9 @@ function exportDistributionExcel(distOrders, partners) {
   XLSX.writeFile(wb, `DOMIX_Hop_tac_phan_phoi_${TODAY.toISOString().slice(0, 10)}.xlsx`);
 }
 
-function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setTransactions, transactions, company, inventory, setInventory, reportYear, reportMonth, orders, employees, authUser, allEmployees, debts, setDebts, settlements, setSettlements, moveStock, payDebt }) {
+function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setTransactions, transactions, company, inventory, setInventory, reportYear, reportMonth, orders, employees, authUser, allEmployees, debts, setDebts, settlements, setSettlements, moveStock, payDebt, dataLoader }) {
+  const [activeTableView, setActiveTableView] = useState("sales");
+  const lazyTableData = useLazyTableData(activeTableView, { sales: ["distributionPartners", "distributionOrders", "transactions", "inventory", "orders", "debts"], purchases: ["distributionPartners", "distributionOrders", "inventory", "stockMovements"], settlements: ["distributionPartners", "distributionOrders", "distributionSettlements", "debts", "transactions"], partners: ["distributionPartners"], summary: ["distributionPartners", "distributionOrders", "distributionSettlements", "debts"] }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   const [rangeMode, setRangeMode] = useState("month");
   const [rangeFrom, setRangeFrom] = useState(new Date(reportYear || TODAY.getFullYear(), (reportMonth || TODAY.getMonth() + 1) - 1, 1).toISOString().slice(0, 10));
   const [rangeTo, setRangeTo] = useState(new Date(reportYear || TODAY.getFullYear(), (reportMonth || TODAY.getMonth() + 1), 0).toISOString().slice(0, 10));
@@ -4813,11 +6019,19 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
     return Object.values(map).sort((a, b) => nameOf(a.partnerId).localeCompare(nameOf(b.partnerId)));
   })();
 
+  if (!lazyTableData.ready) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={[{ id: "sales", label: "Đơn phân phối", icon: ShoppingCart }, { id: "settlements", label: "Quyết toán", icon: FileSignature }, { id: "partners", label: "Đối tác", icon: Handshake }, { id: "summary", label: "Tổng quan", icon: BarChart3 }, { id: "purchases", label: "Đơn nhập hàng", icon: Package }]} />
+        <DataLoadingPanel title="Đang tải dữ liệu bảng đã chọn" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
-        <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
-        <span>Đối tác phân phối bán hộ sản phẩm (VD: mã key kích hoạt ứng dụng) — <strong className="text-charcoal">đối tác trực tiếp cấp mã cho khách khi khách mua thành công</strong>, sau đó ăn hoa hồng % theo doanh thu. Về nguyên tắc <strong className="text-charcoal">đối tác phải xuất hoá đơn VAT</strong> cho phần hoa hồng đó — đây là chứng từ chi phí hợp lệ của công ty, nên bắt buộc đính kèm trước khi ghi nhận vào Thu Chi. Nếu sản phẩm có thời hạn, nhớ ghi lại mã key đã cấp để tra cứu/hỗ trợ khách sau này (xem bảng theo hạn ở tab Kho hàng).</span>
+      <div style={{ display: activeTableView === "summary" ? undefined : "none" }} className="rounded-lg border border-paper-line bg-white px-3 py-2 text-xs text-muted">
+        Tổng quan dòng tiền, hóa đơn và công nợ theo từng đối tác. Chọn một bảng phía trên để xử lý công việc cụ thể.
       </div>
 
       {syncMsg && (
@@ -4826,14 +6040,26 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
         </div>
       )}
 
+      <SectionViewSwitcher
+        value={activeTableView}
+        onChange={setActiveTableView}
+        options={[
+          { id: "sales", label: "Đơn phân phối", icon: ShoppingCart, count: salesOrders.length },
+          { id: "settlements", label: "Quyết toán", icon: FileText, count: visibleSettlements.length },
+          { id: "partners", label: "Đối tác", icon: Handshake, count: partners.length },
+          { id: "summary", label: "Tổng hợp", icon: BarChart3, count: summaryByPartnerProduct.length },
+          { id: "purchases", label: "Đơn nhập hàng", icon: Package, count: purchaseOrders.length },
+        ]}
+      />
+
       {/* ---------- HỒ SƠ QUYẾT TOÁN (mục IV): hóa đơn ≠ tiền, duyệt ≠ tiền — tiền chỉ vào Thu Chi khi ghi nhận thanh toán ---------- */}
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+      <div style={{ display: activeTableView === "settlements" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="px-4 py-3 flex items-center justify-between flex-wrap gap-2 border-b border-paper-line bg-paper/60">
           <div className="text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><FileText size={13} /> Hồ sơ quyết toán đối tác — duyệt tạo CÔNG NỢ, tiền thật mới vào Thu Chi</div>
           <div className="flex items-center gap-2">
-            <input value={settlementSearch} onChange={(e) => setSettlementSearch(e.target.value)} placeholder="Tìm mã QT / đối tác / số HĐ / trạng thái..." className="border border-paper-line rounded px-2.5 py-1.5 text-xs w-64" />
+            <input value={settlementSearch} onChange={(e) => setSettlementSearch(e.target.value)} placeholder="Tìm mã QT / đối tác / số HĐ / trạng thái..." className="w-64 rounded-lg border border-[#304261] bg-[#131d2c] px-3 py-2 text-xs text-[#e5edf9] placeholder:text-[#7485a3] focus:border-[#5f8df8] focus:outline-none" />
             {mayCreateSettlement && (
-              <button onClick={() => { setSettlementForm({ partnerId: partners[0]?.id || "", periodFrom: rangeFrom, periodTo: rangeTo, dueDate: "", note: "" }); setSettlementErr(""); setShowSettlementModal(true); }} className="flex items-center gap-1.5 text-xs bg-ink text-white px-3 py-2 rounded-md hover:bg-ink-light"><Plus size={13} /> Tạo quyết toán</button>
+              <button onClick={() => { setSettlementForm({ partnerId: partners[0]?.id || "", periodFrom: rangeFrom, periodTo: rangeTo, dueDate: "", note: "" }); setSettlementErr(""); setShowSettlementModal(true); }} className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#4c76c8] bg-[linear-gradient(180deg,#3561ad,#294a81)] px-4 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(49,91,165,0.28)] hover:border-[#6d95e8] hover:brightness-110"><Plus size={14} /> Tạo quyết toán</button>
             )}
           </div>
         </div>
@@ -4980,7 +6206,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
       )}
 
       {summaryByPartnerProduct.length > 0 && (
-        <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+        <div style={{ display: activeTableView === "summary" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
           <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Tổng hợp theo Đối tác + Sản phẩm — theo trạng thái HÓA ĐƠN (tiền thật xem ở hồ sơ quyết toán + Công nợ)</div>
           <table className="w-full text-sm">
             <thead>
@@ -5007,7 +6233,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-paper-line p-3 flex items-center gap-2 flex-wrap">
+      <div style={{ display: ["sales", "purchases"].includes(activeTableView) ? "flex" : "none" }} className="bg-white rounded-lg border border-paper-line p-3 items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[220px]">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
           <input
@@ -5023,7 +6249,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
         <span className="text-[11px] text-muted">{salesOrders.length + purchaseOrders.length}/{distOrders.length} đơn{distSearchQ ? " khớp tìm kiếm (mọi tháng)" : " trong kỳ"}</span>
       </div>
 
-      <div className="grid grid-cols-5 gap-4">
+      <div style={{ display: activeTableView === "summary" ? "grid" : "none" }} className="grid-cols-5 gap-3">
         <KpiCard icon={TrendingUp} label="Tổng doanh thu bán/nhượng quyền" value={fmtVND(totalRevenue)} tone="up" />
         <KpiCard icon={Handshake} label="Tổng hoa hồng/phí đối tác" value={fmtVND(totalCommission)} tone="down" />
         <KpiCard icon={Wallet} label="Công ty thực nhận" value={fmtVND(totalRemitted)} tone={totalRemitted >= 0 ? "up" : "down"} />
@@ -5031,13 +6257,13 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
         <KpiCard icon={Package} label="Tổng tiền nhập hàng (mua đứt)" value={fmtVND(totalPurchaseCost)} tone="down" />
       </div>
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+      <div style={{ display: activeTableView === "partners" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="px-4 pt-3 pb-2 flex items-center justify-between">
           <div className="text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><Handshake size={13} /> Đối tác phân phối</div>
           <button onClick={() => { setEditingPartnerId(null); setShowPartnerForm(true); }} className="text-xs bg-ink text-white px-2.5 py-1.5 rounded-md hover:bg-ink-light flex items-center gap-1"><Plus size={12} /> Thêm đối tác</button>
         </div>
         {showPartnerForm && (
-          <div className="mx-4 mb-3 bg-paper border border-paper-line rounded-md p-3">
+          <div className="domix-inline-form-modal bg-white border border-paper-line rounded-md p-5">
             <div className="text-[11px] font-semibold text-ink uppercase mb-2">{editingPartnerId ? "Sửa đối tác" : "Đối tác mới"}</div>
             <div className="grid grid-cols-4 gap-2">
               <input value={partnerForm.name} onChange={(e) => setPartnerForm({ ...partnerForm, name: e.target.value })} placeholder="Tên đối tác/công ty" className="border border-paper-line rounded px-2 py-1.5 text-xs col-span-2" />
@@ -5214,16 +6440,26 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
         </table>
       </div>
 
-      <div className="flex justify-between items-center">
-        <p className="text-sm text-muted">{salesOrders.length} đơn bán/nhượng quyền · {purchaseOrders.length} đơn nhập hàng đã ghi nhận.</p>
-        <div className="flex gap-2">
-          <button onClick={() => exportDistributionExcel(distOrders, partners)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90"><FileSpreadsheet size={15} /> Xuất Excel</button>
-          <button onClick={() => { setBatchDraft({ partnerId: partners[0]?.id || "", invoiceNo: "", attachmentData: "", attachmentName: "", attachmentType: "" }); setBatchErr(""); setShowBatchModal(true); }} disabled={partners.length === 0} className="flex items-center gap-1.5 text-sm border border-gold text-gold px-3.5 py-2 rounded-md hover:bg-gold/10 disabled:opacity-40"><Layers size={15} /> Xác nhận gộp cả tháng</button>
-          <button onClick={() => { setPurchaseForm((f) => ({ ...f, partnerId: partners.find((p) => p.partnerRole === "nha_cung_cap")?.id || partners[0]?.id || "" })); setShowPurchaseForm(true); }} disabled={partners.length === 0} className="flex items-center gap-1.5 text-sm border border-paper-line text-ink px-3.5 py-2 rounded-md hover:border-gold disabled:opacity-40"><Plus size={15} /> Thêm đơn nhập hàng</button>
-          <button onClick={() => { setOrderForm((f) => ({ ...f, partnerId: partners[0]?.id || "" })); setShowOrderForm(true); }} disabled={partners.length === 0} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light disabled:opacity-40"><Plus size={15} /> Thêm đơn bán/nhượng quyền</button>
+      {activeTableView === "sales" && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-[#263650] bg-[linear-gradient(180deg,rgba(18,25,39,0.98),rgba(14,19,30,0.96))] p-3.5 shadow-[0_10px_30px_rgba(6,10,18,0.18)]">
+          <p className="text-sm font-medium text-[#d3dbea]">{salesOrders.length} đơn phân phối trong phạm vi đang xem.</p>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => exportDistributionExcel(distOrders, partners)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#37527f] bg-[#162338] px-4 text-sm font-semibold text-[#e7eefc] hover:border-[#4e6ea4] hover:bg-[#1b2b44]"><FileSpreadsheet size={14} /> Xuất Excel</button>
+            <button onClick={() => { setBatchDraft({ partnerId: partners[0]?.id || "", invoiceNo: "", attachmentData: "", attachmentName: "", attachmentType: "" }); setBatchErr(""); setShowBatchModal(true); }} disabled={partners.length === 0} className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#7a6528] bg-[#2e2410] px-4 text-sm font-semibold text-[#f4cf72] hover:border-[#a88833] hover:bg-[#3a2d13] disabled:opacity-40"><Layers size={14} /> Xác nhận hóa đơn gộp</button>
+            <button onClick={() => { setOrderForm((f) => ({ ...f, partnerId: partners[0]?.id || "" })); setShowOrderForm(true); }} disabled={partners.length === 0} className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#4c76c8] bg-[linear-gradient(180deg,#3561ad,#294a81)] px-4 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(49,91,165,0.28)] hover:border-[#6d95e8] hover:brightness-110 disabled:opacity-40"><Plus size={14} /> Thêm đơn phân phối</button>
+          </div>
         </div>
-      </div>
-      {partners.length === 0 && <p className="text-xs text-gold flex items-center gap-1.5"><AlertTriangle size={12} /> Thêm đối tác phân phối trước khi ghi đơn.</p>}
+      )}
+      {activeTableView === "purchases" && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-[#263650] bg-[linear-gradient(180deg,rgba(18,25,39,0.98),rgba(14,19,30,0.96))] p-3.5 shadow-[0_10px_30px_rgba(6,10,18,0.18)]">
+          <p className="text-sm font-medium text-[#d3dbea]">{purchaseOrders.length} đơn nhập hàng trong phạm vi đang xem.</p>
+          <div className="flex flex-wrap gap-2">
+            <button onClick={() => exportDistributionExcel(distOrders, partners)} className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#37527f] bg-[#162338] px-4 text-sm font-semibold text-[#e7eefc] hover:border-[#4e6ea4] hover:bg-[#1b2b44]"><FileSpreadsheet size={14} /> Xuất Excel</button>
+            <button onClick={() => { setPurchaseForm((f) => ({ ...f, partnerId: partners.find((p) => p.partnerRole === "nha_cung_cap")?.id || partners[0]?.id || "" })); setShowPurchaseForm(true); }} disabled={partners.length === 0} className="inline-flex h-10 items-center gap-2 rounded-lg border border-[#4c76c8] bg-[linear-gradient(180deg,#3561ad,#294a81)] px-4 text-sm font-semibold text-white shadow-[0_8px_18px_rgba(49,91,165,0.28)] hover:border-[#6d95e8] hover:brightness-110 disabled:opacity-40"><Plus size={14} /> Thêm đơn nhập hàng</button>
+          </div>
+        </div>
+      )}
+      {["sales", "purchases"].includes(activeTableView) && partners.length === 0 && <p className="text-xs text-gold flex items-center gap-1.5"><AlertTriangle size={12} /> Thêm đối tác phân phối trước khi ghi đơn.</p>}
 
       {showBatchModal && (
         <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-6">
@@ -5255,7 +6491,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
       )}
 
       {showOrderForm && (
-        <div className="bg-white rounded-lg border border-paper-line p-5 relative">
+        <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
           <button className="absolute top-3 right-3 text-muted" onClick={() => setShowOrderForm(false)}><X size={16} /></button>
           <h3 className="ktns-serif font-semibold text-ink mb-4">Đơn phân phối mới</h3>
           <div className="grid grid-cols-4 gap-3">
@@ -5316,7 +6552,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
       )}
 
       {showPurchaseForm && (
-        <div className="bg-white rounded-lg border border-paper-line p-5 relative">
+        <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
           <button className="absolute top-3 right-3 text-muted" onClick={() => { setShowPurchaseForm(false); setPurchaseErr(""); }}><X size={16} /></button>
           <h3 className="ktns-serif font-semibold text-ink mb-1">Nhập hàng từ nhà cung cấp (mua đứt bán lại)</h3>
           <p className="text-[11px] text-muted mb-3">Công ty bạn mua sản phẩm này, sau đó tự bán lại cho khách và tự xuất hoá đơn ở tab Doanh thu CRM như bình thường. Lợi nhuận = giá bán − giá mua.</p>
@@ -5361,7 +6597,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+      <div style={{ display: activeTableView === "sales" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Đơn bán / Đại lý / Nhượng quyền</div>
         <div className="max-h-[420px] overflow-y-auto">
         <table className="w-full text-sm">
@@ -5377,7 +6613,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
           </thead>
           <tbody>
             {salesOrders.length === 0 && <tr><td colSpan={14} className="px-4 py-6 text-center text-xs text-muted">Chưa có đơn bán/nhượng quyền nào.</td></tr>}
-            {salesOrders.map((o, idx) => ({ ...o, _stt: idx + 1 })).slice().reverse().map((o) => {
+            {salesOrders.slice().reverse().map((o, idx) => {
               const p = partnerOf(o.partnerId);
               const pct = resolvePct(o);
               const split = computePartnerAmount(o.revenue, o.vatRate, pct, p?.partnerRole);
@@ -5387,7 +6623,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
               return (
                 <React.Fragment key={o.id}>
                 <tr className={`border-t border-paper-line cursor-pointer hover:bg-paper/40 ${!o.partnerInvoiceReceived ? "ktns-warn-row" : ""}`} onClick={() => setExpandedDistId(isExpanded ? null : o.id)}>
-                  <td className="px-4 py-2 ktns-mono text-xs text-muted">{o._stt}</td>
+                  <td className="px-4 py-2 ktns-mono text-xs text-muted">{idx + 1}</td>
                   <td className="px-4 py-2 ktns-mono text-xs text-muted">{o.date}</td>
                   <td className="px-4 py-2">{o.productName}</td>
                   <td className="px-4 py-2 text-xs">{o.endCustomerName || srcOrder?.customerName || "—"}</td>
@@ -5432,10 +6668,13 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
         </table>
         </div>
       </div>
-      <p className="text-xs text-muted">* Công thức áp dụng cho MỌI vai trò đối tác (Đại lý lẫn Nhượng quyền): Doanh thu → trừ VAT → phần còn lại mới tính % hoa hồng/phí theo doanh thu cộng dồn cả tháng với đối tác đó → phần còn lại sau hoa hồng/phí là số đối tác nộp về công ty. Khi nhận hoá đơn VAT từ đối tác, hệ thống tự ghi 1 khoản Chi tương ứng bên tab Thu Chi — dùng làm chứng từ chi phí hợp lệ khi quyết toán thuế.</p>
+      <details style={{ display: activeTableView === "sales" ? undefined : "none" }} className="rounded-lg border border-paper-line bg-white px-3 py-2 text-xs text-muted">
+        <summary className="cursor-pointer font-medium text-ink">Xem cách tính tiền đơn phân phối</summary>
+        <p className="mt-2">Doanh thu trừ VAT, sau đó tính hoa hồng/phí theo doanh thu cộng dồn tháng. Phần còn lại là số đối tác phải nộp về công ty. Hoá đơn đối tác được lưu làm chứng từ chi phí.</p>
+      </details>
 
       {purchaseOrders.length > 0 && (
-        <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+        <div style={{ display: activeTableView === "purchases" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
           <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Đơn nhập hàng (mua đứt bán lại)</div>
           <table className="w-full text-sm">
             <thead>
@@ -5448,11 +6687,11 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
               </tr>
             </thead>
             <tbody>
-              {purchaseOrders.map((o, idx) => ({ ...o, _stt: idx + 1 })).slice().reverse().map((o) => {
+              {purchaseOrders.slice().reverse().map((o, idx) => {
                 const vat = splitVAT(o.totalCost, o.vatRate);
                 return (
                   <tr key={o.id} className="border-t border-paper-line">
-                    <td className="px-4 py-2 ktns-mono text-xs text-muted">{o._stt}</td>
+                    <td className="px-4 py-2 ktns-mono text-xs text-muted">{idx + 1}</td>
                     <td className="px-4 py-2 ktns-mono text-xs text-muted">{o.date}</td>
                     <td className="px-4 py-2">{o.productName}</td>
                     <td className="px-4 py-2 text-xs">{nameOf(o.partnerId)}</td>
@@ -5617,7 +6856,7 @@ function HopDong({ contracts, setContracts, partners, employees }) {
       </button>
 
       {showForm && (
-        <div className="bg-white rounded-lg border border-paper-line p-4">
+        <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-4">
           <div className="grid grid-cols-3 gap-3">
             <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Tên/số hợp đồng<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="VD: HĐ Nhượng quyền Say Media 2026" className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Loại
@@ -5701,7 +6940,13 @@ function HopDong({ contracts, setContracts, partners, employees }) {
   );
 }
 
-function CongNo({ debts, setDebts, setTransactions, transactions, distributionOrders, distributionPartners, setTab, authUser, allEmployees, payDebt, unpayDebt, customers }) {
+function CongNo({ debts, setDebts, setTransactions, transactions, distributionOrders, distributionPartners, setTab, authUser, allEmployees, payDebt, unpayDebt, customers, dataLoader }) {
+  const [activeTableView, setActiveTableView] = useState("debts");
+  const lazyTableData = useLazyTableData(activeTableView, {
+    debts: ["debts", "transactions", "customers"],
+    pending: ["distributionOrders", "distributionPartners"],
+    summary: ["debts"],
+  }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   const [showForm, setShowForm] = useState(false);
   const [filter, setFilter] = useState("all");
   const blankDebtForm = {
@@ -5806,35 +7051,53 @@ function CongNo({ debts, setDebts, setTransactions, transactions, distributionOr
     return groupOf(d) === filter;
   });
   const SOURCE_LABELS = { crm: "CRM", distribution_settlement: "Quyết toán ĐT", purchase: "Nhập hàng", manual: "Nhập tay", payroll: "Lương", other: "Khác" };
+  const tableOptions = [
+    { id: "debts", label: "Danh sách công nợ", icon: CreditCard, count: activeDebts.length },
+    { id: "pending", label: "Chờ đối tác xác nhận", icon: Handshake, count: pendingDistByPartner.reduce((sum, item) => sum + item.count, 0) },
+    { id: "summary", label: "Tổng hợp công nợ", icon: BarChart3, count: overdue.length },
+  ];
+
+  if (!lazyTableData.ready) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={tableOptions.map(({ count, ...item }) => item)} />
+        <DataLoadingPanel title="Đang tải dữ liệu bảng đã chọn" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
-        <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
-        <span>Theo dõi ai đang nợ mình (<strong className="text-charcoal">Phải thu</strong>) và mình đang nợ ai (<strong className="text-charcoal">Phải trả</strong>) — tách khỏi Thu Chi vì đây là tiền chưa thực nhận/thực chi, không tính vào số dư quỹ cho tới khi thanh toán xong.</span>
-      </div>
+      <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={tableOptions} />
 
-      <div className="grid grid-cols-3 gap-4">
-        <KpiCard icon={CreditCard} label="Tổng phải thu" value={fmtVND(receivable)} tone="up" />
-        <KpiCard icon={CreditCard} label="Tổng phải trả" value={fmtVND(payable)} tone="down" />
-        <KpiCard icon={AlertTriangle} label="Khoản quá hạn" value={overdue.length} tone={overdue.length > 0 ? "down" : "up"} />
-      </div>
-
-      {pendingDistByPartner.length > 0 && (
-        <div className="bg-white rounded-lg border border-ink-light/30 overflow-hidden">
-          <div className="px-4 py-2.5 bg-paper text-xs font-semibold text-ink-light uppercase flex items-center gap-1.5"><Handshake size={13} /> Doanh thu ròng đang chờ đối tác phân phối xác nhận — chưa vào Thu Chi, không phải công nợ</div>
-          <div className="divide-y divide-paper-line">
-            {pendingDistByPartner.map((x) => (
-              <button key={x.partner.id} onClick={() => setTab && setTab("hoptac")} className="w-full text-left px-4 py-2.5 flex items-center justify-between text-sm hover:bg-paper/60">
-                <span className="text-charcoal">Qua <strong>{x.partner.name}</strong> — {x.count} đơn chưa xác nhận</span>
-                <span className="ktns-mono text-ink-light font-medium flex items-center gap-2">{fmtVND(x.total)} <ChevronRight size={14} className="text-muted" /></span>
-              </button>
-            ))}
-          </div>
-          <p className="px-4 py-2 text-[10px] text-muted border-t border-paper-line">* Số này CHƯA nằm trong Thu Chi và CHƯA tính vào "Tổng phải thu" ở trên — chỉ hiện để biết còn bao nhiêu tiền dự kiến. Xử lý ở tab Hợp tác phân phối ("Xác nhận gộp cả tháng" hoặc từng đơn) thì sẽ tự chuyển thành khoản Thu thật.</p>
+      {activeTableView === "summary" && (
+        <div className="grid grid-cols-3 gap-4">
+          <KpiCard icon={CreditCard} label="Tổng phải thu" value={fmtVND(receivable)} tone="up" />
+          <KpiCard icon={CreditCard} label="Tổng phải trả" value={fmtVND(payable)} tone="down" />
+          <KpiCard icon={AlertTriangle} label="Khoản quá hạn" value={overdue.length} tone={overdue.length > 0 ? "down" : "up"} />
         </div>
       )}
 
+      {activeTableView === "pending" && (
+        <div className="bg-white rounded-lg border border-ink-light/30 overflow-hidden">
+          <div className="px-4 py-3 bg-paper text-xs font-semibold text-ink-light uppercase flex items-center gap-1.5"><Handshake size={13} /> Doanh thu chờ đối tác phân phối xác nhận</div>
+          {pendingDistByPartner.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-muted">Không có đơn nào đang chờ đối tác xác nhận.</div>
+          ) : (
+            <div className="divide-y divide-paper-line">
+              {pendingDistByPartner.map((x) => (
+                <button key={x.partner.id} onClick={() => setTab && setTab("hoptac")} className="w-full text-left px-4 py-3 flex items-center justify-between text-sm hover:bg-paper/60">
+                  <span className="text-charcoal">Qua <strong>{x.partner.name}</strong> — {x.count} đơn chưa xác nhận</span>
+                  <span className="ktns-mono text-ink-light font-medium flex items-center gap-2">{fmtVND(x.total)} <ChevronRight size={14} className="text-muted" /></span>
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="px-4 py-2 text-[10px] text-muted border-t border-paper-line">Khoản này chưa vào Thu Chi và chưa phải công nợ. Chọn một đối tác để mở đúng khu vực xử lý tại Hợp tác phân phối.</p>
+        </div>
+      )}
+
+      {activeTableView === "debts" && (<>
       <div className="flex justify-between items-center flex-wrap gap-2">
         <div className="flex gap-2 flex-wrap">
           {DEBT_GROUPS.map(([id, label]) => (
@@ -5852,7 +7115,7 @@ function CongNo({ debts, setDebts, setTransactions, transactions, distributionOr
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-lg border border-paper-line p-5 relative">
+        <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
           <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={async () => { if ((form.partner || form.amount) && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setShowForm(false); }}><X size={16} /></button>
           <h3 className="ktns-serif font-semibold text-ink mb-4">Khoản công nợ mới</h3>
           <div className="grid grid-cols-4 gap-3">
@@ -5968,6 +7231,8 @@ function CongNo({ debts, setDebts, setTransactions, transactions, distributionOr
       </div>
       <p className="text-xs text-muted">* Bấm vào dòng để xem lịch sử thanh toán. Cho phép thanh toán MỘT PHẦN — mỗi lần thu/trả tạo đúng một giao dịch Thu Chi thật; xóa lần thanh toán sẽ đảo giao dịch tương ứng và phục hồi số dư nợ.</p>
 
+      </>)}
+
       {payingDebt && (
         <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-5 w-full max-w-md shadow-xl" onClick={(ev) => ev.stopPropagation()}>
@@ -6000,17 +7265,19 @@ function CongNo({ debts, setDebts, setTransactions, transactions, distributionOr
 }
 
 // ---------- Kho hàng ----------
-function exportInventoryExcel(inventory) {
+function exportInventoryExcel(inventory, employees = []) {
   const wb = XLSX.utils.book_new();
   const rows = inventory.map((p) => ({
     "Mã SKU": p.sku, "Tên sản phẩm": p.name, "Đơn vị": p.unit,
     "Tồn kho": p.stock, "Tồn tối thiểu": p.minStock,
     "Giá nhập": Math.round(p.costPrice), "Giá bán": Math.round(p.sellPrice),
     "Giá trị tồn kho (theo giá nhập)": Math.round(p.stock * p.costPrice),
+    "Ngày hết hạn": p.expiryDate || "",
+    "Nhân viên phụ trách": employees.find((employee) => Number(employee.id) === Number(p.assignedEmployeeId))?.name || "Toàn bộ nhân viên",
     "Trạng thái": p.stock <= p.minStock ? "Sắp hết hàng" : "Bình thường",
   }));
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws["!cols"] = new Array(9).fill({ wch: 18 });
+  ws["!cols"] = new Array(11).fill({ wch: 18 });
   XLSX.utils.book_append_sheet(wb, ws, "Kho hàng");
   XLSX.writeFile(wb, `DOMIX_Kho_hang_${TODAY.toISOString().slice(0, 10)}.xlsx`);
 }
@@ -6084,7 +7351,7 @@ function TaiSanCoDinh({ assets, setAssets, setTransactions, reportYear, reportMo
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-lg border border-paper-line p-4">
+        <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-4">
           <div className="grid grid-cols-3 gap-3">
             <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Tên tài sản<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="VD: Laptop Dell, Máy in, Bàn ghế văn phòng..." className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Loại
@@ -6142,38 +7409,99 @@ function TaiSanCoDinh({ assets, setAssets, setTransactions, reportYear, reportMo
   );
 }
 
-function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, moveStock, stockMovements, authUser }) {
+function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, moveStock, stockMovements, authUser, currentEmployee, positionAccess, employees = [], dataLoader }) {
+  const [activeTableView, setActiveTableView] = useState("inventory");
+  const lazyTableData = useLazyTableData(activeTableView, { inventory: ["inventory"], revenue: ["inventory", "orders", "distributionOrders"], keys: ["inventory"], movements: ["stockMovements", "inventory"] }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   const [showForm, setShowForm] = useState(false);
-  const blankProduct = { sku: "", name: "", groupName: "", unit: "cái", stock: "", minStock: "10", costPrice: "", sellPrice: "", durationMonths: "0", vatRate: 8 };
+  const [editingProductId, setEditingProductId] = useState(null);
+  const blankProduct = {
+    sku: "", name: "", groupName: "", unit: "cái", stock: "", minStock: "10",
+    costPrice: "", sellPrice: "", durationMonths: "0", vatRate: 8,
+    expiryDate: "", assignedEmployeeId: "",
+  };
   const [form, setForm] = useState(blankProduct);
-  const [showMovements, setShowMovements] = useState(false);
+  const [showMovements, setShowMovements] = useState(true);
+  const canManageInventory = normalizeAccountRole(authUser?.role) !== "user";
+  const canEditAssignedInventory = !canManageInventory && Boolean(positionAccess?.inventoryWrite && currentEmployee?.id);
+  const canViewAllInventory = canManageInventory || positionAccess?.inventoryScope === "all-read" || positionAccess?.inventoryScope === "all";
+  const isAssignedProduct = (product) => Number(product?.assignedEmployeeId) === Number(currentEmployee?.id);
+  const canEditProduct = (product) => canManageInventory || (canEditAssignedInventory && isAssignedProduct(product));
+  const visibleInventory = canViewAllInventory ? inventory : inventory.filter(isAssignedProduct);
+  const activeEmployeesWithEmail = (employees || []).filter((employee) => employee.status !== "inactive" && String(employee.email || "").includes("@"));
 
-  const addProduct = () => {
-    if (!form.name || !form.stock) return;
-    const newId = Date.now();
-    const openingQty = Number(form.stock) || 0;
-    // Sản phẩm tạo với tồn 0, tồn đầu vào bằng movement "opening" — mọi biến động tồn
-    // từ lúc sinh ra đều có nhật ký, không có con số xuất hiện "từ hư không" (mục IX).
-    setInventory((prev) => [...prev, { ...form, id: newId, stock: 0, minStock: Number(form.minStock) || 0, costPrice: Number(form.costPrice) || 0, sellPrice: Number(form.sellPrice) || 0, durationMonths: Number(form.durationMonths) || 0, vatRate: Number(form.vatRate) || 0 }]);
-    if (moveStock && openingQty > 0) {
-      moveStock({ productId: newId, movementType: "opening", quantity: openingQty, sourceModule: "kho", sourceId: newId, note: "Tồn đầu khi tạo sản phẩm", createdBy: authUser?.email || "" });
-    }
+  useEffect(() => {
+    if (!canManageInventory && activeTableView !== "inventory") setActiveTableView("inventory");
+  }, [canManageInventory, activeTableView]);
+
+  const resetProductForm = () => {
+    setEditingProductId(null);
     setForm(blankProduct);
     setShowForm(false);
   };
-  // Thêm nhanh 1 gói thời hạn khác CÙNG NHÓM sản phẩm — VD "AI Agent" đã có gói 1 tháng,
-  // giờ thêm gói 3 tháng/6 tháng... chỉ cần đổi thời hạn + giá, không phải gõ lại từ đầu.
+
+  const openNewProduct = () => {
+    if (!canManageInventory) return;
+    setEditingProductId(null);
+    setForm(blankProduct);
+    setShowForm(true);
+  };
+
+  const openEditProduct = (product) => {
+    if (!canEditProduct(product)) return;
+    setEditingProductId(product.id);
+    setForm({
+      sku: product.sku || "", name: product.name || "", groupName: product.groupName || "",
+      unit: product.unit || "cái", stock: String(product.stock ?? 0), minStock: String(product.minStock ?? 0),
+      costPrice: String(product.costPrice ?? 0), sellPrice: String(product.sellPrice ?? 0),
+      durationMonths: String(product.durationMonths ?? 0), vatRate: Number(product.vatRate ?? 8),
+      expiryDate: product.expiryDate || "", assignedEmployeeId: product.assignedEmployeeId || "",
+    });
+    setShowForm(true);
+  };
+
+  const saveProduct = () => {
+    const editingProduct = inventory.find((product) => product.id === editingProductId);
+    if (editingProductId !== null ? !canEditProduct(editingProduct) : !canManageInventory) return;
+    if (!String(form.name || "").trim()) return;
+    const normalized = {
+      sku: String(form.sku || "").trim(), name: String(form.name || "").trim(),
+      groupName: String(form.groupName || "").trim(), unit: String(form.unit || "cái").trim(),
+      minStock: Number(form.minStock) || 0, costPrice: Number(form.costPrice) || 0,
+      sellPrice: Number(form.sellPrice) || 0, durationMonths: Number(form.durationMonths) || 0,
+      vatRate: Number(form.vatRate) || 0, expiryDate: form.expiryDate || "",
+      assignedEmployeeId: canManageInventory ? (Number(form.assignedEmployeeId) || null) : (editingProduct?.assignedEmployeeId || null),
+    };
+    if (editingProductId !== null) {
+      setInventory((prev) => prev.map((product) => product.id === editingProductId ? { ...product, ...normalized } : product));
+      resetProductForm();
+      return;
+    }
+    if (form.stock === "") return;
+    const newId = Date.now();
+    const openingQty = Number(form.stock) || 0;
+    setInventory((prev) => [...prev, { ...normalized, id: newId, stock: 0 }]);
+    if (moveStock && openingQty > 0) {
+      moveStock({ productId: newId, movementType: "opening", quantity: openingQty, sourceModule: "kho", sourceId: newId, note: "Tồn đầu khi tạo sản phẩm", createdBy: authUser?.email || "" });
+    }
+    resetProductForm();
+  };
+
+  // Thêm nhanh 1 gói thời hạn khác CÙNG NHÓM sản phẩm.
   const addVariant = (baseProduct) => {
+    if (!canManageInventory) return;
+    setEditingProductId(null);
     setForm({
       sku: "", name: baseProduct.name, groupName: baseProduct.groupName || baseProduct.name,
       unit: baseProduct.unit, stock: "", minStock: String(baseProduct.minStock),
       costPrice: String(baseProduct.costPrice), sellPrice: "", durationMonths: "1", vatRate: baseProduct.vatRate ?? 8,
+      expiryDate: "", assignedEmployeeId: baseProduct.assignedEmployeeId || "",
     });
     setShowForm(true);
   };
   // Điều chỉnh tay = movement adjustment_in/out có nhật ký + người thao tác — không sửa số trực tiếp.
   const adjustStock = (id, delta) => {
-    if (!moveStock) return;
+    const product = inventory.find((item) => item.id === id);
+    if (!canEditProduct(product) || !moveStock) return;
     moveStock({
       productId: id, movementType: delta > 0 ? "adjustment_in" : "adjustment_out",
       quantity: Math.abs(delta), sourceModule: "kho",
@@ -6181,14 +7509,32 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
       note: "Điều chỉnh tay tại tab Kho hàng", createdBy: authUser?.email || "",
     });
   };
-  const removeProduct = (id) => setInventory((prev) => prev.filter((p) => p.id !== id));
+  const removeProduct = (id) => {
+    if (!canManageInventory) return;
+    setInventory((prev) => prev.filter((p) => p.id !== id));
+  };
 
-  const totalValue = inventory.reduce((a, p) => a + p.stock * p.costPrice, 0);
-  const lowStock = inventory.filter((p) => p.stock <= p.minStock);
+  const totalValue = visibleInventory.reduce((a, p) => a + p.stock * p.costPrice, 0);
+  const lowStock = visibleInventory.filter((p) => p.stock <= p.minStock);
+  const expiryDaysLeft = (product) => {
+    if (!product?.expiryDate) return null;
+    const expiry = new Date(`${product.expiryDate}T00:00:00`);
+    const today = new Date(`${TODAY_STR}T00:00:00`);
+    if (Number.isNaN(expiry.getTime())) return null;
+    return Math.round((expiry - today) / 86400000);
+  };
+  const expiringInventory = visibleInventory.filter((product) => {
+    const days = expiryDaysLeft(product);
+    return days !== null && days >= 0 && days <= 5;
+  });
+  const expiredInventory = visibleInventory.filter((product) => {
+    const days = expiryDaysLeft(product);
+    return days !== null && days < 0;
+  });
 
   // Gộp các gói thời hạn khác nhau của CÙNG 1 sản phẩm lại theo groupName (VD "AI Agent":
   // gói 1 tháng/3 tháng/6 tháng/12 tháng, mỗi gói giá riêng) để hiển thị rõ ràng, không rời rạc.
-  const groupedInventory = Object.values(inventory.reduce((acc, p) => {
+  const groupedInventory = Object.values(visibleInventory.reduce((acc, p) => {
     const key = p.groupName || p.name;
     acc[key] = acc[key] || { groupName: key, items: [] };
     acc[key].items.push(p);
@@ -6199,7 +7545,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
   // để biết sản phẩm nào bán chạy và bán chủ yếu qua kênh nào. Tách rõ THÊM: sản phẩm này của
   // công ty hay của đối tác nào cung cấp, và nếu bán qua phân phối thì ĐÚNG đối tác nào (không
   // gộp chung "Hợp tác phân phối" mập mờ nữa) — đúng yêu cầu lọc rõ dòng tiền theo từng đối tác.
-  const productRevenue = inventory.map((p) => {
+  const productRevenue = visibleInventory.map((p) => {
     const owningPartner = distPartners ? distPartners.find((dp) => (dp.productIds || []).includes(p.id)) : null;
     const directOrders = (orders || []).filter((o) => o.productId === p.id);
     const distOrdersForP = (distOrders || []).filter((o) => o.productId === p.id && o.orderKind !== "purchase");
@@ -6221,7 +7567,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
 
   // Sản phẩm dạng mã key/gói có hạn (durationMonths > 0) — mỗi lượt bán (CRM hoặc phân phối)
   // tự tính ngày hết hạn = ngày bán + số tháng, để biết mã nào còn hạn/sắp hết/đã hết.
-  const keyProducts = inventory.filter((p) => (p.durationMonths || 0) > 0);
+  const keyProducts = visibleInventory.filter((p) => (p.durationMonths || 0) > 0);
   const addMonths = (dateStr, months) => { const d = new Date(dateStr); d.setMonth(d.getMonth() + months); return d; };
   const keyLedger = keyProducts.flatMap((p) => {
     const direct = (orders || []).filter((o) => o.productId === p.id).map((o) => ({
@@ -6239,46 +7585,72 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
     return { ...k, daysLeft, status };
   }).sort((a, b) => a.daysLeft - b.daysLeft);
 
+  const inventoryViewOptions = canManageInventory
+    ? [
+        { id: "inventory", label: "Danh mục sản phẩm", icon: Package, count: visibleInventory.length },
+        { id: "revenue", label: "Doanh thu sản phẩm", icon: TrendingUp, count: productRevenue.length },
+        { id: "keys", label: "Mã key / thời hạn", icon: CalendarCheck, count: keyLedger.length },
+        { id: "movements", label: "Nhật ký kho", icon: ClipboardList, count: (stockMovements || []).length },
+      ]
+    : [{ id: "inventory", label: "Danh mục sản phẩm", icon: Package, count: visibleInventory.length }];
+
+  if (!lazyTableData.ready) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={inventoryViewOptions} />
+        <DataLoadingPanel title="Đang tải dữ liệu bảng đã chọn" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
-      <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
-        <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
-        <span>Theo dõi tồn kho, giá nhập/bán, và cảnh báo khi sắp hết hàng — nhập/xuất kho bằng nút +/- ngay trên bảng.</span>
-      </div>
+      <div style={{ display: activeTableView === "inventory" ? undefined : "none" }} className="rounded-lg border border-paper-line bg-white px-3 py-2 text-xs text-muted">{canManageInventory ? "Quản lý toàn bộ sản phẩm, tồn kho, ngày hết hạn và người phụ trách." : canEditAssignedInventory ? "Bạn chỉ thấy và được sửa các sản phẩm đã phân công cho mình. Không được tạo mới, xóa hoặc chuyển người phụ trách." : canViewAllInventory ? "Bạn được xem toàn bộ Kho hàng ở chế độ chỉ đọc." : "Bạn chỉ thấy sản phẩm được giao phụ trách; hiện chưa có sản phẩm nào được phân công."}</div>
 
-      <div className="grid grid-cols-3 gap-4">
-        <KpiCard icon={Package} label="Số mặt hàng" value={inventory.length} />
+      <SectionViewSwitcher
+        value={activeTableView}
+        onChange={setActiveTableView}
+        options={inventoryViewOptions}
+      />
+
+      <div style={{ display: activeTableView === "inventory" ? "grid" : "none" }} className="grid-cols-4 gap-3">
+        <KpiCard icon={Package} label="Số mặt hàng" value={visibleInventory.length} />
         <KpiCard icon={Wallet} label="Giá trị tồn kho" value={fmtVND(totalValue)} tone="up" sub="Tính theo giá nhập" />
         <KpiCard icon={AlertTriangle} label="Sắp hết hàng" value={lowStock.length} tone={lowStock.length > 0 ? "down" : "up"} />
+        <KpiCard icon={CalendarCheck} label="Còn hạn ≤ 5 ngày" value={expiringInventory.length} tone={expiringInventory.length > 0 || expiredInventory.length > 0 ? "down" : "up"} sub={expiredInventory.length > 0 ? `${expiredInventory.length} đã hết hạn` : "Email tự động"} />
       </div>
 
-      <div className="flex justify-between items-center">
-        <p className="text-sm text-muted">{inventory.length} sản phẩm trong kho.</p>
+      <div style={{ display: activeTableView === "inventory" ? "flex" : "none" }} className="justify-between items-center">
+        <p className="text-xs text-muted">{visibleInventory.length} sản phẩm bạn được phép xem.</p>
         <div className="flex gap-2">
-          <button onClick={() => exportInventoryExcel(inventory)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90">
+          <button onClick={() => exportInventoryExcel(visibleInventory, employees)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90">
             <FileSpreadsheet size={15} /> Xuất Excel
           </button>
-          <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light">
-            <Plus size={15} /> Thêm sản phẩm
-          </button>
+          {canManageInventory && (
+            <button onClick={openNewProduct} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light">
+              <Plus size={15} /> Thêm sản phẩm
+            </button>
+          )}
         </div>
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-lg border border-paper-line p-5 relative">
-          <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={async () => { if (form.name && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setShowForm(false); }}><X size={16} /></button>
-          <h3 className="ktns-serif font-semibold text-ink mb-4">{form.groupName ? `Gói mới cho "${form.groupName}"` : "Sản phẩm mới"}</h3>
+        <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
+          <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={async () => { if (form.name && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; resetProductForm(); }}><X size={16} /></button>
+          <h3 className="ktns-serif font-semibold text-ink mb-4">{editingProductId !== null ? "Sửa thông tin sản phẩm" : (form.groupName ? `Gói mới cho "${form.groupName}"` : "Sản phẩm mới")}</h3>
           <div className="grid grid-cols-4 gap-3">
             <label className="text-xs text-muted flex flex-col gap-1">Mã SKU<input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="SP-006" className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
             <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Tên sản phẩm/gói<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Đơn vị<input value={form.unit} onChange={(e) => setForm({ ...form, unit: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
             <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Nhóm sản phẩm <span className="text-[10px] text-ink-light">(để trống nếu là sản phẩm độc lập; đặt cùng tên nhóm cho các gói thời hạn của cùng 1 sản phẩm, VD "AI Agent")</span><input value={form.groupName} onChange={(e) => setForm({ ...form, groupName: e.target.value })} placeholder="VD: AI Agent" className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-            <label className="text-xs text-muted flex flex-col gap-1">Tồn kho ban đầu<input type="number" value={form.stock} onChange={(e) => setForm({ ...form, stock: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
+            <label className="text-xs text-muted flex flex-col gap-1">{editingProductId !== null ? "Tồn kho hiện tại" : "Tồn kho ban đầu"}<input type="number" value={form.stock} disabled={editingProductId !== null} onChange={(e) => setForm({ ...form, stock: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono disabled:bg-paper disabled:text-muted" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Tồn tối thiểu (cảnh báo)<input type="number" value={form.minStock} onChange={(e) => setForm({ ...form, minStock: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Giá nhập (đ)<MoneyInput value={form.costPrice} onChange={(v) => setForm({ ...form, costPrice: v })} /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Giá bán — đã gồm VAT (đ)<MoneyInput value={form.sellPrice} onChange={(v) => setForm({ ...form, sellPrice: v })} /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Thuế suất VAT của giá bán trên<select value={form.vatRate} onChange={(e) => setForm({ ...form, vatRate: Number(e.target.value) })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono">{VAT_RATE_OPTIONS.map((r) => (<option key={r} value={r}>{r}%</option>))}</select></label>
             <label className="text-xs text-muted flex flex-col gap-1">Thời hạn sử dụng (tháng, 0 = hàng thường không có hạn)<input type="number" min="0" value={form.durationMonths} onChange={(e) => setForm({ ...form, durationMonths: e.target.value })} placeholder="VD: 1, 3, 6, 12" className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
+            <label className="text-xs text-muted flex flex-col gap-1">Ngày hết hạn sản phẩm trong kho<input type="date" value={form.expiryDate || ""} onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
+            {canManageInventory ? <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Nhân viên phụ trách xử lý cảnh báo<select value={form.assignedEmployeeId || ""} onChange={(e) => setForm({ ...form, assignedEmployeeId: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm"><option value="">— Không phân công: gửi toàn bộ nhân viên —</option>{activeEmployeesWithEmail.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {employee.email}</option>)}</select><span className="text-[10px] text-ink-light">Nếu bỏ trống, email cảnh báo sẽ gửi riêng cho tất cả nhân viên đang hoạt động có email.</span></label> : <div className="col-span-2 rounded border border-paper-line bg-paper px-3 py-2 text-xs text-muted">Người phụ trách: <strong className="text-ink">{currentEmployee?.name || "Tài khoản hiện tại"}</strong>. Nhân viên không được chuyển sản phẩm sang người khác.</div>}
           </div>
           {form.sellPrice && Number(form.vatRate) > 0 && (
             <div className="mt-2 text-xs bg-paper rounded px-2.5 py-2 flex gap-4">
@@ -6286,12 +7658,12 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
               <span>VAT ({form.vatRate}%): <strong className="ktns-mono text-stamp-red">{fmtVND(splitVAT(Number(form.sellPrice), form.vatRate).vatAmount)}</strong></span>
             </div>
           )}
-          <button onClick={addProduct} className="mt-4 bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">Lưu</button>
+          <button onClick={saveProduct} className="mt-4 bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">{editingProductId !== null ? "Lưu thay đổi" : "Lưu sản phẩm"}</button>
         </div>
       )}
 
       {productRevenue.length > 0 && (
-        <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+        <div style={{ display: activeTableView === "revenue" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
           <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><TrendingUp size={13} /> Doanh thu theo sản phẩm — rõ của ai, qua đối tác nào</div>
           <table className="w-full text-sm">
             <thead>
@@ -6337,7 +7709,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+      <div style={{ display: activeTableView === "inventory" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Danh mục sản phẩm — các gói thời hạn cùng 1 sản phẩm được gộp chung nhóm</div>
         <table className="w-full text-sm">
           <thead>
@@ -6347,7 +7719,8 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
               <th className="px-4 py-2.5 text-right">Tồn kho</th>
               <th className="px-4 py-2.5 text-right">Giá nhập</th>
               <th className="px-4 py-2.5 text-right">Giá bán (đã gồm VAT)</th>
-              <th className="px-4 py-2.5">Thời hạn</th>
+              <th className="px-4 py-2.5">Thời hạn gói</th>
+              <th className="px-4 py-2.5">Hạn kho / Phụ trách</th>
               <th className="px-4 py-2.5">Đối tác phân phối</th>
               <th className="px-4 py-2.5">Trạng thái</th>
               <th className="px-4 py-2.5"></th>
@@ -6358,25 +7731,28 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
               <React.Fragment key={g.groupName}>
                 {g.items.length > 1 && (
                   <tr className="bg-paper/60">
-                    <td colSpan={9} className="px-4 py-1.5 text-[11px] font-semibold text-ink uppercase flex items-center justify-between">
+                    <td colSpan={10} className="px-4 py-1.5 text-[11px] font-semibold text-ink uppercase flex items-center justify-between">
                       <span>{g.groupName} — {g.items.length} gói</span>
-                      <button onClick={() => addVariant(g.items[0])} className="text-[10px] bg-ink text-white px-2 py-1 rounded flex items-center gap-1 normal-case font-normal"><Plus size={10} /> Thêm gói thời hạn khác</button>
+                      {canManageInventory && <button onClick={() => addVariant(g.items[0])} className="text-[10px] bg-ink text-white px-2 py-1 rounded flex items-center gap-1 normal-case font-normal"><Plus size={10} /> Thêm gói thời hạn khác</button>}
                     </td>
                   </tr>
                 )}
                 {g.items.map((p) => {
                   const low = p.stock <= p.minStock;
+                  const daysLeft = expiryDaysLeft(p);
+                  const expiryWarning = daysLeft !== null && daysLeft <= 5;
+                  const assignedEmployee = employees.find((employee) => Number(employee.id) === Number(p.assignedEmployeeId));
                   const handlingPartners = (distPartners || []).filter((dp) => (dp.productIds || []).includes(p.id));
                   const vat = splitVAT(p.sellPrice, p.vatRate || 0);
                   return (
-                    <tr key={p.id} className={`border-t border-paper-line ${low ? "ktns-warn-row" : ""}`}>
+                    <tr key={p.id} className={`border-t border-paper-line ${low || expiryWarning ? "ktns-warn-row" : ""}`}>
                       <td className="px-4 py-2 ktns-mono text-xs text-muted">{p.sku}</td>
                       <td className="px-4 py-2 font-medium">{p.durationMonths > 0 && g.items.length > 1 ? `↳ Gói ${p.durationMonths} tháng` : p.name} <span className="text-[11px] text-muted">/{p.unit}</span></td>
                       <td className="px-4 py-2 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          <button onClick={() => adjustStock(p.id, -1)} className="w-5 h-5 rounded border border-paper-line text-muted hover:border-stamp-red hover:text-stamp-red text-xs">−</button>
+                          {canEditProduct(p) && <button onClick={() => adjustStock(p.id, -1)} className="w-5 h-5 rounded border border-paper-line text-muted hover:border-stamp-red hover:text-stamp-red text-xs">−</button>}
                           <span className="ktns-mono w-10 text-center">{p.stock}</span>
-                          <button onClick={() => adjustStock(p.id, 1)} className="w-5 h-5 rounded border border-paper-line text-muted hover:border-ledger-green hover:text-ledger-green text-xs">+</button>
+                          {canEditProduct(p) && <button onClick={() => adjustStock(p.id, 1)} className="w-5 h-5 rounded border border-paper-line text-muted hover:border-ledger-green hover:text-ledger-green text-xs">+</button>}
                         </div>
                       </td>
                       <td className="px-4 py-2 text-right ktns-mono text-muted">{fmtVND(p.costPrice)}</td>
@@ -6385,9 +7761,14 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
                         <div className="text-[10px] text-muted">VAT {p.vatRate || 0}% = {fmtVND(vat.vatAmount)} (trước thuế {fmtVND(vat.beforeTax)})</div>
                       </td>
                       <td className="px-4 py-2 text-xs">{p.durationMonths > 0 ? <span className="ktns-mono text-ink-light">{p.durationMonths} tháng</span> : <span className="text-muted">—</span>}</td>
+                      <td className="px-4 py-2 text-xs">
+                        <div className={daysLeft !== null && daysLeft < 0 ? "text-stamp-red font-semibold ktns-mono" : "ktns-mono text-ink-light"}>{p.expiryDate || "Không đặt hạn"}</div>
+                        {daysLeft !== null && <div className={`mt-0.5 text-[10px] ${daysLeft <= 5 ? "text-stamp-red font-semibold" : "text-muted"}`}>{daysLeft < 0 ? `Đã quá ${Math.abs(daysLeft)} ngày` : daysLeft === 0 ? "Hết hạn hôm nay" : `Còn ${daysLeft} ngày`}</div>}
+                        <div className="mt-0.5 text-[10px] text-muted">{assignedEmployee ? `Phụ trách: ${assignedEmployee.name}` : "Email: toàn bộ nhân viên"}</div>
+                      </td>
                       <td className="px-4 py-2 text-xs">{handlingPartners.length > 0 ? handlingPartners.map((dp) => dp.name).join(", ") : <span className="text-muted">Chưa gán đối tác</span>}</td>
-                      <td className="px-4 py-2">{low ? <StampBadge text="SẮP HẾT HÀNG" /> : <StampBadge text="CÒN HÀNG" gold />}</td>
-                      <td className="px-4 py-2 text-right"><button onClick={() => removeProduct(p.id)} className="text-muted hover:text-stamp-red"><Trash2 size={14} /></button></td>
+                      <td className="px-4 py-2"><div className="flex flex-col items-start gap-1">{low ? <StampBadge text="SẮP HẾT HÀNG" /> : <StampBadge text="CÒN HÀNG" gold />}{daysLeft !== null && daysLeft < 0 && <StampBadge text="ĐÃ HẾT HẠN" />}{daysLeft !== null && daysLeft >= 0 && daysLeft <= 5 && <StampBadge text="SẮP HẾT HẠN" />}</div></td>
+                      <td className="px-4 py-2 text-right">{canEditProduct(p) && <div className="flex items-center justify-end gap-2"><button onClick={() => openEditProduct(p)} className="text-muted hover:text-ink" title="Sửa sản phẩm được phân công"><Pencil size={14} /></button>{canManageInventory && <button onClick={() => removeProduct(p.id)} className="text-muted hover:text-stamp-red"><Trash2 size={14} /></button>}</div>}</td>
                     </tr>
                   );
                 })}
@@ -6399,7 +7780,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
       </div>
 
       {keyLedger.length > 0 && (
-        <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+        <div style={{ display: activeTableView === "keys" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
           <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><CalendarCheck size={13} /> Theo dõi mã Key/Gói theo hạn — {keyLedger.filter((k) => k.status === "expiring").length} sắp hết hạn, {keyLedger.filter((k) => k.status === "expired").length} đã hết hạn</div>
           <div className="max-h-[420px] overflow-y-auto">
           <table className="w-full text-sm">
@@ -6440,7 +7821,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
       )}
 
       {/* ---------- Nhật ký xuất/nhập kho (mục IX): mọi biến động tồn đều có nguồn gốc ---------- */}
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+      <div style={{ display: activeTableView === "movements" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <button onClick={() => setShowMovements((v) => !v)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-semibold text-ink uppercase hover:bg-paper/50">
           <span className="flex items-center gap-1.5"><ClipboardList size={13} /> Nhật ký xuất/nhập kho ({(stockMovements || []).length} bút toán)</span>
           <ChevronRight size={14} className={`text-muted transition-transform ${showMovements ? "rotate-90" : ""}`} />
@@ -6503,10 +7884,18 @@ function computeTaskProgress(task, orders, marketingLogs) {
     const value = (marketingLogs || []).filter((l) => l.employeeId === task.employeeId && l.date === task.date).reduce((a, l) => a + (Number(l.conversions) || 0), 0);
     return { value, label: `${value} đơn` };
   }
-  return { value: task.doneManual ? 1 : 0, label: task.doneManual ? "Đã xong" : "Chưa xong" };
+  const reviewStatus = task.doneManual ? "approved" : (task.completionStatus || "");
+  if (reviewStatus === "approved") return { value: 1, label: "Đã xong" };
+  if (reviewStatus === "submitted") return { value: 0, label: "Chờ xác nhận" };
+  if (reviewStatus === "returned") return { value: 0, label: "Cần làm lại" };
+  return { value: 0, label: "Chưa xong" };
 }
 
 function evaluateTaskStatus(task, progressValue) {
+  const reviewStatus = task.doneManual ? "approved" : (task.completionStatus || "");
+  if (reviewStatus === "approved") return "dat";
+  if (reviewStatus === "submitted") return "cho_duyet";
+  if (reviewStatus === "returned") return "can_lam_lai";
   const isToday = task.date === GIAOVIEC_TODAY;
   const isPastNoon = new Date().getHours() >= 12;
   if (task.targetType === "khac") {
@@ -6514,7 +7903,6 @@ function evaluateTaskStatus(task, progressValue) {
     if (isToday && isPastNoon) return "canh_bao";
     return "dang_lam";
   }
-  if (progressValue >= task.targetValue && task.targetValue > 0) return "dat";
   if (progressValue > 0) return "dang_lam";
   if (isToday && isPastNoon) return "canh_bao";
   return "dang_lam";
@@ -6541,7 +7929,7 @@ function computeEmployeeTaskStats(employeeId, tasks, orders, marketingLogs) {
     const progress = computeTaskProgress(t, orders, marketingLogs);
     const status = evaluateTaskStatus(t, progress.value);
     if (status === "dat") done++;
-    if (status === "canh_bao") warned++;
+    if (status === "canh_bao" || status === "can_lam_lai") warned++;
   });
   return { total: own.length, done, warned };
 }
@@ -6599,7 +7987,13 @@ function exportMasterRankingExcel(rows) {
 function exportTasksExcel(tasks, employees, orders, marketingLogs) {
   const wb = XLSX.utils.book_new();
   const nameOf = (id) => employees.find((e) => e.id === id)?.name || "—";
-  const statusLabel = { dat: "Đạt chỉ tiêu", dang_lam: "Đang làm", canh_bao: "Cảnh báo - chưa có tiến độ" };
+  const statusLabel = {
+    dat: "Đã xác nhận hoàn thành",
+    cho_duyet: "Chờ kế toán/sếp kiểm tra",
+    can_lam_lai: "Trả về làm lại",
+    dang_lam: "Đang làm",
+    canh_bao: "Cảnh báo - chưa có tiến độ",
+  };
   const rows = tasks.map((t) => {
     const progress = computeTaskProgress(t, orders, marketingLogs);
     const status = evaluateTaskStatus(t, progress.value);
@@ -6622,9 +8016,101 @@ function normalizeAccountEmail(value = "") {
   return String(value || "").trim().toLowerCase();
 }
 
+const ACCOUNT_ROLE_META = {
+  admin: { label: "Quản trị/Admin", description: "Toàn quyền quản trị hệ thống và duyệt cuối." },
+  accountant: { label: "Kế toán", description: "Toàn quyền vận hành tương đương Admin; vẫn tách riêng trong luồng duyệt lương." },
+  user: { label: "Nhân viên", description: "Nhận việc, chat, xem Kho hàng, chấm công và tạo đề xuất lương cá nhân." },
+};
+
+function normalizeAccountRole(role = "user") {
+  const value = String(role || "").trim().toLowerCase();
+  if (value === "admin" || value === "boss") return "admin";
+  if (value === "accountant") return "accountant";
+  return "user"; // staff/user/giá trị cũ đều về nhân viên thường.
+}
+
+function isAdminRole(role) {
+  return normalizeAccountRole(role) === "admin";
+}
+
+function isAccountantRole(role) {
+  return normalizeAccountRole(role) === "accountant";
+}
+
+function accountRoleLabel(role) {
+  return ACCOUNT_ROLE_META[normalizeAccountRole(role)]?.label || "Nhân viên";
+}
+
+// Phân quyền màn hình:
+// - Admin và Kế toán: toàn quyền vận hành hệ thống.
+// - User: khu vực cá nhân và được xem Kho hàng ở chế độ chỉ đọc.
+// Trong quy trình lương, Kế toán vẫn được nhận diện riêng để lưu đúng dấu vết thẩm định.
+const ROLE_TAB_ACCESS = {
+  admin: [
+    "dashboard", "thuchi", "congno", "vongop", "taisan", "quy", "hoachdinh",
+    "crm", "marketing", "hoptac", "kho", "hopdong", "hotro",
+    "giaoviec", "chat", "nhansu", "tuyendung", "chamcong", "hieusuat", "luong",
+    "ai", "phaply", "task-reminder-settings", "settings", "taikhoan",
+  ],
+  accountant: [
+    "dashboard", "thuchi", "congno", "vongop", "taisan", "quy", "hoachdinh",
+    "crm", "marketing", "hoptac", "kho", "hopdong", "hotro",
+    "giaoviec", "chat", "nhansu", "tuyendung", "chamcong", "hieusuat", "luong",
+    "ai", "phaply", "settings", "taikhoan",
+  ],
+  user: ["giaoviec", "chat", "chamcong", "luong", "taikhoan"],
+};
+
+function allowedTabsForRole(role, employee = null) {
+  const normalizedRole = normalizeAccountRole(role);
+  if (normalizedRole !== "user") return ROLE_TAB_ACCESS[normalizedRole] || ROLE_TAB_ACCESS.user;
+  const base = ROLE_TAB_ACCESS.user;
+  const positionTabs = positionAccessFor(employee, normalizedRole).tabs || [];
+  return Array.from(new Set([...base, ...positionTabs]));
+}
+
+function defaultTabForRole(role, employee = null) {
+  const normalizedRole = normalizeAccountRole(role);
+  if (normalizedRole !== "user") return "dashboard";
+  const allowed = allowedTabsForRole(normalizedRole, employee);
+  return allowed.includes("giaoviec") ? "giaoviec" : (allowed[0] || "taikhoan");
+}
+
+
+function normalizePayrollRoleText(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function employeeIsAccountant(employee) {
+  if (!employee || employee.status === "inactive") return false;
+  const roleToken = normalizePayrollRoleText(employee.roleType).replace(/\s+/g, "_");
+  if (["ke_toan", "ketoan", "accountant", "accounting", "finance"].includes(roleToken)) return true;
+  const description = normalizePayrollRoleText(`${employee.position || ""} ${employee.dept || ""}`);
+  return description.includes("ke toan")
+    || description.includes("tai chinh")
+    || description.includes("accountant")
+    || description.includes("accounting")
+    || description.includes("finance");
+}
+
 function employeeProfileForEmail(employees = [], email = "") {
   const normalized = normalizeAccountEmail(email);
   return (employees || []).find((employee) => normalizeAccountEmail(employee.email) === normalized) || null;
+}
+
+function employeeForAuthUser(employees = [], authUser = null) {
+  const accountId = Number(authUser?.id);
+  const linkedByAccountId = Number.isFinite(accountId)
+    ? (employees || []).find((employee) => Number(employee.account_id) === accountId)
+    : null;
+  return linkedByAccountId || employeeProfileForEmail(employees, authUser?.email);
 }
 
 function accountDisplayName(employee, email = "") {
@@ -6634,7 +8120,7 @@ function accountDisplayName(employee, email = "") {
 function accountPositionLabel(employee, accountRole = "user") {
   return employee?.position?.trim()
     || ROLE_META[employee?.roleType]?.label
-    || (accountRole === "admin" ? "Quản trị viên" : "Nhân viên");
+    || accountRoleLabel(accountRole);
 }
 
 function accountInitials(value = "") {
@@ -6698,7 +8184,8 @@ function resizeAvatarFile(file, targetSize = 480) {
 }
 
 function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTasks, setTab }) {
-  const isAdmin = authUser?.role === "admin";
+  const CHAT_PAGE_SIZE = 40;
+  const isAdmin = isAdminRole(authUser?.role) || isAccountantRole(authUser?.role);
   const [mode, setMode] = useState("direct");
   const [listFilter, setListFilter] = useState("all");
   const [contacts, setContacts] = useState([]);
@@ -6713,6 +8200,8 @@ function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTas
   const [showGroupForm, setShowGroupForm] = useState(false);
   const [groupForm, setGroupForm] = useState({ id: null, name: "", memberEmails: [] });
   const [showTaskForm, setShowTaskForm] = useState(false);
+  const [hasOlderMessages, setHasOlderMessages] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   const [taskForm, setTaskForm] = useState({
     date: GIAOVIEC_TODAY,
     employeeId: "",
@@ -6722,6 +8211,10 @@ function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTas
     visibility: "private",
   });
   const scrollRef = useRef(null);
+  const messagesRef = useRef([]);
+  const loadingMessagesRef = useRef(false);
+  const conversationKeyRef = useRef("");
+  const shouldScrollToBottomRef = useRef(true);
 
   const employeeForEmail = (email) => employeeProfileForEmail(employees, email);
   const directContacts = isAdmin
@@ -6731,6 +8224,60 @@ function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTas
   const selectedEmployee = employeeForEmail(selectedEmail);
   const selectedGroup = groups.find((group) => String(group.id) === String(selectedGroupId));
   const groupMembers = selectedGroup?.members || [];
+  const conversationKey = mode === "direct" ? `direct:${selectedEmail}` : `group:${selectedGroupId}`;
+
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    conversationKeyRef.current = conversationKey;
+  }, [conversationKey]);
+
+  const mergeMessagesById = (current, incoming) => {
+    const map = new Map();
+    [...(current || []), ...(incoming || [])].forEach((message) => {
+      if (message?.id) map.set(message.id, message);
+    });
+    return [...map.values()].sort((a, b) => Number(a.id) - Number(b.id));
+  };
+
+  const appendMessage = (message) => {
+    if (!message?.id) return;
+    shouldScrollToBottomRef.current = true;
+    setMessages((current) => {
+      const next = mergeMessagesById(current, [message]);
+      messagesRef.current = next;
+      return next;
+    });
+  };
+
+  const mergeReadReceipts = useCallback((receipts = []) => {
+    if (!receipts.length) return;
+    const readAtById = new Map(receipts.map((receipt) => [Number(receipt.id), receipt.readAt]));
+    setMessages((current) => {
+      let changed = false;
+      const next = current.map((message) => {
+        const readAt = readAtById.get(Number(message.id));
+        if (!readAt || message.readAt === readAt) return message;
+        changed = true;
+        return { ...message, readAt };
+      });
+      if (changed) messagesRef.current = next;
+      return changed ? next : current;
+    });
+  }, []);
+
+  const syncReadReceipts = useCallback(async (targetEmail = selectedEmail) => {
+    if (!targetEmail) return;
+    const visibleSentMessages = messagesRef.current.filter((message) => (
+      message.senderEmail === authUser?.email && !message.readAt
+    ));
+    if (!visibleSentMessages.length) return;
+    const oldestPendingId = Math.min(...visibleSentMessages.map((message) => Number(message.id) || 0));
+    const result = await fetchChatReadReceipts(targetEmail, { afterId: Math.max(0, oldestPendingId - 1) });
+    mergeReadReceipts(result.receipts || []);
+  }, [authUser?.email, mergeReadReceipts, selectedEmail]);
 
   const loadLists = useCallback(async () => {
     const [directResult, groupResult] = await Promise.all([fetchChatConversations(), fetchChatGroups()]);
@@ -6757,16 +8304,28 @@ function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTas
       if (!nextDirectVisible.length) {
         setSelectedEmail("");
         setMessages([]);
+        messagesRef.current = [];
+        conversationKeyRef.current = "direct:";
+        setHasOlderMessages(false);
       } else if (!nextDirectVisible.some((contact) => contact.email === selectedEmail)) {
         setSelectedEmail(nextDirectVisible[0].email);
         setMessages([]);
+        messagesRef.current = [];
+        conversationKeyRef.current = `direct:${nextDirectVisible[0].email}`;
+        setHasOlderMessages(false);
       }
     } else if (!nextGroups.length) {
       setSelectedGroupId("");
       setMessages([]);
+      messagesRef.current = [];
+      conversationKeyRef.current = "group:";
+      setHasOlderMessages(false);
     } else if (!nextGroups.some((group) => String(group.id) === String(selectedGroupId))) {
       setSelectedGroupId(String(nextGroups[0].id));
       setMessages([]);
+      messagesRef.current = [];
+      conversationKeyRef.current = `group:${nextGroups[0].id}`;
+      setHasOlderMessages(false);
     }
   }, [isAdmin, mode, onUnreadChange, selectedEmail, selectedGroupId]);
 
@@ -6790,40 +8349,109 @@ function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTas
     return null;
   }, [mode, selectedEmail, selectedGroupId, onUnreadChange]);
 
-  const loadMessages = useCallback(async () => {
-    if (mode === "direct") {
-      if (!selectedEmail) { setMessages([]); return; }
-      const result = await fetchChatMessages(selectedEmail);
-      setMessages(result.messages || []);
-      // Cuộc trò chuyện đang mở luôn được xem là đã đọc, kể cả tin mới đến trong lúc đang chat.
-      await markCurrentRead();
-      return;
+  const loadMessagesPage = useCallback(async (direction = "initial", target = null) => {
+    const activeMode = target?.mode || mode;
+    const activeEmail = target?.selectedEmail ?? selectedEmail;
+    const activeGroupId = target?.selectedGroupId ?? selectedGroupId;
+    const activeKey = activeMode === "direct" ? `direct:${activeEmail}` : `group:${activeGroupId}`;
+    const hasDirect = activeMode === "direct" && activeEmail;
+    const hasGroup = activeMode === "group" && activeGroupId;
+    if (!hasDirect && !hasGroup) {
+      setMessages([]);
+      messagesRef.current = [];
+      setHasOlderMessages(false);
+      return [];
     }
-    if (!selectedGroupId) { setMessages([]); return; }
-    const result = await fetchChatGroupMessages(selectedGroupId);
-    setMessages(result.messages || []);
-    await markCurrentRead();
-  }, [mode, selectedEmail, selectedGroupId, markCurrentRead]);
+    if (loadingMessagesRef.current && direction !== "initial") return [];
+
+    const requestKey = activeKey;
+    if (direction === "initial") conversationKeyRef.current = requestKey;
+    const currentMessages = messagesRef.current;
+    const options = { limit: CHAT_PAGE_SIZE };
+    if (direction === "newer") {
+      const newest = currentMessages[currentMessages.length - 1];
+      if (!newest?.id) return [];
+      options.afterId = newest.id;
+    } else if (direction === "older") {
+      const oldest = currentMessages[0];
+      if (!oldest?.id || !hasOlderMessages) return [];
+      options.beforeId = oldest.id;
+      setLoadingOlder(true);
+    }
+
+    const scrollEl = scrollRef.current;
+    const previousHeight = direction === "older" && scrollEl ? scrollEl.scrollHeight : 0;
+    const previousTop = direction === "older" && scrollEl ? scrollEl.scrollTop : 0;
+    const nearBottom = !scrollEl || scrollEl.scrollHeight - scrollEl.scrollTop - scrollEl.clientHeight < 140;
+
+    loadingMessagesRef.current = true;
+    try {
+      const result = activeMode === "direct"
+        ? await fetchChatMessages(activeEmail, options)
+        : await fetchChatGroupMessages(activeGroupId, options);
+      if (conversationKeyRef.current !== requestKey) return [];
+      const incoming = result.messages || [];
+
+      if (direction !== "newer") setHasOlderMessages(Boolean(result.hasMoreOlder));
+      shouldScrollToBottomRef.current = direction === "initial" || (direction === "newer" && nearBottom);
+
+      setMessages((current) => {
+        const next = direction === "initial" ? incoming : mergeMessagesById(current, incoming);
+        messagesRef.current = next;
+        return next;
+      });
+
+      if (direction === "older" && scrollEl) {
+        shouldScrollToBottomRef.current = false;
+        window.requestAnimationFrame(() => {
+          scrollEl.scrollTop = scrollEl.scrollHeight - previousHeight + previousTop;
+        });
+      }
+
+      // Cuộc trò chuyện đang mở luôn được xem là đã đọc, nhưng không ghi DB mỗi giây khi không có tin mới.
+      if (direction === "initial" || incoming.length) {
+        if (target) {
+          const readResult = activeMode === "direct"
+            ? await markChatRead(activeEmail)
+            : await markChatGroupRead(activeGroupId);
+          onUnreadChange?.(Number(readResult.unread) || 0);
+        } else {
+          await markCurrentRead();
+        }
+      }
+      if (activeMode === "direct") await syncReadReceipts(activeEmail);
+      return incoming;
+    } finally {
+      loadingMessagesRef.current = false;
+      if (direction === "older") setLoadingOlder(false);
+    }
+  }, [hasOlderMessages, markCurrentRead, mode, onUnreadChange, selectedEmail, selectedGroupId, syncReadReceipts]);
+
+  const loadMessages = useCallback(async () => {
+    return loadMessagesPage("initial");
+  }, [loadMessagesPage]);
 
   useEffect(() => {
     loadLists().catch((err) => setError(err.message || "Không tải được danh sách tin nhắn"));
-    const timer = window.setInterval(() => loadLists().catch(() => {}), 2500);
+    const timer = window.setInterval(() => loadLists().catch(() => {}), 1800);
     return () => window.clearInterval(timer);
   }, [loadLists]);
 
   useEffect(() => {
     loadMessages().catch((err) => setError(err.message || "Không tải được nội dung tin nhắn"));
     if ((mode === "direct" && !selectedEmail) || (mode === "group" && !selectedGroupId)) return undefined;
-    const timer = window.setInterval(() => loadMessages().catch(() => {}), 2500);
+    const timer = window.setInterval(() => loadMessagesPage("newer").catch(() => {}), 1000);
     return () => window.clearInterval(timer);
-  }, [loadMessages, mode, selectedEmail, selectedGroupId]);
+  }, [loadMessages, loadMessagesPage, mode, selectedEmail, selectedGroupId]);
 
   useEffect(() => {
     markCurrentRead().catch(() => {});
   }, [markCurrentRead]);
 
   useEffect(() => {
+    if (!shouldScrollToBottomRef.current) return;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    shouldScrollToBottomRef.current = false;
   }, [messages]);
 
   const selectDirect = async (email) => {
@@ -6831,11 +8459,16 @@ function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTas
     setSelectedEmail(email);
     setSelectedGroupId("");
     setMessages([]);
+    messagesRef.current = [];
+    conversationKeyRef.current = `direct:${email}`;
+    setHasOlderMessages(false);
+    shouldScrollToBottomRef.current = true;
     setError("");
     try {
       setContacts((current) => current.map((contact) => contact.email === email ? { ...contact, unreadCount: 0 } : contact));
       const result = await markChatRead(email);
       onUnreadChange?.(Number(result.unread) || 0);
+      await loadMessagesPage("initial", { mode: "direct", selectedEmail: email, selectedGroupId: "" });
       await loadLists();
     } catch (err) {
       setError(err.message || "Không đánh dấu đã đọc được");
@@ -6847,11 +8480,16 @@ function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTas
     setSelectedGroupId(String(groupId));
     setSelectedEmail("");
     setMessages([]);
+    messagesRef.current = [];
+    conversationKeyRef.current = `group:${groupId}`;
+    setHasOlderMessages(false);
+    shouldScrollToBottomRef.current = true;
     setError("");
     try {
       setGroups((current) => current.map((group) => String(group.id) === String(groupId) ? { ...group, unreadCount: 0 } : group));
       const result = await markChatGroupRead(groupId);
       onUnreadChange?.(Number(result.unread) || 0);
+      await loadMessagesPage("initial", { mode: "group", selectedEmail: "", selectedGroupId: String(groupId) });
       await loadLists();
     } catch (err) {
       setError(err.message || "Không đánh dấu đã đọc được");
@@ -6861,6 +8499,10 @@ function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTas
   const switchMode = (nextMode) => {
     setMode(nextMode);
     setMessages([]);
+    messagesRef.current = [];
+    conversationKeyRef.current = nextMode === "direct" ? `direct:${directContacts[0]?.email || ""}` : `group:${groups[0]?.id || ""}`;
+    setHasOlderMessages(false);
+    shouldScrollToBottomRef.current = true;
     setError("");
     if (nextMode === "direct") {
       setSelectedGroupId("");
@@ -6880,10 +8522,11 @@ function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTas
     setLoading(true);
     setError("");
     try {
-      if (mode === "group") await sendChatGroupMessage(selectedGroupId, body);
-      else await sendChatMessage(selectedEmail, body);
+      const result = mode === "group"
+        ? await sendChatGroupMessage(selectedGroupId, body)
+        : await sendChatMessage(selectedEmail, body);
+      appendMessage(result.message);
       setInput("");
-      await loadMessages();
       await markCurrentRead();
       await loadLists();
     } catch (err) {
@@ -6950,6 +8593,7 @@ function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTas
       setGroups(result.groups || []);
       setSelectedGroupId("");
       setMessages([]);
+      setShowGroupForm(false);
       await loadLists();
     } catch (err) {
       setError(err.message || "Không xóa được nhóm chat");
@@ -6971,13 +8615,56 @@ function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTas
     }
   };
 
+  const clearCurrentConversation = async () => {
+    if (!isAdmin || !hasDestination || loading) return;
+    const label = mode === "group"
+      ? selectedGroup?.name || "nhóm này"
+      : accountDisplayName(selectedEmployee, selectedEmail);
+    if (!(await confirmOverlay(`Xóa toàn bộ lịch sử trò chuyện với "${label}"?`, {
+      title: "Xóa lịch sử trò chuyện",
+      confirmLabel: "Xóa lịch sử",
+      tone: "danger",
+    }))) return;
+    setLoading(true);
+    setError("");
+    try {
+      const result = mode === "group"
+        ? await clearChatGroupConversation(selectedGroupId)
+        : await clearChatConversation(selectedEmail);
+      setMessages([]);
+      messagesRef.current = [];
+      setHasOlderMessages(false);
+      await loadLists();
+      onUnreadChange?.(Number(result.unread) || 0);
+    } catch (err) {
+      setError(err.message || "Không xóa được lịch sử trò chuyện.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const taskTypesForEmployee = (employeeId) => {
     const employee = employees.find((item) => item.id === Number(employeeId));
     return ROLE_TASK_TYPES[employee?.roleType] || ["khac"];
   };
 
   const openTaskAssignment = () => {
-    if (!isAdmin || mode !== "direct" || !selectedEmail) return;
+    if (!isAdmin) return;
+    if (mode === "group") {
+      if (!selectedGroupId) return;
+      setTaskForm({
+        date: GIAOVIEC_TODAY,
+        employeeId: "",
+        targetType: "khac",
+        targetValue: "",
+        description: "",
+        visibility: "public",
+      });
+      setError("");
+      setShowTaskForm(true);
+      return;
+    }
+    if (!selectedEmail) return;
     const employee = employeeForEmail(selectedEmail);
     if (!employee) {
       setError(`Tài khoản ${selectedEmail} chưa liên kết với hồ sơ nhân sự nên chưa thể giao việc.`);
@@ -6996,44 +8683,66 @@ function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTas
     setShowTaskForm(true);
   };
 
+  const buildTaskMessage = (task) => {
+    const targetLabel = TASK_TYPES[task.targetType]?.label || task.targetType;
+    const targetLine = task.targetType === "khac" ? "" : `
+Chỉ tiêu: ${task.targetValue} ${TASK_TYPES[task.targetType]?.unit || ""}`;
+    return `Bạn được giao việc mới.
+Ngày: ${task.date}
+Chế độ: ${task.visibility === "public" ? "Công khai" : "Riêng tư"}
+Loại: ${targetLabel}${targetLine}
+Nội dung: ${task.description}`;
+  };
+
   const saveTaskFromChat = async () => {
-    if (!isAdmin || !setTasks || !taskForm.employeeId || !taskForm.description.trim() || loading) return;
-    const employee = employees.find((item) => item.id === Number(taskForm.employeeId));
-    if (!employee?.email) {
-      setError("Hồ sơ nhân sự chưa có email đăng nhập.");
-      return;
-    }
+    if (!isAdmin || !setTasks || !taskForm.description.trim() || loading) return;
     const newTask = {
       ...taskForm,
       id: Date.now(),
-      employeeId: Number(taskForm.employeeId),
+      employeeId: taskForm.employeeId ? Number(taskForm.employeeId) : "",
       targetValue: Number(taskForm.targetValue) || 0,
       description: taskForm.description.trim(),
       doneManual: false,
-      visibility: taskForm.visibility === "public" ? "public" : "private",
+      visibility: mode === "group" ? "public" : (taskForm.visibility === "public" ? "public" : "private"),
       createdByEmail: authUser?.email || "",
+      createdAt: new Date().toISOString(),
     };
+    let createdTaskIds = [];
     setLoading(true);
     setError("");
     try {
-      setTasks((current) => [...current, newTask]);
-      const targetLabel = TASK_TYPES[newTask.targetType]?.label || newTask.targetType;
-      const targetLine = newTask.targetType === "khac" ? "" : `
-Chỉ tiêu: ${newTask.targetValue} ${TASK_TYPES[newTask.targetType]?.unit || ""}`;
-      await sendChatMessage(
-        employee.email,
-        `Bạn được giao việc mới.
-Ngày: ${newTask.date}
-Chế độ: ${newTask.visibility === "public" ? "Công khai" : "Riêng tư"}
-Loại: ${targetLabel}${targetLine}
-Nội dung: ${newTask.description}`
-      );
+      if (mode === "group") {
+        if (!selectedGroupId) return;
+        const assignedEmployees = groupMembers
+          .filter((member) => member.email !== authUser?.email)
+          .map((member) => employeeForEmail(member.email))
+          .filter(Boolean);
+        const groupTasks = assignedEmployees.map((employee, index) => ({
+          ...newTask,
+          id: newTask.id + index,
+          employeeId: Number(employee.id),
+        }));
+        createdTaskIds = groupTasks.map((task) => task.id);
+        if (groupTasks.length) setTasks((current) => [...current, ...groupTasks]);
+        const result = await sendChatGroupMessage(selectedGroupId, buildTaskMessage(newTask));
+        appendMessage(result.message);
+      } else {
+        if (!newTask.employeeId) return;
+        const employee = employees.find((item) => item.id === Number(newTask.employeeId));
+        if (!employee?.email) {
+          setError("Hồ sơ nhân sự chưa có email đăng nhập.");
+          return;
+        }
+        createdTaskIds = [newTask.id];
+        setTasks((current) => [...current, newTask]);
+        const result = await sendChatMessage(employee.email, buildTaskMessage(newTask));
+        appendMessage(result.message);
+      }
       setShowTaskForm(false);
-      await loadMessages();
       await markCurrentRead();
       await loadLists();
     } catch (err) {
-      setTasks((current) => current.filter((task) => task.id !== newTask.id));
+      if (createdTaskIds.length) setTasks((current) => current.filter((task) => !createdTaskIds.includes(task.id)));
       setError(err.message || "Không giao được công việc.");
     } finally {
       setLoading(false);
@@ -7041,6 +8750,10 @@ Nội dung: ${newTask.description}`
   };
 
   const hasDestination = mode === "direct" ? !!selectedEmail : !!selectedGroupId;
+  const canAssignTaskFromChat = isAdmin && ((mode === "direct" && !!selectedEmail) || (mode === "group" && !!selectedGroupId));
+  const taskRecipientLabel = mode === "group"
+    ? selectedGroup?.name || "Nhóm đang chat"
+    : employees.find((item) => item.id === Number(taskForm.employeeId))?.name || selectedEmail;
   const parseTaskMessage = (body = "") => {
     if (!String(body).startsWith("Bạn được giao việc mới.")) return null;
     const task = {};
@@ -7060,20 +8773,51 @@ Nội dung: ${newTask.description}`
   const previewMessage = (body = "") => {
     const task = parseTaskMessage(body);
     if (task) return `Công việc: ${task.description || task.type || "Công việc mới"}`;
-    return String(body || "").replace(/\s+/g, " ").trim();
+    return displayChatBody(body).replace(/\s+/g, " ").trim();
+  };
+  const displayChatBody = (body = "") => {
+    return String(body || "").replace(/^Đã nhận việc #\d+:/, "Đã nhận việc:");
+  };
+  const chatTimeZone = "Asia/Ho_Chi_Minh";
+  const parseChatTimestamp = (value) => {
+    if (!value) return null;
+    let normalized = String(value).trim();
+    // SQLite CURRENT_TIMESTAMP lưu theo UTC nhưng trả về dạng không có múi giờ.
+    // Bổ sung Z để trình duyệt không hiểu nhầm đây là giờ địa phương của thiết bị.
+    if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(normalized)) {
+      normalized = `${normalized.replace(" ", "T")}Z`;
+    }
+    const date = new Date(normalized);
+    return Number.isNaN(date.getTime()) ? null : date;
+  };
+  const chatDayKey = (date) => {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: chatTimeZone, year: "numeric", month: "2-digit", day: "2-digit",
+    }).formatToParts(date);
+    const part = (type) => parts.find((item) => item.type === type)?.value || "";
+    return `${part("year")}-${part("month")}-${part("day")}`;
+  };
+  const formatChatTime = (value) => {
+    const date = value instanceof Date ? value : parseChatTimestamp(value);
+    if (!date) return "";
+    return date.toLocaleTimeString("vi-VN", {
+      timeZone: chatTimeZone, hour: "2-digit", minute: "2-digit", hour12: false,
+    });
+  };
+  const formatChatDate = (value) => {
+    const date = value instanceof Date ? value : parseChatTimestamp(value);
+    if (!date) return "";
+    return date.toLocaleDateString("vi-VN", { timeZone: chatTimeZone });
   };
   const conversationTime = (value) => {
-    if (!value) return "";
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return "";
+    const date = parseChatTimestamp(value);
+    if (!date) return "";
     const now = new Date();
-    if (date.toDateString() === now.toDateString()) {
-      return date.toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" });
-    }
-    const yesterday = new Date(now);
-    yesterday.setDate(now.getDate() - 1);
-    if (date.toDateString() === yesterday.toDateString()) return "Hôm qua";
-    return date.toLocaleDateString("vi-VN", { day: "2-digit", month: "2-digit" });
+    if (chatDayKey(date) === chatDayKey(now)) return formatChatTime(date);
+    const yesterday = new Date(now.getTime() - 86400000);
+    if (chatDayKey(date) === chatDayKey(yesterday)) return "Hôm qua";
+    return date.toLocaleDateString("vi-VN", { timeZone: chatTimeZone, day: "2-digit", month: "2-digit" });
   };
   const normalizedSearch = searchQuery.trim().toLowerCase();
   const visibleDirectContacts = directContacts.filter((contact) => {
@@ -7109,16 +8853,24 @@ Nội dung: ${newTask.description}`
   const selectedCompletedCount = selectedEmployeeTasks.filter((task) => task.doneManual).length;
   const selectedOverdueCount = selectedEmployeeTasks.filter((task) => !task.doneManual && task.date && task.date < GIAOVIEC_TODAY).length;
   const selectedDoingCount = selectedEmployeeTasks.filter((task) => !task.doneManual && (!task.date || task.date >= GIAOVIEC_TODAY)).length;
+  const acknowledgedTaskMessageIds = useMemo(() => new Set(
+    messages
+      .filter((message) => message.senderEmail === authUser?.email)
+      .map((message) => String(message.body || "").match(/^Đã nhận việc #(\d+):/))
+      .filter(Boolean)
+      .map((match) => Number(match[1]))
+  ), [authUser?.email, messages]);
 
   const acknowledgeTask = async (task) => {
-    if (!task || loading || !hasDestination) return;
-    const body = `Đã nhận việc: ${task.description || task.type || "Công việc mới"}`;
+    if (!task?.messageId || loading || !hasDestination || acknowledgedTaskMessageIds.has(Number(task.messageId))) return;
+    const body = `Đã nhận việc #${task.messageId}: ${task.description || task.type || "Công việc mới"}`;
     setLoading(true);
     setError("");
     try {
-      if (mode === "group") await sendChatGroupMessage(selectedGroupId, body);
-      else await sendChatMessage(selectedEmail, body);
-      await loadMessages();
+      const result = mode === "group"
+        ? await sendChatGroupMessage(selectedGroupId, body)
+        : await sendChatMessage(selectedEmail, body);
+      appendMessage(result.message);
       await markCurrentRead();
       await loadLists();
     } catch (err) {
@@ -7128,29 +8880,34 @@ Nội dung: ${newTask.description}`
     }
   };
 
-  return (
-    <div className="domix-task-chat grid h-[calc(100vh-190px)] min-h-[650px] grid-cols-1 overflow-hidden rounded-[26px] border border-[#223b66] bg-[radial-gradient(circle_at_top_left,rgba(47,105,255,0.17),transparent_28%),linear-gradient(180deg,#07111f_0%,#0b1730_100%)] shadow-[0_28px_85px_rgba(2,8,23,0.42)] xl:grid-cols-[380px_minmax(0,1fr)]">
-      <section className="flex min-h-0 flex-col border-b border-[#1c3154] bg-[linear-gradient(180deg,rgba(8,17,32,0.98),rgba(10,24,47,0.98))] xl:border-b-0 xl:border-r">
-        <div className="border-b border-[#183052] px-5 pb-5 pt-6">
-          <div className="text-[24px] font-bold tracking-wide text-[#f4c76a]">DOMIX</div>
-          <div className="mt-1 text-sm text-[#dce8ff]">Trao đổi công việc</div>
+  const handleMessagesScroll = useCallback((event) => {
+    if (event.currentTarget.scrollTop > 80 || loadingOlder || !hasOlderMessages) return;
+    loadMessagesPage("older").catch((err) => setError(err.message || "Không tải được tin nhắn cũ hơn"));
+  }, [hasOlderMessages, loadMessagesPage, loadingOlder]);
 
-          <div className="mt-5 rounded-[18px] border border-[#2a426d] bg-[#0c1a31] px-4 py-3">
-            <div className="flex items-center gap-3 text-[#91a8cf]">
-              <Search size={17} className="shrink-0" />
+  return (
+    <div className="domix-task-chat grid h-full min-h-0 grid-cols-1 overflow-hidden border-0 bg-[radial-gradient(circle_at_top_left,rgba(47,105,255,0.17),transparent_28%),linear-gradient(180deg,#07111f_0%,#0b1730_100%)] shadow-none xl:grid-cols-[328px_minmax(0,1fr)]">
+      <section className="flex min-h-0 flex-col border-b border-[#1c3154] bg-[linear-gradient(180deg,rgba(8,17,32,0.98),rgba(10,24,47,0.98))] xl:border-b-0 xl:border-r">
+        <div className="border-b border-[#183052] px-4 pb-4 pt-4">
+          <div className="text-[20px] font-bold tracking-wide text-[#f4c76a]">DOMIX</div>
+          <div className="mt-0.5 text-xs text-[#dce8ff]">Trao đổi công việc</div>
+
+          <div className="domix-chat-search mt-4 rounded-[18px] border border-[#2a426d]/80 bg-white/[0.035] px-3 py-2.5 transition-colors focus-within:border-[#5f86d8]/70">
+            <div className="flex items-center gap-2.5 text-[#91a8cf]">
+              <Search size={15} className="shrink-0" />
               <input
                 value={searchQuery}
                 onChange={(event) => setSearchQuery(event.target.value)}
                 placeholder="Tìm người, nhóm hoặc nội dung..."
-                className="w-full border-0 bg-transparent p-0 text-sm text-white placeholder:text-[#768db5] focus:outline-none focus:ring-0"
+                className="domix-chat-search-input w-full border-0 bg-transparent p-0 text-xs text-white outline-none placeholder:text-[#768db5] focus:bg-transparent focus:outline-none focus:ring-0"
               />
             </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            <button onClick={() => setListFilter("all")} className={`rounded-[15px] border px-3 py-2.5 text-sm font-semibold transition ${listFilter === "all" ? "border-[#315ba8] bg-[#234a8e] text-white" : "border-[#263e68] bg-white/[0.03] text-[#a7b9d8] hover:bg-white/[0.06]"}`}>Tất cả</button>
-            <button onClick={() => setListFilter("unread")} className={`rounded-[15px] border px-3 py-2.5 text-sm font-semibold transition ${listFilter === "unread" ? "border-[#315ba8] bg-[#234a8e] text-white" : "border-[#263e68] bg-white/[0.03] text-[#a7b9d8] hover:bg-white/[0.06]"}`}>Chưa đọc {totalUnread > 0 && <span className="ml-1 inline-flex min-w-5 h-5 items-center justify-center rounded-full bg-[#3f7cff] px-1 text-[10px] text-white">{totalUnread > 99 ? "99+" : totalUnread}</span>}</button>
-            <button onClick={() => setListFilter("group")} className={`rounded-[15px] border px-3 py-2.5 text-sm font-semibold transition ${listFilter === "group" ? "border-[#315ba8] bg-[#234a8e] text-white" : "border-[#263e68] bg-white/[0.03] text-[#a7b9d8] hover:bg-white/[0.06]"}`}>Nhóm</button>
+          <div className="mt-3 grid grid-cols-3 gap-1.5">
+            <button onClick={() => setListFilter("all")} className={`rounded-[12px] border px-2.5 py-2 text-xs font-semibold transition ${listFilter === "all" ? "border-[#315ba8] bg-[#234a8e] text-white" : "border-[#263e68] bg-white/[0.03] text-[#a7b9d8] hover:bg-white/[0.06]"}`}>Tất cả</button>
+            <button onClick={() => setListFilter("unread")} className={`rounded-[12px] border px-2.5 py-2 text-xs font-semibold transition ${listFilter === "unread" ? "border-[#315ba8] bg-[#234a8e] text-white" : "border-[#263e68] bg-white/[0.03] text-[#a7b9d8] hover:bg-white/[0.06]"}`}>Chưa đọc {totalUnread > 0 && <span className="ml-1 inline-flex min-w-4 h-4 items-center justify-center rounded-full bg-[#3f7cff] px-1 text-[9px] text-white">{totalUnread > 99 ? "99+" : totalUnread}</span>}</button>
+            <button onClick={() => setListFilter("group")} className={`rounded-[12px] border px-2.5 py-2 text-xs font-semibold transition ${listFilter === "group" ? "border-[#315ba8] bg-[#234a8e] text-white" : "border-[#263e68] bg-white/[0.03] text-[#a7b9d8] hover:bg-white/[0.06]"}`}>Nhóm</button>
           </div>
         </div>
 
@@ -7165,21 +8922,21 @@ Nội dung: ${newTask.description}`
               const unreadCount = Number(contact.unreadCount) || 0;
               const active = mode === "direct" && selectedEmail === contact.email;
               return (
-                <button key={entry.key} onClick={() => selectDirect(contact.email)} className={`w-full border-b border-[#183052] px-5 py-4 text-left transition ${active ? "bg-[linear-gradient(90deg,rgba(45,91,179,0.40),rgba(18,39,76,0.26))]" : "hover:bg-white/[0.04]"}`}>
-                  <div className="flex items-start gap-3.5">
+                <button key={entry.key} onClick={() => selectDirect(contact.email)} className={`w-full border-b border-[#183052] px-4 py-3 text-left transition ${active ? "bg-[linear-gradient(90deg,rgba(45,91,179,0.40),rgba(18,39,76,0.26))]" : "hover:bg-white/[0.04]"}`}>
+                  <div className="flex items-start gap-3">
                     <div className="relative shrink-0">
-                      <AccountAvatar employee={profile} email={contact.email} name={displayName} className="h-12 w-12" textClassName="text-xs" />
+                      <AccountAvatar employee={profile} email={contact.email} name={displayName} className="h-10 w-10" textClassName="text-[10px]" />
                       {contact.active && <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-[#0b1730] bg-[#39cf72]" />}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className={`truncate text-[15px] ${unreadCount > 0 ? "font-bold text-white" : "font-semibold text-[#edf4ff]"}`}>{displayName}</div>
-                        <span className="shrink-0 text-[11px] text-[#9cb0d1]">{conversationTime(contact.lastAt)}</span>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className={`truncate text-sm ${unreadCount > 0 ? "font-bold text-white" : "font-semibold text-[#edf4ff]"}`}>{displayName}</div>
+                        <span className="shrink-0 text-[10px] text-[#9cb0d1]">{conversationTime(contact.lastAt)}</span>
                       </div>
-                      <div className="mt-0.5 truncate text-xs text-[#a5b7d5]">{positionLabel}</div>
-                      <div className="mt-2 flex items-center gap-2">
-                        <div className={`min-w-0 flex-1 truncate text-sm ${unreadCount > 0 ? "font-semibold text-[#dce8ff]" : "text-[#aebfda]"}`}>{previewMessage(contact.lastMessage) || "Bắt đầu trao đổi công việc"}</div>
-                        {unreadCount > 0 && <span className="inline-flex min-w-6 h-6 shrink-0 items-center justify-center rounded-full bg-[#3f7cff] px-1.5 text-[11px] font-bold text-white shadow-[0_8px_20px_rgba(63,124,255,0.42)]">{unreadCount > 99 ? "99+" : unreadCount}</span>}
+                      <div className="mt-0.5 truncate text-[11px] font-semibold text-[#f4c76a]">{positionLabel}</div>
+                      <div className="mt-1.5 flex items-center gap-2">
+                        <div className={`min-w-0 flex-1 truncate text-xs ${unreadCount > 0 ? "font-semibold text-[#dce8ff]" : "text-[#aebfda]"}`}>{previewMessage(contact.lastMessage) || "Bắt đầu trao đổi công việc"}</div>
+                        {unreadCount > 0 && <span className="inline-flex min-w-5 h-5 shrink-0 items-center justify-center rounded-full bg-[#3f7cff] px-1.5 text-[10px] font-bold text-white shadow-[0_8px_20px_rgba(63,124,255,0.42)]">{unreadCount > 99 ? "99+" : unreadCount}</span>}
                       </div>
                     </div>
                   </div>
@@ -7190,18 +8947,18 @@ Nội dung: ${newTask.description}`
             const unreadCount = Number(group.unreadCount) || 0;
             const active = mode === "group" && String(group.id) === String(selectedGroupId);
             return (
-              <button key={entry.key} onClick={() => selectGroup(group.id)} className={`w-full border-b border-[#183052] px-5 py-4 text-left transition ${active ? "bg-[linear-gradient(90deg,rgba(45,91,179,0.40),rgba(18,39,76,0.26))]" : "hover:bg-white/[0.04]"}`}>
-                <div className="flex items-start gap-3.5">
-                  <AccountAvatar name={group.name} className="h-12 w-12 bg-[linear-gradient(135deg,#7b4cc8,#4e2d94)]" textClassName="text-xs" />
+              <button key={entry.key} onClick={() => selectGroup(group.id)} className={`w-full border-b border-[#183052] px-4 py-3 text-left transition ${active ? "bg-[linear-gradient(90deg,rgba(45,91,179,0.40),rgba(18,39,76,0.26))]" : "hover:bg-white/[0.04]"}`}>
+                <div className="flex items-start gap-3">
+                  <AccountAvatar name={group.name} className="h-10 w-10 bg-[linear-gradient(135deg,#7b4cc8,#4e2d94)]" textClassName="text-[10px]" />
                   <div className="min-w-0 flex-1">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className={`truncate text-[15px] ${unreadCount > 0 ? "font-bold text-white" : "font-semibold text-[#edf4ff]"}`}>{group.name}</div>
-                      <span className="shrink-0 text-[11px] text-[#9cb0d1]">{conversationTime(group.lastAt)}</span>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className={`truncate text-sm ${unreadCount > 0 ? "font-bold text-white" : "font-semibold text-[#edf4ff]"}`}>{group.name}</div>
+                      <span className="shrink-0 text-[10px] text-[#9cb0d1]">{conversationTime(group.lastAt)}</span>
                     </div>
-                    <div className="mt-0.5 text-xs text-[#a5b7d5]">{group.members?.length || 0} thành viên</div>
-                    <div className="mt-2 flex items-center gap-2">
-                      <div className={`min-w-0 flex-1 truncate text-sm ${unreadCount > 0 ? "font-semibold text-[#dce8ff]" : "text-[#aebfda]"}`}>{previewMessage(group.lastMessage) || "Trao đổi chung về công việc"}</div>
-                      {unreadCount > 0 && <span className="inline-flex min-w-6 h-6 shrink-0 items-center justify-center rounded-full bg-[#3f7cff] px-1.5 text-[11px] font-bold text-white">{unreadCount > 99 ? "99+" : unreadCount}</span>}
+                    <div className="mt-0.5 text-[11px] text-[#a5b7d5]">{group.members?.length || 0} thành viên</div>
+                    <div className="mt-1.5 flex items-center gap-2">
+                      <div className={`min-w-0 flex-1 truncate text-xs ${unreadCount > 0 ? "font-semibold text-[#dce8ff]" : "text-[#aebfda]"}`}>{previewMessage(group.lastMessage) || "Trao đổi chung về công việc"}</div>
+                      {unreadCount > 0 && <span className="inline-flex min-w-5 h-5 shrink-0 items-center justify-center rounded-full bg-[#3f7cff] px-1.5 text-[10px] font-bold text-white">{unreadCount > 99 ? "99+" : unreadCount}</span>}
                     </div>
                   </div>
                 </div>
@@ -7211,54 +8968,55 @@ Nội dung: ${newTask.description}`
         </div>
 
         {isAdmin && (
-          <div className="border-t border-[#183052] p-4">
-            <button onClick={openCreateGroup} className="w-full rounded-[16px] border border-[#2b456f] bg-white/[0.03] px-4 py-3 text-sm font-semibold text-white hover:bg-white/[0.07]">+ Tạo nhóm mới</button>
+          <div className="border-t border-[#183052] p-3">
+            <button onClick={openCreateGroup} className="w-full rounded-[12px] border border-[#2b456f] bg-white/[0.03] px-3 py-2 text-xs font-semibold text-white hover:bg-white/[0.07]">+ Tạo nhóm mới</button>
           </div>
         )}
       </section>
 
       <section className="flex min-h-0 flex-col bg-[radial-gradient(circle_at_top_left,rgba(65,119,255,0.09),transparent_26%),linear-gradient(180deg,#0a162b_0%,#07111f_100%)]">
-        <div className="border-b border-[#1d3155] bg-white/[0.02] px-6 py-4">
+        <div className="border-b border-[#1d3155] bg-white/[0.02] px-4 py-3">
           <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0 flex items-center gap-4">
+            <div className="min-w-0 flex items-center gap-3">
               {hasDestination && (
                 <div className="relative shrink-0">
                   <AccountAvatar
                     employee={mode === "direct" ? selectedEmployee : null}
                     email={mode === "direct" ? selectedContact?.email : ""}
                     name={mode === "group" ? selectedGroup?.name : accountDisplayName(selectedEmployee, selectedContact?.email)}
-                    className="h-16 w-16"
-                    textClassName="text-sm"
+                    className="h-12 w-12"
+                    textClassName="text-xs"
                   />
                   {mode === "direct" && selectedContact?.active && <span className="absolute bottom-0 right-0 h-4 w-4 rounded-full border-2 border-[#0a162b] bg-[#39cf72]" />}
                 </div>
               )}
               <div className="min-w-0">
-                <h2 className="truncate text-[22px] font-semibold text-white">{mode === "group" ? (selectedGroup?.name || "Chọn nhóm") : (hasDestination ? accountDisplayName(selectedEmployee, selectedContact?.email) : "Chọn người trao đổi")}</h2>
-                <div className="mt-1 flex flex-wrap items-center gap-2 text-sm text-[#a8bbdb]">
-                  <span>{mode === "group" && selectedGroup ? `${groupMembers.length} thành viên` : hasDestination ? accountPositionLabel(selectedEmployee, selectedContact?.role) : "Chọn cuộc trò chuyện bên trái"}</span>
-                  {mode === "direct" && selectedEmployee?.dept && <span className="rounded-full bg-[#103154] px-3 py-1 text-xs text-[#cce0ff]">{selectedEmployee.dept}</span>}
+                <h2 className="truncate text-lg font-semibold text-white">{mode === "group" ? (selectedGroup?.name || "Chọn nhóm") : (hasDestination ? accountDisplayName(selectedEmployee, selectedContact?.email) : "Chọn người trao đổi")}</h2>
+                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-[#a8bbdb]">
+                  <span className={mode === "direct" && hasDestination ? "font-semibold text-[#f4c76a]" : ""}>{mode === "group" && selectedGroup ? `${groupMembers.length} thành viên` : hasDestination ? accountPositionLabel(selectedEmployee, selectedContact?.role) : "Chọn cuộc trò chuyện bên trái"}</span>
+                  {mode === "direct" && selectedEmployee?.dept && <span className="rounded-full bg-[#103154] px-2.5 py-0.5 text-[11px] text-[#cce0ff]">{selectedEmployee.dept}</span>}
                 </div>
               </div>
             </div>
             {hasDestination && (
               <div className="flex items-center gap-3">
-                {mode === "direct" && <button onClick={() => setTab?.("giaoviec")} className="rounded-[15px] bg-[#2f69ff] px-5 py-3 text-sm font-semibold text-white shadow-[0_12px_30px_rgba(47,105,255,0.36)] hover:bg-[#3a75ff]">Xem công việc</button>}
-                {mode === "group" && isAdmin && <button onClick={openEditGroup} className="flex h-11 w-11 items-center justify-center rounded-[15px] border border-[#2b456f] bg-white/[0.04] text-xl text-white hover:bg-white/[0.08]">⋮</button>}
+                {mode === "direct" && <button onClick={() => setTab?.("giaoviec")} className="rounded-[12px] bg-[#2f69ff] px-3.5 py-2 text-xs font-semibold text-white shadow-[0_12px_30px_rgba(47,105,255,0.36)] hover:bg-[#3a75ff]">Xem công việc</button>}
+                {isAdmin && <button onClick={clearCurrentConversation} disabled={loading} className="rounded-[12px] border border-[#8a3a42] bg-[#331923] px-3.5 py-2 text-xs font-semibold text-[#ffb8b8] hover:bg-[#44202a] disabled:opacity-50">Xóa lịch sử</button>}
+                {mode === "group" && isAdmin && <button onClick={openEditGroup} className="flex h-9 w-9 items-center justify-center rounded-[12px] border border-[#2b456f] bg-white/[0.04] text-xl text-white hover:bg-white/[0.08]">⋮</button>}
               </div>
             )}
           </div>
         </div>
 
         {mode === "direct" && hasDestination && (
-          <div className="flex flex-wrap items-center gap-3 border-b border-[#1d3155] bg-white/[0.015] px-6 py-3">
-            <span className="rounded-full bg-[#11284b] px-4 py-2 text-sm font-semibold text-[#82adff]">{selectedDoingCount} đang làm</span>
-            <span className="rounded-full bg-[#2f1823] px-4 py-2 text-sm font-semibold text-[#ff7f8f]">{selectedOverdueCount} quá hạn</span>
-            <span className="rounded-full bg-[#162335] px-4 py-2 text-sm font-semibold text-[#b8c5d9]">{selectedCompletedCount} đã hoàn thành</span>
+          <div className="flex flex-wrap items-center gap-2 border-b border-[#1d3155] bg-white/[0.015] px-4 py-2">
+            <span className="rounded-full bg-[#11284b] px-3 py-1.5 text-xs font-semibold text-[#82adff]">{selectedDoingCount} đang làm</span>
+            <span className="rounded-full bg-[#2f1823] px-3 py-1.5 text-xs font-semibold text-[#ff7f8f]">{selectedOverdueCount} quá hạn</span>
+            <span className="rounded-full bg-[#162335] px-3 py-1.5 text-xs font-semibold text-[#b8c5d9]">{selectedCompletedCount} đã hoàn thành</span>
           </div>
         )}
 
-        <div ref={scrollRef} className="ktns-scrollbar flex-1 min-h-0 overflow-y-auto px-5 py-6 sm:px-8">
+        <div ref={scrollRef} onScroll={handleMessagesScroll} className="ktns-scrollbar flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-6">
           {!hasDestination && (
             <div className="flex h-full items-center justify-center">
               <div className="max-w-md rounded-[26px] border border-[#223b63] bg-white/[0.035] px-8 py-10 text-center shadow-[0_20px_60px_rgba(2,8,22,0.32)]">
@@ -7270,13 +9028,22 @@ Nội dung: ${newTask.description}`
 
           {hasDestination && (
             <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col">
-              <div className="mb-6 flex justify-center"><span className="rounded-full border border-[#233b62] bg-white/[0.04] px-4 py-2 text-[11px] font-medium text-[#a8bbdb]">Hôm nay, {new Date().toLocaleDateString("vi-VN")}</span></div>
+              {hasOlderMessages && (
+                <div className="mb-3 flex justify-center">
+                  <button type="button" onClick={() => loadMessagesPage("older").catch((err) => setError(err.message || "Không tải được tin nhắn cũ hơn"))} disabled={loadingOlder} className="rounded-full border border-[#29426e] bg-white/[0.04] px-3 py-1.5 text-[10px] font-semibold text-[#a8bbdb] disabled:opacity-50">
+                    {loadingOlder ? "Đang tải..." : "Tải tin cũ hơn"}
+                  </button>
+                </div>
+              )}
+              <div className="mb-4 flex justify-center"><span className="rounded-full border border-[#233b62] bg-white/[0.04] px-3 py-1.5 text-[10px] font-medium text-[#a8bbdb]">Hôm nay, {formatChatDate(new Date())}</span></div>
               {messages.length === 0 && <div className="m-auto rounded-[20px] border border-dashed border-[#29426e] bg-white/[0.03] px-6 py-5 text-center text-sm text-[#9eb2d7]">Chưa có nội dung trao đổi.</div>}
-              <div className="space-y-6">
+              <div className="space-y-4">
                 {messages.map((message) => {
                   const mine = message.senderEmail === authUser?.email;
-                  const time = message.createdAt ? new Date(message.createdAt).toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit" }) : "";
+                  const time = formatChatTime(message.createdAt);
                   const task = parseTaskMessage(message.body);
+                  if (task) task.messageId = message.id;
+                  const taskAcknowledged = task ? acknowledgedTaskMessageIds.has(Number(message.id)) : false;
                   const senderEmployee = employeeForEmail(message.senderEmail);
                   return (
                     <div key={message.id} className={`group flex items-end gap-3 ${mine ? "justify-end" : "justify-start"}`}>
@@ -7300,15 +9067,15 @@ Nội dung: ${newTask.description}`
                             </div>
                             <div className="flex flex-wrap gap-3 border-t border-[#1b3763] px-6 py-5">
                               <button type="button" onClick={() => setTab?.("giaoviec")} className="rounded-[15px] border border-[#476cae] bg-white/[0.03] px-5 py-3 text-sm font-semibold text-white hover:bg-white/[0.07]">Xem công việc</button>
-                              {!mine && <button type="button" onClick={() => acknowledgeTask(task)} disabled={loading} className="rounded-[15px] bg-[#2f69ff] px-5 py-3 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(47,105,255,0.34)] disabled:opacity-50">Đã nhận việc</button>}
+                              {!mine && <button type="button" onClick={() => acknowledgeTask(task)} disabled={loading || taskAcknowledged} className="rounded-[12px] bg-[#2f69ff] px-3.5 py-2 text-xs font-semibold text-white shadow-[0_12px_28px_rgba(47,105,255,0.34)] disabled:opacity-50">{taskAcknowledged ? "Đã nhận" : "Đã nhận việc"}</button>}
                             </div>
                           </div>
                         ) : (
-                          <div className={`rounded-[19px] px-5 py-3.5 text-[15px] leading-relaxed shadow-[0_16px_36px_rgba(2,8,23,0.20)] ${mine ? "rounded-br-md bg-[linear-gradient(135deg,#2859d8,#356dff)] text-white" : "rounded-bl-md border border-[#263f67] bg-[linear-gradient(180deg,rgba(255,255,255,0.085),rgba(255,255,255,0.045))] text-[#edf4ff]"}`}>
-                            <div className="whitespace-pre-wrap">{message.body}</div>
+                          <div className={`rounded-[16px] px-4 py-2.5 text-sm leading-relaxed shadow-[0_16px_36px_rgba(2,8,23,0.20)] ${mine ? "rounded-br-md bg-[linear-gradient(135deg,#2859d8,#356dff)] text-white" : "rounded-bl-md border border-[#263f67] bg-[linear-gradient(180deg,rgba(255,255,255,0.085),rgba(255,255,255,0.045))] text-[#edf4ff]"}`}>
+                            <div className="whitespace-pre-wrap">{displayChatBody(message.body)}</div>
                           </div>
                         )}
-                        <div className={`mt-2 flex items-center gap-1.5 px-1 text-[11px] ${mine ? "justify-end text-[#8db6ff]" : "justify-start text-[#8ea7d2]"}`}>
+                        <div className={`mt-1.5 flex items-center gap-1.5 px-1 text-[10px] ${mine ? "justify-end text-[#8db6ff]" : "justify-start text-[#8ea7d2]"}`}>
                           {time && <span>{time}</span>}
                           {mine && mode === "direct" && (
                             <span className={`inline-flex items-center ${message.readAt ? "text-[#6fb5ff]" : "text-[#9eb2d7]"}`} title={message.readAt ? "Đã xem" : "Đã gửi"}>
@@ -7327,17 +9094,17 @@ Nội dung: ${newTask.description}`
           )}
         </div>
 
-        <div className="border-t border-[#1d3155] bg-[linear-gradient(180deg,rgba(10,22,43,0.88),rgba(7,17,31,0.96))] px-5 py-5 sm:px-8">
+        <div className="domix-chat-composer border-t border-transparent bg-[linear-gradient(180deg,rgba(7,17,31,0),rgba(7,17,31,0.42))] px-4 pb-4 pt-2 sm:px-6">
           {error && <div className="mx-auto mb-3 max-w-5xl rounded-2xl border border-[#5b2730] bg-[#32171d]/90 px-4 py-2.5 text-xs text-[#ffb6ae]">{error}</div>}
-          <div className="mx-auto max-w-5xl">
-            <div className="flex items-end gap-3 rounded-[22px] border border-[#29426e] bg-[#091326] p-2.5 shadow-[0_15px_40px_rgba(2,8,23,0.30)] focus-within:border-[#4475ce]">
+          <div className="mx-auto max-w-5xl px-1">
+            <div className="domix-chat-composer-box flex items-end gap-2 rounded-[28px] border border-white/[0.12] bg-white/[0.055] p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04),0_14px_35px_rgba(2,8,23,0.18)] transition-colors focus-within:border-[#5f86d8]/70">
               {isAdmin && (
                 <button
                   type="button"
                   onClick={openTaskAssignment}
-                  disabled={mode !== "direct" || !selectedEmail || loading}
-                  title={mode === "direct" && selectedEmail ? "Giao việc cho người đang chat" : "Chọn một người để giao việc"}
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[16px] bg-[linear-gradient(135deg,#8cb6ff,#4d86ff)] text-[30px] font-light text-[#0a1730] shadow-[0_12px_30px_rgba(74,130,255,0.35)] disabled:opacity-40"
+                  disabled={!canAssignTaskFromChat || loading}
+                  title={canAssignTaskFromChat ? (mode === "group" ? "Giao việc vào nhóm đang chat" : "Giao việc cho người đang chat") : "Chọn người hoặc nhóm để giao việc"}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[linear-gradient(135deg,#8cb6ff,#4d86ff)] text-xl font-light text-[#0a1730] shadow-[0_10px_24px_rgba(74,130,255,0.28)] disabled:opacity-40"
                 >+
                 </button>
               )}
@@ -7349,11 +9116,11 @@ Nội dung: ${newTask.description}`
                 disabled={!hasDestination || loading}
                 rows={1}
                 placeholder={hasDestination ? "Nhập tin nhắn..." : "Chọn cuộc trò chuyện trước"}
-                className="ktns-scrollbar max-h-[132px] min-h-[48px] flex-1 resize-none border-0 bg-transparent px-3 py-3 text-sm leading-6 text-white placeholder:text-[#7289ad] focus:outline-none focus:ring-0 disabled:text-[#7289ad]"
+                className="domix-chat-input ktns-scrollbar max-h-[112px] min-h-[38px] flex-1 resize-none border-0 bg-transparent px-3 py-2 text-sm leading-6 text-white placeholder:text-[#7289ad] focus:outline-none focus:ring-0 disabled:text-[#7289ad]"
               />
-              <button onClick={send} disabled={!hasDestination || !input.trim() || loading} className="h-12 shrink-0 rounded-[16px] bg-[#2f69ff] px-6 text-sm font-semibold text-white shadow-[0_12px_28px_rgba(47,105,255,0.34)] disabled:bg-[#41516d] disabled:text-[#9eb2d7]">{loading ? "Đang gửi" : "Gửi"}</button>
+              <button onClick={send} disabled={!hasDestination || !input.trim() || loading} className="h-9 shrink-0 rounded-full bg-[#3d6ef4] px-4 text-xs font-semibold text-white shadow-[0_10px_22px_rgba(47,105,255,0.25)] transition-colors hover:bg-[#4a7cff] disabled:bg-[#41516d]/70 disabled:text-[#9eb2d7]">{loading ? "Đang gửi" : "Gửi"}</button>
             </div>
-            <div className="mt-2 px-2 text-[11px] text-[#7f95bb]">Enter để gửi · Shift + Enter để xuống dòng</div>
+            <div className="mt-1 px-4 text-[10px] text-[#6f83a8]">Enter để gửi · Shift + Enter để xuống dòng</div>
           </div>
         </div>
       </section>
@@ -7392,6 +9159,9 @@ Nội dung: ${newTask.description}`
               </div>
             </div>
             <div className="flex justify-end gap-2 border-t border-[#e7e0d6] bg-white/70 px-6 py-4">
+              {groupForm.id && (
+                <button onClick={removeGroup} disabled={loading} className="mr-auto rounded-full border border-[#dfb7b2] bg-[#fff5f4] px-5 py-2.5 text-sm font-semibold text-[#b5342e] disabled:opacity-40">Xóa nhóm</button>
+              )}
               <button onClick={() => setShowGroupForm(false)} className="rounded-full border border-[#ddd6cb] bg-white px-5 py-2.5 text-sm font-semibold text-[#53617a]">Hủy</button>
               <button onClick={saveGroup} disabled={!groupForm.name.trim() || loading} className="rounded-full bg-[#2f6f4f] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-40">{groupForm.id ? "Lưu thay đổi" : "Tạo nhóm"}</button>
             </div>
@@ -7405,7 +9175,7 @@ Nội dung: ${newTask.description}`
             <div className="flex items-start justify-between gap-4 border-b border-[#e7e0d6] px-6 py-5">
               <div>
                 <h3 className="domix-chat-primary ktns-serif text-2xl font-semibold text-[#243653]">Giao việc ngay trong chat</h3>
-                <p className="domix-chat-muted mt-1 text-xs text-[#837d74]">Người nhận: {employees.find((item) => item.id === Number(taskForm.employeeId))?.name || selectedEmail}</p>
+                <p className="domix-chat-muted mt-1 text-xs text-[#837d74]">Người nhận: {taskRecipientLabel}</p>
               </div>
               <button onClick={() => setShowTaskForm(false)} className="rounded-full border border-[#ddd6cb] bg-white px-4 py-2 text-xs font-semibold text-[#59667a]">Đóng</button>
             </div>
@@ -7419,7 +9189,7 @@ Nội dung: ${newTask.description}`
                 </label>
                 <label className="flex flex-col gap-2 text-sm font-semibold text-[#2c3d58]">
                   Chế độ
-                  <select value={taskForm.visibility} onChange={(event) => setTaskForm({ ...taskForm, visibility: event.target.value })} className="rounded-2xl border border-[#dfd8ce] bg-white px-4 py-3 text-sm font-normal">
+                  <select value={mode === "group" ? "public" : taskForm.visibility} onChange={(event) => setTaskForm({ ...taskForm, visibility: event.target.value })} disabled={mode === "group"} className="rounded-2xl border border-[#dfd8ce] bg-white px-4 py-3 text-sm font-normal disabled:bg-[#f3eee7] disabled:text-[#8a8176]">
                     <option value="private">Riêng tư</option>
                     <option value="public">Công khai</option>
                   </select>
@@ -7454,7 +9224,9 @@ Nội dung: ${newTask.description}`
   );
 }
 
-function HoTroKhachHang({ cases, setCases, employees, orders, setOrders }) {
+function HoTroKhachHang({ cases, setCases, employees, orders, setOrders, dataLoader }) {
+  const [activeTableView, setActiveTableView] = useState("active");
+  const lazyTableData = useLazyTableData(activeTableView, { active: ["supportCases", "orders"], history: ["supportCases"] }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   const supportStaff = employees.filter((e) => e.roleType === "ky_thuat" || e.roleType === "cskh");
   const blankForm = { customerName: "", phone: "", issue: "", employeeId: supportStaff[0]?.id || "" };
   const [form, setForm] = useState(blankForm);
@@ -7507,13 +9279,31 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders }) {
   };
   const removeCase = (id) => setCases((prev) => prev.filter((c) => c.id !== id));
 
+  if (!lazyTableData.ready) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={[{ id: "active", label: "Đang hỗ trợ", icon: Headphones }, { id: "history", label: "Lịch sử hoàn tất", icon: Archive }]} />
+        <DataLoadingPanel title="Đang tải dữ liệu hỗ trợ" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
+      <SectionViewSwitcher
+        value={activeTableView}
+        onChange={setActiveTableView}
+        options={[
+          { id: "active", label: "Đang hỗ trợ", icon: Headphones, count: activeCases.length },
+          { id: "history", label: "Lịch sử hoàn tất", icon: Archive, count: cases.filter((item) => item.status === "hoan_tat").length },
+        ]}
+      />
       <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
         <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
         <span>Theo dõi ai đang hỗ trợ khách nào ngay lúc này — tạo ca hỗ trợ mới sẽ <strong className="text-charcoal">tự cảnh báo nếu khách đó đã có người khác đang xử lý</strong>, tránh 2-3 người cùng nhắn/gọi 1 khách gây phiền. Sale chốt đơn xong bấm "Gửi hỗ trợ khách hàng" ở tab CRM sẽ tự đẩy tên/SĐT/sản phẩm/thời hạn sang đây (<strong className="text-charcoal">không kèm doanh thu</strong> — bảo mật, bên hỗ trợ không cần và không được xem số tiền). Ai rảnh thì bấm nhận ca. Xong việc ghi kết quả rồi bấm "Hoàn tất" — kết quả tự động gửi ngược về đúng đơn hàng bên CRM để Sale xem lại.</span>
       </div>
 
+      {activeTableView === "active" && (<>
       <div className="grid grid-cols-4 gap-4">
         <KpiCard icon={Headphones} label="Đang hỗ trợ" value={activeCases.length} tone={activeCases.length > 0 ? "down" : "up"} />
         <KpiCard icon={UserCheck} label="Nhân viên đang bận" value={Object.keys(busyByEmployee).length} />
@@ -7625,7 +9415,9 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders }) {
         </div>
       </div>
 
-      {cases.filter((c) => c.status === "hoan_tat").length > 0 && (
+      </>)}
+
+      {activeTableView === "history" && (
         <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
           <div className="px-4 pt-3 pb-1 flex items-center justify-between flex-wrap gap-2">
             <div className="text-xs font-semibold text-ink uppercase">Lịch sử đã hoàn tất</div>
@@ -7636,15 +9428,15 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders }) {
                 <ChevronRight size={11} className={`transition-transform ${showHistoryPicker ? "rotate-90" : ""}`} />
               </button>
               {showHistoryPicker && (
-                <div className="absolute top-full right-0 mt-1 bg-white border border-paper-line rounded-md shadow-lg p-3 z-20 w-64">
+                <div className="absolute top-full right-0 mt-1 w-[min(26rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] bg-white border border-paper-line rounded-md shadow-lg p-3 z-20">
                   <button onClick={() => { setHistoryMode("today"); setShowHistoryPicker(false); }} className={`w-full text-left text-xs px-2 py-1.5 rounded ${historyMode === "today" ? "bg-paper font-medium" : "hover:bg-paper"}`}>Hôm nay</button>
                   <button onClick={() => { setHistoryMode("all"); setShowHistoryPicker(false); }} className={`w-full text-left text-xs px-2 py-1.5 rounded ${historyMode === "all" ? "bg-paper font-medium" : "hover:bg-paper"}`}>Toàn bộ lịch sử</button>
                   <div className={`px-2 py-1.5 rounded ${historyMode === "custom" ? "bg-paper" : ""}`}>
-                    <button onClick={() => setHistoryMode("custom")} className={`text-xs mb-1.5 ${historyMode === "custom" ? "font-medium" : ""}`}>Tuỳ chỉnh khoảng ngày</button>
-                    <div className="flex items-center gap-1">
-                      <input type="date" value={historyFrom} onChange={(e) => { setHistoryFrom(e.target.value); setHistoryMode("custom"); }} className="border border-paper-line rounded px-1.5 py-1 text-[11px] flex-1" />
+                    <button onClick={() => setHistoryMode("custom")} className={`text-xs mb-2 ${historyMode === "custom" ? "font-medium" : ""}`}>Tuỳ chỉnh khoảng ngày</button>
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+                      <input type="date" value={historyFrom} onChange={(e) => { setHistoryFrom(e.target.value); setHistoryMode("custom"); }} className="min-w-0 w-full border border-paper-line rounded px-2 py-1.5 text-xs" />
                       <span className="text-muted text-[10px]">→</span>
-                      <input type="date" value={historyTo} onChange={(e) => { setHistoryTo(e.target.value); setHistoryMode("custom"); }} className="border border-paper-line rounded px-1.5 py-1 text-[11px] flex-1" />
+                      <input type="date" value={historyTo} onChange={(e) => { setHistoryTo(e.target.value); setHistoryMode("custom"); }} className="min-w-0 w-full border border-paper-line rounded px-2 py-1.5 text-xs" />
                     </div>
                   </div>
                 </div>
@@ -7687,14 +9479,21 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders }) {
   );
 }
 
-function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs, reportYear, reportMonth }) {
-  const isAdmin = authUser?.role === "admin";
+function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs, reportYear, reportMonth, realtimeUnreadTaskIds = [] }) {
+  const isAdmin = isAdminRole(authUser?.role) || isAccountantRole(authUser?.role);
   const currentEmail = (authUser?.email || "").trim().toLowerCase();
+  const currentEmployee = employeeForAuthUser(employees, authUser);
+  const currentIsAccountant = !isAdmin && (isAccountantRole(authUser?.role) || employeeIsAccountant(currentEmployee));
+  const currentCanReportTask = Boolean(currentEmployee) && !isAdmin && !currentIsAccountant && currentEmployee?.status !== "inactive";
+  const canReviewTasks = isAdmin || currentIsAccountant;
   const [showForm, setShowForm] = useState(false);
   const [filterDate, setFilterDate] = useState(GIAOVIEC_TODAY);
-  const [viewMonthMode, setViewMonthMode] = useState(false);
+  // Nhân viên mở tab sẽ thấy ngay toàn bộ việc đang làm của mình, không bị ẩn bởi bộ lọc một ngày.
+  const [viewMonthMode, setViewMonthMode] = useState(() => !isAdmin && !currentIsAccountant);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [returnTarget, setReturnTarget] = useState(null);
+  const [returnReason, setReturnReason] = useState("");
   const firstEmp = employees[0];
   const [form, setForm] = useState({
     date: GIAOVIEC_TODAY,
@@ -7737,8 +9536,10 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
       targetValue: Number(form.targetValue) || 0,
       description: form.description.trim(),
       doneManual: false,
+      completionStatus: "",
       visibility: form.visibility === "public" ? "public" : "private",
       createdByEmail: authUser?.email || "",
+      createdAt: new Date().toISOString(),
     };
     setTasks((current) => [...current, newTask]);
     setShowForm(false);
@@ -7769,48 +9570,158 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
     }
   };
 
-  const toggleDone = (id) => {
-    if (!isAdmin) return;
-    setTasks((current) => current.map((task) => task.id === id ? { ...task, doneManual: !task.doneManual } : task));
-  };
   const removeTask = (id) => {
     if (!isAdmin) return;
     setTasks((current) => current.filter((task) => task.id !== id));
   };
   const nameOf = (id) => employees.find((employee) => employee.id === id)?.name || "—";
   const employeeEmailOf = (id) => (employees.find((employee) => employee.id === id)?.email || "").trim().toLowerCase();
+  const taskOwnerName = (task) => nameOf(task.employeeId);
+  const notifyTaskOwner = async (task, message) => {
+    const email = employeeEmailOf(task.employeeId);
+    if (!email) return;
+    try {
+      await sendChatMessage(email, message);
+    } catch {
+      // Mất kết nối chat không được làm hỏng thao tác đánh giá công việc.
+    }
+  };
+  const reportTaskDone = (row) => {
+    if (!currentCanReportTask || Number(row.employeeId) !== Number(currentEmployee?.id)) return;
+    const submittedAt = nowStamp();
+    setTasks((current) => current.map((task) => task.id === row.id ? {
+      ...task,
+      doneManual: false,
+      completionStatus: "submitted",
+      completionSubmittedAt: submittedAt,
+      completionSubmittedByEmail: authUser?.email || "",
+      completionSubmittedByName: taskOwnerName(task),
+      completionReviewedAt: "",
+      completionReviewedByEmail: "",
+      completionReviewedByName: "",
+    } : task));
+    setNotice("Đã báo hoàn thành công việc. Kế toán hoặc Sếp sẽ kiểm tra và xác nhận.");
+  };
+  const approveTaskDone = (row) => {
+    if (!canReviewTasks) return;
+    const reviewedAt = nowStamp();
+    const reviewerName = currentIsAccountant ? "Kế toán" : "Sếp/Admin";
+    setTasks((current) => current.map((task) => task.id === row.id ? {
+      ...task,
+      doneManual: true,
+      completionStatus: "approved",
+      completionReviewedAt: reviewedAt,
+      completionReviewedByEmail: authUser?.email || "",
+      completionReviewedByName: reviewerName,
+      completionReturnReason: "",
+    } : task));
+    notifyTaskOwner(row, `Công việc đã được ${reviewerName} xác nhận hoàn thành.\nNgày: ${row.date}\nNội dung: ${row.description}`);
+    setNotice(`Đã xác nhận ${taskOwnerName(row)} hoàn thành công việc.`);
+  };
+  const openReturnTask = (row) => {
+    if (!canReviewTasks) return;
+    setReturnTarget(row);
+    setReturnReason("");
+  };
+  const confirmReturnTask = () => {
+    if (!returnTarget || !canReviewTasks) return;
+    const reason = returnReason.trim() || "Công việc chưa đạt yêu cầu, cần xử lý lại.";
+    const returnedAt = nowStamp();
+    const reviewerName = currentIsAccountant ? "Kế toán" : "Sếp/Admin";
+    setTasks((current) => current.map((task) => task.id === returnTarget.id ? {
+      ...task,
+      doneManual: false,
+      completionStatus: "returned",
+      completionReturnReason: reason,
+      completionReturnedAt: returnedAt,
+      completionReturnedByEmail: authUser?.email || "",
+      completionReturnedByName: reviewerName,
+    } : task));
+    notifyTaskOwner(returnTarget, `Công việc chưa được xác nhận hoàn thành và đã được trả lại.\nNgày: ${returnTarget.date}\nNội dung: ${returnTarget.description}\nLý do: ${reason}`);
+    setNotice(`Đã trả công việc về cho ${taskOwnerName(returnTarget)}.`);
+    setReturnTarget(null);
+    setReturnReason("");
+  };
 
-  const permittedTasks = isAdmin
+  const permittedTasks = (isAdmin || currentIsAccountant)
     ? tasks
     : tasks.filter((task) => task.visibility !== "private" || employeeEmailOf(task.employeeId) === currentEmail);
-  const filtered = viewMonthMode
-    ? permittedTasks.filter((task) => { const date = new Date(task.date); return date.getFullYear() === reportYear && date.getMonth() + 1 === reportMonth; })
-    : permittedTasks.filter((task) => task.date === filterDate);
-  const statusOrder = { canh_bao: 0, dang_lam: 1, dat: 2 };
+  const filtered = currentCanReportTask && viewMonthMode
+    ? permittedTasks.filter((task) => Number(task.employeeId) === Number(currentEmployee?.id) && !task.doneManual)
+    : viewMonthMode
+      ? permittedTasks.filter((task) => { const date = new Date(task.date); return date.getFullYear() === reportYear && date.getMonth() + 1 === reportMonth; })
+      : permittedTasks.filter((task) => task.date === filterDate);
+  const statusOrder = { can_lam_lai: 0, canh_bao: 1, cho_duyet: 2, dang_lam: 3, dat: 4 };
   const rows = filtered.map((task) => {
     const progress = computeTaskProgress(task, orders, marketingLogs);
     const status = evaluateTaskStatus(task, progress.value);
     return { ...task, progress, status };
-  }).sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
-  const warnCount = rows.filter((row) => row.status === "canh_bao").length;
+  }).sort((a, b) => (
+    statusOrder[a.status] - statusOrder[b.status]
+    || String(b.createdAt || b.date || "").localeCompare(String(a.createdAt || a.date || ""))
+    || Number(b.id || 0) - Number(a.id || 0)
+  ));
   const doneCount = rows.filter((row) => row.status === "dat").length;
+  const pendingReviewCount = rows.filter((row) => row.status === "cho_duyet").length;
   const unassigned = isAdmin ? employees.filter((employee) => !filtered.some((task) => task.employeeId === employee.id)) : [];
+
+  const renderTaskStatus = (row) => {
+    if (row.status === "dat") return <StampBadge text="ĐÃ XÁC NHẬN" gold />;
+    if (row.status === "cho_duyet") return <StampBadge text="CHỜ KIỂM TRA" muted />;
+    if (row.status === "can_lam_lai") return <StampBadge text="TRẢ VỀ LÀM LẠI" />;
+    if (row.status === "dang_lam") return <StampBadge text="ĐANG LÀM" muted />;
+    return <StampBadge text="CẢNH BÁO" />;
+  };
+
+  const renderTaskActions = (row) => {
+    const reviewStatus = row.doneManual ? "approved" : (row.completionStatus || "");
+    const ownTask = Number(row.employeeId) === Number(currentEmployee?.id);
+    if (canReviewTasks && reviewStatus === "submitted") {
+      return (
+        <>
+          <button onClick={() => approveTaskDone(row)} className="text-[10px] px-2 py-1 rounded border border-ledger-green/30 bg-ledger-green/10 text-ledger-green hover:bg-ledger-green/15 flex items-center gap-1 font-medium">
+            <CheckCircle2 size={10} /> Xác nhận
+          </button>
+          <button onClick={() => openReturnTask(row)} className="text-[10px] px-2 py-1 rounded border border-stamp-red/30 bg-stamp-red/10 text-stamp-red hover:bg-stamp-red/15 flex items-center gap-1 font-medium">
+            <X size={10} /> Chưa đạt
+          </button>
+        </>
+      );
+    }
+    if (currentCanReportTask && ownTask && reviewStatus !== "approved" && reviewStatus !== "submitted") {
+      return (
+        <button onClick={() => reportTaskDone(row)} className="text-[10px] px-2 py-1 rounded border border-[#315fae]/30 text-[#315fae] hover:bg-[#315fae]/5 flex items-center gap-1 font-medium">
+          <Send size={10} /> {reviewStatus === "returned" ? "Báo hoàn thành lại" : "Báo hoàn thành"}
+        </button>
+      );
+    }
+    if (reviewStatus === "submitted") return <span className="text-[10px] text-muted">Đã báo hoàn thành</span>;
+    if (reviewStatus === "returned") return <span className="text-[10px] text-stamp-red">Đang chờ làm lại</span>;
+    if (reviewStatus === "approved") return <span className="text-[10px] text-ledger-green">Đã xác nhận</span>;
+    return <span className="text-[10px] text-muted">Chưa báo hoàn thành</span>;
+  };
 
   return (
     <div className="flex flex-col gap-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <KpiCard icon={ClipboardList} label={viewMonthMode ? `Nhiệm vụ kỳ ${reportMonth}/${reportYear}` : "Nhiệm vụ hôm nay"} value={filtered.length} />
+        <KpiCard icon={ClipboardList} label={viewMonthMode && currentCanReportTask ? "Việc đang làm của tôi" : (viewMonthMode ? `Nhiệm vụ kỳ ${reportMonth}/${reportYear}` : "Nhiệm vụ hôm nay")} value={filtered.length} />
         <KpiCard icon={CheckCircle2} label="Đã đạt chỉ tiêu" value={doneCount} tone="up" />
-        <KpiCard icon={AlertTriangle} label="Cảnh báo — chưa có tiến độ" value={warnCount} tone={warnCount > 0 ? "down" : "up"} />
+        <KpiCard icon={AlertTriangle} label={canReviewTasks ? "Chờ kiểm tra" : "Chờ xác nhận"} value={pendingReviewCount} tone={pendingReviewCount > 0 ? "down" : "up"} />
         <KpiCard icon={UserCheck} label={isAdmin ? "Chưa được giao việc" : "Việc của tôi / công khai"} value={isAdmin ? unassigned.length : filtered.length} tone={isAdmin && unassigned.length > 0 ? "down" : "up"} />
       </div>
 
       {notice && <div className="bg-ledger-green/10 border border-ledger-green/20 rounded-lg px-3 py-2 text-xs text-ledger-green">{notice}</div>}
+      {currentCanReportTask && realtimeUnreadTaskIds.length > 0 && (
+        <div className="rounded-lg border border-[#4f7ee8]/35 bg-[#4f7ee8]/10 px-3 py-2 text-xs text-[#315fae] flex items-center gap-2">
+          <ClipboardList size={14} className="shrink-0" />
+          <span><strong>{realtimeUnreadTaskIds.length} công việc mới</strong> vừa được đồng bộ. Danh sách tự cập nhật, không cần tải lại trang.</span>
+        </div>
+      )}
 
       <div className="flex justify-between items-center flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => setViewMonthMode((value) => !value)} className={`text-xs px-3 py-2 rounded-md border flex items-center gap-1.5 ${viewMonthMode ? "bg-ink text-white border-ink" : "border-paper-line text-ink-light"}`}>
-            <CalendarCheck size={12} /> {viewMonthMode ? `Xem cả kỳ ${reportMonth}/${reportYear}` : "Xem theo ngày"}
+            <CalendarCheck size={12} /> {currentCanReportTask ? (viewMonthMode ? "Việc đang làm của tôi" : "Xem theo ngày") : (viewMonthMode ? `Xem cả kỳ ${reportMonth}/${reportYear}` : "Xem theo ngày")}
           </button>
           {!viewMonthMode && <input type="date" value={filterDate} onChange={(event) => setFilterDate(event.target.value)} className="border border-paper-line rounded-md px-3 py-2 text-sm ktns-mono" />}
         </div>
@@ -7895,6 +9806,32 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
         </div>
       )}
 
+      {returnTarget && (
+        <div className="fixed inset-0 z-[81] bg-ink/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl border border-paper-line shadow-2xl w-full max-w-md p-5" onClick={(event) => event.stopPropagation()}>
+            <h3 className="ktns-serif font-semibold text-stamp-red mb-1 flex items-center gap-1.5"><X size={15} /> Trả công việc về user</h3>
+            <p className="text-xs text-muted mb-3">
+              Công việc của <strong className="text-charcoal">{taskOwnerName(returnTarget)}</strong> sẽ được báo lại để xử lý tiếp.
+            </p>
+            <label className="text-xs text-muted flex flex-col gap-1">
+              Lý do chưa xác nhận hoàn thành
+              <textarea
+                value={returnReason}
+                onChange={(event) => setReturnReason(event.target.value)}
+                rows={4}
+                autoFocus
+                placeholder="VD: Chưa đủ bằng chứng/kết quả, cần bổ sung lại..."
+                className="border border-paper-line rounded px-2.5 py-2 text-sm resize-none"
+              />
+            </label>
+            <div className="flex flex-wrap gap-2 mt-4 justify-end">
+              <button onClick={() => { setReturnTarget(null); setReturnReason(""); }} className="border border-paper-line text-sm px-3 py-1.5 rounded-md text-muted">Huỷ</button>
+              <button onClick={confirmReturnTask} className="bg-stamp-red text-white text-sm px-3 py-1.5 rounded-md hover:opacity-90">Trả về user</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="max-h-[480px] overflow-y-auto ktns-scrollbar">
           <table className="w-full text-sm">
@@ -7906,22 +9843,36 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
                 <th className="px-4 py-2.5 text-right">Tiến độ thực tế</th>
                 <th className="px-4 py-2.5">Trạng thái</th>
                 <th className="px-4 py-2.5">Hiển thị</th>
-                {isAdmin && <th className="px-4 py-2.5"></th>}
+                <th className="px-4 py-2.5 text-right">Thao tác</th>
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && <tr><td colSpan={isAdmin ? 7 : 6} className="px-4 py-6 text-center text-xs text-muted">Chưa có công việc phù hợp.</td></tr>}
-              {rows.map((row) => (
-                <tr key={row.id} className={`border-t border-paper-line ${row.status === "canh_bao" ? "ktns-warn-row" : ""}`}>
-                  <td className="px-4 py-2"><div className="font-medium">{nameOf(row.employeeId)}</div><div className="text-[11px] text-muted">{ROLE_META[employees.find((employee) => employee.id === row.employeeId)?.roleType]?.label}</div></td>
+              {rows.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-xs text-muted">Chưa có công việc phù hợp.</td></tr>}
+              {rows.map((row) => {
+                const isRealtimeNew = realtimeUnreadTaskIds.includes(String(row.id));
+                return (
+                <tr key={row.id} className={`border-t border-paper-line transition-colors ${isRealtimeNew ? "bg-[#315fae]/10" : ""} ${["canh_bao", "can_lam_lai"].includes(row.status) ? "ktns-warn-row" : ""}`}>
+                  <td className="px-4 py-2"><div className="font-medium flex items-center gap-1.5">{nameOf(row.employeeId)}{isRealtimeNew && <span className="rounded bg-stamp-red px-1.5 py-0.5 text-[9px] font-bold text-white">MỚI</span>}</div><div className="text-[11px] text-muted">{ROLE_META[employees.find((employee) => employee.id === row.employeeId)?.roleType]?.label}</div></td>
                   <td className="px-4 py-2 text-xs text-muted max-w-sm">{row.description}</td>
                   <td className="px-4 py-2 text-right ktns-mono text-xs">{row.targetType === "khac" ? "—" : `${row.targetValue} ${TASK_TYPES[row.targetType].unit}`}</td>
                   <td className="px-4 py-2 text-right ktns-mono text-xs font-medium">{row.progress.label}</td>
-                  <td className="px-4 py-2">{row.status === "dat" && <StampBadge text="ĐẠT CHỈ TIÊU" gold />}{row.status === "dang_lam" && <StampBadge text="ĐANG LÀM" muted />}{row.status === "canh_bao" && <StampBadge text="CẢNH BÁO" />}</td>
+                  <td className="px-4 py-2">
+                    <div className="flex flex-col items-start gap-1">
+                      {renderTaskStatus(row)}
+                      {row.completionStatus === "submitted" && <span className="text-[10px] text-muted">User báo lúc {row.completionSubmittedAt || "—"}</span>}
+                      {row.completionStatus === "returned" && row.completionReturnReason && <span className="text-[10px] text-stamp-red max-w-[220px]">{row.completionReturnReason}</span>}
+                    </div>
+                  </td>
                   <td className="px-4 py-2 text-xs text-muted">{row.visibility === "public" ? "Công khai" : "Riêng tư"}</td>
-                  {isAdmin && <td className="px-4 py-2 text-right"><div className="flex items-center justify-end gap-2">{row.targetType === "khac" && <button onClick={() => toggleDone(row.id)} className="text-[10px] border border-paper-line rounded px-2 py-1 text-ink-light">{row.doneManual ? "Bỏ đánh dấu" : "Đánh dấu xong"}</button>}<button onClick={() => removeTask(row.id)} className="text-muted hover:text-stamp-red"><Trash2 size={14} /></button></div></td>}
+                  <td className="px-4 py-2 text-right">
+                    <div className="flex flex-wrap items-center justify-end gap-2">
+                      {renderTaskActions(row)}
+                      {isAdmin && <button onClick={() => removeTask(row.id)} className="text-muted hover:text-stamp-red" title="Xóa công việc"><Trash2 size={14} /></button>}
+                    </div>
+                  </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -7937,15 +9888,24 @@ function nowStamp() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-function exportOrdersExcel(orders, employees) {
+function exportOrdersExcel(orders, employees, inventory = []) {
   const wb = XLSX.utils.book_new();
   const nameOf = (id) => employees.find((e) => e.id === id)?.name || "—";
 
-  const rows = orders.map((o) => ({
+  const rows = orders.map((o) => {
+    const duration = crmOrderDurationInfo(o, inventory);
+    return ({
     "Ngày tháng": o.date,
+    "Ngày bắt đầu sử dụng": o.serviceStartDate || o.date || "",
     "Khách hàng": o.customerName,
     "SĐT": o.phone,
     "Email": o.email,
+    "Sản phẩm": o.importedProductName || o.productName || "",
+    "Thời hạn": duration.label || "",
+    "Số tháng": duration.months || 0,
+    "Số ngày": duration.days || 0,
+    "Ngày hết hạn": o.expiryDate || crmAddDurationToIsoDate(o.serviceStartDate || o.date, duration),
+    "IDTK / KEY": o.issuedKeyCode || "",
     "Nội dung chuyển khoản": o.note,
     "Nhân sự Sale": nameOf(o.saleEmployeeId),
     "Ngày nhận tiền": o.receivedAt,
@@ -7956,9 +9916,10 @@ function exportOrdersExcel(orders, employees) {
     "Ngày giờ xuất HĐ": o.invoiceDate,
     "Có chứng từ đính kèm": o.invoiceAttachmentData ? "Có" : "Không",
     "Lần liên hệ gần nhất": (o.contactLog || []).length ? o.contactLog[o.contactLog.length - 1].date : "",
-  }));
+  });
+  });
   const ws1 = XLSX.utils.json_to_sheet(rows);
-  ws1["!cols"] = [{ wch: 12 }, { wch: 22 }, { wch: 13 }, { wch: 24 }, { wch: 26 }, { wch: 14 }, { wch: 16 }, { wch: 13 }, { wch: 16 }, { wch: 18 }, { wch: 12 }, { wch: 18 }, { wch: 16 }, { wch: 18 }];
+  ws1["!cols"] = [{ wch: 12 }, { wch: 18 }, { wch: 22 }, { wch: 13 }, { wch: 24 }, { wch: 42 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 16 }, { wch: 26 }, { wch: 14 }, { wch: 16 }, { wch: 13 }, { wch: 16 }, { wch: 18 }, { wch: 12 }, { wch: 18 }, { wch: 16 }, { wch: 18 }];
   XLSX.utils.book_append_sheet(wb, ws1, "Đơn hàng");
 
   const bySale = {};
@@ -8015,7 +9976,229 @@ function exportDailyCallReportExcel(dailyContacts, dailyBySale, date, nameOf) {
   XLSX.writeFile(wb, `DOMIX_Bao_cao_goi_khach_${date}.xlsx`);
 }
 
-function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByEmployee, setTransactions, transactions, inventory, setInventory, distPartners, distOrders, setDistOrders, reportYear, reportMonth, pages, setSupportCases, customers, setCustomers, moveStock, authUser, debts, setDebts }) {
+
+
+const CRM_T7_COLUMNS = [
+  "STT", "NGÀY THÁNG", "HỌ TÊN / HỘ KINH DOANH / CÔNG TY", "SĐT", "MAIL",
+  "SẢN PHẨM", "IDTK / KEY", "SỐ TIỀN", "NỘI DUNG CHUYỂN KHOẢN", "NHÂN SỰ SALE",
+  "TÊN ĐƠN VỊ / NGƯỜI MUA", "MST / CCCD", "ĐỊA CHỈ", "NGÀY NHẬN TIỀN",
+  "SỐ TIỀN KẾ TOÁN XÁC NHẬN", "TÌNH TRẠNG HÓA ĐƠN", "SỐ HÓA ĐƠN", "NGÀY HÓA ĐƠN", "MISA AMIS",
+];
+
+const CRM_LEGACY_COLUMNS = [
+  "NGÀY THÁNG", "HỌ TÊN / HỘ KINH DOANH / CÔNG TY", "SĐT", "MAIL", "SẢN PHẨM",
+  "IDTK / KEY", "SỐ TIỀN", "NỘI DUNG CHUYỂN KHOẢN", "CCCD / MÃ SỐ THUẾ",
+  "NHÂN SỰ SALE", "SỐ TIỀN KẾ TOÁN XÁC NHẬN", "TÌNH TRẠNG HÓA ĐƠN",
+];
+
+function crmDetectImportLayout(matrix) {
+  const firstRows = (matrix || []).slice(0, 4).map((row) => (row || []).map(normalizeCrmImportText));
+  const first = firstRows[0] || [];
+  const isExtended = first.some((value) => value === "stt") || first.length >= 19;
+  if (isExtended) {
+    return {
+      type: "extended", columns: CRM_T7_COLUMNS,
+      stt: 0, date: 1, name: 2, phone: 3, email: 4, product: 5, key: 6,
+      amount: 7, note: 8, sale: 9, buyer: 10, tax: 11, address: 12,
+      receivedAt: 13, confirmedAmount: 14, invoiceStatus: 15, invoiceNo: 16,
+      invoiceDate: 17, misa: 18,
+    };
+  }
+  const hasLegacyHeader = first.some((value) => value.includes("ngay thang"))
+    && first.some((value) => value.includes("ho ten"));
+  if (hasLegacyHeader || first.length >= 10) {
+    return {
+      type: "legacy", columns: CRM_LEGACY_COLUMNS,
+      date: 0, name: 1, phone: 2, email: 3, product: 4, key: 5,
+      amount: 6, note: 7, tax: 8, sale: 9, confirmedAmount: 10, invoiceStatus: 11,
+      buyer: null, address: null, receivedAt: null, invoiceNo: null, invoiceDate: null, misa: null,
+    };
+  }
+  return null;
+}
+
+function crmImportCell(row, layout, field) {
+  const index = layout?.[field];
+  return Number.isInteger(index) && index >= 0 ? row?.[index] : "";
+}
+
+function normalizeCrmImportText(value) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function crmImportNumber(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const raw = String(value ?? "").trim();
+  if (!raw) return 0;
+  const normalized = raw.replace(/\s/g, "").replace(/\.(?=\d{3}(?:\D|$))/g, "").replace(/,/g, ".").replace(/[^\d.-]/g, "");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function crmImportPhone(value) {
+  let digits = String(value ?? "").replace(/\D/g, "");
+  if (!digits) return "";
+  if (digits.startsWith("84") && digits.length >= 11) digits = `0${digits.slice(2)}`;
+  if (digits.length === 9) digits = `0${digits}`;
+  return digits;
+}
+
+function crmImportEmail(value) {
+  const raw = String(value ?? "").trim();
+  const match = raw.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i);
+  return match ? match[0].replace(/[.,;]+$/, "") : raw.replace(/[.,;]+$/, "");
+}
+
+function crmImportCode(value) {
+  if (value === null || value === undefined || value === "") return "";
+  if (typeof value === "number" && Number.isFinite(value)) return String(Math.trunc(value));
+  return String(value).trim().replace(/\.0$/, "");
+}
+
+function crmImportTaxCode(value) {
+  let digits = String(value ?? "").replace(/\D/g, "");
+  if (digits.length === 9) digits = `0${digits}`;
+  return digits;
+}
+
+function crmImportDateParts(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return {
+      year: value.getFullYear(), month: value.getMonth() + 1, day: value.getDate(),
+      hour: value.getHours(), minute: value.getMinutes(), second: value.getSeconds(),
+    };
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const parsed = XLSX.SSF.parse_date_code(value);
+    if (parsed) return { year: parsed.y, month: parsed.m, day: parsed.d, hour: parsed.H || 0, minute: parsed.M || 0, second: Math.round(parsed.S || 0) };
+  }
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const iso = raw.match(/^(\d{4})[-/]([01]?\d)[-/]([0-3]?\d)(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (iso) return { year: Number(iso[1]), month: Number(iso[2]), day: Number(iso[3]), hour: Number(iso[4] || 0), minute: Number(iso[5] || 0), second: Number(iso[6] || 0) };
+  const vi = raw.match(/^([0-3]?\d)[-/]([01]?\d)[-/](\d{4})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?/);
+  if (vi) return { year: Number(vi[3]), month: Number(vi[2]), day: Number(vi[1]), hour: Number(vi[4] || 0), minute: Number(vi[5] || 0), second: Number(vi[6] || 0) };
+  return null;
+}
+
+function crmImportIsoDate(value) {
+  const p = crmImportDateParts(value);
+  if (!p) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${p.year}-${pad(p.month)}-${pad(p.day)}`;
+}
+
+function crmImportDateTime(value) {
+  const p = crmImportDateParts(value);
+  if (!p) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${p.year}-${pad(p.month)}-${pad(p.day)} ${pad(p.hour)}:${pad(p.minute)}:${pad(p.second)}`;
+}
+
+function crmImportDuration(rawProduct, matchedProduct = null) {
+  const text = normalizeCrmImportText(rawProduct);
+  const monthMatch = text.match(/(?:^|[^\d])(\d{1,3})\s*(?:thang|thg)\b/);
+  const dayMatch = text.match(/(?:^|[^\d])(\d{1,3})\s*ngay\b/);
+  let months = monthMatch ? Math.max(0, Number(monthMatch[1]) || 0) : 0;
+  let days = dayMatch ? Math.max(0, Number(dayMatch[1]) || 0) : 0;
+  if (!months && !days && Number(matchedProduct?.durationMonths) > 0) {
+    months = Number(matchedProduct.durationMonths);
+  }
+  const parts = [];
+  if (months) parts.push(`${months} tháng`);
+  if (days) parts.push(`${days} ngày`);
+  return { months, days, label: parts.join(" ") };
+}
+
+function crmAddDurationToIsoDate(startDate, duration = {}) {
+  const parts = crmImportDateParts(startDate);
+  if (!parts) return "";
+  const months = Math.max(0, Number(duration?.months) || 0);
+  const days = Math.max(0, Number(duration?.days) || 0);
+  if (!months && !days) return "";
+
+  const startMonthIndex = parts.year * 12 + (parts.month - 1);
+  const targetMonthIndex = startMonthIndex + months;
+  const targetYear = Math.floor(targetMonthIndex / 12);
+  const targetMonth = targetMonthIndex % 12;
+  const lastDayOfTargetMonth = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  const clampedDay = Math.min(parts.day, lastDayOfTargetMonth);
+  const result = new Date(Date.UTC(targetYear, targetMonth, clampedDay));
+  if (days) result.setUTCDate(result.getUTCDate() + days);
+  return result.toISOString().slice(0, 10);
+}
+
+function crmOrderDurationInfo(order, inventory = []) {
+  const matchedProduct = (inventory || []).find((product) => Number(product.id) === Number(order?.productId));
+  const explicitMonths = Math.max(0, Number(order?.durationMonths) || 0);
+  const explicitDays = Math.max(0, Number(order?.durationDays) || 0);
+  if (explicitMonths || explicitDays) {
+    const parts = [];
+    if (explicitMonths) parts.push(`${explicitMonths} tháng`);
+    if (explicitDays) parts.push(`${explicitDays} ngày`);
+    return { months: explicitMonths, days: explicitDays, label: order?.durationLabel || parts.join(" ") };
+  }
+  return crmImportDuration(order?.importedProductName || order?.productName || "", matchedProduct);
+}
+
+function crmImportOrderKeys(order) {
+  const keys = [];
+  const invoiceNo = normalizeCrmImportText(order?.invoiceNo);
+  if (invoiceNo) keys.push(`invoice:${invoiceNo}`);
+  const contact = crmImportPhone(order?.phone) || normalizeCrmImportText(order?.email) || normalizeCrmImportText(order?.customerName);
+  keys.push(`row:${order?.date || ""}|${contact}|${Math.round(Number(order?.amount) || 0)}`);
+  return keys;
+}
+
+function crmImportFindEmployee(rawName, employees, aliases) {
+  const target = normalizeCrmImportText(rawName);
+  if (!target) return null;
+  const aliasId = aliases?.get(target);
+  if (aliasId) return employees.find((e) => Number(e.id) === Number(aliasId)) || null;
+  const candidates = (employees || []).filter((e) => ["sale", "ky_thuat"].includes(e.roleType));
+  const exact = candidates.find((e) => normalizeCrmImportText(e.name) === target);
+  if (exact) return exact;
+  const targetTokens = target.split(" ").filter(Boolean);
+  const fuzzy = candidates.filter((e) => {
+    const name = normalizeCrmImportText(e.name);
+    const nameTokens = name.split(" ").filter(Boolean);
+    return targetTokens.every((token) => nameTokens.includes(token)) || nameTokens.some((token) => token === target);
+  });
+  return fuzzy.length === 1 ? fuzzy[0] : null;
+}
+
+function crmImportFindProduct(rawProduct, amount, inventory) {
+  const durationInfo = crmImportDuration(rawProduct);
+  const duration = durationInfo.months;
+  const products = inventory || [];
+  if (duration > 0) {
+    const durationMatches = products.filter((p) => Number(p.durationMonths) === duration);
+    if (durationMatches.length === 1) return durationMatches[0];
+    const aiMatch = durationMatches.find((p) => normalizeCrmImportText(`${p.groupName || ""} ${p.name || ""}`).includes("ai"));
+    if (aiMatch) return aiMatch;
+  }
+  const amountMatch = products.find((p) => Math.round(Number(p.sellPrice) || 0) === Math.round(Number(amount) || 0));
+  return amountMatch || null;
+}
+
+function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByEmployee, setTransactions, transactions, inventory, setInventory, distPartners, distOrders, setDistOrders, reportYear, reportMonth, pages, setSupportCases, customers, setCustomers, moveStock, authUser, debts, setDebts, dataLoader }) {
+  const [activeTableView, setActiveTableView] = useState("orders");
+  const importT7InputRef = useRef(null);
+  const importWorkbookRef = useRef(null);
+  const [importWorkbookInfo, setImportWorkbookInfo] = useState(null);
+  const [showImportSheetPicker, setShowImportSheetPicker] = useState(false);
+  const [importT7Preview, setImportT7Preview] = useState(null);
+  const [importT7Error, setImportT7Error] = useState("");
+  const [importT7Message, setImportT7Message] = useState("");
+  const [importT7Reading, setImportT7Reading] = useState(false);
+  const lazyTableData = useLazyTableData(activeTableView, { orders: ["orders", "customers", "inventory", "transactions", "distributionPartners", "distributionOrders", "debts"], sales: ["orders"], daily: ["orders", "leads"], leads: ["leads", "orders", "customers"] }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   const [showForm, setShowForm] = useState(false);
   const [rangeMode, setRangeMode] = useState("month");
   const [rangeFrom, setRangeFrom] = useState(new Date(reportYear || TODAY.getFullYear(), (reportMonth || TODAY.getMonth() + 1) - 1, 1).toISOString().slice(0, 10));
@@ -8073,6 +10256,289 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
     productId: "", quantity: "1", issuedKeyCode: "", pageId: "",
     invoiceStatus: "pending", invoiceNo: "", invoiceDate: "", paidNow: true,
   });
+
+  const readCrmExcelFile = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    setImportT7Error("");
+    setImportT7Message("");
+    setImportT7Preview(null);
+    setImportT7Reading(true);
+    try {
+      if (!/\.(xlsx|xls)$/i.test(file.name)) throw new Error("Chỉ hỗ trợ file Excel .xlsx hoặc .xls.");
+      const buffer = await file.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array", cellDates: true });
+      if (!workbook.SheetNames?.length) throw new Error("File Excel không có sheet dữ liệu.");
+      importWorkbookRef.current = workbook;
+      const sheets = workbook.SheetNames.map((name) => {
+        const worksheet = workbook.Sheets[name];
+        let rowCount = 0;
+        try {
+          const range = XLSX.utils.decode_range(worksheet?.["!ref"] || "A1:A1");
+          rowCount = Math.max(0, range.e.r - range.s.r + 1);
+        } catch { rowCount = 0; }
+        return { name, rowCount };
+      });
+      const preferred = sheets.find((sheet) => normalizeCrmImportText(sheet.name) === `t${Number(reportMonth)}`)?.name
+        || sheets.find((sheet) => normalizeCrmImportText(sheet.name) === "t7")?.name
+        || sheets[0].name;
+      setImportWorkbookInfo({ fileName: file.name, sheets, selectedSheet: preferred });
+      setShowImportSheetPicker(true);
+    } catch (error) {
+      importWorkbookRef.current = null;
+      setImportWorkbookInfo(null);
+      setImportT7Error(error.message || "Không đọc được file Excel.");
+    } finally {
+      setImportT7Reading(false);
+    }
+  };
+
+  const processCrmImportSheet = async (sheetName) => {
+    const workbook = importWorkbookRef.current;
+    if (!workbook || !sheetName) return;
+    setImportT7Error("");
+    setImportT7Message("");
+    setImportT7Reading(true);
+    try {
+      const worksheet = workbook.Sheets[sheetName];
+      if (!worksheet) throw new Error(`Không tìm thấy sheet ${sheetName}.`);
+      const matrix = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "", raw: true });
+      const layout = crmDetectImportLayout(matrix);
+      if (!layout) throw new Error(`Sheet ${sheetName} không đúng cấu trúc file doanh thu được hỗ trợ.`);
+
+      let carriedDate = "";
+      const candidateRows = [];
+      matrix.forEach((row, index) => {
+        const parsedDate = crmImportIsoDate(crmImportCell(row, layout, "date"))
+          || crmImportIsoDate(crmImportCell(row, layout, "receivedAt"));
+        if (parsedDate) carriedDate = parsedDate;
+        const customerName = String(crmImportCell(row, layout, "name") || "").trim();
+        const amount = crmImportNumber(crmImportCell(row, layout, "confirmedAmount"))
+          || crmImportNumber(crmImportCell(row, layout, "amount"));
+        if (customerName && amount > 0 && carriedDate) {
+          candidateRows.push({ row, excelRow: index + 1, date: parsedDate || carriedDate });
+        }
+      });
+      if (!candidateRows.length) throw new Error(`Sheet ${sheetName} không có dòng dữ liệu hợp lệ. Cần có tên khách hàng, ngày và số tiền theo mẫu doanh thu.`);
+
+      const existingByKey = new Map();
+      (orders || []).forEach((order) => crmImportOrderKeys(order).forEach((key) => existingByKey.set(key, order)));
+      const saleAliases = new Map();
+      candidateRows.forEach(({ row, date }) => {
+        const amount = crmImportNumber(crmImportCell(row, layout, "confirmedAmount")) || crmImportNumber(crmImportCell(row, layout, "amount"));
+        const probe = {
+          date,
+          phone: crmImportPhone(crmImportCell(row, layout, "phone")),
+          email: crmImportEmail(crmImportCell(row, layout, "email")),
+          customerName: crmImportCell(row, layout, "name"),
+          amount,
+          invoiceNo: crmImportCode(crmImportCell(row, layout, "invoiceNo")),
+        };
+        const existing = crmImportOrderKeys(probe).map((key) => existingByKey.get(key)).find(Boolean);
+        const saleName = normalizeCrmImportText(crmImportCell(row, layout, "sale"));
+        if (existing?.saleEmployeeId && saleName) saleAliases.set(saleName, existing.saleEmployeeId);
+      });
+
+      const knownKeys = new Set(existingByKey.keys());
+      const baseOrderId = Math.max(Date.now(), ...(orders || []).map((o) => Number(o.id) || 0)) + 1000;
+      const baseCustomerId = Math.max(baseOrderId + 100000, ...(customers || []).map((c) => Number(c.id) || 0)) + 1000;
+      const customerMap = new Map((customers || []).map((customer) => [customerKeyOf(customer), customer]));
+      const customersToAdd = [];
+      const parsedOrders = [];
+      const duplicateOrderUpdates = new Map();
+      const duplicates = [];
+      const unmatchedSales = new Set();
+      const unmatchedProducts = new Set();
+      let invalidCount = 0;
+
+      candidateRows.forEach(({ row, excelRow, date }, index) => {
+        const customerName = String(crmImportCell(row, layout, "name") || "").trim();
+        const phone = crmImportPhone(crmImportCell(row, layout, "phone"));
+        const email = crmImportEmail(crmImportCell(row, layout, "email"));
+        const amount = crmImportNumber(crmImportCell(row, layout, "confirmedAmount")) || crmImportNumber(crmImportCell(row, layout, "amount"));
+        if (!customerName || !amount || !date) { invalidCount += 1; return; }
+        const rawProduct = String(crmImportCell(row, layout, "product") || "").trim();
+        const product = crmImportFindProduct(rawProduct, amount, inventory);
+        const durationInfo = crmImportDuration(rawProduct, product);
+        const expiryDate = crmAddDurationToIsoDate(date, durationInfo);
+        const rawSaleName = String(crmImportCell(row, layout, "sale") || "").trim();
+        const saleEmployee = crmImportFindEmployee(rawSaleName, employees, saleAliases);
+        if (rawSaleName && !saleEmployee) unmatchedSales.add(rawSaleName);
+        if (rawProduct && !product) unmatchedProducts.add(rawProduct);
+
+        const companyOrBuyer = String(crmImportCell(row, layout, "buyer") || "").trim();
+        const taxOrId = crmImportTaxCode(crmImportCell(row, layout, "tax"));
+        const invoiceAddress = String(crmImportCell(row, layout, "address") || "").trim();
+        const companyHint = /cong ty|cty|doanh nghiep|hop tac xa|ho kinh doanh/.test(normalizeCrmImportText(companyOrBuyer));
+        const isCompany = companyHint || Boolean(invoiceAddress && [10, 13].includes(taxOrId.length));
+        const invoiceState = normalizeCrmImportText(crmImportCell(row, layout, "invoiceStatus"));
+        const misaState = normalizeCrmImportText(crmImportCell(row, layout, "misa"));
+        const invoiceNo = crmImportCode(crmImportCell(row, layout, "invoiceNo"));
+        const issued = invoiceState.includes("da xuat") || misaState.includes("da ht") || Boolean(invoiceNo);
+        const receivedRaw = crmImportCell(row, layout, "receivedAt");
+        const keyValue = String(crmImportCell(row, layout, "key") || "").trim();
+        const order = {
+          id: baseOrderId + index,
+          date,
+          customerName,
+          phone,
+          email,
+          customerTaxCode: isCompany ? taxOrId : "",
+          customerCompanyName: isCompany ? companyOrBuyer : "",
+          customerInvoiceAddress: isCompany ? invoiceAddress : "",
+          invoiceBuyerName: !isCompany ? companyOrBuyer : "",
+          invoiceBuyerId: !isCompany ? taxOrId : "",
+          note: String(crmImportCell(row, layout, "note") || "").trim(),
+          saleEmployeeId: saleEmployee ? Number(saleEmployee.id) : null,
+          importedSaleName: rawSaleName,
+          dealType: normalizeCrmImportText(keyValue).includes("upsale") || saleEmployee?.roleType === "ky_thuat" ? "upsale" : "sale",
+          receivedAt: crmImportDateTime(receivedRaw) || `${date} 00:00:00`,
+          amount,
+          productId: product ? Number(product.id) : null,
+          productName: product?.name || rawProduct,
+          importedProductName: rawProduct,
+          serviceStartDate: date,
+          durationMonths: durationInfo.months,
+          durationDays: durationInfo.days,
+          durationLabel: durationInfo.label,
+          expiryDate,
+          quantity: 1,
+          issuedKeyCode: keyValue,
+          pageId: null,
+          invoiceStatus: issued ? "issued" : "pending",
+          invoiceType: issued ? "Hóa đơn GTGT" : "Chưa xác định",
+          invoiceNo,
+          invoiceDate: crmImportIsoDate(crmImportCell(row, layout, "invoiceDate")),
+          invoiceMisaStatus: String(crmImportCell(row, layout, "misa") || "").trim(),
+          vatRate: Number(product?.vatRate ?? 8),
+          linkedTxId: null,
+          contactLog: [],
+          auditLog: [],
+          customerPaymentStatus: "paid",
+          customerPaidAmount: amount,
+          cashCollector: "company",
+          customerInvoiceIssuer: "company",
+          importSource: "excel_crm",
+          importSheet: sheetName,
+          importExcelRow: excelRow,
+          importedAt: new Date().toISOString(),
+          importedBy: authUser?.email || "",
+        };
+        const orderKeys = crmImportOrderKeys(order);
+        const existingOrder = orderKeys.map((key) => existingByKey.get(key)).find(Boolean);
+        if (existingOrder) {
+          const enrichedOrder = {
+            ...existingOrder,
+            productId: existingOrder.productId || order.productId,
+            productName: existingOrder.productName || order.productName,
+            importedProductName: rawProduct || existingOrder.importedProductName || existingOrder.productName || "",
+            serviceStartDate: date,
+            durationMonths: durationInfo.months,
+            durationDays: durationInfo.days,
+            durationLabel: durationInfo.label,
+            expiryDate,
+            importSource: existingOrder.importSource || "excel_crm",
+            importSheet: sheetName,
+            importExcelRow: excelRow,
+            importedAt: existingOrder.importedAt || new Date().toISOString(),
+            importedBy: existingOrder.importedBy || authUser?.email || "",
+          };
+          const timingChanged = String(existingOrder.serviceStartDate || existingOrder.date || "") !== String(enrichedOrder.serviceStartDate || "")
+            || Number(existingOrder.durationMonths || 0) !== Number(enrichedOrder.durationMonths || 0)
+            || Number(existingOrder.durationDays || 0) !== Number(enrichedOrder.durationDays || 0)
+            || String(existingOrder.expiryDate || "") !== String(enrichedOrder.expiryDate || "")
+            || String(existingOrder.importedProductName || "") !== String(enrichedOrder.importedProductName || "");
+          if (timingChanged) duplicateOrderUpdates.set(existingOrder.id, enrichedOrder);
+          duplicates.push({ excelRow, customerName, amount, invoiceNo, updatedTiming: timingChanged });
+          return;
+        }
+        if (orderKeys.some((key) => knownKeys.has(key))) {
+          duplicates.push({ excelRow, customerName, amount, invoiceNo, updatedTiming: false });
+          return;
+        }
+        orderKeys.forEach((key) => knownKeys.add(key));
+
+        const customerKey = customerKeyOf({ customerName, phone, email });
+        let customer = customerMap.get(customerKey);
+        if (!customer) {
+          customer = {
+            id: baseCustomerId + customersToAdd.length,
+            customerName, phone, secondaryPhone: "", email, zalo: "",
+            customerType: isCompany ? "company" : "individual",
+            companyName: isCompany ? companyOrBuyer : "",
+            taxCode: isCompany ? taxOrId : "",
+            invoiceAddress: isCompany ? invoiceAddress : "",
+            address: "", source: `Nhập Excel ${sheetName}`,
+            assignedSaleEmployeeId: saleEmployee ? Number(saleEmployee.id) : null,
+            status: "active", tags: [sheetName], note: `Nhập tự động từ sheet ${sheetName}`,
+            createdAt: date, updatedAt: new Date().toISOString(), contactLog: [], auditLog: [],
+          };
+          customerMap.set(customerKey, customer);
+          customersToAdd.push(customer);
+        }
+        order.customerId = customer.id;
+        parsedOrders.push(order);
+      });
+
+      setImportT7Preview({
+        fileName: importWorkbookInfo?.fileName || "File Excel",
+        sheetName,
+        layoutType: layout.type,
+        columnLabels: layout.columns,
+        orders: parsedOrders,
+        updatedOrders: Array.from(duplicateOrderUpdates.values()),
+        customers: customersToAdd,
+        sourceRows: candidateRows.length,
+        duplicateCount: duplicates.length,
+        updatedCount: duplicateOrderUpdates.size,
+        invalidCount,
+        totalAmount: parsedOrders.reduce((sum, order) => sum + Number(order.amount || 0), 0),
+        durationParsedCount: [...parsedOrders, ...duplicateOrderUpdates.values()].filter((order) => Number(order.durationMonths) > 0 || Number(order.durationDays) > 0).length,
+        expiryCalculatedCount: [...parsedOrders, ...duplicateOrderUpdates.values()].filter((order) => Boolean(order.expiryDate)).length,
+        missingDurationCount: [...parsedOrders, ...duplicateOrderUpdates.values()].filter((order) => !Number(order.durationMonths) && !Number(order.durationDays)).length,
+        unmatchedSales: Array.from(unmatchedSales),
+        unmatchedProducts: Array.from(unmatchedProducts),
+        duplicates: duplicates.slice(0, 20),
+      });
+    } catch (error) {
+      setImportT7Preview(null);
+      setImportT7Error(error.message || "Không đọc được dữ liệu sheet đã chọn.");
+    } finally {
+      setImportT7Reading(false);
+    }
+  };
+
+  const chooseCrmImportSheet = async (sheetName) => {
+    setImportWorkbookInfo((current) => current ? { ...current, selectedSheet: sheetName } : current);
+    setShowImportSheetPicker(false);
+    await processCrmImportSheet(sheetName);
+  };
+
+  const confirmCrmT7Import = async () => {
+    if (!importT7Preview || (!importT7Preview.orders?.length && !importT7Preview.updatedOrders?.length)) return;
+    const updateMap = new Map((importT7Preview.updatedOrders || []).map((order) => [String(order.id), order]));
+    const nextOrders = [
+      ...(orders || []).map((order) => updateMap.get(String(order.id)) || order),
+      ...(importT7Preview.orders || []),
+    ];
+    const nextCustomers = [...(customers || []), ...(importT7Preview.customers || [])];
+    setImportT7Reading(true);
+    setImportT7Error("");
+    try {
+      await saveAppFields({ orders: nextOrders, customers: nextCustomers });
+      setOrders(nextOrders);
+      setCustomers(nextCustomers);
+      setImportT7Message(`Đã thêm ${importT7Preview.orders.length} đơn mới và cập nhật thời hạn cho ${importT7Preview.updatedCount || 0} đơn đã có từ sheet ${importT7Preview.sheetName}; bỏ qua ${Math.max(0, importT7Preview.duplicateCount - (importT7Preview.updatedCount || 0))} dòng trùng không đổi.`);
+      setImportT7Preview(null);
+      setActiveTableView("orders");
+    } catch (error) {
+      setImportT7Error(error.message || "Không lưu được dữ liệu nhập vào cơ sở dữ liệu.");
+    } finally {
+      setImportT7Reading(false);
+    }
+  };
+
   const selectProduct = (productId) => {
     const p = (inventory || []).find((i) => i.id === Number(productId));
     setForm((f) => ({ ...f, productId, amount: p ? String(p.sellPrice * Number(f.quantity || 1)) : f.amount }));
@@ -8113,9 +10579,13 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
     // Thu hay không. Sản phẩm của đối tác thu tiền → công ty KHÔNG bao giờ ghi Thu ở bước này.
     const companyCollects = !owningPartner || (owningPartner.cashCollector || "partner") === "company";
     const paidNow = form.paidNow !== false; // mặc định: khách chuyển khoản ngay như luồng hiện tại
+    const durationInfo = crmImportDuration(product ? `${product.name || ""} ${product.durationMonths || 0} tháng` : "", product);
+    const expiryDate = crmAddDurationToIsoDate(form.date, durationInfo);
     setOrders((prev) => [...prev, {
       ...form, id: orderId, customerId, saleEmployeeId: Number(form.saleEmployeeId) || null, dealType,
       productId: form.productId ? Number(form.productId) : null, productName: product?.name || "",
+      serviceStartDate: form.date, durationMonths: durationInfo.months, durationDays: durationInfo.days,
+      durationLabel: durationInfo.label, expiryDate,
       quantity: Number(form.quantity) || 1, amount, pageId: form.pageId ? Number(form.pageId) : null, contactLog: [], auditLog: [],
       customerPaymentStatus: paidNow ? "paid" : "unpaid",
       customerPaidAmount: paidNow ? amount : 0,
@@ -8181,7 +10651,8 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
   // còn chăm sóc định kỳ/tư vấn nâng cấp trong suốt vòng đời khách hàng.
   const sendToSupport = (o, type) => {
     const product = inventory.find((i) => i.id === o.productId);
-    const durationLabel = product ? (product.durationMonths > 0 ? `Gói ${product.durationMonths} tháng` : "Trọn đời/vĩnh viễn") : "";
+    const durationInfo = crmOrderDurationInfo(o, inventory);
+    const durationLabel = durationInfo.label ? `Gói ${durationInfo.label}` : (product ? "Trọn đời/vĩnh viễn" : "");
     const typeLabel = SUPPORT_TYPES[type] || SUPPORT_TYPES.kich_hoat;
     setSupportCases((prev) => [...prev, {
       id: Date.now(), customerName: o.customerName, phone: o.phone, zalo: o.phone,
@@ -8329,10 +10800,13 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
     }
     const ORDER_EDIT_FIELDS = ["date", "customerName", "saleEmployeeId", "amount", "note", "issuedKeyCode", "receivedAt"];
     const audit = diffAudit(old, { ...editingOrder, amount: newAmount }, ORDER_EDIT_FIELDS, authUser?.email || "");
+    const durationInfo = crmOrderDurationInfo(editingOrder, inventory);
+    const expiryDate = crmAddDurationToIsoDate(editingOrder.date, durationInfo);
     setOrders((prev) => prev.map((x) => (x.id === editingOrder.id ? {
-      ...x, date: editingOrder.date, customerName: editingOrder.customerName,
+      ...x, date: editingOrder.date, serviceStartDate: editingOrder.date, customerName: editingOrder.customerName,
       saleEmployeeId: Number(editingOrder.saleEmployeeId) || x.saleEmployeeId,
       amount: newAmount, note: editingOrder.note, issuedKeyCode: editingOrder.issuedKeyCode, receivedAt: editingOrder.receivedAt,
+      durationMonths: durationInfo.months, durationDays: durationInfo.days, durationLabel: durationInfo.label, expiryDate,
       auditLog: [...(x.auditLog || []), ...audit],
     } : x)));
     if (amountChanged) {
@@ -8452,21 +10926,37 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
     return { emp: e, totalContacts: own.length, uniqueCustomers, calls, status };
   });
 
-  return (
-    <div className="flex flex-col gap-4">
-      <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
-        <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
-        <span>Ghi nhận đơn Sale chốt được VÀ Kỹ thuật upsale thành công ở đây — loại giao dịch tự nhận theo vị trí người phụ trách. Xuất hoá đơn (bắt buộc đính kèm chứng từ) sẽ tự đẩy sang <strong className="text-charcoal">Thu Chi</strong>, và doanh số/upsale tự cộng ngược lại đúng người ở <strong className="text-charcoal">Bảng lương</strong> — không cần nhập tay 2 nơi.</span>
+  if (!lazyTableData.ready) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={[{ id: "orders", label: "Đơn hàng", icon: ShoppingCart }, { id: "leads", label: "Khách tiềm năng", icon: UserPlus }, { id: "daily", label: "Liên hệ trong ngày", icon: CalendarCheck }, { id: "sales", label: "Hiệu suất Sale", icon: TrendingUp }]} />
+        <DataLoadingPanel title="Đang tải dữ liệu bảng đã chọn" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} />
       </div>
+    );
+  }
 
-      <div className="grid grid-cols-4 gap-4">
+  return (
+    <div className="flex min-h-[calc(100vh-150px)] flex-col gap-3">
+
+      <SectionViewSwitcher
+        value={activeTableView}
+        onChange={setActiveTableView}
+        options={[
+          { id: "orders", label: "Đơn hàng", icon: ShoppingCart, count: visibleOrders.length },
+          { id: "leads", label: "Khách tiềm năng", icon: UserPlus, count: filteredLeads.length },
+          { id: "daily", label: "Liên hệ trong ngày", icon: Phone, count: dailyContacts.length },
+          { id: "sales", label: "Hiệu suất Sale", icon: TrendingUp, count: saleStats.length },
+        ]}
+      />
+
+      <div style={{ display: activeTableView === "orders" ? "grid" : "none" }} className="grid-cols-4 gap-3">
         <KpiCard icon={ShoppingCart} label="Tổng số đơn/upsale" value={orders.length} />
         <KpiCard icon={Wallet} label="Tổng doanh thu ghi nhận" value={fmtVND(totalRevenue)} tone="up" />
         <KpiCard icon={AlertTriangle} label="Chưa xuất hoá đơn" value={pendingCount} tone={pendingCount > 0 ? "down" : "up"} />
         <KpiCard icon={UserCheck} label="Sale + Kỹ thuật đang ghi nhận" value={dealEmployees.length} />
       </div>
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+      <div style={{ display: activeTableView === "sales" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><TrendingUp size={13} /> Chi tiết doanh số từng Sale — để tính KPI &amp; xem chất lượng</div>
         <table className="w-full text-sm">
           <thead>
@@ -8501,7 +10991,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
         </table>
       </div>
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+      <div style={{ display: activeTableView === "daily" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="px-4 pt-3 pb-2 flex items-center justify-between flex-wrap gap-2">
           <div className="text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><Phone size={13} /> Báo cáo gọi/liên hệ khách hàng theo ngày</div>
           <div className="flex items-center gap-2">
@@ -8512,7 +11002,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
         </div>
 
         {showLeadForm && (
-          <div className="mx-4 mb-3 bg-paper border border-paper-line rounded-md p-3">
+          <div className="domix-inline-form-modal bg-white border border-paper-line rounded-md p-5">
             <div className="text-[11px] font-semibold text-ink uppercase mb-2">Khách tiềm năng mới — Marketing/Pancake đẩy qua cho Sale gọi</div>
             <div className="grid grid-cols-4 gap-2">
               <input type="date" value={leadForm.date} onChange={(e) => setLeadForm({ ...leadForm, date: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-xs" />
@@ -8620,7 +11110,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
         <p className="px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Hiệu quả khi liên hệ ≥{CALL_GOOD_THRESHOLD} khách/ngày, trung bình {CALL_OK_THRESHOLD}-{CALL_GOOD_THRESHOLD - 1} khách, dưới {CALL_OK_THRESHOLD} là chưa hiệu quả — chỉnh ngưỡng này trong code nếu công ty có KPI riêng. Ghi nhận cuộc gọi ở phần "Nhật ký liên hệ đa kênh" khi mở rộng từng đơn hàng bên dưới.</p>
       </div>
 
-      <div className="bg-white rounded-lg border border-gold/40 overflow-hidden">
+      <div style={{ display: activeTableView === "leads" ? undefined : "none" }} className="bg-white rounded-lg border border-gold/40 overflow-hidden">
         <div className="px-4 py-2.5 bg-gold/5 flex items-center justify-between flex-wrap gap-2">
           <span className="text-xs font-semibold text-gold uppercase flex items-center gap-1.5"><Phone size={13} /> Khách hàng tiềm năng đang chăm sóc — chưa mua, chưa phải đơn hàng thật</span>
           <span className="text-[11px] text-muted">{(leads || []).filter((l) => l.status === "dang_cham_soc").length} người đang chăm sóc</span>
@@ -8753,10 +11243,17 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
         <p className="px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Khách ở đây CHƯA tính vào doanh thu/hoá đơn — khi Sale chốt được đơn thật, bấm "Đã mua → Tạo đơn hàng" để chuyển hẳn xuống bảng đơn hàng CRM bên dưới. Mặc định chỉ hiện 10 người gần hẹn nhất, bấm "Xem thêm" để hiện dần, không tự hiện hết một lúc.</p>
       </div>
 
-      <div className="flex justify-between items-center">
-        <p className="text-sm text-muted">{orders.length} đơn hàng đã ghi nhận trong CRM.</p>
-        <div className="flex gap-2">
-          <button onClick={() => exportOrdersExcel(orders, employees)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90">
+      <div style={{ display: activeTableView === "orders" ? "flex" : "none" }} className="justify-between items-center gap-3">
+        <div>
+          <p className="text-sm text-muted">{orders.length} đơn hàng đã ghi nhận trong CRM.</p>
+          <p className="mt-0.5 text-[11px] text-muted">Đọc file Excel theo mẫu doanh thu. Nếu file có nhiều sheet, hệ thống sẽ hiển thị danh sách để chọn sheet cần nhập.</p>
+        </div>
+        <div className="flex flex-wrap justify-end gap-2">
+          <input ref={importT7InputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={readCrmExcelFile} />
+          <button disabled={importT7Reading} onClick={() => importT7InputRef.current?.click()} className="flex items-center gap-1.5 text-sm border border-[#4f7ee8] text-[#7fa5ff] bg-[#13213a] px-3.5 py-2 rounded-md hover:bg-[#192b4a] disabled:opacity-50" title="Chọn file Excel và chọn sheet cần nhập">
+            {importT7Reading ? <Loader2 size={15} className="animate-spin" /> : <FileUp size={15} />} {importT7Reading ? "Đang xử lý..." : "Đọc file Excel"}
+          </button>
+          <button onClick={() => exportOrdersExcel(orders, employees, inventory)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90">
             <FileSpreadsheet size={15} /> Xuất Excel chi tiết hoá đơn
           </button>
           <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light">
@@ -8765,8 +11262,111 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
         </div>
       </div>
 
+      {activeTableView === "orders" && importT7Error && (
+        <div className="rounded-lg border border-stamp-red/40 bg-stamp-red/10 px-3 py-2 text-xs text-stamp-red flex items-center justify-between gap-3">
+          <span className="flex items-center gap-1.5"><AlertTriangle size={13} /> {importT7Error}</span>
+          <button onClick={() => setImportT7Error("")} className="text-stamp-red"><X size={13} /></button>
+        </div>
+      )}
+      {activeTableView === "orders" && importT7Message && (
+        <div className="rounded-lg border border-ledger-green/40 bg-ledger-green/10 px-3 py-2 text-xs text-ledger-green flex items-center justify-between gap-3">
+          <span className="flex items-center gap-1.5"><CheckCircle2 size={13} /> {importT7Message}</span>
+          <button onClick={() => setImportT7Message("")} className="text-ledger-green"><X size={13} /></button>
+        </div>
+      )}
+
+
+      {showImportSheetPicker && importWorkbookInfo && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/55 p-5">
+          <div className="w-full max-w-xl overflow-hidden rounded-xl border border-paper-line bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 border-b border-paper-line px-5 py-4">
+              <div>
+                <h3 className="ktns-serif text-lg font-semibold text-ink flex items-center gap-2"><FileSpreadsheet size={17} /> Chọn sheet cần nhập</h3>
+                <p className="mt-1 text-xs text-muted">{importWorkbookInfo.fileName} · {importWorkbookInfo.sheets.length} sheet. Chỉ sheet được chọn mới được đọc và lưu vào DB.</p>
+              </div>
+              <button onClick={() => setShowImportSheetPicker(false)} className="text-muted hover:text-ink"><X size={17} /></button>
+            </div>
+            <div className="grid max-h-[55vh] grid-cols-1 gap-2 overflow-y-auto p-4 sm:grid-cols-2">
+              {importWorkbookInfo.sheets.map((sheet) => (
+                <button
+                  key={sheet.name}
+                  disabled={importT7Reading}
+                  onClick={() => chooseCrmImportSheet(sheet.name)}
+                  className={`flex items-center justify-between rounded-lg border px-4 py-3 text-left transition-colors ${importWorkbookInfo.selectedSheet === sheet.name ? "border-[#4f7ee8] bg-[#edf3ff] text-[#244f99]" : "border-paper-line bg-paper/30 text-ink hover:border-[#4f7ee8] hover:bg-[#f5f8ff]"}`}
+                >
+                  <span className="min-w-0"><span className="block truncate text-sm font-semibold">{sheet.name}</span><span className="mt-0.5 block text-[10px] text-muted">Khoảng {sheet.rowCount} dòng</span></span>
+                  <ChevronRight size={15} className="shrink-0" />
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {importT7Preview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/55 p-5">
+          <div className="w-full max-w-3xl overflow-hidden rounded-xl border border-paper-line bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 border-b border-paper-line px-5 py-4">
+              <div>
+                <h3 className="ktns-serif text-lg font-semibold text-ink flex items-center gap-2"><FileUp size={17} /> Kiểm tra dữ liệu sheet {importT7Preview.sheetName}</h3>
+                <p className="mt-1 text-xs text-muted">{importT7Preview.fileName} · sheet {importT7Preview.sheetName}. Chưa ghi dữ liệu cho tới khi bấm “Nhập vào CRM”.</p>
+              </div>
+              <button onClick={() => setImportT7Preview(null)} className="text-muted hover:text-ink"><X size={17} /></button>
+            </div>
+            <div className="max-h-[65vh] overflow-y-auto p-5">
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+                <div className="rounded-lg border border-paper-line bg-paper/50 p-3"><div className="text-[10px] uppercase text-muted">Dòng hợp lệ</div><div className="mt-1 text-lg font-bold ktns-mono text-ink">{importT7Preview.sourceRows}</div></div>
+                <div className="rounded-lg border border-ledger-green/30 bg-ledger-green/5 p-3"><div className="text-[10px] uppercase text-muted">Sẽ nhập mới</div><div className="mt-1 text-lg font-bold ktns-mono text-ledger-green">{importT7Preview.orders.length}</div></div>
+                <div className="rounded-lg border border-[#315fae]/30 bg-[#315fae]/5 p-3"><div className="text-[10px] uppercase text-muted">Cập nhật thời hạn</div><div className="mt-1 text-lg font-bold ktns-mono text-[#315fae]">{importT7Preview.updatedCount || 0}</div></div>
+                <div className="rounded-lg border border-gold/30 bg-gold/5 p-3"><div className="text-[10px] uppercase text-muted">Dòng trùng</div><div className="mt-1 text-lg font-bold ktns-mono text-gold">{importT7Preview.duplicateCount}</div></div>
+                <div className="rounded-lg border border-stamp-red/30 bg-stamp-red/5 p-3"><div className="text-[10px] uppercase text-muted">Dòng lỗi</div><div className="mt-1 text-lg font-bold ktns-mono text-stamp-red">{importT7Preview.invalidCount}</div></div>
+                <div className="rounded-lg border border-paper-line bg-paper/50 p-3"><div className="text-[10px] uppercase text-muted">Doanh thu mới</div><div className="mt-1 text-sm font-bold ktns-mono text-ink">{fmtVND(importT7Preview.totalAmount)}</div></div>
+              </div>
+
+              <div className="mt-4 rounded-lg border border-[#32496f] bg-[#182335] p-3 text-xs text-[#d8e4ff]">
+                <div className="font-semibold text-[#f2f6ff]">Cách hệ thống xử lý file</div>
+                <div className="mt-1.5 leading-5 text-[#b9c9e5]">Đọc sheet đã chọn; lấy ngày bắt đầu từ cột NGÀY THÁNG; tách thời hạn trực tiếp trong cột SẢN PHẨM (1 tháng, 2 tháng, 3 tháng, 6 tháng, 10 ngày...); tính NGÀY HẾT HẠN; chuẩn hóa SĐT, email, số tiền và hóa đơn; tự bỏ qua đơn đã tồn tại. Việc nhập lịch sử không tự trừ kho và không tự tạo thêm giao dịch Thu Chi.</div>
+                <div className="mt-2 flex flex-wrap gap-2 text-[10px]"><span className="rounded bg-white/10 px-2 py-1">Tách thời hạn: {importT7Preview.durationParsedCount}/{importT7Preview.orders.length + (importT7Preview.updatedCount || 0)}</span><span className="rounded bg-white/10 px-2 py-1">Đã tính hết hạn: {importT7Preview.expiryCalculatedCount}</span>{importT7Preview.missingDurationCount > 0 && <span className="rounded bg-[#7b4f18] px-2 py-1">Chưa có thời hạn: {importT7Preview.missingDurationCount}</span>}</div>
+              </div>
+
+              <div className="mt-4 overflow-x-auto rounded-lg border border-paper-line">
+                <div className="border-b border-paper-line bg-paper/60 px-3 py-2 text-[11px] font-semibold uppercase text-ink">Xem trước thời gian sử dụng</div>
+                <table className="min-w-full text-xs">
+                  <thead><tr className="bg-paper/40 text-left text-[10px] uppercase text-muted"><th className="px-3 py-2">Ngày bắt đầu</th><th className="px-3 py-2">Khách hàng</th><th className="px-3 py-2">Sản phẩm</th><th className="px-3 py-2">Thời hạn</th><th className="px-3 py-2">Ngày hết hạn</th></tr></thead>
+                  <tbody>{[...(importT7Preview.orders || []), ...(importT7Preview.updatedOrders || [])].slice(0, 8).map((order) => <tr key={`${order.importExcelRow}-${order.id}`} className="border-t border-paper-line"><td className="px-3 py-2 ktns-mono">{order.serviceStartDate || order.date}</td><td className="px-3 py-2">{order.customerName}</td><td className="max-w-[280px] px-3 py-2">{order.importedProductName || order.productName || "—"}</td><td className="px-3 py-2 font-semibold">{order.durationLabel || "Chưa nhận diện"}</td><td className="px-3 py-2 ktns-mono font-semibold text-ledger-green">{order.expiryDate || "—"}</td></tr>)}</tbody>
+                </table>
+              </div>
+
+              {(importT7Preview.unmatchedSales.length > 0 || importT7Preview.unmatchedProducts.length > 0) && (
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                  <div className="rounded-lg border border-gold/30 bg-gold/5 p-3 text-xs">
+                    <div className="font-semibold text-gold">Sale chưa ghép được ({importT7Preview.unmatchedSales.length})</div>
+                    <div className="mt-1 text-muted">{importT7Preview.unmatchedSales.join(", ") || "Không có"}</div>
+                    <div className="mt-1 text-[10px] text-muted">Đơn vẫn được nhập nhưng để trống người phụ trách; có thể sửa sau trong chi tiết đơn.</div>
+                  </div>
+                  <div className="rounded-lg border border-gold/30 bg-gold/5 p-3 text-xs">
+                    <div className="font-semibold text-gold">Sản phẩm chưa ghép được ({importT7Preview.unmatchedProducts.length})</div>
+                    <div className="mt-1 text-muted max-h-24 overflow-y-auto">{importT7Preview.unmatchedProducts.join("; ") || "Không có"}</div>
+                    <div className="mt-1 text-[10px] text-muted">Tên sản phẩm gốc vẫn được giữ trong đơn. Thời hạn vẫn được tách trực tiếp từ tên sản phẩm để tính ngày hết hạn; không tự trừ tồn kho.</div>
+                  </div>
+                </div>
+              )}
+
+              <details className="mt-4 rounded-lg border border-paper-line bg-paper/30 p-3">
+                <summary className="cursor-pointer text-xs font-semibold text-ink">Xem định dạng cột được hỗ trợ</summary>
+                <div className="mt-2 grid grid-cols-1 gap-1 text-[11px] text-muted md:grid-cols-2">{(importT7Preview.columnLabels || CRM_T7_COLUMNS).map((column, index) => <div key={column}><span className="ktns-mono text-ink">{String.fromCharCode(65 + index)}.</span> {column}</div>)}</div>
+              </details>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-paper-line bg-paper/50 px-5 py-3.5">
+              <button onClick={() => setImportT7Preview(null)} className="rounded-md border border-paper-line px-4 py-2 text-sm text-muted">Huỷ</button>
+              <button disabled={!importT7Preview.orders.length && !importT7Preview.updatedOrders?.length} onClick={confirmCrmT7Import} className="flex items-center gap-1.5 rounded-md bg-[#315fae] px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-40"><FileUp size={14} /> Lưu {importT7Preview.orders.length} đơn mới + {importT7Preview.updatedCount || 0} cập nhật</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showForm && (
-        <div className="bg-white rounded-lg border border-paper-line p-5 relative">
+        <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
           <button
             className="absolute top-3 right-3 text-muted hover:text-ink"
             onClick={async () => {
@@ -8842,7 +11442,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
         <span className="text-[11px] text-muted">{visibleOrders.length}/{orders.length} đơn hàng{orderSearchQ ? " khớp tìm kiếm (mọi tháng)" : ""}</span>
       </div>
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-x-auto">
+      <div style={{ display: activeTableView === "orders" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-x-auto">
         <div className="max-h-[420px] overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10">
@@ -8851,6 +11451,8 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
               <th className="px-3 py-2.5">Ngày</th>
               <th className="px-3 py-2.5">Khách hàng</th>
               <th className="px-3 py-2.5">Sản phẩm</th>
+              <th className="px-3 py-2.5">Thời hạn</th>
+              <th className="px-3 py-2.5">Ngày hết hạn</th>
               <th className="px-3 py-2.5">Liên hệ</th>
               <th className="px-3 py-2.5">Người phụ trách</th>
               <th className="px-3 py-2.5">Loại</th>
@@ -8861,25 +11463,29 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
             </tr>
           </thead>
           <tbody>
-            {visibleOrders.map((o, idx) => ({ ...o, _stt: idx + 1 })).slice().reverse().map((o) => {
+            {visibleOrders.slice().reverse().map((o, idx) => {
               const pending = o.invoiceStatus !== "issued";
               const log = o.contactLog || [];
               const lastContact = log[log.length - 1];
+              const durationInfo = crmOrderDurationInfo(o, inventory);
+              const expiryDate = o.expiryDate || crmAddDurationToIsoDate(o.serviceStartDate || o.date, durationInfo);
               return (
                 <React.Fragment key={o.id}>
                   <tr className={`border-t border-paper-line cursor-pointer hover:bg-paper/50 ${pending ? "ktns-warn-row" : ""}`} onClick={() => toggleExpand(o.id)}>
-                    <td className="px-3 py-2 ktns-mono text-xs text-muted">{o._stt}</td>
+                    <td className="px-3 py-2 ktns-mono text-xs text-muted">{idx + 1}</td>
                     <td className="px-3 py-2 ktns-mono text-xs text-muted">{o.date}</td>
                     <td className="px-3 py-2">
                       <div className="font-medium">{o.customerName}</div>
                       <div className="text-[11px] text-muted">{o.note}</div>
                     </td>
-                    <td className="px-3 py-2 text-xs">
-                      {o.productName ? <>{o.productName} <span className="text-muted">x{o.quantity || 1}</span></> : <span className="text-muted">—</span>}
+                    <td className="px-3 py-2 text-xs min-w-[250px]">
+                      {(o.importedProductName || o.productName) ? <>{o.importedProductName || o.productName} <span className="text-muted">x{o.quantity || 1}</span></> : <span className="text-muted">—</span>}
                       {(distOrders || []).some((d) => d.sourceCrmOrderId === o.id) && (
                         <div className="text-[9px] text-gold flex items-center gap-0.5 mt-0.5"><Link2 size={9} /> Đã nối Hợp tác phân phối</div>
                       )}
                     </td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap"><span className="rounded bg-[#315fae]/10 px-2 py-1 font-semibold text-[#315fae]">{durationInfo.label || "—"}</span></td>
+                    <td className="px-3 py-2 text-xs whitespace-nowrap"><div className="ktns-mono font-semibold text-ledger-green">{expiryDate || "—"}</div><div className="mt-0.5 text-[10px] text-muted">Từ {o.serviceStartDate || o.date || "—"}</div></td>
                     <td className="px-3 py-2 text-xs text-muted">
                       <div className="ktns-mono">{o.phone}</div>
                       <div>{o.email}</div>
@@ -8932,7 +11538,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
                   </tr>
                   {expanded[o.id] && (
                     <tr className="border-t border-paper-line bg-paper/40">
-                      <td colSpan={11} className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                      <td colSpan={13} className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-between mb-1.5">
                           <div className="text-[11px] font-semibold text-ink uppercase flex items-center gap-1.5"><Phone size={12} /> Nhật ký liên hệ đa kênh — {o.customerName} ({o.phone})</div>
                           <div className="flex items-center gap-2 relative">
@@ -9188,7 +11794,12 @@ function exportMarketingExcel(logs, employees) {
   XLSX.writeFile(wb, `DOMIX_Marketing_hang_ngay_${TODAY.toISOString().slice(0, 10)}.xlsx`);
 }
 
-function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportYear, reportMonth, pages, setPages, orders, inventory }) {
+function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportYear, reportMonth, pages, setPages, orders, inventory, authUser, currentEmployee, positionAccess, dataLoader }) {
+  const [activeTableView, setActiveTableView] = useState("daily");
+  const canManageMarketing = normalizeAccountRole(authUser?.role) !== "user";
+  const canWriteMarketingDaily = canManageMarketing || Boolean(positionAccess?.marketingWrite && currentEmployee?.id);
+  const canEditMarketingLog = (log) => canManageMarketing || (canWriteMarketingDaily && Number(log?.employeeId) === Number(currentEmployee?.id));
+  const lazyTableData = useLazyTableData(activeTableView, { daily: ["marketingLogs", "marketingPages"], pages: ["marketingPages", "inventory", "orders"], pageRevenue: ["marketingPages", "orders"], ranking: ["marketingLogs"] }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   const pageNameOf = (id) => (pages || []).find((p) => p.id === id)?.name || "";
   const [showPageForm, setShowPageForm] = useState(false);
   const [editingPageId, setEditingPageId] = useState(null);
@@ -9201,12 +11812,13 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
   const saleEmpAll = employees.filter((e) => e.roleType === "sale");
   const closePageForm = () => { setShowPageForm(false); setEditingPageId(null); setPageForm(blankPageForm); };
   const startEditPage = (p) => {
+    if (!canManageMarketing) return;
     setEditingPageId(p.id);
     setPageForm({ name: p.name, url: p.url || "", productIds: [...(p.productIds || [])], marketingEmployeeIds: [...(p.marketingEmployeeIds || [])], saleEmployeeIds: [...(p.saleEmployeeIds || [])] });
     setShowPageForm(true);
   };
   const addPage = () => {
-    if (!pageForm.name) return;
+    if (!canManageMarketing || !pageForm.name) return;
     if (editingPageId) {
       setPages((prev) => prev.map((p) => (p.id === editingPageId ? { ...p, ...pageForm } : p)));
     } else {
@@ -9214,12 +11826,13 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
     }
     closePageForm();
   };
-  const removePage = (id) => setPages((prev) => prev.filter((p) => p.id !== id));
+  const removePage = (id) => { if (canManageMarketing) setPages((prev) => prev.filter((p) => p.id !== id)); };
   const togglePageEmp = (field, id) => setPageForm((f) => ({ ...f, [field]: f[field].includes(id) ? f[field].filter((x) => x !== id) : [...f[field], id] }));
   const togglePageProduct = (id) => setPageForm((f) => ({ ...f, productIds: f.productIds.includes(id) ? f.productIds.filter((x) => x !== id) : [...f.productIds, id] }));
 
-  const mktEmployees = employees.filter((e) => e.roleType === "ads");
+  const mktEmployees = employees.filter((e) => ["ads", "sale"].includes(e.roleType));
   const [showForm, setShowForm] = useState(false);
+  const [editingLogId, setEditingLogId] = useState(null);
   const [rangeMode, setRangeMode] = useState("month");
   const [rangeFrom, setRangeFrom] = useState(new Date(reportYear || TODAY.getFullYear(), (reportMonth || TODAY.getMonth() + 1) - 1, 1).toISOString().slice(0, 10));
   const [rangeTo, setRangeTo] = useState(new Date(reportYear || TODAY.getFullYear(), (reportMonth || TODAY.getMonth() + 1), 0).toISOString().slice(0, 10));
@@ -9229,24 +11842,76 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
     setRangeTo(new Date(reportYear, reportMonth, 0).toISOString().slice(0, 10));
   }, [reportYear, reportMonth, rangeMode]);
   const [showRangePicker, setShowRangePicker] = useState(false);
+  const [dailySearch, setDailySearch] = useState("");
+  const [dailyEmployeeFilter, setDailyEmployeeFilter] = useState("all");
+  const [dailyPageFilter, setDailyPageFilter] = useState("all");
   const visibleLogs = rangeMode === "all" ? logs : logs.filter((l) => l.date >= rangeFrom && l.date <= rangeTo);
+  const defaultMarketingEmployeeId = canManageMarketing ? (mktEmployees[0]?.id || "") : (currentEmployee?.id || "");
   const [form, setForm] = useState({
-    date: TODAY_STR, employeeId: mktEmployees[0]?.id || "", pageId: "", pagesManaged: "1", customersReached: "",
+    date: TODAY_STR, employeeId: defaultMarketingEmployeeId, pageId: "", pagesManaged: "1", customersReached: "",
     conversions: "", adSpend: "", revenue: "", note: "",
   });
   const nameOf = (id) => employees.find((e) => e.id === id)?.name || "—";
+  const normalizedDailySearch = dailySearch.trim().toLocaleLowerCase("vi-VN");
+  const dailyTableLogs = visibleLogs.filter((log) => {
+    if (dailyEmployeeFilter !== "all" && Number(log.employeeId) !== Number(dailyEmployeeFilter)) return false;
+    if (dailyPageFilter !== "all") {
+      if (dailyPageFilter === "unassigned" && log.pageId) return false;
+      if (dailyPageFilter !== "unassigned" && Number(log.pageId) !== Number(dailyPageFilter)) return false;
+    }
+    if (!normalizedDailySearch) return true;
+    const searchable = [log.date, nameOf(log.employeeId), pageNameOf(log.pageId), log.note, log.customersReached, log.conversions]
+      .filter((value) => value !== undefined && value !== null)
+      .join(" ")
+      .toLocaleLowerCase("vi-VN");
+    return searchable.includes(normalizedDailySearch);
+  });
+  const dailyTableTotals = dailyTableLogs.reduce((sum, log) => ({
+    customers: sum.customers + (Number(log.customersReached) || 0),
+    conversions: sum.conversions + (Number(log.conversions) || 0),
+    spend: sum.spend + (Number(log.adSpend) || 0),
+    revenue: sum.revenue + (Number(log.revenue) || 0),
+  }), { customers: 0, conversions: 0, spend: 0, revenue: 0 });
+  const dailyTableConversionRate = dailyTableTotals.customers > 0 ? (dailyTableTotals.conversions / dailyTableTotals.customers) * 100 : 0;
+  const dailyTableRoas = dailyTableTotals.spend > 0 ? dailyTableTotals.revenue / dailyTableTotals.spend : 0;
+  const formatMarketingDate = (value) => {
+    const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return match ? `${match[3]}/${match[2]}/${match[1]}` : (value || "—");
+  };
 
-  const addLog = () => {
-    if (!form.employeeId || !form.customersReached) return;
-    setLogs((prev) => [...prev, {
-      ...form, id: Date.now(), employeeId: Number(form.employeeId), pageId: form.pageId ? Number(form.pageId) : null,
-      pagesManaged: Number(form.pagesManaged) || 0, customersReached: Number(form.customersReached) || 0,
-      conversions: Number(form.conversions) || 0, adSpend: Number(form.adSpend) || 0, revenue: Number(form.revenue) || 0,
-    }]);
-    setForm({ date: TODAY_STR, employeeId: mktEmployees[0]?.id || "", pageId: "", pagesManaged: "1", customersReached: "", conversions: "", adSpend: "", revenue: "", note: "" });
+  const resetMarketingLogForm = () => {
+    setEditingLogId(null);
+    setForm({ date: TODAY_STR, employeeId: defaultMarketingEmployeeId, pageId: "", pagesManaged: "1", customersReached: "", conversions: "", adSpend: "", revenue: "", note: "" });
     setShowForm(false);
   };
-  const removeLog = (id) => setLogs((prev) => prev.filter((l) => l.id !== id));
+  const startEditLog = (log) => {
+    if (!canEditMarketingLog(log)) return;
+    setEditingLogId(log.id);
+    setForm({
+      date: log.date || TODAY_STR, employeeId: String(log.employeeId || defaultMarketingEmployeeId),
+      pageId: log.pageId ? String(log.pageId) : "", pagesManaged: String(log.pagesManaged ?? 1),
+      customersReached: String(log.customersReached ?? ""), conversions: String(log.conversions ?? ""),
+      adSpend: String(log.adSpend ?? ""), revenue: String(log.revenue ?? ""), note: log.note || "",
+    });
+    setShowForm(true);
+  };
+  const addLog = () => {
+    if (!canWriteMarketingDaily || !form.customersReached) return;
+    const employeeId = canManageMarketing ? Number(form.employeeId) : Number(currentEmployee?.id);
+    if (!employeeId) return;
+    const normalized = {
+      ...form, employeeId, pageId: form.pageId ? Number(form.pageId) : null,
+      pagesManaged: Number(form.pagesManaged) || 0, customersReached: Number(form.customersReached) || 0,
+      conversions: Number(form.conversions) || 0, adSpend: Number(form.adSpend) || 0, revenue: Number(form.revenue) || 0,
+    };
+    if (editingLogId !== null) {
+      setLogs((prev) => prev.map((log) => log.id === editingLogId && canEditMarketingLog(log) ? { ...log, ...normalized } : log));
+    } else {
+      setLogs((prev) => [...prev, { ...normalized, id: Date.now() }]);
+    }
+    resetMarketingLogForm();
+  };
+  const removeLog = (id) => setLogs((prev) => prev.filter((log) => log.id !== id || !canEditMarketingLog(log)));
 
   // Xếp hạng hiệu suất hàng ngày theo từng người — trung bình khách/ngày, tỷ lệ chuyển đổi, ROAS.
   const leaderboard = mktEmployees.map((e) => {
@@ -9284,27 +11949,46 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
     return { page: p, spend, leadRevenue, realRevenue, realRoas, orderCount: pageOrders.length, byProduct };
   });
 
+  if (!lazyTableData.ready) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={[{ id: "daily", label: "Nhật ký hằng ngày", icon: CalendarCheck }, { id: "ranking", label: "Xếp hạng hiệu suất", icon: BarChart3 }, { id: "pages", label: "Quản lý Page", icon: Megaphone }, { id: "pageRevenue", label: "Doanh thu theo Page", icon: TrendingUp }]} />
+        <DataLoadingPanel title="Đang tải dữ liệu bảng đã chọn" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex flex-col gap-4">
-      <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
-        <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
-        <span>Ghi mỗi ngày làm việc của từng nhân viên Marketing/Ads ở đây — chi phí, doanh thu và số liệu chuyển đổi sẽ tự cộng vào <strong className="text-charcoal">Bảng lương</strong> và <strong className="text-charcoal">Hiệu suất</strong> theo tháng.</span>
+    <div className={activeTableView === "daily" ? "flex h-full min-h-0 flex-col gap-3 overflow-hidden" : "ktns-scrollbar flex h-full min-h-0 flex-col gap-4 overflow-y-auto pr-1"}>
+
+
+      <div className="shrink-0">
+      <SectionViewSwitcher
+        value={activeTableView}
+        onChange={setActiveTableView}
+        options={[
+          { id: "daily", label: "Nhật ký hàng ngày", icon: CalendarCheck, count: visibleLogs.length },
+          { id: "ranking", label: "Xếp hạng hiệu suất", icon: Gauge, count: leaderboard.length },
+          { id: "pages", label: "Quản lý Page", icon: Megaphone, count: (pages || []).length },
+          { id: "pageRevenue", label: "Doanh thu theo Page", icon: TrendingUp, count: pageStats.length },
+        ]}
+      />
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
+      <div style={{ display: activeTableView === "daily" ? "grid" : "none" }} className="shrink-0 grid-cols-2 gap-2.5 xl:grid-cols-4">
         <KpiCard icon={Megaphone} label="Số nhân viên Marketing" value={mktEmployees.length} />
         <KpiCard icon={ShoppingCart} label="Số ngày đã ghi nhận" value={logs.length} />
         <KpiCard icon={UserCheck} label="Khách tiếp cận hôm nay" value={totalCustomersToday} tone="up" />
         <KpiCard icon={TrendingUp} label="ROAS trung bình cao nhất" value={leaderboard[0] ? `${leaderboard[0].roas.toFixed(2)}x` : "—"} tone="up" sub={leaderboard[0]?.emp.name} />
       </div>
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+      <div style={{ display: activeTableView === "pages" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="px-4 pt-3 pb-2 flex items-center justify-between">
           <div className="text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><Megaphone size={13} /> Quản lý Page — ai chạy ads, đơn ra thì Sale nào xử lý</div>
-          <button onClick={() => { setEditingPageId(null); setPageForm(blankPageForm); setShowPageForm(true); }} className="text-xs bg-ink text-white px-2.5 py-1.5 rounded-md hover:bg-ink-light flex items-center gap-1"><Plus size={12} /> Thêm Page</button>
+          {canManageMarketing && <button onClick={() => { setEditingPageId(null); setPageForm(blankPageForm); setShowPageForm(true); }} className="text-xs bg-ink text-white px-2.5 py-1.5 rounded-md hover:bg-ink-light flex items-center gap-1"><Plus size={12} /> Thêm Page</button>}
         </div>
         {showPageForm && (
-          <div className="mx-4 mb-3 bg-paper border border-paper-line rounded-md p-3">
+          <div className="domix-inline-form-modal bg-white border border-paper-line rounded-md p-5">
             <div className="text-[11px] font-semibold text-ink uppercase mb-2">{editingPageId ? "Sửa Page — cập nhật đúng nhân sự đang có hiện tại" : "Page mới"}</div>
             <input value={pageForm.name} onChange={(e) => setPageForm({ ...pageForm, name: e.target.value })} placeholder="Tên Page (VD: Page DOMIX)" className="border border-paper-line rounded px-2 py-1.5 text-xs w-full mb-2" />
             <input value={pageForm.url} onChange={(e) => setPageForm({ ...pageForm, url: e.target.value })} placeholder="Link Page thật (VD: https://facebook.com/domix.page) — sếp bấm vào kiểm tra được" className="border border-paper-line rounded px-2 py-1.5 text-xs w-full mb-2" />
@@ -9370,10 +12054,10 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
                 <td className="px-4 py-2 text-xs">{p.marketingEmployeeIds?.map((id) => nameOf(id)).join(", ") || "—"}</td>
                 <td className="px-4 py-2 text-xs">{p.saleEmployeeIds?.map((id) => nameOf(id)).join(", ") || "—"}</td>
                 <td className="px-4 py-2 text-right">
-                  <div className="flex items-center justify-end gap-2">
+                  {canManageMarketing && <div className="flex items-center justify-end gap-2">
                     <button onClick={() => startEditPage(p)} className="text-muted hover:text-ink"><Pencil size={13} /></button>
                     <button onClick={() => removePage(p.id)} className="text-muted hover:text-stamp-red"><Trash2 size={14} /></button>
-                  </div>
+                  </div>}
                 </td>
               </tr>
             ))}
@@ -9382,7 +12066,7 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
       </div>
 
       {pageStats.length > 0 && (
-        <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+        <div style={{ display: activeTableView === "pageRevenue" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
           <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Doanh thu theo Page — cả phễu Marketing → Sale (kỳ đang xem)</div>
           <table className="w-full text-sm">
             <thead><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-4 py-2">Page</th><th className="px-4 py-2 text-right">Chi phí ads</th><th className="px-4 py-2 text-right">Doanh thu tự khai (Marketing)</th><th className="px-4 py-2 text-right">Đơn Sale chốt thật</th><th className="px-4 py-2 text-right">Doanh thu THẬT (CRM)</th><th className="px-4 py-2 text-right">ROAS thật cả phễu</th></tr></thead>
@@ -9415,7 +12099,7 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+      <div style={{ display: activeTableView === "ranking" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><Gauge size={13} /> Xếp hạng hiệu suất — để đánh giá hàng ngày</div>
         <table className="w-full text-sm">
           <thead>
@@ -9453,31 +12137,49 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
         </table>
       </div>
 
-      <div className="flex justify-between items-center">
-        <div className="flex items-center gap-2">
-          <RangeModePicker rangeMode={rangeMode} setRangeMode={setRangeMode} rangeFrom={rangeFrom} setRangeFrom={setRangeFrom} rangeTo={rangeTo} setRangeTo={setRangeTo} reportMonth={reportMonth} reportYear={reportYear} show={showRangePicker} setShow={setShowRangePicker} />
-          <p className="text-sm text-muted">{visibleLogs.length}/{logs.length} lượt ghi nhận theo ngày.</p>
-        </div>
-        <div className="flex gap-2">
-          <button onClick={() => exportMarketingExcel(visibleLogs, employees)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90">
-            <FileSpreadsheet size={15} /> Xuất Excel chi tiết
-          </button>
-          <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light">
-            <Plus size={15} /> Ghi nhận ngày mới
-          </button>
+      <div className="shrink-0 rounded-xl border border-paper-line bg-white p-3 shadow-sm">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <RangeModePicker rangeMode={rangeMode} setRangeMode={setRangeMode} rangeFrom={rangeFrom} setRangeFrom={setRangeFrom} rangeTo={rangeTo} setRangeTo={setRangeTo} reportMonth={reportMonth} reportYear={reportYear} show={showRangePicker} setShow={setShowRangePicker} />
+            {activeTableView === "daily" && <>
+              <select value={dailyEmployeeFilter} onChange={(event) => setDailyEmployeeFilter(event.target.value)} className="h-9 min-w-[155px] rounded-lg border border-paper-line bg-white px-2.5 text-xs text-ink">
+                <option value="all">Tất cả nhân viên</option>
+                {mktEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
+              </select>
+              <select value={dailyPageFilter} onChange={(event) => setDailyPageFilter(event.target.value)} className="h-9 min-w-[150px] rounded-lg border border-paper-line bg-white px-2.5 text-xs text-ink">
+                <option value="all">Tất cả Page</option>
+                <option value="unassigned">Chưa gán Page</option>
+                {(pages || []).map((page) => <option key={page.id} value={page.id}>{page.name}</option>)}
+              </select>
+              <label className="relative min-w-[220px] flex-1 xl:max-w-[360px]">
+                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                <input value={dailySearch} onChange={(event) => setDailySearch(event.target.value)} placeholder="Tìm nhân viên, Page, ghi chú..." className="h-9 w-full rounded-lg border border-paper-line bg-white pl-9 pr-3 text-xs text-ink outline-none transition focus:border-[#4f7ee8]" />
+              </label>
+              <span className="whitespace-nowrap text-[11px] text-muted">{dailyTableLogs.length}/{visibleLogs.length} dòng</span>
+            </>}
+            {activeTableView !== "daily" && <span className="text-xs text-muted">{visibleLogs.length}/{logs.length} lượt ghi nhận trong kỳ.</span>}
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <button onClick={() => exportMarketingExcel(visibleLogs, employees)} className="flex h-9 items-center gap-1.5 rounded-lg bg-ledger-green px-3.5 text-xs font-semibold text-white transition hover:opacity-90">
+              <FileSpreadsheet size={14} /> Xuất Excel
+            </button>
+            {canWriteMarketingDaily && <button onClick={() => { setEditingLogId(null); setForm((current) => ({ ...current, date: TODAY_STR, employeeId: defaultMarketingEmployeeId })); setShowForm(true); }} className="flex h-9 items-center gap-1.5 rounded-lg bg-ink px-3.5 text-xs font-semibold text-white transition hover:bg-ink-light">
+              <Plus size={14} /> Ghi nhận ngày mới
+            </button>}
+          </div>
         </div>
       </div>
 
       {showForm && (
-        <div className="bg-white rounded-lg border border-paper-line p-5 relative">
-          <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={async () => { if (form.customersReached && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setShowForm(false); }}><X size={16} /></button>
-          <h3 className="ktns-serif font-semibold text-ink mb-4">Ghi nhận hiệu suất ngày</h3>
+        <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
+          <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={async () => { if (form.customersReached && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; resetMarketingLogForm(); }}><X size={16} /></button>
+          <h3 className="ktns-serif font-semibold text-ink mb-4">{editingLogId !== null ? "Cập nhật Marketing hằng ngày" : "Ghi nhận hiệu suất ngày"}</h3>
           <div className="grid grid-cols-4 gap-3">
             <label className="text-xs text-muted flex flex-col gap-1">Ngày<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Nhân viên
-              <select value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
+              {canManageMarketing ? <select value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
                 {mktEmployees.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
-              </select>
+              </select> : <div className="border border-paper-line rounded bg-paper px-2 py-1.5 text-sm">{currentEmployee?.name || "Tài khoản hiện tại"}</div>}
             </label>
             <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Page đang chạy
               <select value={form.pageId} onChange={(e) => setForm({ ...form, pageId: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
@@ -9491,61 +12193,108 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
             <label className="text-xs text-muted flex flex-col gap-1">Doanh thu (đ)<MoneyInput value={form.revenue} onChange={(v) => setForm({ ...form, revenue: v })} /></label>
             <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Ghi chú tối ưu (đã đổi gì hôm nay)<input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="VD: đổi creative, tắt tập quảng cáo yếu..." className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
           </div>
-          <button onClick={addLog} className="mt-4 bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">Lưu</button>
+          <button onClick={addLog} className="mt-4 bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">{editingLogId !== null ? "Lưu cập nhật" : "Lưu"}</button>
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-x-auto">
-        <div className="max-h-[420px] overflow-y-auto">
-        <table className="w-full text-sm">
-          <thead className="sticky top-0 z-10">
-            <tr className="bg-paper text-left text-xs uppercase text-muted">
-              <th className="px-3 py-2.5">STT</th>
-              <th className="px-3 py-2.5">Ngày</th>
-              <th className="px-3 py-2.5">Nhân viên</th>
-              <th className="px-3 py-2.5">Page</th>
-              <th className="px-3 py-2.5 text-right">Khách tiếp cận</th>
-              <th className="px-3 py-2.5 text-right">Chuyển đổi</th>
-              <th className="px-3 py-2.5 text-right">Tỷ lệ CĐ</th>
-              <th className="px-3 py-2.5 text-right">Chi phí</th>
-              <th className="px-3 py-2.5 text-right">Doanh thu</th>
-              <th className="px-3 py-2.5 text-right">ROAS</th>
-              <th className="px-3 py-2.5">Ghi chú tối ưu</th>
-              <th className="px-3 py-2.5"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {visibleLogs.map((l, idx) => ({ ...l, _stt: idx + 1 })).slice().reverse().map((l) => {
-              const convRate = l.customersReached > 0 ? (l.conversions / l.customersReached) * 100 : 0;
-              const roas = l.adSpend > 0 ? l.revenue / l.adSpend : 0;
-              return (
-                <tr key={l.id} className="border-t border-paper-line">
-                  <td className="px-3 py-2 ktns-mono text-xs text-muted">{l._stt}</td>
-                  <td className="px-3 py-2 ktns-mono text-xs text-muted">{l.date}</td>
-                  <td className="px-3 py-2 text-xs font-medium">{nameOf(l.employeeId)}</td>
-                  <td className="px-3 py-2 text-xs">{pageNameOf(l.pageId) || <span className="text-muted">{l.pagesManaged} page (chưa đặt tên)</span>}</td>
-                  <td className="px-3 py-2 text-right ktns-mono text-xs">{l.customersReached}</td>
-                  <td className="px-3 py-2 text-right ktns-mono text-xs">{l.conversions}</td>
-                  <td className="px-3 py-2 text-right ktns-mono text-xs">{convRate.toFixed(1)}%</td>
-                  <td className="px-3 py-2 text-right ktns-mono text-xs text-muted">{fmtVND(l.adSpend)}</td>
-                  <td className="px-3 py-2 text-right ktns-mono text-xs text-ledger-green">{fmtVND(l.revenue)}</td>
-                  <td className="px-3 py-2 text-right ktns-mono text-xs font-medium">{roas.toFixed(2)}x</td>
-                  <td className="px-3 py-2 text-xs text-muted max-w-xs">{l.note || "—"}</td>
-                  <td className="px-3 py-2 text-right"><button onClick={() => removeLog(l.id)} className="text-muted hover:text-stamp-red"><Trash2 size={14} /></button></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+      <div style={{ display: activeTableView === "daily" ? undefined : "none" }} className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-paper-line bg-white shadow-sm">
+        <div className="shrink-0 flex flex-col gap-2 border-b border-paper-line bg-paper/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-semibold text-ink"><CalendarCheck size={16} className="text-[#4f7ee8]" /> Bảng hiệu suất Marketing theo ngày</div>
+            <p className="mt-0.5 text-[11px] text-muted">Theo dõi khách tiếp cận, chuyển đổi, chi phí, doanh thu và ROAS trên cùng một bảng.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+            <span className="rounded-full border border-paper-line bg-white px-2.5 py-1 text-muted">Tốt: CĐ ≥10%</span>
+            <span className="rounded-full border border-paper-line bg-white px-2.5 py-1 text-muted">Tốt: ROAS ≥3x</span>
+          </div>
+        </div>
+
+        <div className="ktns-scrollbar min-h-0 flex-1 overflow-auto overscroll-contain">
+          <table className="w-full min-w-[1280px] table-fixed text-sm">
+            <colgroup>
+              <col className="w-[58px]" />
+              <col className="w-[105px]" />
+              <col className="w-[150px]" />
+              <col className="w-[220px]" />
+              <col className="w-[115px]" />
+              <col className="w-[105px]" />
+              <col className="w-[100px]" />
+              <col className="w-[125px]" />
+              <col className="w-[130px]" />
+              <col className="w-[90px]" />
+              <col />
+              <col className="w-[78px]" />
+            </colgroup>
+            <thead className="sticky top-0 z-10 shadow-[0_1px_0_var(--paper-line)]">
+              <tr className="bg-paper text-left text-[10px] uppercase tracking-wide text-muted">
+                <th className="px-3 py-3 text-center">STT</th>
+                <th className="px-3 py-3">Ngày</th>
+                <th className="px-3 py-3">Nhân viên</th>
+                <th className="px-3 py-3">Page</th>
+                <th className="px-3 py-3 text-right">Tiếp cận</th>
+                <th className="px-3 py-3 text-right">Chuyển đổi</th>
+                <th className="px-3 py-3 text-right">Tỷ lệ CĐ</th>
+                <th className="px-3 py-3 text-right">Chi phí</th>
+                <th className="px-3 py-3 text-right">Doanh thu</th>
+                <th className="px-3 py-3 text-right">ROAS</th>
+                <th className="px-3 py-3">Ghi chú tối ưu</th>
+                <th className="px-3 py-3 text-center">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dailyTableLogs.length === 0 && <tr><td colSpan={12} className="h-56 px-4 text-center"><div className="mx-auto flex max-w-sm flex-col items-center gap-2 text-muted"><Search size={24} /><span className="text-sm font-medium text-ink">Không có dữ liệu phù hợp</span><span className="text-xs">Thử đổi khoảng ngày, nhân viên, Page hoặc từ khóa tìm kiếm.</span></div></td></tr>}
+              {dailyTableLogs.slice().reverse().map((log, index) => {
+                const conversionRate = log.customersReached > 0 ? (log.conversions / log.customersReached) * 100 : 0;
+                const roas = log.adSpend > 0 ? log.revenue / log.adSpend : 0;
+                const conversionTone = conversionRate >= 10 ? "text-ledger-green" : conversionRate >= 5 ? "text-gold" : "text-stamp-red";
+                const roasTone = roas >= 3 ? "text-ledger-green" : roas >= 1.5 ? "text-gold" : "text-stamp-red";
+                return (
+                  <tr key={log.id} className="group border-t border-paper-line transition-colors hover:bg-paper/55">
+                    <td className="px-3 py-2.5 text-center text-xs text-muted ktns-mono">{index + 1}</td>
+                    <td className="px-3 py-2.5 text-xs text-muted ktns-mono">{formatMarketingDate(log.date)}</td>
+                    <td className="px-3 py-2.5"><div className="truncate text-xs font-semibold text-ink" title={nameOf(log.employeeId)}>{nameOf(log.employeeId)}</div></td>
+                    <td className="px-3 py-2.5"><div className="truncate text-xs text-ink" title={pageNameOf(log.pageId) || `${log.pagesManaged || 0} page (chưa đặt tên)`}>{pageNameOf(log.pageId) || <span className="text-muted">{log.pagesManaged || 0} page (chưa đặt tên)</span>}</div></td>
+                    <td className="px-3 py-2.5 text-right text-xs font-semibold text-ink ktns-mono">{Number(log.customersReached || 0).toLocaleString("vi-VN")}</td>
+                    <td className="px-3 py-2.5 text-right text-xs font-semibold text-ink ktns-mono">{Number(log.conversions || 0).toLocaleString("vi-VN")}</td>
+                    <td className={`px-3 py-2.5 text-right text-xs font-semibold ktns-mono ${conversionTone}`}>{conversionRate.toFixed(1)}%</td>
+                    <td className="px-3 py-2.5 text-right text-xs text-muted ktns-mono">{fmtVND(log.adSpend)}</td>
+                    <td className="px-3 py-2.5 text-right text-xs font-semibold text-ledger-green ktns-mono">{fmtVND(log.revenue)}</td>
+                    <td className={`px-3 py-2.5 text-right text-xs font-bold ktns-mono ${roasTone}`}>{roas.toFixed(2)}x</td>
+                    <td className="px-3 py-2.5"><div className="line-clamp-2 text-xs leading-5 text-muted" title={log.note || ""}>{log.note || "—"}</div></td>
+                    <td className="px-3 py-2.5 text-center">{canEditMarketingLog(log) ? <div className="flex items-center justify-center gap-1">
+                      <button onClick={() => startEditLog(log)} className="rounded-md p-1.5 text-muted transition hover:bg-white hover:text-ink" title="Sửa cập nhật"><Pencil size={14} /></button>
+                      <button onClick={() => removeLog(log.id)} className="rounded-md p-1.5 text-muted transition hover:bg-white hover:text-stamp-red" title="Xóa cập nhật"><Trash2 size={14} /></button>
+                    </div> : <span className="text-[10px] text-muted">Chỉ xem</span>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="shrink-0 grid grid-cols-2 gap-px border-t border-paper-line bg-paper-line sm:grid-cols-3 xl:grid-cols-6">
+          {[
+            ["Số lượt ghi nhận", dailyTableLogs.length.toLocaleString("vi-VN")],
+            ["Khách tiếp cận", dailyTableTotals.customers.toLocaleString("vi-VN")],
+            ["Chuyển đổi", dailyTableTotals.conversions.toLocaleString("vi-VN")],
+            ["Tỷ lệ chuyển đổi", `${dailyTableConversionRate.toFixed(1)}%`],
+            ["Tổng chi phí", fmtVND(dailyTableTotals.spend)],
+            ["Doanh thu / ROAS", `${fmtVND(dailyTableTotals.revenue)} · ${dailyTableRoas.toFixed(2)}x`],
+          ].map(([label, value]) => <div key={label} className="bg-white px-3 py-2.5"><div className="text-[9px] font-semibold uppercase tracking-wide text-muted">{label}</div><div className="mt-0.5 truncate text-xs font-semibold text-ink ktns-mono" title={String(value)}>{value}</div></div>)}
         </div>
       </div>
-      <p className="text-xs text-muted">* Tỷ lệ chuyển đổi ≥10% và ROAS ≥3x được coi là tốt, dưới 5%/1.5x cần tối ưu lại — chỉnh ngưỡng này trong code nếu công ty có tiêu chuẩn riêng.</p>
     </div>
   );
 }
 
 // ---------- Chấm công ----------
-function ChamCong({ employees, setEmployees, unlockedMonths, setUnlockedMonths, company }) {
+function ChamCong({ authUser, employees, setEmployees, unlockedMonths, setUnlockedMonths, company }) {
+  const currentEmployee = employeeForAuthUser(employees, authUser);
+  const currentIsBoss = isAdminRole(authUser?.role);
+  const currentIsAccountant = !currentIsBoss && (isAccountantRole(authUser?.role) || employeeIsAccountant(currentEmployee));
+  const canViewAllAttendance = currentIsBoss || currentIsAccountant;
+  const canEditAttendance = currentIsBoss || currentIsAccountant;
+  const canSelfCheckToday = Boolean(currentEmployee) && !currentIsBoss && !currentIsAccountant && currentEmployee?.status !== "inactive";
   const [viewYear, setViewYear] = useState(ATT_YEAR);
   const [viewMonth, setViewMonth] = useState(ATT_MONTH);
   const isCurrentMonth = viewYear === ATT_YEAR && viewMonth === ATT_MONTH;
@@ -9553,7 +12302,10 @@ function ChamCong({ employees, setEmployees, unlockedMonths, setUnlockedMonths, 
   const locked = isPeriodLocked(viewYear, viewMonth, unlockedMonths);
   const days = Array.from({ length: daysInMonthVN(viewYear, viewMonth) }, (_, i) => i + 1);
 
-  const activeEmployees = employees.filter((e) => isEmployeeActiveInMonth(e, viewYear, viewMonth));
+  const allActiveEmployees = employees.filter((e) => isEmployeeActiveInMonth(e, viewYear, viewMonth));
+  const activeEmployees = canViewAllAttendance
+    ? allActiveEmployees
+    : allActiveEmployees.filter((employee) => Number(employee.id) === Number(currentEmployee?.id));
   const groups = Object.keys(ROLE_META)
     .map((rt) => ({ rt, meta: ROLE_META[rt], members: activeEmployees.filter((e) => e.roleType === rt) }))
     .filter((g) => g.members.length > 0);
@@ -9564,8 +12316,9 @@ function ChamCong({ employees, setEmployees, unlockedMonths, setUnlockedMonths, 
   const [unlockPassword, setUnlockPassword] = useState("");
   const [unlockError, setUnlockError] = useState("");
 
-  const openUnlockModal = () => { setUnlockPassword(""); setUnlockError(""); setShowUnlockModal(true); };
+  const openUnlockModal = () => { if (!canEditAttendance) return; setUnlockPassword(""); setUnlockError(""); setShowUnlockModal(true); };
   const confirmUnlock = () => {
+    if (!canEditAttendance) return;
     if (unlockPassword === (company.directorPassword || DEFAULT_DIRECTOR_PASSWORD)) {
       setUnlockedMonths((prev) => new Set(prev).add(monthKey(viewYear, viewMonth)));
       setShowUnlockModal(false);
@@ -9575,7 +12328,13 @@ function ChamCong({ employees, setEmployees, unlockedMonths, setUnlockedMonths, 
   };
 
   const updateCell = (empId, day, code) => {
-    if (locked) { openUnlockModal(); return; }
+    const isOwnToday = canSelfCheckToday
+      && Number(empId) === Number(currentEmployee?.id)
+      && viewYear === ATT_YEAR
+      && viewMonth === ATT_MONTH
+      && Number(day) === Number(TODAY.getDate());
+    if (!canEditAttendance && !isOwnToday) return;
+    if (canEditAttendance && locked) { openUnlockModal(); return; }
     setEmployees((prev) => prev.map((e) => {
       if (e.id !== empId) return e;
       const monthRec = { ...(e.attendance?.[key] || defaultMonthAttendance(viewYear, viewMonth)) };
@@ -9585,12 +12344,13 @@ function ChamCong({ employees, setEmployees, unlockedMonths, setUnlockedMonths, 
   };
 
   const quickAddEmp = () => {
+    if (!canEditAttendance) return;
     if (!quick.name || !quick.baseSalary) return;
     setEmployees((prev) => [...prev, {
       id: Date.now(), name: quick.name, position: quick.position || ROLE_META[quick.roleType].label,
       dept: quick.dept || ROLE_META[quick.roleType].label, roleType: quick.roleType,
       contractType: quick.contractType, probationRate: DEFAULT_PROBATION_RATE,
-      baseSalary: Number(quick.baseSalary) || 0, bonusTarget: 0, kpi: 100,
+      baseSalary: Number(quick.baseSalary) || 0, dailySalary: 0, bonusTarget: 0, kpi: 100,
       joined: TODAY_STR, status: "active", dependents: 0, mealAllowance: 730000, attendanceBonus: 300000, otherBonus: 0, advance: 0,
       dob: "", hometown: "", bankName: "", bankAccount: "", phone: "", email: "",
       customScore: 80, adSpend: 0, adRevenue: 0, conversions: 0, ctr: 0,
@@ -9606,8 +12366,12 @@ function ChamCong({ employees, setEmployees, unlockedMonths, setUnlockedMonths, 
     <div className="flex flex-col gap-4">
       <div className="flex justify-between items-center flex-wrap gap-2">
         <p className="text-sm text-muted">
-          Chủ nhật tự động là ngày nghỉ (CN). Ngày đã qua chưa chấm mặc định "X" (đủ công); <strong className="text-ink">ngày chưa tới bị khoá, để trắng</strong> — đúng ngày đó mới chấm được, tránh chấm công khống trước. Mỗi tháng lưu riêng, chuyển tháng vẫn giữ lịch sử.
-          {isCurrentMonth ? <> Ngày công tính đến hôm nay tự động đổ sang <strong className="text-ink">Bảng lương</strong>.</> : <strong className="text-gold"> Đang xem tháng khác — Bảng lương chỉ tính theo tháng {ATT_MONTH}/{ATT_YEAR}.</strong>}
+          Chấm công lưu riêng theo từng tháng và tự đổ số ngày công sang Bảng lương.
+          {currentIsBoss
+            ? <strong className="ml-1 text-ledger-green">Sếp xem và chỉnh sửa toàn bộ dữ liệu chấm công.</strong>
+            : currentIsAccountant
+              ? <strong className="ml-1 text-gold">Kế toán được xem toàn bộ nhưng không được sửa.</strong>
+              : <strong className="ml-1 text-[#69a3ff]">Bạn tự chấm công ngày hôm nay và chỉ xem lịch sử của chính mình.</strong>}
         </p>
         <div className="flex items-center gap-2">
           <select
@@ -9617,21 +12381,21 @@ function ChamCong({ employees, setEmployees, unlockedMonths, setUnlockedMonths, 
           >
             {MONTH_OPTIONS.map((o) => (<option key={monthKey(o.year, o.month)} value={monthKey(o.year, o.month)}>{monthLabelVN(o.month, o.year)}{o.year === ATT_YEAR && o.month === ATT_MONTH ? " (hiện tại)" : ""}</option>))}
           </select>
-          {locked ? (
+          {canEditAttendance && (locked ? (
             <button onClick={openUnlockModal} className="flex items-center gap-1.5 text-xs bg-stamp-red text-white px-3 py-2 rounded-md hover:opacity-90">
-              <CreditCard size={13} /> Đã khoá sổ — Nhập mật khẩu giám đốc
+              <CreditCard size={13} /> Đã khoá sổ — Mở khóa
             </button>
           ) : (
             !isCurrentMonth && new Date(viewYear, viewMonth, 0) < TODAY && (
               <span className="text-[10px] text-gold px-2 py-1 rounded-full bg-gold/10">Còn {LOCK_WINDOW_DAYS - Math.floor((TODAY - new Date(viewYear, viewMonth, 0)) / 86400000)} ngày trước khi khoá sổ</span>
             )
-          )}
-          <button onClick={() => setShowQuickAdd(true)} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light"><Plus size={15} /> Tuyển thêm nhân viên</button>
+          ))}
+          {canEditAttendance && <button onClick={() => setShowQuickAdd(true)} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light"><Plus size={15} /> Thêm nhân viên</button>}
         </div>
       </div>
 
-      {showQuickAdd && (
-        <div className="bg-white rounded-lg border border-paper-line p-5 relative">
+      {showQuickAdd && canEditAttendance && (
+        <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
           <button className="absolute top-3 right-3 text-muted" onClick={() => setShowQuickAdd(false)}><X size={16} /></button>
           <h3 className="ktns-serif font-semibold text-ink mb-1">Thêm nhân viên mới vào chấm công</h3>
           <p className="text-xs text-muted mb-4">Nhập nhanh để có mặt trong bảng chấm công ngay — vào tab Nhân sự sau để bổ sung lương thưởng, KPI, chỉ số vận hành chi tiết.</p>
@@ -9678,14 +12442,22 @@ function ChamCong({ employees, setEmployees, unlockedMonths, setUnlockedMonths, 
                     {groups.flatMap((g) => g.members.map((emp) => {
                       const rawCode = emp.attendance?.[key]?.[day];
                       const code = rawCode || (sunday ? "CN" : "");
+                      const isOwnToday = canSelfCheckToday
+                        && Number(emp.id) === Number(currentEmployee?.id)
+                        && viewYear === ATT_YEAR
+                        && viewMonth === ATT_MONTH
+                        && Number(day) === Number(TODAY.getDate());
+                      const canEditCell = canEditAttendance || isOwnToday;
                       return (
                         <td key={emp.id} className="px-1.5 py-1 border-t border-paper-line text-center">
                           {sunday ? (
                             <span className="ktns-mono text-xs text-stamp-red">CN</span>
                           ) : isFuture && !rawCode ? (
-                            <span className="ktns-mono text-xs text-paper-line" title="Chưa tới ngày — kế toán chỉ chấm được khi ngày này đến, tránh chấm công khống trước.">—</span>
-                          ) : locked ? (
-                            <button onClick={openUnlockModal} className="ktns-mono text-xs text-muted border border-dashed border-paper-line rounded px-1.5 py-0.5 w-11" title="Tháng đã khoá sổ — bấm để nhập mật khẩu giám đốc mở khoá">
+                            <span className="ktns-mono text-xs text-paper-line" title="Chưa tới ngày — chỉ Sếp được chỉnh khi ngày này đến, tránh chấm công khống trước.">—</span>
+                          ) : !canEditCell ? (
+                            <span className={`ktns-mono inline-flex min-w-10 justify-center rounded border px-1.5 py-0.5 text-xs ${code ? "border-paper-line text-ink" : "border-paper-line/60 text-muted"}`} title={code ? ATTENDANCE_CODES[code]?.label : "Chưa chấm công"}>{code || "—"}</span>
+                          ) : canEditAttendance && locked ? (
+                            <button onClick={openUnlockModal} className="ktns-mono text-xs text-muted border border-dashed border-paper-line rounded px-1.5 py-0.5 w-11" title="Tháng đã khoá sổ — bấm để mở khoá">
                               🔒{code || "—"}
                             </button>
                           ) : (
@@ -9722,7 +12494,11 @@ function ChamCong({ employees, setEmployees, unlockedMonths, setUnlockedMonths, 
             </div>
           ))}
           <p className="text-[11px] text-muted mt-2 pt-2 border-t border-paper-line">
-            Bấm "Tuyển thêm nhân viên" ở trên để thêm ngay tại đây, hoặc thêm đầy đủ hơn ở tab Nhân sự — cả hai cách đều tự xuất hiện đúng nhóm vị trí, mặc định làm đủ công.
+            {currentIsBoss
+              ? "Sếp có thể chỉnh trực tiếp từng ngày và toàn bộ nhân viên."
+              : currentIsAccountant
+                ? "Kế toán được xem toàn bộ lịch sử chấm công nhưng không được chỉnh sửa."
+                : "Bạn chỉ xem lịch sử của mình và được chấm công tại ô của ngày hôm nay."}
           </p>
           <p className="text-[11px] text-muted pt-2 border-t border-paper-line">
             Đổi tháng ở ô chọn phía trên để chấm bù/kiểm tra tháng trước — dữ liệu từng tháng lưu riêng, không ghi đè lên nhau. Ngày chưa tới luôn bị khoá dù ở tháng nào, tránh chấm công khống trước.
@@ -9730,7 +12506,7 @@ function ChamCong({ employees, setEmployees, unlockedMonths, setUnlockedMonths, 
         </div>
       </div>
 
-      {showUnlockModal && (
+      {showUnlockModal && canEditAttendance && (
         <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-5 w-80 shadow-xl" onClick={(ev) => ev.stopPropagation()}>
             <h3 className="ktns-serif font-semibold text-ink mb-1 flex items-center gap-1.5"><CreditCard size={15} /> Mở khoá sổ tháng {viewMonth}/{viewYear}</h3>
@@ -9768,7 +12544,7 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
   const [accountMessage, setAccountMessage] = useState("");
   const [accountError, setAccountError] = useState("");
   const [accountLoading, setAccountLoading] = useState(false);
-  const isAdmin = authUser?.role === "admin";
+  const isAdmin = isAdminRole(authUser?.role) || isAccountantRole(authUser?.role);
   const periodActive = employees.filter((e) => isEmployeeActiveInMonth(e, reportYear, reportMonth));
   const periodInactive = employees.filter((e) => !isEmployeeActiveInMonth(e, reportYear, reportMonth));
   const visibleEmployees = showInactive ? employees : periodActive;
@@ -9788,7 +12564,7 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
   }, [refreshUsers]);
 
   const blankForm = {
-    name: "", position: "", dept: "", baseSalary: "", bonusTarget: "", kpi: "100", joined: TODAY_STR,
+    name: "", position: "", dept: "", baseSalary: "", dailySalary: "", bonusTarget: "", kpi: "100", joined: TODAY_STR,
     dependents: "0", mealAllowance: "730000", attendanceBonus: "300000",
     roleType: "khac", customScore: "80",
     contractType: "chinh_thuc", probationRate: "85",
@@ -9820,9 +12596,10 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
   const [editingId, setEditingId] = useState(null);
 
   const startEdit = (e) => {
+    if (!isAdmin) return;
     setEditingId(e.id);
     setForm({
-      name: e.name, position: e.position, dept: e.dept, baseSalary: String(e.baseSalary), bonusTarget: String(e.bonusTarget), kpi: String(e.kpi), joined: e.joined,
+      name: e.name, position: e.position, dept: e.dept, baseSalary: String(e.baseSalary), dailySalary: String(e.dailySalary || 0), bonusTarget: String(e.bonusTarget), kpi: String(e.kpi), joined: e.joined,
       dependents: String(e.dependents || 0), mealAllowance: String(e.mealAllowance || 0), attendanceBonus: String(e.attendanceBonus || 0),
       roleType: e.roleType, customScore: String(e.customScore || 0),
       contractType: e.contractType || "chinh_thuc", probationRate: String(Math.round((e.probationRate || DEFAULT_PROBATION_RATE) * 100)),
@@ -9835,15 +12612,16 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
       salesTarget: String(e.salesTarget || 0), salesActual: String(e.salesActual || 0), dealsClosed: String(e.dealsClosed || 0), leadsHandled: String(e.leadsHandled || 0),
       tasksAssigned: String(e.tasksAssigned || 0), tasksCompleted: String(e.tasksCompleted || 0), tasksOnTime: String(e.tasksOnTime || 0), bugsFixed: String(e.bugsFixed || 0), upsaleValue: String(e.upsaleValue || 0),
       consecutiveLowKpiMonths: String(e.consecutiveLowKpiMonths || 0),
-      accountRole: accountForEmail(e.email)?.role || e.accountRole || "user",
+      accountRole: normalizeAccountRole(accountForEmail(e.email)?.role || e.accountRole || "user"),
     });
     setShowForm(true);
   };
   const closeForm = () => { setShowForm(false); setEditingId(null); setForm(blankForm); };
   // Bổ sung hồ sơ nhân sự cho một tài khoản đã có sẵn (email + quyền được điền trước).
   const startAddForAccount = (account) => {
+    if (!isAdmin) return;
     setEditingId(null);
-    setForm({ ...blankForm, email: account.email, accountRole: account.role || "user" });
+    setForm({ ...blankForm, email: account.email, accountRole: normalizeAccountRole(account.role || "user") });
     setShowForm(true);
   };
 
@@ -9854,7 +12632,7 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
     const existingAccount = accountForEmail(email);
     const payload = {
       email,
-      role: employee.accountRole || existingAccount?.role || "user",
+      role: normalizeAccountRole(employee.accountRole || existingAccount?.role || "user"),
       active: employee.status === "inactive" ? 0 : 1,
     };
     if (options.withDefaultPassword || !existingAccount) payload.password = DEFAULT_EMPLOYEE_PASSWORD;
@@ -9867,13 +12645,14 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
     const account = accountForEmail(employee.email);
     const result = await saveUser({
       email: employee.email.trim().toLowerCase(),
-      role: account?.role || employee.accountRole || "user",
+      role: normalizeAccountRole(account?.role || employee.accountRole || "user"),
       active: active ? 1 : 0,
     });
     setUsers(result.users || []);
   };
 
   const saveEmp = async () => {
+    if (!isAdmin) return;
     if (!form.name || !form.baseSalary || !form.email) {
       setAccountError("Cần nhập họ tên, lương và email đăng nhập cho nhân sự.");
       return;
@@ -9885,8 +12664,8 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
     const parsed = {
       ...form,
       email,
-      accountRole: form.accountRole || "user",
-      baseSalary: num(form.baseSalary), bonusTarget: num(form.bonusTarget), kpi: num(form.kpi),
+      accountRole: normalizeAccountRole(form.accountRole || "user"),
+      baseSalary: num(form.baseSalary), dailySalary: num(form.dailySalary), bonusTarget: num(form.bonusTarget), kpi: num(form.kpi),
       dependents: num(form.dependents), mealAllowance: num(form.mealAllowance) || 730000, attendanceBonus: num(form.attendanceBonus),
       customScore: num(form.customScore),
       probationRate: num(form.probationRate) / 100 || DEFAULT_PROBATION_RATE,
@@ -9921,8 +12700,9 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
   };
   const [resigningId, setResigningId] = useState(null);
   const [resignDate, setResignDate] = useState(TODAY.toISOString().slice(0, 10));
-  const startResign = (id) => { setResigningId(id); setResignDate(TODAY.toISOString().slice(0, 10)); };
+  const startResign = (id) => { if (!isAdmin) return; setResigningId(id); setResignDate(TODAY.toISOString().slice(0, 10)); };
   const confirmResign = async () => {
+    if (!isAdmin) return;
     const employee = employees.find((e) => e.id === resigningId);
     setEmployees((prev) => prev.map((e) => (e.id === resigningId ? { ...e, status: "inactive", resignedDate: resignDate } : e)));
     setResigningId(null);
@@ -9934,6 +12714,7 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
     }
   };
   const reactivate = async (id) => {
+    if (!isAdmin) return;
     const employee = employees.find((e) => e.id === id);
     setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, status: "active", resignedDate: null } : e)));
     try {
@@ -9943,8 +12724,43 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
       setAccountError(err.message || "Không mở lại được tài khoản đăng nhập.");
     }
   };
-  const updateField = (id, field, value) => setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, [field]: Number(value) || 0 } : e)));
-  const updateTextField = (id, field, value) => setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, [field]: value } : e)));
+  const [employeeDeleteTarget, setEmployeeDeleteTarget] = useState(null);
+  const [employeeDeleteLoading, setEmployeeDeleteLoading] = useState(false);
+
+  const requestDeleteEmployee = (employee) => {
+    if (!isAdmin || !employee) return;
+    const employeeEmail = String(employee.email || "").trim().toLowerCase();
+    const currentEmail = String(authUser?.email || "").trim().toLowerCase();
+    if (employeeEmail && employeeEmail === currentEmail) {
+      setAccountError("Không thể xóa hồ sơ và tài khoản đang dùng để đăng nhập. Hãy đăng nhập bằng một tài khoản quản trị khác trước.");
+      return;
+    }
+    setAccountError("");
+    setAccountMessage("");
+    setEmployeeDeleteTarget(employee);
+  };
+
+  const confirmDeleteEmployee = async () => {
+    if (!isAdmin || !employeeDeleteTarget || employeeDeleteLoading) return;
+    setEmployeeDeleteLoading(true);
+    setAccountError("");
+    setAccountMessage("");
+    try {
+      const result = await deleteEmployee(employeeDeleteTarget.id);
+      const deletedEmail = String(employeeDeleteTarget.email || "").trim().toLowerCase();
+      setEmployees(Array.isArray(result.employees) ? result.employees : employees.filter((employee) => employee.id !== employeeDeleteTarget.id));
+      if (deletedEmail) setUsers((current) => current.filter((user) => String(user.email || "").trim().toLowerCase() !== deletedEmail));
+      setAccountMessage(`Đã xóa nhân sự ${employeeDeleteTarget.name}${deletedEmail ? ` và tài khoản đăng nhập ${deletedEmail}` : ""}.`);
+      setEmployeeDeleteTarget(null);
+    } catch (err) {
+      setAccountError(err.message || "Không xóa được nhân sự và tài khoản đăng nhập.");
+    } finally {
+      setEmployeeDeleteLoading(false);
+    }
+  };
+
+  const updateField = (id, field, value) => { if (!isAdmin) return; setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, [field]: Number(value) || 0 } : e))); };
+  const updateTextField = (id, field, value) => { if (!isAdmin) return; setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, [field]: value } : e))); };
 
   return (
     <div className="flex flex-col gap-4">
@@ -9959,14 +12775,14 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
               {showInactive ? "Ẩn người đã nghỉ" : `Hiện cả ${periodInactive.length} người đã nghỉ/chưa vào`}
             </button>
           )}
-          <button onClick={() => { setForm(blankForm); setEditingId(null); setShowForm(true); }} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light"><Plus size={15} /> Thêm nhân viên</button>
+          {isAdmin ? <button onClick={() => { setForm(blankForm); setEditingId(null); setShowForm(true); }} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light"><Plus size={15} /> Thêm nhân viên</button> : <span className="rounded-md border border-gold/30 bg-gold/5 px-3 py-2 text-xs text-gold">Chỉ xem · Sếp mới được sửa nhân sự và tài khoản</span>}
         </div>
       </div>
 
       {accountMessage && <div className="bg-ledger-green/10 border border-ledger-green/20 rounded-lg px-3 py-2 text-xs text-ledger-green">{accountMessage}</div>}
       {accountError && <div className="bg-stamp-red/10 border border-stamp-red/20 rounded-lg px-3 py-2 text-xs text-stamp-red">{accountError}</div>}
 
-      {showForm && (
+      {showForm && isAdmin && (
         <div className="fixed inset-0 z-[80] bg-ink/50 backdrop-blur-sm flex items-center justify-center p-3 md:p-5">
           <div className="bg-white rounded-xl border border-paper-line shadow-2xl w-full max-w-7xl max-h-[94vh] flex flex-col overflow-hidden" onClick={(event) => event.stopPropagation()}>
             <div className="px-5 md:px-6 py-4 border-b border-paper-line bg-paper/30 flex items-center justify-between gap-4 shrink-0">
@@ -9984,8 +12800,9 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
               <label className="text-xs text-muted flex flex-col gap-1 md:col-span-2">Email đăng nhập<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="nhanvien@gmail.com" className="border border-paper-line rounded px-2 py-1.5 text-sm" required /></label>
               <label className="text-xs text-muted flex flex-col gap-1">Quyền tài khoản
                 <select value={form.accountRole} onChange={(e) => setForm({ ...form, accountRole: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm bg-white">
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
+                  <option value="user">Nhân viên</option>
+                  <option value="accountant">Kế toán</option>
+                  <option value="admin">Quản trị/Admin</option>
                 </select>
               </label>
               <div className="md:col-span-2 xl:col-span-4 text-[11px] text-ink-light bg-paper rounded px-2 py-1.5 flex items-center gap-1.5"><UserCheck size={12} /> Mật khẩu mặc định cho tài khoản mới: <strong className="ktns-mono text-ink">{DEFAULT_EMPLOYEE_PASSWORD}</strong></div>
@@ -10001,12 +12818,17 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
                 {Object.entries(ROLE_META).map(([id, m]) => (<option key={id} value={id}>{m.label}</option>))}
               </select>
             </label>
+            <div className="md:col-span-2 xl:col-span-3 rounded-md border border-gold/25 bg-gold/5 px-3 py-2 text-[11px] text-ink-light">
+              <strong className="text-ink">Quyền theo vị trí:</strong> {POSITION_ACCESS_META[form.roleType]?.summary || POSITION_ACCESS_META.khac.summary}
+              <span className="ml-1">Quyền tài khoản Admin/Kế toán vẫn được ưu tiên cao hơn.</span>
+            </div>
             <label className="text-xs text-muted flex flex-col gap-1">Loại hợp đồng
               <select value={form.contractType} onChange={(e) => setForm({ ...form, contractType: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
                 {Object.entries(CONTRACT_META).map(([id, m]) => (<option key={id} value={id}>{m.label}</option>))}
               </select>
             </label>
-            <label className="text-xs text-muted flex flex-col gap-1">Mức lương (đ)<MoneyInput value={form.baseSalary} onChange={(v) => setForm({ ...form, baseSalary: v })} /></label>
+            <label className="text-xs text-muted flex flex-col gap-1">Lương cơ bản tháng (đ)<MoneyInput value={form.baseSalary} onChange={(v) => setForm({ ...form, baseSalary: v })} /></label>
+            <label className="text-xs text-muted flex flex-col gap-1">Lương một ngày (đ)<MoneyInput value={form.dailySalary} onChange={(v) => setForm({ ...form, dailySalary: v })} /><span className="text-[10px] text-ink-light normal-case">Nếu để 0, hệ thống tự lấy lương cơ bản chia số ngày làm việc chuẩn của tháng.</span></label>
             <label className="text-xs text-muted flex flex-col gap-1">
               Mức thưởng mục tiêu (đ)<MoneyInput value={form.bonusTarget} onChange={(v) => setForm({ ...form, bonusTarget: v })} />
               <span className="text-[10px] text-ink-light normal-case">
@@ -10166,150 +12988,139 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
         </div>
       )}
 
-      <div className="grid grid-cols-3 gap-4">
-        {visibleEmployees.map((e) => {
-          const months = tenureMonths(e.joined);
-          const RoleIcon = ROLE_META[e.roleType]?.icon || UserCog;
-          const pay = computePayroll(e, reportYear, reportMonth);
-          return (
-            <div key={e.id} className="bg-white rounded-lg border border-paper-line p-4 flex flex-col gap-2.5">
-              <div className="flex justify-between items-start">
-                <div>
-                  <EditableName value={e.name} onSave={(v) => updateTextField(e.id, "name", v)} className="font-semibold text-ink text-sm" />
-                  <div className="text-xs text-muted">{e.position} · {e.dept}</div>
-                </div>
-                {e.status === "active" ? <StampBadge text="ĐANG LÀM" gold /> : <StampBadge text={e.resignedDate ? `NGHỈ TỪ ${e.resignedDate.split("-").reverse().join("/")}` : "NGHỈ VIỆC"} muted />}
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex items-center gap-1.5 text-[11px] text-ink-light"><RoleIcon size={12} /> {ROLE_META[e.roleType]?.label}</div>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${e.contractType === "ctv" ? "bg-gold" : e.contractType === "thu_viec" ? "bg-stamp-red" : "bg-ledger-green"}`} style={{ color: "white" }}>
-                  {CONTRACT_META[e.contractType]?.label || "Chính thức"}{e.contractType === "thu_viec" ? ` (${Math.round((e.probationRate || DEFAULT_PROBATION_RATE) * 100)}%)` : ""}
-                </span>
-              </div>
-              <div className="flex flex-col gap-0.5">
-                <div className="ktns-mono text-sm text-ink font-semibold">
-                  {pay.usesRevenueModel ? fmtVND(pay.mainSalary) : fmtVND(pay.salaryByDays)}
-                  <span className="text-muted text-[11px] font-normal"> tạm tính tháng {reportMonth}</span>
-                </div>
-                {pay.usesRevenueModel ? (
-                  <div className={`text-[10px] ${pay.actualDays === 0 ? "text-stamp-red font-medium" : "text-muted"}`}>
-                    {pay.actualDays === 0 ? "Chưa chấm công ngày nào — chưa phát sinh lương" : `Theo doanh số — lương cơ bản niêm yết ${fmtVND(e.baseSalary)}/tháng`}
-                  </div>
-                ) : (
-                  <div className="text-[10px] text-muted">{fmtVND(pay.daySalary)}/ngày × {pay.actualDays.toFixed(1)}/{pay.standardDays} ngày công đã chấm</div>
-                )}
-                <div className="text-[10px] flex items-center gap-1.5">
-                  <span className={pay.hasAbsence ? "text-stamp-red" : "text-ledger-green"}>
-                    {pay.hasAbsence ? `Mất chuyên cần (có ngày nghỉ)` : `Chuyên cần đủ +${fmtVND(e.attendanceBonus || 0)}`}
-                  </span>
-                  <span className="text-muted">· thưởng tới {fmtVND(e.bonusTarget)}</span>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center justify-between text-[11px] text-muted">
-                  <span className="flex items-center gap-1"><Target size={11} /> KPI thưởng</span>
-                  <input type="number" value={e.kpi} onChange={(ev) => updateField(e.id, "kpi", ev.target.value)} className="w-14 border border-paper-line rounded px-1 py-0.5 text-right ktns-mono text-[11px]" />
-                </div>
-                <KpiBar value={e.kpi} />
-                {!pay.usesRevenueModel && <div className="text-[10px] text-muted text-right">= {fmtVND(pay.kpiBonus)} thưởng KPI</div>}
-              </div>
-
-              <div className="flex items-center justify-between text-[11px] text-muted"><span className="flex items-center gap-1"><CalendarCheck size={11} /> Công tháng {reportMonth}</span><span className="ktns-mono">{monthlyCongFor(e.attendance, reportYear, reportMonth).toFixed(1)}/{standardWorkDaysFor(reportYear, reportMonth)} ngày</span></div>
-              <div className="flex items-center justify-between text-[11px] text-muted"><span>Thâm niên</span><span className="ktns-mono">{tenureLabel(months)}</span></div>
-
-              {e.email && (() => {
-                const account = accountForEmail(e.email);
-                return (
-                  <div className="flex flex-col gap-1 text-[11px] border-t border-paper-line pt-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="ktns-mono text-ink truncate">{e.email}</span>
-                      <span className={(account ? (account.active ? "text-ledger-green" : "text-stamp-red") : "text-muted") + " text-[10px] font-medium shrink-0"}>
-                        {account ? (account.active ? "Đang hoạt động" : "Đã khóa") : "Chưa tạo tài khoản"}
-                      </span>
+      <div className="domix-db-table-shell max-h-[68vh] ktns-scrollbar">
+        <table className="domix-db-table text-sm">
+          <thead>
+            <tr>
+              <th className="px-4 py-3 text-left">Nhân viên</th>
+              <th className="px-4 py-3 text-left">Chức vụ / Phòng ban</th>
+              <th className="px-4 py-3 text-left">Hợp đồng</th>
+              <th className="px-4 py-3 text-right">Lương tạm tính</th>
+              <th className="px-4 py-3 text-left">Công / KPI</th>
+              <th className="px-4 py-3 text-left">Tài khoản</th>
+              <th className="px-4 py-3 text-left">Trạng thái</th>
+              <th className="px-4 py-3 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleEmployees.length === 0 && accountsWithoutProfile.length === 0 && (
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-muted">Chưa có dữ liệu nhân sự phù hợp với kỳ đang xem.</td></tr>
+            )}
+            {visibleEmployees.map((e) => {
+              const months = tenureMonths(e.joined);
+              const pay = computePayroll(e, reportYear, reportMonth);
+              const account = e.email ? accountForEmail(e.email) : null;
+              const cong = monthlyCongFor(e.attendance, reportYear, reportMonth);
+              return (
+                <tr key={e.id}>
+                  <td className="px-4 py-3 min-w-[230px]">
+                    {isAdmin ? <EditableName value={e.name} onSave={(value) => updateTextField(e.id, "name", value)} className="font-semibold text-ink text-sm" /> : <div className="font-semibold text-ink text-sm">{e.name}</div>}
+                    <div className="mt-1 text-[11px] text-muted ktns-mono">{e.email || "Chưa có email"}</div>
+                    {e.phone && <div className="mt-1 text-[11px] text-muted">{e.phone}</div>}
+                  </td>
+                  <td className="px-4 py-3 min-w-[190px]">
+                    <div className="font-medium text-charcoal">{e.position || ROLE_META[e.roleType]?.label || "—"}</div>
+                    <div className="mt-1 text-xs text-muted">{e.dept || "Chưa gán phòng ban"}</div>
+                    <div className="mt-1 text-[10px] text-ink-light">Nhóm: {ROLE_META[e.roleType]?.label || "Khác"}</div>
+                  </td>
+                  <td className="px-4 py-3 min-w-[150px]">
+                    <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold text-white ${e.contractType === "ctv" ? "bg-gold" : e.contractType === "thu_viec" ? "bg-stamp-red" : "bg-ledger-green"}`}>
+                      {CONTRACT_META[e.contractType]?.label || "Chính thức"}
+                    </span>
+                    <div className="mt-2 text-[11px] text-muted">Thâm niên: {tenureLabel(months)}</div>
+                    <div className="mt-1 text-[11px] text-muted">Vào làm: {e.joined ? e.joined.split("-").reverse().join("/") : "—"}</div>
+                  </td>
+                  <td className="px-4 py-3 text-right min-w-[160px]">
+                    <div className="ktns-mono font-semibold text-ink">{fmtVND(pay.usesRevenueModel ? pay.mainSalary : pay.salaryByDays)}</div>
+                    <div className="mt-1 text-[10px] text-muted">Tháng {reportMonth}/{reportYear}</div>
+                    <div className="mt-1 text-[10px] text-muted">Cơ bản: {fmtVND(e.baseSalary)} · Ngày: {fmtVND(e.dailySalary || (e.baseSalary / standardWorkDaysFor(reportYear, reportMonth)))}</div>
+                  </td>
+                  <td className="px-4 py-3 min-w-[175px]">
+                    <div className="text-xs text-muted">Ngày công: <span className="ktns-mono font-medium text-charcoal">{cong.toFixed(1)}/{standardWorkDaysFor(reportYear, reportMonth)}</span></div>
+                    <div className="mt-2 flex items-center gap-2">
+                      <span className="text-xs text-muted">KPI</span>
+                      {isAdmin ? <input type="number" value={e.kpi} onChange={(event) => updateField(e.id, "kpi", event.target.value)} className="w-16 border border-paper-line rounded px-2 py-1 text-right ktns-mono text-xs" /> : <span className="ktns-mono text-xs font-semibold text-ink">{Number(e.kpi || 0)}%</span>}
                     </div>
-                    {isAdmin && (
-                      <div className="flex items-center gap-1.5">
+                    <div className="mt-2"><KpiBar value={e.kpi} /></div>
+                  </td>
+                  <td className="px-4 py-3 min-w-[190px]">
+                    <div className={`text-xs font-semibold ${account ? (account.active ? "text-ledger-green" : "text-stamp-red") : "text-muted"}`}>
+                      {account ? (account.active ? "Đang hoạt động" : "Đã khóa") : "Chưa tạo tài khoản"}
+                    </div>
+                    {isAdmin && e.email && (
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
                         <select
-                          value={account?.role || e.accountRole || "user"}
-                          onChange={async (ev) => {
+                          value={normalizeAccountRole(account?.role || e.accountRole || "user")}
+                          onChange={async (event) => {
                             try {
-                              const result = await saveUser({ email: e.email.trim().toLowerCase(), role: ev.target.value, active: account?.active ?? 1, ...(!account ? { password: DEFAULT_EMPLOYEE_PASSWORD } : {}) });
+                              const nextRole = normalizeAccountRole(event.target.value);
+                              updateTextField(e.id, "accountRole", nextRole);
+                              const result = await saveUser({ email: e.email.trim().toLowerCase(), role: nextRole, active: account?.active ?? 1, ...(!account ? { password: DEFAULT_EMPLOYEE_PASSWORD } : {}) });
                               setUsers(result.users || []);
-                              setAccountMessage(`Đã cập nhật quyền ${ev.target.value} cho ${e.email}.`);
+                              setAccountMessage(`Đã cập nhật quyền ${accountRoleLabel(event.target.value)} cho ${e.email}.`);
                             } catch (err) { setAccountError(err.message || "Không cập nhật được quyền tài khoản."); }
                           }}
-                          className="border border-paper-line rounded px-1.5 py-0.5 text-[11px] text-ink bg-white"
+                          className="border border-paper-line rounded px-2 py-1 text-xs bg-white"
                         >
-                          <option value="user">User</option>
-                          <option value="admin">Admin</option>
+                          <option value="user">Nhân viên</option>
+                          <option value="accountant">Kế toán</option>
+                          <option value="admin">Quản trị/Admin</option>
                         </select>
                         <button
                           onClick={async () => {
                             if (e.email === authUser?.email) { setAccountError("Không thể tự khóa tài khoản đang đăng nhập."); return; }
                             try {
                               const active = account ? !account.active : 1;
-                              const result = await saveUser({ email: e.email.trim().toLowerCase(), role: account?.role || e.accountRole || "user", active, ...(!account ? { password: DEFAULT_EMPLOYEE_PASSWORD } : {}) });
+                              const result = await saveUser({ email: e.email.trim().toLowerCase(), role: normalizeAccountRole(account?.role || e.accountRole || "user"), active, ...(!account ? { password: DEFAULT_EMPLOYEE_PASSWORD } : {}) });
                               setUsers(result.users || []);
                               setAccountMessage(`${active ? "Đã mở" : "Đã khóa"} tài khoản ${e.email}.`);
                             } catch (err) { setAccountError(err.message || "Không cập nhật được trạng thái tài khoản."); }
                           }}
                           disabled={e.email === authUser?.email}
-                          className="text-[11px] border border-paper-line text-ink px-2 py-0.5 rounded hover:border-gold disabled:opacity-40"
+                          className="border border-paper-line rounded px-2 py-1 text-xs text-ink disabled:opacity-40"
                         >
                           {account?.active ? "Khóa" : "Mở"}
                         </button>
                       </div>
                     )}
-                  </div>
-                );
-              })()}
-              {(e.phone || e.bankName) && (
-                <div className="flex flex-col gap-0.5 text-[11px] text-muted border-t border-paper-line pt-1.5">
-                  {e.phone && <div className="flex items-center gap-1.5"><Phone size={10} /> <span className="ktns-mono">{e.phone}</span></div>}
-                  {e.bankName && <div className="flex items-center gap-1.5"><Landmark size={10} /> {e.bankName} · <span className="ktns-mono">{e.bankAccount}</span></div>}
-                  {e.hometown && <div className="flex items-center gap-1.5"><MapPin size={10} /> {e.hometown}{e.dob ? ` · sinh ${e.dob.split("-").reverse().join("/")}` : ""}</div>}
-                  {e.idNumber && <div className="flex items-center gap-1.5"><CreditCard size={10} /> CCCD <span className="ktns-mono">{e.idNumber}</span></div>}
-                  {e.education && <div className="flex items-center gap-1.5"><ClipboardList size={10} /> {e.education}{e.major ? ` · ${e.major}` : ""}</div>}
-                </div>
-              )}
-              {e.resumeSummary && (
-                <div>
-                  <button onClick={() => setExpandedResume((p) => ({ ...p, [e.id]: !p[e.id] }))} className="text-[10px] text-ink-light underline">
-                    {expandedResume[e.id] ? "Ẩn sơ yếu lý lịch" : "Xem sơ yếu lý lịch"}
-                  </button>
-                  {expandedResume[e.id] && <p className="text-[11px] text-muted mt-1 bg-paper rounded p-2 leading-relaxed">{e.resumeSummary}</p>}
-                </div>
-              )}
-
-              <div className="flex gap-1.5 flex-wrap">
-                <LinkChip>đã tính vào Bảng lương</LinkChip>
-                <LinkChip>chấm công ở tab Chấm công</LinkChip>
-                <LinkChip>xem ở Hiệu suất</LinkChip>
-              </div>
-
-              <div className="flex gap-3 items-center mt-1">
-                <button onClick={() => startEdit(e)} className="text-xs text-ink font-medium flex items-center gap-1 hover:text-ink-light"><Pencil size={11} /> Sửa thông tin</button>
-                <button onClick={() => (e.status === "active" ? startResign(e.id) : reactivate(e.id))} className="text-xs text-ink-light underline">{e.status === "active" ? "Đánh dấu nghỉ việc" : "Kích hoạt lại"}</button>
-              </div>
-            </div>
-          );
-        })}
-        {accountsWithoutProfile.map((u) => (
-          <div key={`acc-${u.email}`} className="bg-paper/60 rounded-lg border border-dashed border-paper-line p-4 flex flex-col gap-2.5">
-            <div className="flex justify-between items-start">
-              <div>
-                <div className="font-semibold text-ink-light italic text-sm">Chưa có hồ sơ nhân sự</div>
-                <div className="text-xs text-muted ktns-mono truncate">{u.email}</div>
-              </div>
-              <span className={(u.active ? "text-ledger-green" : "text-stamp-red") + " text-[10px] font-medium"}>{u.active ? "Đang hoạt động" : "Đã khóa"}</span>
-            </div>
-            <div className="text-[11px] text-muted">Tài khoản đăng nhập (quyền: {u.role}) chưa gắn với nhân sự nào — bổ sung hồ sơ để tính lương, chấm công, hiệu suất.</div>
-            <div className="mt-auto">
-              <button onClick={() => startAddForAccount(u)} className="text-xs text-ink font-medium inline-flex items-center gap-1 hover:text-ink-light"><Plus size={11} /> Bổ sung hồ sơ</button>
-            </div>
-          </div>
-        ))}
+                  </td>
+                  <td className="px-4 py-3 min-w-[145px]">
+                    {e.status === "active" ? <StampBadge text="ĐANG LÀM" gold /> : <StampBadge text={e.resignedDate ? `NGHỈ TỪ ${e.resignedDate.split("-").reverse().join("/")}` : "NGHỈ VIỆC"} muted />}
+                    {e.hometown && <div className="mt-2 text-[11px] text-muted">{e.hometown}</div>}
+                  </td>
+                  <td className="px-4 py-3 text-right min-w-[245px]">
+                    {isAdmin ? <div className="flex flex-wrap justify-end gap-2">
+                      <button onClick={() => startEdit(e)} className="rounded-md bg-ink px-3 py-1.5 text-xs font-semibold text-white">Sửa</button>
+                      <button onClick={() => (e.status === "active" ? startResign(e.id) : reactivate(e.id))} className="rounded-md border border-paper-line px-3 py-1.5 text-xs text-ink-light">
+                        {e.status === "active" ? "Nghỉ việc" : "Kích hoạt"}
+                      </button>
+                      <button
+                        onClick={() => requestDeleteEmployee(e)}
+                        disabled={String(e.email || "").trim().toLowerCase() === String(authUser?.email || "").trim().toLowerCase()}
+                        className="inline-flex items-center gap-1 rounded-md border border-stamp-red/30 bg-stamp-red/5 px-3 py-1.5 text-xs font-semibold text-stamp-red hover:bg-stamp-red/10 disabled:cursor-not-allowed disabled:opacity-40"
+                        title="Xóa hồ sơ nhân sự và tài khoản đăng nhập liên kết"
+                      >
+                        <Trash2 size={13} /> Xóa
+                      </button>
+                    </div> : <span className="text-[10px] text-muted">Chỉ xem</span>}
+                  </td>
+                </tr>
+              );
+            })}
+            {isAdmin && accountsWithoutProfile.map((user) => (
+              <tr key={`acc-${user.email}`} className="bg-paper/40">
+                <td className="px-4 py-3">
+                  <div className="font-semibold text-ink-light italic">Chưa có hồ sơ nhân sự</div>
+                  <div className="mt-1 text-[11px] text-muted ktns-mono">{user.email}</div>
+                </td>
+                <td className="px-4 py-3 text-xs text-muted" colSpan={4}>Tài khoản đăng nhập chưa liên kết hồ sơ. Cần bổ sung để tính lương, chấm công và hiệu suất.</td>
+                <td className="px-4 py-3 text-xs">Quyền: <strong>{accountRoleLabel(user.role)}</strong></td>
+                <td className="px-4 py-3"><span className={user.active ? "text-ledger-green text-xs font-semibold" : "text-stamp-red text-xs font-semibold"}>{user.active ? "Đang hoạt động" : "Đã khóa"}</span></td>
+                <td className="px-4 py-3 text-right"><button onClick={() => startAddForAccount(user)} className="rounded-md bg-ink px-3 py-1.5 text-xs font-semibold text-white">Bổ sung hồ sơ</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
 
       {resigningId && (
@@ -10323,6 +13134,33 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
             <div className="flex gap-2 mt-4">
               <button onClick={confirmResign} className="bg-stamp-red text-white text-sm px-3 py-1.5 rounded-md hover:opacity-90">Xác nhận nghỉ việc</button>
               <button onClick={() => setResigningId(null)} className="border border-paper-line text-sm px-3 py-1.5 rounded-md text-muted">Huỷ</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {employeeDeleteTarget && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-ink/50 p-4 backdrop-blur-sm" onClick={() => !employeeDeleteLoading && setEmployeeDeleteTarget(null)}>
+          <div className="w-full max-w-md rounded-xl border border-stamp-red/20 bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-stamp-red/10 text-stamp-red"><Trash2 size={18} /></div>
+              <div className="min-w-0 flex-1">
+                <h3 className="ktns-serif text-lg font-semibold text-ink">Xóa nhân sự và tài khoản đăng nhập?</h3>
+                <p className="mt-1 text-sm text-muted">
+                  Nhân sự <strong className="text-ink">{employeeDeleteTarget.name}</strong>
+                  {employeeDeleteTarget.email ? <> và tài khoản <strong className="ktns-mono text-ink">{employeeDeleteTarget.email}</strong></> : null} sẽ bị xóa vĩnh viễn.
+                </p>
+              </div>
+              <button type="button" onClick={() => setEmployeeDeleteTarget(null)} disabled={employeeDeleteLoading} className="text-muted hover:text-ink disabled:opacity-40"><X size={18} /></button>
+            </div>
+            <div className="mt-4 rounded-lg border border-stamp-red/15 bg-stamp-red/5 px-3 py-2.5 text-xs leading-5 text-ink-light">
+              Tài khoản đăng nhập và toàn bộ phiên đăng nhập sẽ bị thu hồi. Dữ liệu chat gắn trực tiếp với tài khoản có thể bị xóa; dữ liệu nghiệp vụ lịch sử khác vẫn được giữ để đối soát.
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <button type="button" onClick={() => setEmployeeDeleteTarget(null)} disabled={employeeDeleteLoading} className="rounded-md border border-paper-line px-3 py-2 text-sm text-muted disabled:opacity-40">Hủy</button>
+              <button type="button" onClick={confirmDeleteEmployee} disabled={employeeDeleteLoading} className="inline-flex items-center gap-1.5 rounded-md bg-stamp-red px-3 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60">
+                <Trash2 size={14} /> {employeeDeleteLoading ? "Đang xóa..." : "Xóa vĩnh viễn"}
+              </button>
             </div>
           </div>
         </div>
@@ -10348,7 +13186,9 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
 }
 
 // ---------- Hiệu suất nhân viên ----------
-function HieuSuat({ employees, masterRanking, supportCases }) {
+function HieuSuat({ employees, masterRanking, supportCases, dataLoader }) {
+  const [activeTableView, setActiveTableView] = useState("overview");
+  const lazyTableData = useLazyTableData(activeTableView, { overview: ["supportCases"], details: ["supportCases"] }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   // Số ca Hỗ trợ khách hàng đã hoàn thành — tính THẬT từ dữ liệu module Hỗ trợ khách hàng, không
   // phải số tự gõ tay như tasksAssigned/tasksCompleted — nối 2 module lại với nhau để đánh giá
   // hiệu suất Kỹ thuật/CSKH phản ánh đúng khối lượng hỗ trợ thật đã xử lý trong kỳ.
@@ -10366,10 +13206,28 @@ function HieuSuat({ employees, masterRanking, supportCases }) {
   const filters = [{ id: "all", label: "Tất cả" }, ...Object.entries(ROLE_META).map(([id, m]) => ({ id, label: m.label }))];
   const categoryCounts = (masterRanking || []).reduce((acc, r) => { acc[r.category] = (acc[r.category] || 0) + 1; return acc; }, {});
 
+  if (!lazyTableData.ready) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={[{ id: "overview", label: "Xếp hạng tổng hợp", icon: Gauge }, { id: "details", label: "Chi tiết từng nhân viên", icon: Users }]} />
+        <DataLoadingPanel title="Đang tải dữ liệu bảng đã chọn" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
+      <SectionViewSwitcher
+        value={activeTableView}
+        onChange={setActiveTableView}
+        options={[
+          { id: "overview", label: "Xếp hạng tổng hợp", icon: Gauge, count: (masterRanking || []).length },
+          { id: "details", label: "Chi tiết từng nhân viên", icon: Users, count: employees.length },
+        ]}
+      />
+
       {masterRanking && masterRanking.length > 0 && (
-        <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+        <div style={{ display: activeTableView === "overview" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
           <div className="px-4 pt-3 pb-2 flex items-center justify-between flex-wrap gap-2">
             <div>
               <div className="text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><Gauge size={13} /> Xếp hạng tổng hợp — ai chăm, ai lười, ai cần cải thiện</div>
@@ -10439,7 +13297,7 @@ function HieuSuat({ employees, masterRanking, supportCases }) {
         ))}
       </div>
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-x-auto">
+      <div style={{ display: activeTableView === "details" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-paper text-left text-xs uppercase text-muted">
@@ -10480,7 +13338,7 @@ function HieuSuat({ employees, masterRanking, supportCases }) {
         </table>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div style={{ display: activeTableView === "details" ? "grid" : "none" }} className="grid grid-cols-2 gap-4">
         {filtered.map((e) => {
           const perf = evaluatePerformance(e);
           const RoleIcon = ROLE_META[e.roleType]?.icon || UserCog;
@@ -10535,14 +13393,23 @@ function HieuSuat({ employees, masterRanking, supportCases }) {
 }
 
 // ---------- Bảng lương ----------
-function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, reportMonth, setTransactions, payrollPayments, setPayrollPayments, company, kpiTiers, setKpiTiers, payrollApprovals, setPayrollApprovals, midMonthRequests, setMidMonthRequests, employees }) {
+function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, reportMonth, setTransactions, payrollPayments, setPayrollPayments, company, kpiTiers, setKpiTiers, payrollApprovals, setPayrollApprovals, midMonthRequests, setMidMonthRequests, employees, authUser, dataLoader }) {
+  // Hai nghiệp vụ dùng chung một màn hình nhưng luôn được phân loại rõ:
+  // - monthly: đề xuất lương hàng tháng bình thường.
+  // - midmonth: yêu cầu thanh toán lương sớm do nghỉ việc/nghỉ ngang.
+  const monthlySectionRef = useRef(null);
+  const midMonthSectionRef = useRef(null);
+  const scrollToPayrollSection = (ref) => ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   const [showKpiConfig, setShowKpiConfig] = useState(false);
+  const [showPayrollSummary, setShowPayrollSummary] = useState(true);
+  const [payrollListMode, setPayrollListMode] = useState("monthly");
+  const lazyTableData = useLazyTableData(payrollListMode, { monthly: ["payrollApprovals", "payrollPayments", "kpiTiers", "transactions"], midmonth: ["midMonthRequests", "payrollPayments", "transactions"] }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
+  const [showSalaryRules, setShowSalaryRules] = useState(false);
   const addKpiTierRow = (role) => setKpiTiers((prev) => ({ ...prev, [role]: [...prev[role], { minRevenue: 0, pct: 0 }] }));
   const updateKpiTierRow = (role, i, field, value) => setKpiTiers((prev) => ({ ...prev, [role]: prev[role].map((t, idx) => (idx === i ? { ...t, [field]: Number(value) || 0 } : t)) }));
   const removeKpiTierRow = (role, i) => setKpiTiers((prev) => ({ ...prev, [role]: prev[role].filter((_, idx) => idx !== i) }));
   const [expanded, setExpanded] = useState({});
   const toggleExpand = (id) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
-  const updateAdjustment = (id, field, value) => setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, [field]: Number(value) || 0 } : e)));
   // Drawer chi tiết MỘT nhân sự (mục XI) — overlay rộng thay cho việc kéo ngang bảng.
   const [detailRowId, setDetailRowId] = useState(null);
   const detailRow = payrollRows.find((r) => r.id === detailRowId) || null;
@@ -10550,80 +13417,727 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
   const periodKey = `${reportYear}-${reportMonth}`;
   const paymentOf = (employeeId) => payrollPayments.find((p) => p.employeeId === employeeId && p.year === reportYear && p.month === reportMonth);
   const approvalOf = (employeeId) => payrollApprovals.find((a) => a.employeeId === employeeId && a.year === reportYear && a.month === reportMonth);
-  // Kế toán duyệt trước — đánh dấu đã rà số liệu đúng, chuyển sang chờ sếp xác nhận.
-  const accountantApprove = (r) => {
-    setPayrollApprovals((prev) => {
-      const existing = approvalOf(r.id);
-      if (existing) return prev.map((a) => (a.id === existing.id ? { ...a, status: "cho_sep_xac_nhan", amount: r.net, accountantApprovedAt: nowStamp() } : a));
-      return [...prev, { id: Date.now(), employeeId: r.id, year: reportYear, month: reportMonth, amount: r.net, status: "cho_sep_xac_nhan", accountantApprovedAt: nowStamp(), bossApprovedAt: null }];
-    });
+
+  // Luồng xét duyệt lương có lưu dấu vết người duyệt:
+  // Bắt buộc: Nhân viên đề xuất → Kế toán duyệt → Sếp duyệt và đóng dấu.
+  // Kế toán từ chối trả về nhân viên; Sếp từ chối trả về Kế toán.
+  const activeAccountants = employees.filter((employee) => (
+    employeeIsAccountant(employee)
+    && String(employee.email || "").trim()
+  ));
+  const hasAccountant = activeAccountants.length > 0;
+  const currentEmployee = employeeForAuthUser(employees, authUser);
+  // Admin và Kế toán là hai cấp thẩm định riêng biệt. Một tài khoản Admin dù hồ sơ
+  // nhân sự có chức danh Kế toán cũng không được xử lý thay bước của Kế toán.
+  const currentIsBoss = isAdminRole(authUser?.role);
+  const currentIsAccountant = !currentIsBoss && (isAccountantRole(authUser?.role) || employeeIsAccountant(currentEmployee));
+  // Chỉ nhân viên thuộc các chức danh khác mới được tạo/gửi lại đề xuất của chính mình.
+  const currentCanSubmitPayroll = Boolean(currentEmployee) && !currentIsBoss && !currentIsAccountant && currentEmployee?.status !== "inactive";
+  const canViewAllPayroll = currentIsBoss || currentIsAccountant;
+  const isCurrentPayrollPeriod = Number(reportYear) === Number(ATT_YEAR) && Number(reportMonth) === Number(ATT_MONTH);
+  // Hàng đợi thẩm định chỉ hiển thị HỒ SƠ ĐÃ ĐƯỢC NHÂN VIÊN TẠO.
+  // - Kế toán: thấy các đề xuất cấp dưới đã gửi (kể cả hồ sơ đang chờ Admin hoặc bị trả lại).
+  // - Admin: chỉ thấy hồ sơ Kế toán đã trình lên và hồ sơ đã đóng dấu để có thể xóa.
+  // - Nhân viên: chỉ thấy dòng của chính mình để tạo/sửa/gửi lại và xem lịch sử.
+  const visiblePayrollRows = currentIsBoss
+    ? payrollRows.filter((row) => {
+        const approval = approvalOf(row.id);
+        return approval && ["cho_sep_xac_nhan", "da_duyet_cho_thanh_toan", "cho_ke_toan_chi_tra"].includes(approval.status);
+      })
+    : currentIsAccountant
+      ? payrollRows.filter((row) => Boolean(approvalOf(row.id)))
+      : payrollRows.filter((row) => Number(row.id) === Number(currentEmployee?.id));
+  const visibleMidMonthRequests = currentIsBoss
+    ? midMonthRequests.filter((request) => ["cho_sep_xac_nhan", "da_duyet_cho_thanh_toan", "cho_ke_toan_chi_tra"].includes(request.status))
+    : currentIsAccountant
+      ? midMonthRequests
+      : midMonthRequests.filter((request) => Number(request.employeeId) === Number(currentEmployee?.id));
+  const periodVisibleMidMonthRequests = visibleMidMonthRequests.filter((request) => {
+    const requestDate = new Date(request.date);
+    return requestDate.getFullYear() === Number(reportYear) && requestDate.getMonth() + 1 === Number(reportMonth);
+  });
+  const monthlyPendingCount = currentIsBoss
+    ? visiblePayrollRows.filter((row) => approvalOf(row.id)?.status === "cho_sep_xac_nhan").length
+    : currentIsAccountant
+      ? visiblePayrollRows.filter((row) => approvalOf(row.id)?.status === "cho_ke_toan_duyet").length
+      : visiblePayrollRows.filter((row) => {
+          const approval = approvalOf(row.id);
+          return !approval || approval.status === "tra_ve_nhan_vien";
+        }).length;
+  const midMonthPendingCount = currentIsBoss
+    ? periodVisibleMidMonthRequests.filter((request) => request.status === "cho_sep_xac_nhan").length
+    : currentIsAccountant
+      ? periodVisibleMidMonthRequests.filter((request) => request.status === "cho_ke_toan_duyet").length
+      : periodVisibleMidMonthRequests.filter((request) => request.status === "tra_ve_nhan_vien").length;
+  const monthlyProposalCount = visiblePayrollRows.filter((row) => Boolean(approvalOf(row.id))).length;
+  const midMonthRequestTotal = periodVisibleMidMonthRequests.reduce((sum, request) => sum + (Number(request.amount) || 0), 0);
+  const actorIdentity = () => ({
+    email: String(authUser?.email || "").trim().toLowerCase(),
+    name: currentEmployee?.name || (currentIsBoss ? "Sếp / Quản trị viên" : authUser?.email || "Người dùng"),
+    at: nowStamp(),
+  });
+  const appendApprovalHistory = (record, step, label) => {
+    const actor = actorIdentity();
+    return [
+      ...(Array.isArray(record?.approvalHistory) ? record.approvalHistory : []),
+      { id: Date.now() + Math.random(), step, label, ...actor },
+    ];
   };
-  const [bossConfirmTarget, setBossConfirmTarget] = useState(null);
-  const [bossPassword, setBossPassword] = useState("");
-  const [bossConfirmError, setBossConfirmError] = useState("");
-  const openBossConfirm = (r) => { setBossConfirmTarget(r); setBossPassword(""); setBossConfirmError(""); };
-  const confirmBossApproval = () => {
-    if (bossPassword !== (company.directorPassword || DEFAULT_DIRECTOR_PASSWORD)) { setBossConfirmError("Sai mật khẩu giám đốc — không thể xác nhận."); return; }
-    const r = bossConfirmTarget;
-    setPayrollApprovals((prev) => prev.map((a) => (a.employeeId === r.id && a.year === reportYear && a.month === reportMonth ? { ...a, status: "da_duyet_cho_thanh_toan", bossApprovedAt: nowStamp() } : a)));
-    setBossConfirmTarget(null);
+  const approvalStatusLabel = (approval, paid) => {
+    if (paid) return "Đã chi trả";
+    if (!approval) return "Chưa gửi xét duyệt";
+    if (approval.status === "tra_ve_nhan_vien") return "Kế toán trả về — nhân viên sửa và gửi lại";
+    if (approval.status === "cho_ke_toan_duyet") return approval.returnedByBoss ? "Sếp trả về — chờ kế toán rà soát lại" : "Chờ kế toán duyệt";
+    if (approval.status === "cho_sep_xac_nhan") return "Chờ sếp xác nhận";
+    if (approval.status === "cho_ke_toan_chi_tra") return "Đã duyệt (dữ liệu cũ) — chờ Kế toán chi trả";
+    if (approval.status === "da_duyet_cho_thanh_toan") return "Sếp đã duyệt — đã đóng dấu";
+    return approval.status || "Chưa duyệt";
   };
-  // Đánh dấu "Đã chi trả" giờ ghi THẬT một khoản Chi vào Thu Chi (đúng người, đúng số tiền thực lãnh
-  // tháng này) — trước đây nút này chỉ đổi màu chữ trên giao diện, không có giao dịch nào cả.
-  // BẮT BUỘC phải qua đủ 2 bước duyệt (Kế toán → Sếp) mới cho phép bấm chi trả thật.
-  const togglePaid = (r) => {
-    const existing = paymentOf(r.id);
-    if (existing) {
-      setTransactions((prev) => prev.filter((t) => t.id !== existing.linkedTxId));
-      setPayrollPayments((prev) => prev.filter((p) => p.id !== existing.id));
+
+  // ---------- FORM TẠO ĐỀ XUẤT LƯƠNG ----------
+  // Đề xuất là một hồ sơ có số liệu và căn cứ rõ ràng, không phải nút gửi dữ liệu lương tự tính.
+  const [proposalTarget, setProposalTarget] = useState(null);
+  const [proposalForm, setProposalForm] = useState(null);
+
+  // Chuẩn hóa số liệu đề xuất. "Lương theo ngày" là ĐƠN GIÁ MỘT NGÀY,
+  // tiền lương kỳ này luôn = số ngày công × đơn giá ngày.
+  const proposalNumbersOf = (source = {}) => {
+    const requestedWorkDays = Math.max(0, Number(source?.requestedWorkDays) || 0);
+    const requestedDailySalary = Math.max(0, Number(
+      source?.requestedDailySalary ?? source?.requestedBaseSalary ?? 0
+    ) || 0);
+    const requestedSalaryByDays = requestedWorkDays * requestedDailySalary;
+    const requestedBonus = Math.max(0, Number(source?.requestedBonus) || 0);
+    const requestedAllowance = Math.max(0, Number(source?.requestedAllowance) || 0);
+    const hasDeductionBreakdown = [
+      "requestedInsuranceDeduction",
+      "requestedTaxDeduction",
+      "requestedAdvanceDeduction",
+      "requestedOtherDeduction",
+    ].some((field) => source?.[field] !== undefined && source?.[field] !== null && source?.[field] !== "");
+    const requestedInsuranceDeduction = Math.max(0, Number(source?.requestedInsuranceDeduction) || 0);
+    const requestedTaxDeduction = Math.max(0, Number(source?.requestedTaxDeduction) || 0);
+    const requestedAdvanceDeduction = Math.max(0, Number(source?.requestedAdvanceDeduction) || 0);
+    const requestedOtherDeduction = Math.max(0, Number(
+      hasDeductionBreakdown ? source?.requestedOtherDeduction : source?.requestedDeduction
+    ) || 0);
+    const requestedDeduction = requestedInsuranceDeduction
+      + requestedTaxDeduction
+      + requestedAdvanceDeduction
+      + requestedOtherDeduction;
+    const amount = Math.max(0,
+      requestedSalaryByDays
+      + requestedBonus
+      + requestedAllowance
+      - requestedDeduction
+    );
+    return {
+      requestedWorkDays,
+      requestedDailySalary,
+      requestedSalaryByDays,
+      requestedBonus,
+      requestedAllowance,
+      requestedInsuranceDeduction,
+      requestedTaxDeduction,
+      requestedAdvanceDeduction,
+      requestedOtherDeduction,
+      requestedDeduction,
+      amount,
+    };
+  };
+  const proposalTotalOf = (form) => proposalNumbersOf(form).amount;
+  const visiblePayrollTotal = visiblePayrollRows.reduce((sum, row) => {
+    const approval = approvalOf(row.id);
+    return sum + (approval ? proposalNumbersOf(approval).amount : 0);
+  }, 0);
+  const proposalFormFor = (r, existing = null) => {
+    const existingNumbers = existing ? proposalNumbersOf(existing) : null;
+    const systemWorkDays = Math.max(0, Number(r.actualDays) || 0);
+    const systemDailySalary = Math.max(0, Number(r.daySalary) || 0);
+    const legacyDeduction = existingNumbers?.requestedDeduction || 0;
+    const existingHasBreakdown = existing && [
+      "requestedInsuranceDeduction",
+      "requestedTaxDeduction",
+      "requestedAdvanceDeduction",
+      "requestedOtherDeduction",
+    ].some((field) => existing[field] !== undefined && existing[field] !== null);
+    return {
+      requestedWorkDays: systemWorkDays,
+      requestedDailySalary: systemDailySalary,
+      requestedBonus: existingNumbers?.requestedBonus ?? (
+        (Number(r.commission) || 0)
+        + (Number(r.compBonus) || 0)
+        + (Number(r.techUpsale) || 0)
+        + (Number(r.kpiBonus) || 0)
+        + (Number(r.kpiMilestoneBonus) || 0)
+        + (Number(r.otherBonus) || 0)
+      ),
+      requestedAllowance: existingNumbers?.requestedAllowance ?? (
+        (Number(r.seniorityAllowance) || 0)
+        + (Number(r.mealAllowance) || 0)
+        + (Number(r.attendanceBonus) || 0)
+      ),
+      requestedInsuranceDeduction: existingHasBreakdown ? existingNumbers.requestedInsuranceDeduction : (existing ? 0 : (Number(r.employeeInsurance) || 0)),
+      requestedTaxDeduction: existingHasBreakdown ? existingNumbers.requestedTaxDeduction : (existing ? 0 : (Number(r.thueTNCN) || 0)),
+      requestedAdvanceDeduction: existingHasBreakdown ? existingNumbers.requestedAdvanceDeduction : (existing ? 0 : (Number(r.advance) || 0)),
+      requestedOtherDeduction: existingHasBreakdown ? existingNumbers.requestedOtherDeduction : (existing ? legacyDeduction : 0),
+      proposalReason: existing?.proposalReason || "Lương Tháng",
+      proposalDetails: existing?.proposalDetails || "lương cơ bản tháng",
+      proposalNote: existing?.proposalNote || "",
+    };
+  };
+  const employeeCanEditProposal = (r, existing = approvalOf(r?.id)) => {
+    const isOwnPayroll = Number(currentEmployee?.id) === Number(r?.id);
+    if (!currentCanSubmitPayroll || !isOwnPayroll || !isCurrentPayrollPeriod || paymentOf(r?.id)) return false;
+    if (!existing) return true;
+    if (existing.status === "tra_ve_nhan_vien") return true;
+    // Nhân viên được tiếp tục mở và chỉnh hồ sơ sau khi gửi, miễn Kế toán chưa xử lý.
+    // Hồ sơ Sếp trả về Kế toán vẫn thuộc hàng đợi Kế toán, nhân viên không được sửa ở bước này.
+    return existing.status === "cho_ke_toan_duyet"
+      && !existing.returnedByBoss
+      && !existing.accountantApprovedAt;
+  };
+  const openPayrollProposalForm = (r) => {
+    const isOwnPayroll = Number(currentEmployee?.id) === Number(r.id);
+    if (!currentCanSubmitPayroll || !isOwnPayroll) {
+      noticeOverlay("Chỉ nhân viên thường được tạo hoặc chỉnh sửa đề xuất lương của chính mình. Kế toán và Sếp chỉ đọc, duyệt hoặc không duyệt.", { title: "Không có quyền sửa đề xuất" });
+      return;
+    }
+    if (!isCurrentPayrollPeriod) {
+      noticeOverlay("Chỉ được tạo hoặc chỉnh sửa đề xuất của kỳ lương hiện tại. Các tháng trước chỉ dùng để xem lại.", { title: "Không thể sửa kỳ cũ" });
+      return;
+    }
+    const existing = approvalOf(r.id);
+    if (!employeeCanEditProposal(r, existing)) {
+      noticeOverlay("Kế toán đã xử lý hoặc hồ sơ đang ở bước Admin nên nhân viên chỉ được xem, không thể sửa lúc này.", { title: "Đề xuất đang thẩm định" });
+      return;
+    }
+    setProposalTarget(r);
+    setProposalForm(proposalFormFor(r, existing));
+  };
+
+  // ---------- KHÔNG DUYỆT: nhập lý do bằng OVERLAY (không dùng prompt/alert) ----------
+  // rejectTarget = { r, level: "accountant" | "boss" } — mở overlay nhập lý do trả về.
+  const [rejectTarget, setRejectTarget] = useState(null);
+  const [rejectReason, setRejectReason] = useState("");
+
+  const openAccountantReject = (r) => {
+    if (!currentIsAccountant) {
+      noticeOverlay("Chỉ tài khoản Kế toán được trả đề xuất về nhân viên ở bước này.", { title: "Không có quyền" });
+      return;
+    }
+    const existing = approvalOf(r.id);
+    if (!existing || existing.status !== "cho_ke_toan_duyet") return;
+    setRejectReason("");
+    setRejectTarget({ r, level: "accountant" });
+  };
+  const openBossReject = (r) => {
+    if (!currentIsBoss) {
+      noticeOverlay("Chỉ tài khoản Sếp được trả hồ sơ về ở bước này.", { title: "Không có quyền" });
+      return;
+    }
+    const existing = approvalOf(r.id);
+    if (!existing || existing.status !== "cho_sep_xac_nhan") return;
+    setRejectReason("");
+    setRejectTarget({ r, level: "boss" });
+  };
+  // Xác nhận trả về từ overlay — kế toán trả về NHÂN VIÊN, sếp trả về KẾ TOÁN (kế toán
+  // nhận biết qua nhãn đỏ + badge đếm việc + đồng bộ realtime).
+  const confirmReject = () => {
+    if (!rejectTarget) return;
+    const { r, level } = rejectTarget;
+    const existing = approvalOf(r.id);
+    if (!existing) { setRejectTarget(null); return; }
+    const reason = rejectReason.trim();
+    if (!reason) {
+      noticeOverlay(
+        level === "boss"
+          ? "Admin phải nhập lý do trước khi trả đề xuất về cho Kế toán."
+          : "Kế toán phải nhập lý do trước khi trả đề xuất về cho nhân viên.",
+        { title: "Cần nhập lý do" }
+      );
+      return;
+    }
+    const actor = actorIdentity();
+    setPayrollApprovals((prev) => prev.map((approval) => {
+      if (approval.id !== existing.id) return approval;
+      if (level === "accountant") {
+        return {
+          ...approval,
+          status: "tra_ve_nhan_vien",
+          returnedByBoss: false,
+          returnReason: reason,
+          returnedAt: actor.at,
+          returnedByEmail: actor.email,
+          returnedByName: actor.name,
+          approvalHistory: appendApprovalHistory(approval, "accountant_reject", `Kế toán KHÔNG duyệt — trả hồ sơ về nhân viên (lý do: ${reason})`),
+        };
+      }
+      return {
+        ...approval,
+        // Sếp không duyệt: luôn trả về Kế toán rà soát lại.
+        status: "cho_ke_toan_duyet",
+        returnedByBoss: true,
+        returnReason: reason,
+        returnedAt: actor.at,
+        returnedByEmail: actor.email,
+        returnedByName: actor.name,
+        accountantApprovedAt: null,
+        accountantSignature: null,
+        approvalHistory: appendApprovalHistory(approval, "boss_reject", `Sếp KHÔNG duyệt — trả hồ sơ về Kế toán (lý do: ${reason})`),
+      };
+    }));
+    setRejectTarget(null);
+    setRejectReason("");
+  };
+
+  // ---------- XÓA đề xuất đã được Admin duyệt và đóng dấu ----------
+  // Admin không được xóa hồ sơ đang chờ xử lý. Chỉ sau khi hoàn tất chuỗi duyệt và
+  // có dấu ĐÃ DUYỆT mới được xóa hồ sơ cùng dữ liệu chi trả liên kết.
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const openDeleteApproval = (r) => {
+    if (!currentIsBoss) {
+      noticeOverlay("Chỉ Sếp được xóa đề xuất lương đã đóng dấu.", { title: "Không có quyền" });
       return;
     }
     const approval = approvalOf(r.id);
-    if (!approval || approval.status !== "da_duyet_cho_thanh_toan") return; // chặn cứng — chưa đủ duyệt thì không cho chi
+    if (!approval || !["da_duyet_cho_thanh_toan", "cho_ke_toan_chi_tra"].includes(approval.status)) {
+      noticeOverlay("Chỉ được xóa đề xuất đã được Admin duyệt và đóng dấu ĐÃ DUYỆT.", { title: "Chưa thể xóa" });
+      return;
+    }
+    setDeleteTarget(r);
+  };
+  const confirmDeleteApproval = () => {
+    if (!deleteTarget) return;
+    const payment = paymentOf(deleteTarget.id);
+    setTransactions((prev) => prev.filter((transaction) => {
+      if (payment?.linkedTxId && Number(transaction.id) === Number(payment.linkedTxId)) return false;
+      if (transaction?.source !== "bangluong") return true;
+      const sameEmployee = Number(transaction.sourceOrderId) === Number(deleteTarget.id);
+      const [txYear, txMonth] = String(transaction.date || "").split("-").map(Number);
+      return !(sameEmployee && txYear === Number(reportYear) && txMonth === Number(reportMonth));
+    }));
+    setPayrollPayments((prev) => prev.filter((paymentItem) => !(
+      Number(paymentItem.employeeId) === Number(deleteTarget.id)
+      && Number(paymentItem.year) === Number(reportYear)
+      && Number(paymentItem.month) === Number(reportMonth)
+    )));
+    setPayrollApprovals((prev) => prev.filter((approval) => !(
+      Number(approval.employeeId) === Number(deleteTarget.id)
+      && Number(approval.year) === Number(reportYear)
+      && Number(approval.month) === Number(reportMonth)
+    )));
+    setDeleteTarget(null);
+  };
+
+  const submitPayrollForReview = () => {
+    const r = proposalTarget;
+    const form = proposalForm;
+    if (!r || !form) return;
+    const isOwnPayroll = Number(currentEmployee?.id) === Number(r.id);
+    if (!currentCanSubmitPayroll || !isOwnPayroll) {
+      noticeOverlay("Chỉ nhân viên thường được tạo và gửi đề xuất lương của chính mình. Kế toán và Sếp chỉ thẩm định.", { title: "Không có quyền tạo đề xuất" });
+      return;
+    }
+    if (!isCurrentPayrollPeriod) {
+      noticeOverlay("Nhân viên chỉ được tạo đề xuất cho kỳ lương hiện tại. Các tháng trước chỉ dùng để xem lại.", { title: "Không thể gửi kỳ cũ" });
+      return;
+    }
+    if (!hasAccountant) {
+      noticeOverlay("Chưa có tài khoản nhân sự Kế toán đang hoạt động. Sếp cần gán một nhân sự có chức danh Kế toán trước khi nhận đề xuất lương.", { title: "Chưa cấu hình Kế toán" });
+      return;
+    }
+    if (paymentOf(r.id)) {
+      noticeOverlay("Hồ sơ này đã chi trả nên không thể gửi xét duyệt lại.", { title: "Đã chi trả" });
+      return;
+    }
+    const amount = proposalTotalOf(form);
+    if (amount <= 0) {
+      noticeOverlay("Tổng số tiền đề nghị phải lớn hơn 0đ.", { title: "Số tiền chưa hợp lệ" });
+      return;
+    }
+    if (!String(form.proposalReason || "").trim()) {
+      noticeOverlay("Cần nhập lý do/căn cứ đề xuất lương để Kế toán có thông tin thẩm định.", { title: "Thiếu lý do đề xuất" });
+      return;
+    }
+    if (!String(form.proposalDetails || "").trim()) {
+      noticeOverlay("Cần mô tả công việc, kết quả hoặc căn cứ tính lương trong kỳ.", { title: "Thiếu nội dung đề xuất" });
+      return;
+    }
+    const actor = actorIdentity();
+    const proposalNumbers = proposalNumbersOf(form);
+    const proposalPayload = {
+      ...proposalNumbers,
+      // Giữ alias cũ để dữ liệu từ các bản trước vẫn đọc được, nhưng giá trị này
+      // hiện là ĐƠN GIÁ MỘT NGÀY, không còn là tổng lương của cả kỳ.
+      requestedBaseSalary: proposalNumbers.requestedDailySalary,
+      proposalReason: String(form.proposalReason || "").trim(),
+      proposalDetails: String(form.proposalDetails || "").trim(),
+      proposalNote: String(form.proposalNote || "").trim(),
+    };
+    setPayrollApprovals((prev) => {
+      const existing = prev.find((approval) => approval.employeeId === r.id && approval.year === reportYear && approval.month === reportMonth);
+      // Nhân viên được cập nhật hồ sơ khi Kế toán chưa xử lý, hoặc sửa và gửi lại
+      // sau khi Kế toán trả về. Hai cấp duyệt chỉ đọc nội dung nhân viên nhập.
+      const canUpdatePending = existing
+        && existing.status === "cho_ke_toan_duyet"
+        && !existing.returnedByBoss
+        && !existing.accountantApprovedAt;
+      const canResubmitReturned = existing && existing.status === "tra_ve_nhan_vien";
+      if (canUpdatePending || canResubmitReturned) {
+        return prev.map((approval) => (approval.id !== existing.id ? approval : {
+          ...approval,
+          ...proposalPayload,
+          status: "cho_ke_toan_duyet",
+          returnedByBoss: false,
+          returnReason: "",
+          submittedAt: actor.at,
+          submittedByEmail: actor.email,
+          submittedByName: actor.name,
+          accountantApprovedAt: null,
+          accountantApprovedByEmail: null,
+          accountantApprovedByName: null,
+          accountantSignature: null,
+          bossApprovedAt: null,
+          bossApprovedByEmail: null,
+          bossApprovedByName: null,
+          bossSignature: null,
+          accountantFinalApprovedAt: null,
+          approvalHistory: appendApprovalHistory(
+            approval,
+            canResubmitReturned ? "employee_resubmit" : "employee_update",
+            canResubmitReturned
+              ? `Nhân viên đã sửa hồ sơ và GỬI LẠI đề xuất ${fmtVND(amount)} cho Kế toán`
+              : `Nhân viên đã CẬP NHẬT đề xuất lương thành ${fmtVND(amount)} trước khi Kế toán xử lý`
+          ),
+        }));
+      }
+      if (existing) return prev;
+      const base = {
+        id: Date.now(),
+        employeeId: r.id,
+        year: reportYear,
+        month: reportMonth,
+        ...proposalPayload,
+        status: "cho_ke_toan_duyet",
+        submittedAt: actor.at,
+        submittedByEmail: actor.email,
+        submittedByName: actor.name,
+        accountantApprovedAt: null,
+        bossApprovedAt: null,
+        accountantFinalApprovedAt: null,
+        approvalHistory: [],
+      };
+      return [...prev, {
+        ...base,
+        approvalHistory: appendApprovalHistory(
+          base,
+          "employee_submit",
+          `Nhân viên đã tạo và gửi đề xuất lương ${fmtVND(amount)} cho Kế toán`
+        ),
+      }];
+    });
+    setProposalTarget(null);
+    setProposalForm(null);
+  };
+
+  const accountantApprove = (r) => {
+    if (!currentIsAccountant) {
+      noticeOverlay("Chỉ tài khoản nhân sự Kế toán được duyệt đề xuất ở bước đầu tiên.", { title: "Chờ Kế toán duyệt" });
+      return;
+    }
+    const existingApproval = approvalOf(r.id);
+    if (!existingApproval || existingApproval.status !== "cho_ke_toan_duyet") {
+      noticeOverlay("Nhân viên chưa gửi hồ sơ lương đến Kế toán hoặc hồ sơ đã chuyển sang bước khác.", { title: "Chưa có hồ sơ chờ duyệt" });
+      return;
+    }
+    const actor = actorIdentity();
+    setPayrollApprovals((prev) => prev.map((approval) => {
+      if (approval.id !== existingApproval.id) return approval;
+      return {
+        ...approval,
+        ...proposalNumbersOf(approval),
+        requestedBaseSalary: proposalNumbersOf(approval).requestedDailySalary,
+        status: "cho_sep_xac_nhan",
+        returnedByBoss: false,
+        returnReason: "",
+        accountantApprovedAt: actor.at,
+        accountantApprovedByEmail: actor.email,
+        accountantApprovedByName: actor.name,
+        accountantSignature: `${actor.name} · ${actor.email || "không có email"} · ${actor.at}`,
+        approvalHistory: appendApprovalHistory(approval, "accountant_review", approval.returnedByBoss ? "Kế toán rà soát lại hồ sơ Sếp trả về và chuyển Sếp duyệt lần nữa" : "Kế toán đã rà soát và chuyển Sếp duyệt"),
+      };
+    }));
+  };
+
+  const accountantFinalize = (r) => {
+    if (hasAccountant && !currentIsAccountant) {
+      noticeOverlay("Sau khi Sếp duyệt, hồ sơ phải quay lại đúng tài khoản kế toán để xác nhận chi trả.", { title: "Chờ kế toán chi trả" });
+      return;
+    }
+    const actor = actorIdentity();
+    setPayrollApprovals((prev) => prev.map((approval) => {
+      if (approval.employeeId !== r.id || approval.year !== reportYear || approval.month !== reportMonth) return approval;
+      return {
+        ...approval,
+        status: "da_duyet_cho_thanh_toan",
+        accountantFinalApprovedAt: actor.at,
+        accountantFinalApprovedByEmail: actor.email,
+        accountantFinalApprovedByName: actor.name,
+        accountantFinalSignature: `${actor.name} · ${actor.email || "không có email"} · ${actor.at}`,
+        approvalHistory: appendApprovalHistory(approval, "accountant_payment_release", "Kế toán nhận lại hồ sơ và xác nhận đủ điều kiện chi trả"),
+      };
+    }));
+  };
+
+  const approvePayrollByAdmin = (r) => {
+    if (!currentIsBoss) {
+      noticeOverlay("Chỉ tài khoản Sếp mới được duyệt bước cuối.", { title: "Không có quyền duyệt" });
+      return;
+    }
+    const existing = approvalOf(r.id);
+    if (!existing || existing.status !== "cho_sep_xac_nhan") {
+      noticeOverlay("Đề xuất chưa được Kế toán duyệt và trình lên Admin.", { title: "Chưa đúng bước duyệt" });
+      return;
+    }
+    const actor = actorIdentity();
+    setPayrollApprovals((prev) => prev.map((item) => {
+      if (item.id !== existing.id) return item;
+      return {
+        ...item,
+        ...proposalNumbersOf(item),
+        requestedBaseSalary: proposalNumbersOf(item).requestedDailySalary,
+        status: "da_duyet_cho_thanh_toan",
+        bossApprovedAt: actor.at,
+        bossApprovedByEmail: actor.email,
+        bossApprovedByName: actor.name,
+        bossSignature: `${actor.name} · ${actor.email || "không có email"} · ${actor.at}`,
+        approvalHistory: appendApprovalHistory(item, "boss_approval", "Sếp đã duyệt — hồ sơ được đóng dấu ĐÃ DUYỆT"),
+      };
+    }));
+  };
+
+  // Chỉ ghi khoản Chi thật sau khi hoàn thành đúng chuỗi xét duyệt.
+  const togglePaid = (r) => {
+    const existing = paymentOf(r.id);
+    const allowedToPay = currentIsAccountant;
+    if (!allowedToPay) {
+      noticeOverlay("Sau khi Admin duyệt và đóng dấu, chỉ tài khoản Kế toán được phép thực hiện chi trả.", { title: "Không có quyền chi trả" });
+      return;
+    }
+    if (existing) {
+      noticeOverlay("Khoản lương đã chi trả. Admin có thể xóa toàn bộ đề xuất đã đóng dấu bằng nút Xóa ở cuối dòng.", { title: "Đã chi trả" });
+      return;
+    }
+    const approval = approvalOf(r.id);
+    if (!approval || approval.status !== "da_duyet_cho_thanh_toan") {
+      noticeOverlay("Hồ sơ lương chưa hoàn thành đủ các bước xét duyệt nên chưa thể chi trả.", { title: "Chưa đủ điều kiện chi trả" });
+      return;
+    }
+    const approvedAmount = proposalNumbersOf(approval).amount;
     const txId = Date.now();
+    const paidAt = nowStamp();
     setTransactions((prev) => [...prev, {
       id: txId, date: TODAY.toISOString().slice(0, 10), kind: "chi", category: "Lương nhân viên",
-      desc: `Lương thực lãnh tháng ${reportMonth}/${reportYear} — ${r.name}`, amount: r.net,
+      desc: `Lương theo đề xuất đã duyệt tháng ${reportMonth}/${reportYear} — ${r.name}`, amount: approvedAmount,
       partnerName: r.name, partnerTaxCode: "", paymentMethod: "chuyen_khoan",
       invoiceType: "Biên lai / Phiếu thu nội bộ", invoiceNo: "", vatRate: 0,
       attachmentData: "", attachmentName: "", attachmentType: "",
       status: "approved", source: "bangluong", sourceOrderId: r.id,
     }]);
-    setPayrollPayments((prev) => [...prev, { id: Date.now() + 1, employeeId: r.id, year: reportYear, month: reportMonth, amount: r.net, linkedTxId: txId }]);
+    setPayrollPayments((prev) => [...prev, {
+      id: Date.now() + 1,
+      employeeId: r.id,
+      year: reportYear,
+      month: reportMonth,
+      amount: approvedAmount,
+      linkedTxId: txId,
+      paidAt,
+      paidByEmail: actorIdentity().email,
+      paidByName: actorIdentity().name,
+    }]);
+    setPayrollApprovals((prev) => prev.map((approvalItem) => (
+      approvalItem.employeeId === r.id && approvalItem.year === reportYear && approvalItem.month === reportMonth
+        ? { ...approvalItem, paidAt, paidByEmail: actorIdentity().email, paidByName: actorIdentity().name, approvalHistory: appendApprovalHistory(approvalItem, "paid", "Đã chi trả lương và tạo giao dịch Thu Chi") }
+        : approvalItem
+    )));
   };
-  const paidCount = payrollRows.filter((r) => paymentOf(r.id)).length;
-  // Kiểm tra chéo với "lương giữa tháng" — nếu người này ĐÃ được trả 1 phần qua yêu cầu giữa
-  // tháng trong CHÍNH kỳ đang xem, phải cảnh báo rõ để kế toán không vô tình trả trùng lần nữa
-  // khi chạy lương cuối tháng bình thường.
+  const paidCount = visiblePayrollRows.filter((r) => paymentOf(r.id)).length;
   const midMonthPaidOf = (employeeId) => (midMonthRequests || [])
     .filter((m) => m.employeeId === employeeId && m.paid && new Date(m.date).getFullYear() === reportYear && new Date(m.date).getMonth() + 1 === reportMonth)
     .reduce((a, m) => a + m.amount, 0);
-  const paidTotal = payrollRows.reduce((a, r) => a + (paymentOf(r.id) ? r.net : 0), 0);
+  const paidTotal = visiblePayrollRows.reduce((a, r) => a + (Number(paymentOf(r.id)?.amount) || 0), 0);
 
-  // Yêu cầu lương giữa tháng — cho người nghỉ việc/nghỉ ngang giữa chừng, không cần đợi tới cuối
-  // tháng mới được thanh toán. Cũng phải qua đủ 2 bước duyệt (Kế toán → Sếp) mới cho chi thật.
-  const blankMidMonthForm = { employeeId: employees[0]?.id || "", amount: "", reason: "Nghỉ việc giữa tháng — thanh toán lương những ngày đã làm", date: TODAY_STR };
+  // Đề xuất lương giữa tháng cũng phải do chính nhân viên gửi và đi đúng chuỗi duyệt.
+  const canCreateMidMonthRequest = currentCanSubmitPayroll && isCurrentPayrollPeriod;
+  const defaultMidMonthEmployeeId = currentEmployee?.id || "";
+  const blankMidMonthForm = { employeeId: defaultMidMonthEmployeeId, amount: "", reason: "Nghỉ việc giữa tháng — thanh toán lương những ngày đã làm", date: TODAY_STR };
   const [midMonthForm, setMidMonthForm] = useState(blankMidMonthForm);
   const [showMidMonthForm, setShowMidMonthForm] = useState(false);
   const addMidMonthRequest = () => {
     if (!midMonthForm.employeeId || !midMonthForm.amount) return;
-    setMidMonthRequests((prev) => [...prev, { id: Date.now(), employeeId: Number(midMonthForm.employeeId), amount: Number(midMonthForm.amount), reason: midMonthForm.reason, date: midMonthForm.date, status: "cho_ke_toan_duyet", accountantApprovedAt: null, bossApprovedAt: null, paid: false, linkedTxId: null }]);
-    setMidMonthForm(blankMidMonthForm);
+    if (!hasAccountant) {
+      noticeOverlay("Chưa có tài khoản nhân sự Kế toán đang hoạt động nên chưa thể gửi đề xuất lương.", { title: "Chưa cấu hình Kế toán" });
+      return;
+    }
+    if (!canCreateMidMonthRequest || Number(midMonthForm.employeeId) !== Number(currentEmployee?.id)) {
+      noticeOverlay("Mỗi nhân viên chỉ được gửi đề xuất lương giữa tháng của chính mình trong kỳ hiện tại.", { title: "Không có quyền gửi thay" });
+      return;
+    }
+    const actor = actorIdentity();
+    const requestBase = {
+      id: Date.now(),
+      employeeId: Number(midMonthForm.employeeId),
+      amount: Number(midMonthForm.amount),
+      reason: midMonthForm.reason,
+      date: midMonthForm.date,
+      status: "cho_ke_toan_duyet",
+      submittedAt: actor.at,
+      submittedByEmail: actor.email,
+      submittedByName: actor.name,
+      accountantApprovedAt: null,
+      bossApprovedAt: null,
+      accountantFinalApprovedAt: null,
+      paid: false,
+      linkedTxId: null,
+      approvalHistory: [],
+    };
+    setMidMonthRequests((prev) => [...prev, {
+      ...requestBase,
+      approvalHistory: appendApprovalHistory(requestBase, "employee_submit", "Nhân viên đã gửi đề xuất lương giữa tháng cho Kế toán"),
+    }]);
+    setMidMonthForm({ ...blankMidMonthForm, employeeId: defaultMidMonthEmployeeId });
     setShowMidMonthForm(false);
   };
-  const midMonthAccountantApprove = (id) => setMidMonthRequests((prev) => prev.map((m) => (m.id === id ? { ...m, status: "cho_sep_xac_nhan", accountantApprovedAt: nowStamp() } : m)));
+  const midMonthAccountantApprove = (id) => {
+    if (!currentIsAccountant) {
+      noticeOverlay("Chỉ tài khoản kế toán được duyệt yêu cầu lương giữa tháng.", { title: "Chờ kế toán duyệt" });
+      return;
+    }
+    const actor = actorIdentity();
+    setMidMonthRequests((prev) => prev.map((request) => request.id === id ? {
+      ...request,
+      status: "cho_sep_xac_nhan",
+      accountantApprovedAt: actor.at,
+      accountantApprovedByEmail: actor.email,
+      accountantApprovedByName: actor.name,
+      accountantSignature: `${actor.name} · ${actor.email || "không có email"} · ${actor.at}`,
+      approvalHistory: appendApprovalHistory(request, "accountant_review", "Kế toán đã rà soát yêu cầu lương giữa tháng"),
+    } : request));
+  };
+  const [midMonthRejectTarget, setMidMonthRejectTarget] = useState(null);
+  const [midMonthRejectReason, setMidMonthRejectReason] = useState("");
+  const openMidMonthReject = (request, level) => {
+    if (level === "accountant" && !currentIsAccountant) return;
+    if (level === "boss" && !currentIsBoss) return;
+    setMidMonthRejectReason("");
+    setMidMonthRejectTarget({ request, level });
+  };
+  const confirmMidMonthReject = () => {
+    if (!midMonthRejectTarget) return;
+    const { request: target, level } = midMonthRejectTarget;
+    const reason = midMonthRejectReason.trim();
+    if (!reason) {
+      noticeOverlay(
+        level === "boss"
+          ? "Admin phải nhập lý do trước khi trả đề xuất về cho Kế toán."
+          : "Kế toán phải nhập lý do trước khi trả đề xuất về cho nhân viên.",
+        { title: "Cần nhập lý do" }
+      );
+      return;
+    }
+    const actor = actorIdentity();
+    setMidMonthRequests((prev) => prev.map((request) => {
+      if (request.id !== target.id) return request;
+      if (level === "accountant") {
+        return {
+          ...request,
+          status: "tra_ve_nhan_vien",
+          returnedByBoss: false,
+          returnReason: reason,
+          returnedAt: actor.at,
+          returnedByEmail: actor.email,
+          returnedByName: actor.name,
+          approvalHistory: appendApprovalHistory(request, "accountant_reject", `Kế toán KHÔNG duyệt — trả về nhân viên (lý do: ${reason})`),
+        };
+      }
+      return {
+        ...request,
+        status: "cho_ke_toan_duyet",
+        returnedByBoss: true,
+        returnReason: reason,
+        returnedAt: actor.at,
+        returnedByEmail: actor.email,
+        returnedByName: actor.name,
+        accountantApprovedAt: null,
+        accountantApprovedByEmail: null,
+        accountantApprovedByName: null,
+        accountantSignature: null,
+        approvalHistory: appendApprovalHistory(request, "boss_reject", `Sếp KHÔNG duyệt — trả về Kế toán (lý do: ${reason})`),
+      };
+    }));
+    setMidMonthRejectTarget(null);
+    setMidMonthRejectReason("");
+  };
+  const resubmitMidMonthRequest = (id) => {
+    if (!canCreateMidMonthRequest) return;
+    const actor = actorIdentity();
+    setMidMonthRequests((prev) => prev.map((request) => (
+      request.id === id && Number(request.employeeId) === Number(currentEmployee?.id) && request.status === "tra_ve_nhan_vien"
+        ? {
+          ...request,
+          status: "cho_ke_toan_duyet",
+          returnedByBoss: false,
+          returnReason: "",
+          submittedAt: actor.at,
+          submittedByEmail: actor.email,
+          submittedByName: actor.name,
+          accountantApprovedAt: null,
+          bossApprovedAt: null,
+          approvalHistory: appendApprovalHistory(request, "employee_resubmit", "Nhân viên đã GỬI LẠI đề xuất lương giữa tháng cho Kế toán"),
+        }
+        : request
+    )));
+  };
   const [midMonthBossTarget, setMidMonthBossTarget] = useState(null);
-  const [midMonthBossPassword, setMidMonthBossPassword] = useState("");
-  const [midMonthBossError, setMidMonthBossError] = useState("");
+  const openMidMonthBossConfirm = (request) => {
+    if (!currentIsBoss) {
+      noticeOverlay("Bước xác nhận này chỉ dành cho tài khoản Sếp.", { title: "Chờ Sếp xác nhận" });
+      return;
+    }
+    setMidMonthBossTarget(request);
+  };
   const confirmMidMonthBossApproval = () => {
-    if (midMonthBossPassword !== (company.directorPassword || DEFAULT_DIRECTOR_PASSWORD)) { setMidMonthBossError("Sai mật khẩu giám đốc — không thể xác nhận."); return; }
-    setMidMonthRequests((prev) => prev.map((m) => (m.id === midMonthBossTarget.id ? { ...m, status: "da_duyet_cho_thanh_toan", bossApprovedAt: nowStamp() } : m)));
+    if (!currentIsBoss) {
+      noticeOverlay("Chỉ tài khoản Sếp mới được xác nhận.", { title: "Không có quyền duyệt" });
+      return;
+    }
+    if (!midMonthBossTarget || midMonthBossTarget.status !== "cho_sep_xac_nhan") {
+      noticeOverlay("Đề xuất chưa được Kế toán duyệt và chuyển lên Admin.", { title: "Chưa đúng bước duyệt" });
+      return;
+    }
+    const actor = actorIdentity();
+    setMidMonthRequests((prev) => prev.map((request) => request.id === midMonthBossTarget.id && request.status === "cho_sep_xac_nhan" ? {
+      ...request,
+      status: "da_duyet_cho_thanh_toan",
+      bossApprovedAt: actor.at,
+      bossApprovedByEmail: actor.email,
+      bossApprovedByName: actor.name,
+      bossSignature: `${actor.name} · ${actor.email || "không có email"} · ${actor.at}`,
+      approvalHistory: appendApprovalHistory(request, "boss_approval", "Sếp đã duyệt đề xuất lương giữa tháng — đóng dấu ĐÃ DUYỆT"),
+    } : request));
     setMidMonthBossTarget(null);
   };
   const payMidMonthRequest = (m) => {
+    const allowedToPay = currentIsAccountant;
+    if (!allowedToPay) {
+      noticeOverlay("Chỉ tài khoản Kế toán được chi trả sau khi Admin duyệt và đóng dấu.", { title: "Không có quyền chi trả" });
+      return;
+    }
     if (m.status !== "da_duyet_cho_thanh_toan") return;
     const emp = employees.find((e) => e.id === m.employeeId);
     const txId = Date.now();
+    const paidAt = nowStamp();
     setTransactions((prev) => [...prev, {
       id: txId, date: TODAY_STR, kind: "chi", category: "Lương nhân viên (giữa tháng)",
       desc: `${m.reason} — ${emp?.name || "—"}`, amount: m.amount,
@@ -10631,19 +14145,291 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
       invoiceType: "Biên lai / Phiếu thu nội bộ", invoiceNo: "", vatRate: 0,
       attachmentData: "", attachmentName: "", attachmentType: "", status: "approved", source: "bangluong", sourceOrderId: m.id,
     }]);
-    setMidMonthRequests((prev) => prev.map((x) => (x.id === m.id ? { ...x, paid: true, linkedTxId: txId } : x)));
+    setMidMonthRequests((prev) => prev.map((request) => request.id === m.id ? {
+      ...request,
+      paid: true,
+      linkedTxId: txId,
+      paidAt,
+      paidByEmail: actorIdentity().email,
+      paidByName: actorIdentity().name,
+      approvalHistory: appendApprovalHistory(request, "paid", "Đã chi trả lương giữa tháng và tạo giao dịch Thu Chi"),
+    } : request));
   };
-  const removeMidMonthRequest = (id) => setMidMonthRequests((prev) => prev.filter((m) => m.id !== id));
+  const removeMidMonthRequest = (id) => {
+    const request = midMonthRequests.find((item) => item.id === id);
+    if (!request) return;
+    const isOwnerPending = currentCanSubmitPayroll
+      && Number(request.employeeId) === Number(currentEmployee?.id)
+      && request.status === "cho_ke_toan_duyet"
+      && !request.accountantApprovedAt;
+    const isAdminDeletingStamped = currentIsBoss
+      && ["da_duyet_cho_thanh_toan", "cho_ke_toan_chi_tra"].includes(request.status);
+    if (!isOwnerPending && !isAdminDeletingStamped) {
+      noticeOverlay(
+        currentIsBoss
+          ? "Admin chỉ được xóa đề xuất đã được duyệt và đóng dấu ĐÃ DUYỆT."
+          : "Nhân viên chỉ được hủy đề xuất của chính mình trước khi Kế toán xử lý.",
+        { title: "Không thể xóa đề xuất" }
+      );
+      return;
+    }
+    if (isAdminDeletingStamped && request.linkedTxId) {
+      setTransactions((prev) => prev.filter((transaction) => Number(transaction.id) !== Number(request.linkedTxId)));
+    }
+    setMidMonthRequests((prev) => prev.filter((item) => item.id !== id));
+  };
 
-  const totalEmployeeIns = payrollRows.reduce((a, r) => a + r.employeeInsurance, 0);
-  const totalEmployerIns = payrollRows.reduce((a, r) => a + r.employerInsurance, 0);
-  const totalTax = payrollRows.reduce((a, r) => a + r.thueTNCN, 0);
-  const totalCompanyCost = payrollRows.reduce((a, r) => a + r.employerTotalCost, 0);
-  const totalCommission = payrollRows.reduce((a, r) => a + r.commission + r.compBonus + r.techUpsale, 0);
+  const totalEmployeeIns = visiblePayrollRows.reduce((a, r) => a + r.employeeInsurance, 0);
+  const totalEmployerIns = visiblePayrollRows.reduce((a, r) => a + r.employerInsurance, 0);
+  const totalTax = visiblePayrollRows.reduce((a, r) => a + r.thueTNCN, 0);
+  const totalCompanyCost = visiblePayrollRows.reduce((a, r) => a + r.employerTotalCost, 0);
+  const totalCommission = visiblePayrollRows.reduce((a, r) => a + r.commission + r.compBonus + r.techUpsale, 0);
+
+  const proposalSummaryOf = (r) => {
+    const approval = approvalOf(r.id);
+    if (approval) {
+      return { approval, ...proposalNumbersOf(approval) };
+    }
+    const defaultDailySalary = Math.max(0, Number(r.daySalary) || 0);
+    return {
+      approval: null,
+      ...proposalNumbersOf({
+        requestedWorkDays: r.actualDays ?? 0,
+        requestedDailySalary: defaultDailySalary,
+        requestedBonus: 0,
+        requestedAllowance: 0,
+        requestedInsuranceDeduction: 0,
+        requestedTaxDeduction: 0,
+        requestedAdvanceDeduction: 0,
+        requestedOtherDeduction: 0,
+      }),
+    };
+  };
+
+  const renderPayrollApprovalAction = (r, compact = true) => {
+    const paid = paymentOf(r.id);
+    const approval = approvalOf(r.id);
+    const buttonClass = compact ? "text-[10px] px-2 py-1 rounded" : "text-xs px-3 py-2 rounded-md";
+    const iconSize = compact ? 10 : 12;
+    const isStamped = ["da_duyet_cho_thanh_toan", "cho_ke_toan_chi_tra"].includes(approval?.status);
+
+    if (paid || isStamped) {
+      return (
+        <div className="flex flex-col gap-1 items-end">
+          <StampBadge text={paid ? "ĐÃ CHI TRẢ" : "ĐÃ DUYỆT"} gold />
+          {currentIsBoss && (
+            <button
+              onClick={() => openDeleteApproval(r)}
+              className={`${buttonClass} border border-stamp-red/40 text-stamp-red flex items-center gap-1 hover:bg-stamp-red/5`}
+              title="Admin xóa đề xuất đã đóng dấu và dữ liệu chi trả liên kết"
+            ><Trash2 size={iconSize} /> Xóa đề xuất</button>
+          )}
+        </div>
+      );
+    }
+
+    if (approval?.status === "cho_sep_xac_nhan") {
+      if (currentIsBoss) {
+        return (
+          <div className="flex flex-wrap justify-end gap-1.5">
+            <button onClick={() => approvePayrollByAdmin(r)} className={`${buttonClass} h-8 w-[104px] border border-[#2d6f52] bg-[#133325] text-[#86efac] hover:bg-[#194531] hover:border-[#3c8b67] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] flex items-center justify-center gap-1 font-medium whitespace-nowrap transition-colors`} title="Duyệt và đóng dấu ĐÃ DUYỆT"><CheckCircle2 size={iconSize} /> Duyệt</button>
+            <button onClick={() => openBossReject(r)} className={`${buttonClass} h-8 w-[104px] border border-[#7a3138] bg-[#33161b] text-[#ff9ca6] hover:bg-[#431d23] hover:border-[#9f4450] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] flex items-center justify-center gap-1 font-medium whitespace-nowrap transition-colors`} title="Không duyệt — trả về Kế toán kèm lý do"><X size={iconSize} /> Không duyệt</button>
+          </div>
+        );
+      }
+      return (
+        <span className={`${buttonClass} border border-gold/40 text-gold inline-flex items-center gap-1`}>
+          <Clock size={iconSize} /> {currentIsAccountant ? "Đã duyệt & trình Sếp" : "Chờ Sếp duyệt"}
+        </span>
+      );
+    }
+
+    if (approval?.status === "cho_ke_toan_duyet") {
+      const bossReturnNote = approval.returnedByBoss && (
+        <span className="text-[9px] text-stamp-red flex items-center gap-1" title={approval.returnReason || ""}><AlertTriangle size={9} /> Sếp trả về{approval.returnReason ? `: ${approval.returnReason}` : ""}</span>
+      );
+      if (currentIsAccountant) {
+        return (
+          <div className="flex flex-col gap-1 items-end">
+            {bossReturnNote}
+            <div className="flex flex-wrap justify-end gap-1.5">
+              <button onClick={() => accountantApprove(r)} className={`${buttonClass} h-8 w-[146px] border border-[#2d6f52] bg-[#133325] text-[#86efac] hover:bg-[#194531] hover:border-[#3c8b67] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] flex items-center justify-center gap-1 font-medium whitespace-nowrap transition-colors`} title="Duyệt hồ sơ và trình lên cấp trên"><CheckCircle2 size={iconSize} /> Duyệt & trình cấp trên</button>
+              <button onClick={() => openAccountantReject(r)} className={`${buttonClass} h-8 w-[146px] border border-[#7a3138] bg-[#33161b] text-[#ff9ca6] hover:bg-[#431d23] hover:border-[#9f4450] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] flex items-center justify-center gap-1 font-medium whitespace-nowrap transition-colors`} title="Không duyệt và hoàn đơn về nhân viên kèm lý do"><X size={iconSize} /> Không duyệt · Hoàn đơn</button>
+            </div>
+          </div>
+        );
+      }
+      if (employeeCanEditProposal(r, approval)) {
+        return (
+          <div className="flex flex-col gap-1 items-end">
+            <button onClick={() => openPayrollProposalForm(r)} className={`${buttonClass} border border-[#4f7ee8] text-[#4f7ee8] flex items-center gap-1 font-semibold`} title="Mở form để chỉnh số tiền và nội dung đề xuất trước khi Kế toán xử lý"><Pencil size={iconSize} /> Chỉnh sửa đề xuất</button>
+            <span className="text-[9px] text-muted inline-flex items-center gap-1"><Clock size={9} /> Đã gửi — chờ Kế toán duyệt</span>
+          </div>
+        );
+      }
+      return (
+        <div className="flex flex-col gap-1 items-end">
+          {bossReturnNote}
+          <span className={`${buttonClass} border border-paper-line text-muted inline-flex items-center gap-1`}>
+            <Clock size={iconSize} /> {currentIsBoss ? "Chờ Kế toán duyệt & trình lên" : (approval.returnedByBoss ? "Sếp trả về — Kế toán đang rà soát" : "Đã gửi — chờ Kế toán duyệt")}
+          </span>
+        </div>
+      );
+    }
+
+    if (approval?.status === "tra_ve_nhan_vien") {
+      const canResubmit = currentCanSubmitPayroll
+        && Number(currentEmployee?.id) === Number(r.id)
+        && isCurrentPayrollPeriod;
+      return (
+        <div className="flex flex-col gap-1 items-end">
+          <span className="text-[9px] text-stamp-red flex items-center gap-1" title={approval.returnReason || ""}><AlertTriangle size={9} /> Kế toán trả về{approval.returnReason ? `: ${approval.returnReason}` : ""}</span>
+          {canResubmit
+            ? <button onClick={() => openPayrollProposalForm(r)} className={`${buttonClass} border border-[#4f7ee8] text-[#4f7ee8] flex items-center gap-1`}><Send size={iconSize} /> Gửi lại đề xuất</button>
+            : <span className={`${buttonClass} border border-stamp-red/40 text-stamp-red inline-flex items-center gap-1`}><Clock size={iconSize} /> Chờ nhân viên gửi lại</span>}
+        </div>
+      );
+    }
+
+    if (!approval) {
+      const canSubmit = currentCanSubmitPayroll
+        && Number(currentEmployee?.id) === Number(r.id)
+        && isCurrentPayrollPeriod;
+      if (canSubmit) {
+        return <button onClick={() => openPayrollProposalForm(r)} className={`${buttonClass} border border-[#4f7ee8] text-[#4f7ee8] flex items-center gap-1`}><Send size={iconSize} /> Tạo đề xuất</button>;
+      }
+      const emptyLabel = currentIsAccountant
+        ? "Chờ nhân viên tạo đề xuất"
+        : currentIsBoss
+          ? "Chưa có đề xuất trình duyệt"
+          : "Chưa gửi xét duyệt";
+      return <span className={`${buttonClass} border border-paper-line text-muted inline-flex items-center gap-1`}><Clock size={iconSize} /> {emptyLabel}</span>;
+    }
+
+    return <span className={`${buttonClass} border border-paper-line text-muted inline-flex items-center gap-1`}><Clock size={iconSize} /> {approvalStatusLabel(approval, paid)}</span>;
+  };
+
+  const renderMidMonthApprovalAction = (request) => {
+    if (request.paid) return <StampBadge text="ĐÃ CHI TRẢ" gold />;
+    if (["da_duyet_cho_thanh_toan", "cho_ke_toan_chi_tra"].includes(request.status)) {
+      return <StampBadge text="ĐÃ DUYỆT" gold />;
+    }
+    if (request.status === "cho_sep_xac_nhan") {
+      return currentIsBoss
+        ? <div className="flex flex-wrap justify-end gap-1.5">
+            <button onClick={() => openMidMonthBossConfirm(request)} className="h-8 w-[104px] text-[10px] px-2 rounded-md border border-[#2d6f52] bg-[#133325] text-[#86efac] hover:bg-[#194531] hover:border-[#3c8b67] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] flex items-center justify-center gap-1 font-medium whitespace-nowrap transition-colors"><CheckCircle2 size={10} /> Duyệt</button>
+            <button onClick={() => openMidMonthReject(request, "boss")} className="h-8 w-[104px] text-[10px] px-2 rounded-md border border-[#7a3138] bg-[#33161b] text-[#ff9ca6] hover:bg-[#431d23] hover:border-[#9f4450] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] flex items-center justify-center gap-1 font-medium whitespace-nowrap transition-colors"><X size={10} /> Không duyệt</button>
+          </div>
+        : <span className="text-[10px] border border-gold/40 text-gold px-2 py-1 rounded inline-flex items-center gap-1"><Clock size={10} /> Chờ Sếp duyệt</span>;
+    }
+    if (request.status === "tra_ve_nhan_vien") {
+      const canResubmit = Number(request.employeeId) === Number(currentEmployee?.id) && canCreateMidMonthRequest;
+      return (
+        <div className="flex flex-col items-end gap-1">
+          <span className="text-[9px] text-stamp-red">Kế toán trả về{request.returnReason ? `: ${request.returnReason}` : ""}</span>
+          {canResubmit
+            ? <button onClick={() => resubmitMidMonthRequest(request.id)} className="text-[10px] border border-[#4f7ee8] text-[#4f7ee8] px-2 py-1 rounded flex items-center gap-1"><Send size={10} /> Gửi lại</button>
+            : <span className="text-[10px] border border-stamp-red/40 text-stamp-red px-2 py-1 rounded"><Clock size={10} className="inline mr-1" />Chờ nhân viên gửi lại</span>}
+        </div>
+      );
+    }
+    if (request.status === "cho_ke_toan_duyet") {
+      const returnedNote = request.returnedByBoss && <span className="text-[9px] text-stamp-red">Sếp trả về{request.returnReason ? `: ${request.returnReason}` : ""}</span>;
+      return currentIsAccountant
+        ? <div className="flex flex-col items-end gap-1">
+            {returnedNote}
+            <div className="flex flex-wrap justify-end gap-1.5">
+              <button onClick={() => midMonthAccountantApprove(request.id)} className="text-[10px] px-2 py-1 rounded border border-[#2d6f52] bg-[#133325] text-[#86efac] hover:bg-[#194531] hover:border-[#3c8b67] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] flex items-center gap-1 font-medium transition-colors"><CheckCircle2 size={10} /> Duyệt & trình cấp trên</button>
+              <button onClick={() => openMidMonthReject(request, "accountant")} className="text-[10px] px-2 py-1 rounded border border-[#7a3138] bg-[#33161b] text-[#ff9ca6] hover:bg-[#431d23] hover:border-[#9f4450] shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] flex items-center gap-1 font-medium transition-colors"><X size={10} /> Không duyệt · Hoàn đơn</button>
+            </div>
+          </div>
+        : <div className="flex flex-col items-end gap-1">{returnedNote}<span className="text-[10px] border border-paper-line text-muted px-2 py-1 rounded inline-flex items-center gap-1"><Clock size={10} /> Chờ Kế toán duyệt</span></div>;
+    }
+    return <span className="text-[10px] border border-paper-line text-muted px-2 py-1 rounded">Chưa xác định</span>;
+  };
+
+  const monthlyOwnRow = currentCanSubmitPayroll
+    ? payrollRows.find((row) => Number(row.id) === Number(currentEmployee?.id))
+    : null;
+  const monthlyOwnApproval = monthlyOwnRow ? approvalOf(monthlyOwnRow.id) : null;
+  const monthlyOwnCanEdit = monthlyOwnRow ? employeeCanEditProposal(monthlyOwnRow, monthlyOwnApproval) : false;
+  const openMonthlyProposalAction = () => {
+    if (!currentCanSubmitPayroll) {
+      noticeOverlay("Chỉ nhân viên thường được tạo đề xuất lương. Kế toán và Sếp chỉ đọc, duyệt hoặc không duyệt.", { title: "Không có quyền tạo đề xuất" });
+      return;
+    }
+    if (!monthlyOwnRow) {
+      noticeOverlay("Tài khoản của bạn chưa liên kết đúng với hồ sơ nhân sự nên chưa thể tạo đề xuất lương.", { title: "Chưa liên kết hồ sơ nhân sự" });
+      return;
+    }
+    if (!isCurrentPayrollPeriod) {
+      noticeOverlay("Chỉ được tạo hoặc chỉnh sửa đề xuất ở kỳ lương hiện tại. Hãy chọn đúng tháng hiện tại trên bộ lọc.", { title: "Không thể tạo ở kỳ này" });
+      return;
+    }
+    if (!monthlyOwnApproval || monthlyOwnCanEdit) {
+      openPayrollProposalForm(monthlyOwnRow);
+      return;
+    }
+    if (["da_duyet_cho_thanh_toan", "cho_ke_toan_chi_tra"].includes(monthlyOwnApproval.status)) {
+      noticeOverlay(
+        "Kỳ lương này đã có đề xuất được Admin duyệt và đóng dấu. Admin phải xóa đề xuất đã đóng dấu trước thì nhân viên mới có thể tạo lại đề xuất cho cùng kỳ.",
+        { title: "Đề xuất kỳ này đã được duyệt" }
+      );
+      return;
+    }
+    noticeOverlay(
+      `Đề xuất kỳ này đang ở bước: ${approvalStatusLabel(monthlyOwnApproval, paymentOf(monthlyOwnRow.id))}. Nhân viên không thể tạo thêm đề xuất trùng kỳ khi hồ sơ đang được thẩm định.`,
+      { title: "Đã có đề xuất lương" }
+    );
+  };
+
+  if (!lazyTableData.ready) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionViewSwitcher value={payrollListMode} onChange={setPayrollListMode} options={[{ id: "monthly", label: "Lương định kỳ", icon: Banknote }, { id: "midmonth", label: "Lương giữa tháng", icon: AlertTriangle }]} />
+        <DataLoadingPanel title="Đang tải dữ liệu lương" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} />
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+    <div className="flex flex-col gap-3">
+      <div className="rounded-lg border border-paper-line bg-white px-3 py-2.5 shadow-sm">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-center gap-2 text-sm font-bold text-ink">
+            <Banknote size={15} className="text-[#6f9cff]" />
+            Hồ sơ cần xử lý · kỳ {reportMonth}/{reportYear}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button type="button" onClick={() => setPayrollListMode("monthly")} className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-semibold transition ${payrollListMode === "monthly" ? "border-[#315fae] bg-[#315fae] text-white shadow-sm" : monthlyPendingCount > 0 ? "border-[#315fae] bg-[#315fae]/15 text-[#9bbaff] hover:bg-[#315fae]/25" : "border-paper-line bg-paper/40 text-muted hover:bg-paper"}`}>
+              <Banknote size={13} /> Lương tháng
+              <span className={`inline-flex min-w-5 h-5 items-center justify-center rounded-full px-1.5 ktns-mono text-[10px] ${monthlyPendingCount > 0 ? "bg-[#315fae] text-white" : "bg-paper text-muted"}`}>{monthlyPendingCount}</span>
+            </button>
+            <button type="button" onClick={() => setPayrollListMode("midmonth")} className={`inline-flex items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-semibold transition ${payrollListMode === "midmonth" ? "border-gold bg-gold text-ink shadow-sm" : midMonthPendingCount > 0 ? "border-gold bg-gold/10 text-[#f4c76a] hover:bg-gold/20" : "border-paper-line bg-paper/40 text-muted hover:bg-paper"}`}>
+              <AlertTriangle size={13} /> Giữa tháng
+              <span className={`inline-flex min-w-5 h-5 items-center justify-center rounded-full px-1.5 ktns-mono text-[10px] ${midMonthPendingCount > 0 ? "bg-gold text-ink" : "bg-paper text-muted"}`}>{midMonthPendingCount}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <section ref={monthlySectionRef} className={`${payrollListMode === "monthly" ? "flex" : "hidden"} flex-col gap-3 scroll-mt-24`}>
+        <div className="rounded-lg border border-[#315fae]/35 bg-[#101a2b] px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded bg-[#315fae] px-2 py-1 text-[10px] font-bold text-white">LƯƠNG THÁNG</span>
+            <div className="text-sm font-bold text-[#a9c4ff]">Danh sách đề xuất kỳ {reportMonth}/{reportYear}</div>
+            <span className="text-[11px] text-[#8fa4ca]">{monthlyProposalCount} hồ sơ</span>
+            {monthlyPendingCount > 0 && <span className="rounded-full bg-[#315fae]/20 px-2.5 py-1 text-[10px] font-semibold text-[#c6d7ff]">{monthlyPendingCount} chờ xử lý</span>}
+          </div>
+          {currentCanSubmitPayroll && (
+            <button type="button" onClick={openMonthlyProposalAction} className="shrink-0 inline-flex items-center justify-center gap-2 rounded-md bg-[#315fae] px-3.5 py-2 text-xs font-semibold text-white hover:bg-[#3d6fc4]" title="Tạo hoặc mở lại đề xuất lương hàng tháng">
+              {monthlyOwnCanEdit && monthlyOwnApproval ? <Pencil size={14} /> : <Plus size={14} />}
+              {monthlyOwnCanEdit && monthlyOwnApproval ? "Chỉnh sửa đề xuất" : "Tạo đề xuất"}
+            </button>
+          )}
+        </div>
+
+      {currentIsBoss && <div className="order-1 bg-white rounded-lg border border-paper-line overflow-hidden">
         <button onClick={() => setShowKpiConfig((v) => !v)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-semibold text-ink uppercase hover:bg-paper">
           <span className="flex items-center gap-1.5"><Target size={13} /> Cấu hình thưởng KPI theo mốc doanh số (Sale &amp; Marketing) — tự tính vào lương</span>
           <span className="text-[10px] text-ink-light normal-case">{showKpiConfig ? "Thu gọn ▲" : "Mở rộng ▼"}</span>
@@ -10677,54 +14463,69 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
             </div>
           </div>
         )}
-      </div>
+      </div>}
 
-      <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
-        <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
-        <span>Bấm "Đánh dấu đã chi trả" cho từng người sẽ tự ghi khoản Chi tương ứng vào tab Thu Chi (đúng tên, đúng số thực lãnh) — <strong className="text-charcoal">{paidCount}/{payrollRows.length}</strong> người đã chi trả tháng {reportMonth}/{reportYear}, tổng {fmtVND(paidTotal)}.</span>
-      </div>
-      <div className="grid grid-cols-4 gap-4">
-        <KpiCard icon={Banknote} label="Tổng thực lãnh (NV nhận)" value={fmtVND(totalPayroll)} tone="down" />
-        <KpiCard icon={TrendingUp} label="Tổng hoa hồng & thưởng thêm" value={fmtVND(totalCommission)} tone="up" />
-        <KpiCard icon={FileText} label="Thuế TNCN khấu trừ" value={fmtVND(totalTax)} tone="down" />
-        <KpiCard icon={Wallet} label="Tổng chi phí nhân sự (DN)" value={fmtVND(totalCompanyCost)} tone="down" sub="Gồm lương + BH doanh nghiệp đóng" />
-      </div>
-
-      <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
-        <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
-        <span>
-          <strong className="text-charcoal">Sale</strong>: dưới {fmtVND(SALE_LOW_THRESHOLD)} hưởng {SALE_LOW_RATE * 100}% lương cứng; từ {fmtVND(SALE_KPI_TARGET)} trở lên hưởng đủ lương + hoa hồng lũy tiến, mỗi mốc 100tr tăng thêm 0,6% không giới hạn.
-          <strong className="text-charcoal"> Marketing/Ads</strong>: dưới 140tr hưởng 70% lương cứng; 140–199tr đủ 100% lương; từ 200tr trở lên có hoa hồng 1,6–2,2% + thưởng thêm cố định theo mốc doanh thu.
-          <strong className="text-charcoal"> Hỗ trợ kỹ thuật</strong>: tính theo ngày công + hoa hồng 7% trên giá trị đơn upsale tự chốt cho khách hiện hữu.
-          <strong className="text-charcoal"> Vị trí khác</strong>: theo ngày công + thưởng KPI thường.
-          <strong className="text-charcoal"> Loại hợp đồng</strong>: Chính thức đóng đủ BHXH-BHYT-BHTN + thuế TNCN lũy tiến; Thử việc hưởng % lương thỏa thuận, chưa đóng BHXH; Cộng tác viên không đóng BHXH, khấu trừ thẳng 10% thuế. Bấm mũi tên để xem chi tiết.
-        </span>
-      </div>
-
-      <div className="flex justify-end">
-        <button onClick={() => exportPayrollExcel(payrollRows)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90">
-          <FileSpreadsheet size={15} /> Xuất Excel bảng lương chi tiết
+      <div className="order-2 flex flex-wrap items-center gap-2">
+        <button type="button" onClick={() => setShowSalaryRules((value) => !value)} className="inline-flex items-center gap-1.5 rounded-md border border-paper-line bg-white px-3 py-1.5 text-[11px] font-semibold text-ink hover:bg-paper">
+          <Link2 size={13} /> {showSalaryRules ? "Ẩn quy tắc tính lương" : "Xem quy tắc tính lương"}
+          {showSalaryRules ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
         </button>
       </div>
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+      {showPayrollSummary && (
+        <div className="order-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <KpiCard icon={Banknote} label="Tổng đề xuất" value={fmtVND(visiblePayrollTotal)} tone="down" />
+          <KpiCard icon={TrendingUp} label="Thưởng & hoa hồng" value={fmtVND(totalCommission)} tone="up" />
+          <KpiCard icon={FileText} label="Thuế TNCN" value={fmtVND(totalTax)} tone="down" />
+          <KpiCard icon={Wallet} label="Chi phí doanh nghiệp" value={fmtVND(totalCompanyCost)} tone="down" />
+        </div>
+      )}
+
+      {showSalaryRules && (
+        <div className="order-4 rounded-lg border border-[#334765] bg-[#111b2b] px-4 py-4 text-xs leading-5 text-[#c6d4ef]">
+          <div className="grid gap-3 lg:grid-cols-2">
+            <div className="rounded-md border border-[#315fae]/35 bg-[#15233a] p-3"><strong className="text-[#9fc0ff]">Sale:</strong> dưới 50.000.000đ hưởng 70% lương cứng; từ 50 đến dưới 100 triệu vẫn áp 70%; từ 100.000.000đ trở lên hưởng đủ lương và hoa hồng lũy tiến. Hoa hồng bắt đầu 1,2% cho phần doanh số từ 100–200 triệu; mỗi mốc 100 triệu tiếp theo tăng thêm 0,6%, không giới hạn.</div>
+            <div className="rounded-md border border-[#315fae]/35 bg-[#15233a] p-3"><strong className="text-[#9fc0ff]">Marketing/Ads:</strong> dưới 140 triệu hưởng 70% lương cứng; 140–199 triệu hưởng đủ 100% lương; từ 200 triệu trở lên hưởng thêm hoa hồng 1,6–2,2% và thưởng cố định theo từng mốc doanh thu.</div>
+            <div className="rounded-md border border-[#315fae]/35 bg-[#15233a] p-3"><strong className="text-[#9fc0ff]">Hỗ trợ kỹ thuật:</strong> tiền lương theo ngày công thực tế + hoa hồng 7% trên giá trị đơn upsale do nhân viên tự chốt cho khách hàng hiện hữu. <strong className="text-[#9fc0ff]">Vị trí khác:</strong> tiền lương theo ngày công + thưởng KPI thông thường.</div>
+            <div className="rounded-md border border-[#315fae]/35 bg-[#15233a] p-3"><strong className="text-[#9fc0ff]">Loại hợp đồng:</strong> Chính thức đóng BHXH-BHYT-BHTN và thuế TNCN lũy tiến; Thử việc hưởng tỷ lệ lương thỏa thuận, chưa đóng BHXH; Cộng tác viên không đóng BHXH và khấu trừ 10% thuế khi đủ điều kiện.</div>
+          </div>
+          <div className="mt-3 text-[11px] text-[#91a6c9]">Các quy tắc trên được áp dụng tự động trong form đề xuất và số liệu hệ thống tham chiếu. Bấm “Xem chi tiết” tại từng hồ sơ để kiểm tra từng thành phần.</div>
+        </div>
+      )}
+
+      {canViewAllPayroll && <div className="order-5 flex justify-end gap-2">
+        <button onClick={() => exportPayrollExcel(visiblePayrollRows)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90">
+          <FileSpreadsheet size={15} /> Xuất Excel bảng lương chi tiết
+        </button>
+      </div>}
+
+      <div className="order-6 bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="max-h-[420px] overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 z-10">
             <tr className="bg-paper text-left text-xs uppercase text-muted">
               <th className="px-4 py-2.5">Nhân viên</th>
-              <th className="px-4 py-2.5 text-right">Tổng thu nhập</th>
-              <th className="px-4 py-2.5 text-right">BHXH-YT-TN (NV)</th>
-              <th className="px-4 py-2.5 text-right">Giảm trừ GC</th>
-              <th className="px-4 py-2.5 text-right">Thuế TNCN</th>
-              <th className="px-4 py-2.5 text-right">Thực lãnh</th>
-              <th className="px-4 py-2.5 text-right">Chi phí DN</th>
+              <th className="px-4 py-2.5 text-right">Ngày công ĐX</th>
+              <th className="px-4 py-2.5 text-right">Tiền lương (ngày × đơn giá)</th>
+              <th className="px-4 py-2.5 text-right">Thưởng + Phụ cấp</th>
+              <th className="px-4 py-2.5 text-right">Khấu trừ</th>
+              <th className="px-4 py-2.5 text-right">Tổng đề xuất</th>
+              <th className="px-4 py-2.5 text-right">Hệ thống tham chiếu</th>
               <th className="px-4 py-2.5">Trạng thái</th>
               <th className="px-4 py-2.5"></th>
             </tr>
           </thead>
           <tbody>
-            {payrollRows.map((r) => (
+            {visiblePayrollRows.length === 0 && (
+              <tr><td colSpan={9} className="px-4 py-8 text-center text-xs text-muted">
+                {currentIsBoss
+                  ? "Chưa có đề xuất lương nào được Kế toán duyệt và trình lên Admin."
+                  : currentIsAccountant
+                    ? "Chưa có nhân viên nào tạo và gửi đề xuất lương đến Kế toán."
+                    : "Tài khoản chưa liên kết với hồ sơ nhân sự nên chưa có dữ liệu lương để hiển thị."}
+              </td></tr>
+            )}
+            {visiblePayrollRows.map((r) => (
               <React.Fragment key={r.id}>
                 <tr className="border-t border-paper-line cursor-pointer hover:bg-paper/50" onClick={() => toggleExpand(r.id)}>
                   <td className="px-4 py-2.5">
@@ -10734,12 +14535,15 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                     {r.kpiMilestoneBonus > 0 && <div className="text-[10px] text-gold mt-0.5">+ Thưởng KPI mốc doanh số ({r.kpiMilestonePct}% × {fmtVND(r.kpiMilestoneNetRevenue)} sau VAT) = {fmtVND(r.kpiMilestoneBonus)}</div>}
                     {r.contractType === "ctv" && <div className="text-[10px] text-gold mt-0.5">Khấu trừ 10% thuế TNCN, không giảm trừ gia cảnh</div>}
                   </td>
-                  <td className="px-4 py-2.5 text-right ktns-mono">{fmtVND(r.grossIncome)}</td>
-                  <td className="px-4 py-2.5 text-right ktns-mono text-stamp-red">-{fmtVND(r.employeeInsurance)}</td>
-                  <td className="px-4 py-2.5 text-right ktns-mono text-muted">-{fmtVND(r.personalDeduction)}</td>
-                  <td className="px-4 py-2.5 text-right ktns-mono text-stamp-red">-{fmtVND(r.thueTNCN)}</td>
-                  <td className="px-4 py-2.5 text-right ktns-mono font-semibold text-ink">{fmtVND(r.net)}</td>
-                  <td className="px-4 py-2.5 text-right ktns-mono text-muted">{fmtVND(r.employerTotalCost)}</td>
+                  <td className="px-4 py-2.5 text-right ktns-mono">{Number(proposalSummaryOf(r).requestedWorkDays || 0).toFixed(1)}</td>
+                  <td className="px-4 py-2.5 text-right ktns-mono">
+                    <div>{fmtVND(proposalSummaryOf(r).requestedSalaryByDays)}</div>
+                    <div className="text-[9px] text-muted mt-0.5">{fmtVND(proposalSummaryOf(r).requestedDailySalary)}/ngày</div>
+                  </td>
+                  <td className="px-4 py-2.5 text-right ktns-mono text-ledger-green">{fmtVND(proposalSummaryOf(r).requestedBonus + proposalSummaryOf(r).requestedAllowance)}</td>
+                  <td className="px-4 py-2.5 text-right ktns-mono text-stamp-red">-{fmtVND(proposalSummaryOf(r).requestedDeduction)}</td>
+                  <td className="px-4 py-2.5 text-right ktns-mono font-semibold text-ink">{fmtVND(proposalSummaryOf(r).amount)}</td>
+                  <td className="px-4 py-2.5 text-right ktns-mono text-muted" title="Số thực lãnh hệ thống tự tính để Kế toán đối chiếu">{fmtVND(r.net)}</td>
                   <td className="px-4 py-2.5" onClick={(e) => e.stopPropagation()}>
                     {(() => {
                       const paid = paymentOf(r.id);
@@ -10747,10 +14551,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                       const midPaid = midMonthPaidOf(r.id);
                       return (
                         <div className="flex flex-col gap-1 items-end">
-                          {paid ? <button onClick={() => togglePaid(r)}><StampBadge text="ĐÃ CHI TRẢ" gold /></button>
-                          : approval?.status === "da_duyet_cho_thanh_toan" ? <button onClick={() => togglePaid(r)} className="text-[10px] bg-ledger-green text-white px-2 py-1 rounded flex items-center gap-1"><CheckCircle2 size={10} /> Đã duyệt đủ — Chi trả ngay</button>
-                          : approval?.status === "cho_sep_xac_nhan" ? <button onClick={() => openBossConfirm(r)} className="text-[10px] border border-gold text-gold px-2 py-1 rounded flex items-center gap-1"><UserCheck size={10} /> Chờ sếp xác nhận</button>
-                          : <button onClick={() => accountantApprove(r)} className="text-[10px] border border-paper-line text-muted px-2 py-1 rounded flex items-center gap-1"><CheckCircle2 size={10} /> Kế toán duyệt</button>}
+                          {renderPayrollApprovalAction(r, true)}
+                          <span className="text-[9px] text-muted">{approvalStatusLabel(approval, paid)}</span>
                           {midPaid > 0 && !paid && (
                             <span className="text-[9px] text-stamp-red flex items-center gap-1" title="Kiểm tra kỹ trước khi chi trả — tránh trả trùng"><AlertTriangle size={9} /> Đã trả {fmtVND(midPaid)} qua yêu cầu giữa tháng!</span>
                           )}
@@ -10766,6 +14568,38 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                 {expanded[r.id] && (
                   <tr className="border-t border-paper-line bg-paper/40">
                     <td colSpan={9} className="px-4 py-4">
+                      {approvalOf(r.id) && (
+                        <div className="mb-4 rounded-lg border border-[#315fae]/25 bg-[#315fae]/5 px-4 py-3">
+                          {(() => {
+                            const proposal = proposalNumbersOf(approvalOf(r.id));
+                            return <>
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-[11px] font-semibold uppercase text-[#315fae] flex items-center gap-1.5"><FileText size={12} /> Nội dung nhân viên đề xuất</div>
+                                <div className="text-sm font-bold ktns-mono text-ink">{fmtVND(proposal.amount)}</div>
+                              </div>
+                              <div className="grid grid-cols-2 md:grid-cols-6 gap-3 mt-3 text-xs">
+                                <div><div className="text-[10px] text-muted uppercase">Ngày công</div><div className="font-semibold ktns-mono mt-0.5">{proposal.requestedWorkDays.toFixed(1)}</div></div>
+                                <div><div className="text-[10px] text-muted uppercase">Lương / ngày</div><div className="font-semibold ktns-mono mt-0.5">{fmtVND(proposal.requestedDailySalary)}</div></div>
+                                <div><div className="text-[10px] text-muted uppercase">Tiền lương</div><div className="font-semibold ktns-mono mt-0.5">{fmtVND(proposal.requestedSalaryByDays)}</div></div>
+                                <div><div className="text-[10px] text-muted uppercase">Thưởng / KPI</div><div className="font-semibold ktns-mono mt-0.5">{fmtVND(proposal.requestedBonus)}</div></div>
+                                <div><div className="text-[10px] text-muted uppercase">Phụ cấp</div><div className="font-semibold ktns-mono mt-0.5">{fmtVND(proposal.requestedAllowance)}</div></div>
+                                <div><div className="text-[10px] text-muted uppercase">Tổng khấu trừ</div><div className="font-semibold ktns-mono text-stamp-red mt-0.5">-{fmtVND(proposal.requestedDeduction)}</div></div>
+                              </div>
+                              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3 text-[10px] text-muted">
+                                <div>BH nhân viên: <strong className="ktns-mono text-ink">{fmtVND(proposal.requestedInsuranceDeduction)}</strong></div>
+                                <div>Thuế TNCN: <strong className="ktns-mono text-ink">{fmtVND(proposal.requestedTaxDeduction)}</strong></div>
+                                <div>Tạm ứng: <strong className="ktns-mono text-ink">{fmtVND(proposal.requestedAdvanceDeduction)}</strong></div>
+                                <div>Khấu trừ khác: <strong className="ktns-mono text-ink">{fmtVND(proposal.requestedOtherDeduction)}</strong></div>
+                              </div>
+                            </>;
+                          })()}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-3 pt-3 border-t border-[#315fae]/15 text-xs">
+                            <div><span className="font-semibold text-ink">Lý do/căn cứ:</span> <span className="text-muted whitespace-pre-wrap">{approvalOf(r.id).proposalReason || "—"}</span></div>
+                            <div><span className="font-semibold text-ink">Công việc/kết quả:</span> <span className="text-muted whitespace-pre-wrap">{approvalOf(r.id).proposalDetails || "—"}</span></div>
+                            {approvalOf(r.id).proposalNote && <div className="md:col-span-2"><span className="font-semibold text-ink">Ghi chú:</span> <span className="text-muted whitespace-pre-wrap">{approvalOf(r.id).proposalNote}</span></div>}
+                          </div>
+                        </div>
+                      )}
                       <div className="grid grid-cols-4 gap-6">
                         <div>
                           <div className="text-[11px] font-semibold text-ink uppercase mb-1.5">
@@ -10825,14 +14659,10 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                         </div>
                         <div onClick={(e) => e.stopPropagation()}>
                           <div className="text-[11px] font-semibold text-ink uppercase mb-1.5">Thưởng khác / Tạm ứng</div>
-                          <div className="flex flex-col gap-2 text-xs">
-                            <label className="flex flex-col gap-1 text-muted">Thưởng khác (đ)
-                              <input type="number" defaultValue={r.otherBonus} onBlur={(ev) => updateAdjustment(r.id, "otherBonus", ev.target.value)} className="border border-paper-line rounded px-2 py-1 ktns-mono text-charcoal" />
-                            </label>
-                            <label className="flex flex-col gap-1 text-muted">Tạm ứng / Khấu trừ (đ)
-                              <input type="number" defaultValue={r.advance} onBlur={(ev) => updateAdjustment(r.id, "advance", ev.target.value)} className="border border-paper-line rounded px-2 py-1 ktns-mono text-charcoal" />
-                            </label>
-                            <p className="text-[10px] text-muted">Sửa xong bấm ra ngoài ô để cập nhật thực lãnh.</p>
+                          <div className="flex flex-col gap-1 text-xs ktns-mono">
+                            <div className="flex justify-between"><span className="font-sans text-muted">Thưởng khác</span>{fmtVND(r.otherBonus || 0)}</div>
+                            <div className="flex justify-between"><span className="font-sans text-muted">Tạm ứng / Khấu trừ</span>{fmtVND(r.advance || 0)}</div>
+                            <p className="text-[10px] text-muted font-sans mt-1">Kế toán và Sếp chỉ thẩm định, duyệt hoặc không duyệt; không sửa nội dung đề xuất tại đây.</p>
                           </div>
                         </div>
                       </div>
@@ -10845,21 +14675,38 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
         </table>
         </div>
       </div>
-      <div className="bg-white rounded-lg border border-gold/40 overflow-hidden">
-        <div className="px-4 py-2.5 bg-gold/5 flex items-center justify-between">
-          <span className="text-xs font-semibold text-gold uppercase flex items-center gap-1.5"><Wallet size={13} /> Yêu cầu lương giữa tháng — nghỉ việc/nghỉ ngang, không đợi cuối tháng</span>
-          <button onClick={() => { setMidMonthForm(blankMidMonthForm); setShowMidMonthForm(true); }} className="text-xs bg-ink text-white px-2.5 py-1.5 rounded-md hover:bg-ink-light flex items-center gap-1"><Plus size={12} /> Tạo yêu cầu</button>
+
+      </section>
+
+      <section ref={midMonthSectionRef} className={`${payrollListMode === "midmonth" ? "block" : "hidden"} scroll-mt-24 overflow-hidden rounded-xl border border-gold/40 bg-white`}>
+        <div className="border-b border-gold/30 bg-[#251f12] px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded bg-gold px-2 py-1 text-[10px] font-bold text-ink">GIỮA THÁNG</span>
+            <span className="text-sm font-bold text-[#f4c76a]">Yêu cầu bất thường · {reportMonth}/{reportYear}</span>
+            <span className="text-[11px] text-[#c8b98f]">{periodVisibleMidMonthRequests.length} yêu cầu</span>
+            {midMonthPendingCount > 0 && <span className="rounded-full bg-gold/15 px-2.5 py-1 text-[10px] font-semibold text-[#f8d987]">{midMonthPendingCount} chờ xử lý</span>}
+          </div>
+          {canCreateMidMonthRequest && (
+            <button onClick={() => { setMidMonthForm({ ...blankMidMonthForm, employeeId: defaultMidMonthEmployeeId }); setShowMidMonthForm(true); }} className="text-xs bg-gold text-ink px-3 py-2 rounded-md hover:opacity-90 flex items-center gap-1.5 font-semibold" title="Tạo yêu cầu thanh toán lương giữa tháng"><Plus size={12} /> Tạo yêu cầu giữa tháng</button>
+          )}
         </div>
         {showMidMonthForm && (
-          <div className="p-4 border-b border-paper-line grid grid-cols-4 gap-2">
-            <select value={midMonthForm.employeeId} onChange={(e) => setMidMonthForm({ ...midMonthForm, employeeId: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-xs">
-              {employees.map((e) => (<option key={e.id} value={e.id}>{e.name}{e.status === "inactive" ? " — đã nghỉ việc" : ""}</option>))}
+          <div className="domix-inline-form-modal bg-white border border-paper-line p-5 grid grid-cols-4 gap-3">
+            <select
+              value={midMonthForm.employeeId}
+              onChange={(e) => setMidMonthForm({ ...midMonthForm, employeeId: e.target.value })}
+              disabled
+              className="border border-paper-line rounded px-2 py-1.5 text-xs disabled:bg-paper disabled:text-muted"
+            >
+              {employees.filter((employee) => Number(employee.id) === Number(currentEmployee?.id)).map((e) => (
+                <option key={e.id} value={e.id}>{e.name}{e.status === "inactive" ? " — đã nghỉ việc" : ""}</option>
+              ))}
             </select>
             <input type="date" value={midMonthForm.date} onChange={(e) => setMidMonthForm({ ...midMonthForm, date: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-xs" />
-            <MoneyInput value={midMonthForm.amount} onChange={(v) => setMidMonthForm({ ...midMonthForm, amount: v })} placeholder="Số tiền (đ)" />
-            <input value={midMonthForm.reason} onChange={(e) => setMidMonthForm({ ...midMonthForm, reason: e.target.value })} placeholder="Lý do" className="border border-paper-line rounded px-2 py-1.5 text-xs col-span-4" />
+            <MoneyInput value={midMonthForm.amount} onChange={(v) => setMidMonthForm({ ...midMonthForm, amount: v })} placeholder="Số tiền cần thanh toán sớm (đ)" />
+            <input value={midMonthForm.reason} onChange={(e) => setMidMonthForm({ ...midMonthForm, reason: e.target.value })} placeholder="Lý do bất thường: nghỉ việc/nghỉ ngang/thanh toán trước kỳ..." className="border border-paper-line rounded px-2 py-1.5 text-xs col-span-4" />
             <div className="col-span-4 flex gap-2">
-              <button onClick={addMidMonthRequest} className="text-xs bg-ledger-green text-white px-3 py-1.5 rounded-md">Gửi yêu cầu</button>
+              <button onClick={addMidMonthRequest} className="text-xs bg-ledger-green text-white px-3 py-1.5 rounded-md">Gửi yêu cầu lương giữa tháng</button>
               <button onClick={() => setShowMidMonthForm(false)} className="text-xs border border-paper-line px-3 py-1.5 rounded-md text-muted">Huỷ</button>
             </div>
           </div>
@@ -10867,8 +14714,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
         <table className="w-full text-sm">
           <thead><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-4 py-2">Nhân viên</th><th className="px-4 py-2">Lý do</th><th className="px-4 py-2 text-right">Số tiền</th><th className="px-4 py-2">Ngày</th><th className="px-4 py-2">Trạng thái</th><th className="px-4 py-2"></th></tr></thead>
           <tbody>
-            {midMonthRequests.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-xs text-muted">Chưa có yêu cầu lương giữa tháng nào.</td></tr>}
-            {midMonthRequests.slice().reverse().map((m) => {
+            {periodVisibleMidMonthRequests.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-xs text-muted">Không có yêu cầu lương giữa tháng trong kỳ {reportMonth}/{reportYear}.</td></tr>}
+            {periodVisibleMidMonthRequests.slice().reverse().map((m) => {
               const emp = employees.find((e) => e.id === m.employeeId);
               const reqYear = new Date(m.date).getFullYear(), reqMonth = new Date(m.date).getMonth() + 1;
               return (
@@ -10883,31 +14730,220 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                   <td className="px-4 py-2 text-right ktns-mono">{fmtVND(m.amount)}</td>
                   <td className="px-4 py-2 ktns-mono text-xs text-muted">{m.date}</td>
                   <td className="px-4 py-2">
-                    {m.paid ? <StampBadge text="ĐÃ CHI TRẢ" gold /> :
-                      m.status === "da_duyet_cho_thanh_toan" ? <button onClick={() => payMidMonthRequest(m)} className="text-[10px] bg-ledger-green text-white px-2 py-1 rounded flex items-center gap-1"><CheckCircle2 size={10} /> Đã duyệt đủ — Chi trả ngay</button> :
-                      m.status === "cho_sep_xac_nhan" ? <button onClick={() => { setMidMonthBossTarget(m); setMidMonthBossPassword(""); setMidMonthBossError(""); }} className="text-[10px] border border-gold text-gold px-2 py-1 rounded flex items-center gap-1"><UserCheck size={10} /> Chờ sếp xác nhận</button> :
-                      <button onClick={() => midMonthAccountantApprove(m.id)} className="text-[10px] border border-paper-line text-muted px-2 py-1 rounded flex items-center gap-1"><CheckCircle2 size={10} /> Kế toán duyệt</button>}
+                    {renderMidMonthApprovalAction(m)}
                   </td>
-                  <td className="px-4 py-2 text-right"><button onClick={() => removeMidMonthRequest(m.id)} className="text-muted hover:text-stamp-red"><Trash2 size={13} /></button></td>
+                  <td className="px-4 py-2 text-right">
+                    {((currentCanSubmitPayroll
+                      && String(m.submittedByEmail || "").toLowerCase() === String(authUser?.email || "").toLowerCase()
+                      && m.status === "cho_ke_toan_duyet"
+                      && !m.accountantApprovedAt)
+                      || (currentIsBoss && ["da_duyet_cho_thanh_toan", "cho_ke_toan_chi_tra"].includes(m.status))) && (
+                      <button onClick={() => removeMidMonthRequest(m.id)} className="text-muted hover:text-stamp-red" title={currentIsBoss ? "Admin xóa đề xuất đã đóng dấu" : "Hủy đề xuất trước khi Kế toán duyệt"}><Trash2 size={13} /></button>
+                    )}
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
-      </div>
+      </section>
 
-      <p className="text-xs text-muted">* Mốc doanh số/doanh thu, hệ số lương và hoa hồng lấy đúng theo bảng "Quy định KPI" — chỉnh các hằng số SALE_* và ADS_TIERS trong code nếu công ty đổi chính sách. Thuế TNCN lũy tiến, mức đóng BHXH-BHYT-BHTN có thể thay đổi theo quy định hiện hành — không thay thế tư vấn thuế chính thức.</p>
 
-      {bossConfirmTarget && (
+      {/* ---------- FORM NHÂN VIÊN TẠO / SỬA ĐỀ XUẤT LƯƠNG ---------- */}
+      {proposalTarget && proposalForm && (
+        <div className="fixed inset-0 bg-ink/45 flex items-center justify-center z-50 p-4 md:p-6" onMouseDown={(e) => e.target === e.currentTarget && null}>
+          <div className="bg-white rounded-xl border border-paper-line shadow-2xl w-full max-w-3xl max-h-[92vh] overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-paper-line flex items-start justify-between gap-4 bg-paper/40">
+              <div>
+                <h3 className="ktns-serif font-bold text-ink text-lg flex items-center gap-2"><FileText size={17} /> {approvalOf(proposalTarget.id) ? "Chỉnh sửa đề xuất lương" : "Tạo đề xuất lương"}</h3>
+                <p className="text-xs text-muted mt-1">
+                  {proposalTarget.name} · Kỳ lương {reportMonth}/{reportYear}. Điền rõ số tiền và căn cứ để Kế toán thẩm định.
+                </p>
+              </div>
+              <button onClick={() => { setProposalTarget(null); setProposalForm(null); }} className="w-8 h-8 rounded-md hover:bg-white text-muted hover:text-ink flex items-center justify-center"><X size={17} /></button>
+            </div>
+
+            <div className="overflow-y-auto max-h-[calc(92vh-132px)] px-5 py-5">
+              {approvalOf(proposalTarget.id)?.status === "tra_ve_nhan_vien" && (
+                <div className="mb-4 rounded-lg border border-stamp-red/25 bg-stamp-red/5 px-3 py-2.5 text-xs text-stamp-red">
+                  <div className="font-semibold flex items-center gap-1.5"><AlertTriangle size={13} /> Kế toán đã trả đề xuất về để chỉnh sửa</div>
+                  <div className="mt-1">Lý do: {approvalOf(proposalTarget.id)?.returnReason || "Chưa ghi lý do"}</div>
+                </div>
+              )}
+
+              <div className="mb-4 rounded-lg border border-[#315fae]/35 bg-[#111d31] px-4 py-3 text-xs text-[#c8d6ef]">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-semibold text-[#a9c4ff]">Quy tắc đang áp dụng: {ROLE_META[proposalTarget.roleType]?.label || proposalTarget.position || "Vị trí khác"} · {CONTRACT_META[proposalTarget.contractType]?.label || "Chính thức"}</div>
+                  <div className="rounded bg-[#315fae]/20 px-2 py-1 text-[10px] font-semibold text-[#b8ceff]">TỰ TÍNH THEO CẤU HÌNH HỆ THỐNG</div>
+                </div>
+                <div className="mt-2 text-[#9fb1d0]">{proposalTarget.compStatusLabel || (proposalTarget.roleType === "ky_thuat" ? "Ngày công + 7% giá trị upsale" : "Ngày công + thưởng KPI/phụ cấp")}</div>
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <div className="rounded bg-[#0c1524] px-2.5 py-2"><span className="text-[#7f94b8]">Doanh số tham chiếu</span><div className="mt-0.5 font-bold ktns-mono text-white">{fmtVND(proposalTarget.revenueUsed || 0)}</div></div>
+                  <div className="rounded bg-[#0c1524] px-2.5 py-2"><span className="text-[#7f94b8]">Lương theo quy tắc</span><div className="mt-0.5 font-bold ktns-mono text-white">{fmtVND(proposalTarget.mainSalary ?? proposalTarget.salaryByDays ?? 0)}</div></div>
+                  <div className="rounded bg-[#0c1524] px-2.5 py-2"><span className="text-[#7f94b8]">Hoa hồng/thưởng</span><div className="mt-0.5 font-bold ktns-mono text-[#86efac]">{fmtVND((proposalTarget.commission || 0) + (proposalTarget.compBonus || 0) + (proposalTarget.techUpsale || 0) + (proposalTarget.kpiBonus || 0) + (proposalTarget.kpiMilestoneBonus || 0))}</div></div>
+                  <div className="rounded bg-[#0c1524] px-2.5 py-2"><span className="text-[#7f94b8]">BH + thuế dự kiến</span><div className="mt-0.5 font-bold ktns-mono text-[#ff9ca6]">-{fmtVND((proposalTarget.employeeInsurance || 0) + (proposalTarget.thueTNCN || 0))}</div></div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="rounded-lg border border-[#315fae]/30 bg-[#111d31] px-3 py-3 text-xs">
+                  <div className="font-semibold text-[#a9c4ff]">Ngày công từ cơ sở dữ liệu Chấm công</div>
+                  <div className="mt-1 text-xl font-bold ktns-mono text-white">{Number(proposalForm.requestedWorkDays || 0).toFixed(1)} ngày</div>
+                  <div className="mt-1 text-[10px] text-[#8fa4c8]">Nhân viên không tự sửa. Sếp chỉnh tại Chấm công theo đúng tháng.</div>
+                </div>
+                <div className="rounded-lg border border-[#315fae]/30 bg-[#111d31] px-3 py-3 text-xs">
+                  <div className="font-semibold text-[#a9c4ff]">Lương một ngày từ hồ sơ Nhân sự</div>
+                  <div className="mt-1 text-xl font-bold ktns-mono text-white">{fmtVND(proposalForm.requestedDailySalary || 0)}</div>
+                  <div className="mt-1 text-[10px] text-[#8fa4c8]">Sếp khai báo trong hồ sơ nhân viên; nếu để 0, hệ thống lấy lương tháng chia ngày chuẩn.</div>
+                </div>
+                <div className="rounded-lg border border-[#315fae]/25 bg-[#315fae]/5 px-3 py-2.5 text-xs">
+                  <div className="text-muted">Tiền lương theo ngày công</div>
+                  <div className="mt-1 text-base font-bold ktns-mono text-[#315fae]">{fmtVND(proposalNumbersOf(proposalForm).requestedSalaryByDays)}</div>
+                  <div className="mt-1 text-[10px] text-muted ktns-mono">
+                    {Number(proposalNumbersOf(proposalForm).requestedWorkDays).toFixed(1)} ngày × {fmtVND(proposalNumbersOf(proposalForm).requestedDailySalary)}/ngày
+                  </div>
+                </div>
+
+                <label className="text-xs text-muted flex flex-col gap-1.5">
+                  Thưởng / KPI / Hoa hồng đề nghị
+                  <MoneyInput value={proposalForm.requestedBonus} onChange={(v) => setProposalForm({ ...proposalForm, requestedBonus: v })} />
+                </label>
+                <label className="text-xs text-muted flex flex-col gap-1.5">
+                  Phụ cấp đề nghị
+                  <MoneyInput value={proposalForm.requestedAllowance} onChange={(v) => setProposalForm({ ...proposalForm, requestedAllowance: v })} />
+                </label>
+
+                <div className="md:col-span-2 rounded-xl border border-paper-line bg-paper/30 p-4">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2 mb-3">
+                    <div>
+                      <div className="text-xs font-semibold text-ink">Các khoản khấu trừ trong đề xuất</div>
+                      <div className="text-[10px] text-muted mt-1 leading-4">Nhân viên nhập số đề nghị. Kế toán/Sếp chỉ đọc và duyệt hoặc trả về; không sửa nội dung hồ sơ.</div>
+                    </div>
+                    <div className="text-sm font-bold ktns-mono text-stamp-red">-{fmtVND(proposalNumbersOf(proposalForm).requestedDeduction)}</div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <label className="text-xs text-muted flex flex-col gap-1.5">
+                      BHXH / BHYT / BHTN nhân viên đóng
+                      <MoneyInput value={proposalForm.requestedInsuranceDeduction} onChange={(v) => setProposalForm({ ...proposalForm, requestedInsuranceDeduction: v })} />
+                    </label>
+                    <label className="text-xs text-muted flex flex-col gap-1.5">
+                      Thuế TNCN dự kiến
+                      <MoneyInput value={proposalForm.requestedTaxDeduction} onChange={(v) => setProposalForm({ ...proposalForm, requestedTaxDeduction: v })} />
+                    </label>
+                    <label className="text-xs text-muted flex flex-col gap-1.5">
+                      Tạm ứng đã nhận
+                      <MoneyInput value={proposalForm.requestedAdvanceDeduction} onChange={(v) => setProposalForm({ ...proposalForm, requestedAdvanceDeduction: v })} />
+                    </label>
+                    <label className="text-xs text-muted flex flex-col gap-1.5">
+                      Khấu trừ khác
+                      <MoneyInput value={proposalForm.requestedOtherDeduction} onChange={(v) => setProposalForm({ ...proposalForm, requestedOtherDeduction: v })} />
+                    </label>
+                  </div>
+                  <div className="mt-3 rounded-lg border border-[#32496f] bg-[#182335] px-3.5 py-3 text-[11px] text-[#d8e4ff] leading-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]">
+                    <div className="font-medium text-[#edf4ff]">Số hệ thống dùng để đối chiếu được cấu hình ở:</div>
+                    <div className="mt-1.5 text-[#c5d4f2]">
+                      <strong className="text-[#f4c76a]">Chấm công</strong> <span className="text-[#9eb3d6]">(ngày công)</span>, <strong className="text-[#f4c76a]">Nhân sự</strong> <span className="text-[#9eb3d6]">(lương cơ bản, hợp đồng, bảo hiểm, người phụ thuộc, phụ cấp)</span> và <strong className="text-[#f4c76a]">Thu Chi/Tạm ứng</strong> <span className="text-[#9eb3d6]">(khoản đã ứng)</span>.
+                    </div>
+                    <div className="mt-2 rounded-md border border-[#2b3d5b] bg-[#121a29] px-2.5 py-2 text-[#b8c7e6]">
+                      <strong className="text-[#ffdb8a]">Lưu ý:</strong> Giảm trừ gia cảnh chỉ dùng để tính thuế, không phải khoản trừ trực tiếp khỏi lương.
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-4 rounded-xl border border-ledger-green/30 bg-ledger-green/5 px-4 py-3 flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-[11px] uppercase font-semibold text-ledger-green">Tổng thực nhận đề nghị</div>
+                  <div className="text-[10px] text-muted mt-0.5">(Ngày công × Lương/ngày) + Thưởng + Phụ cấp − Tổng khấu trừ</div>
+                </div>
+                <div className="text-xl font-bold ktns-mono text-ledger-green">{fmtVND(proposalTotalOf(proposalForm))}</div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 mt-4">
+                <label className="text-xs text-muted flex flex-col gap-1.5">
+                  Lý do / căn cứ đề xuất <span className="text-stamp-red">*</span>
+                  <input
+                    value={proposalForm.proposalReason}
+                    onChange={(e) => setProposalForm({ ...proposalForm, proposalReason: e.target.value })}
+                    placeholder="VD: Đề nghị thanh toán lương tháng 7 theo số ngày công và kết quả đã hoàn thành"
+                    className="border border-paper-line rounded-md px-3 py-2 text-sm"
+                  />
+                </label>
+                <label className="text-xs text-muted flex flex-col gap-1.5">
+                  Công việc, kết quả hoặc căn cứ tính lương <span className="text-stamp-red">*</span>
+                  <textarea
+                    value={proposalForm.proposalDetails}
+                    onChange={(e) => setProposalForm({ ...proposalForm, proposalDetails: e.target.value })}
+                    rows={4}
+                    placeholder="Mô tả công việc đã hoàn thành, KPI/doanh số, số ca/ngày công, khoản thưởng hoặc phụ cấp đề nghị..."
+                    className="border border-paper-line rounded-md px-3 py-2 text-sm resize-y"
+                  />
+                </label>
+                <label className="text-xs text-muted flex flex-col gap-1.5">
+                  Ghi chú thêm
+                  <textarea
+                    value={proposalForm.proposalNote}
+                    onChange={(e) => setProposalForm({ ...proposalForm, proposalNote: e.target.value })}
+                    rows={2}
+                    placeholder="Thông tin bổ sung cho Kế toán (không bắt buộc)"
+                    className="border border-paper-line rounded-md px-3 py-2 text-sm resize-y"
+                  />
+                </label>
+              </div>
+            </div>
+
+            <div className="px-5 py-3.5 border-t border-paper-line bg-paper/50 flex items-center justify-end gap-2">
+              <button onClick={() => { setProposalTarget(null); setProposalForm(null); }} className="text-sm border border-paper-line text-muted px-4 py-2 rounded-md">Huỷ</button>
+              <button onClick={submitPayrollForReview} className="text-sm bg-[#315fae] text-white px-4 py-2 rounded-md flex items-center gap-1.5 hover:opacity-90"><Send size={14} /> {approvalOf(proposalTarget.id) ? "Lưu chỉnh sửa & gửi Kế toán" : "Tạo và gửi Kế toán"}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+
+      {/* ---------- Overlay NHẬP LÝ DO KHÔNG DUYỆT (thay cho window.prompt) ---------- */}
+      {rejectTarget && (
+        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-6">
+          <div className="bg-white rounded-lg p-5 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="ktns-serif font-semibold text-stamp-red mb-1 flex items-center gap-1.5"><X size={15} /> Không duyệt hồ sơ lương</h3>
+            <p className="text-xs text-muted mb-3">
+              Hồ sơ lương của <strong className="text-charcoal">{rejectTarget.r.name}</strong> — kỳ {reportMonth}/{reportYear} sẽ được trả về{" "}
+              <strong className="text-charcoal">
+                {rejectTarget.level === "accountant" ? "nhân viên (sửa và gửi lại)" : hasAccountant ? "Kế toán (rà soát lại)" : "nhân viên (công ty chưa có kế toán)"}
+              </strong>. Lý do sẽ hiển thị ngay trên hồ sơ và lưu vào lịch sử xét duyệt.
+            </p>
+            <label className="text-xs text-muted flex flex-col gap-1">
+              Lý do không duyệt
+              <textarea
+                value={rejectReason}
+                onChange={(e) => setRejectReason(e.target.value)}
+                rows={3}
+                autoFocus
+                placeholder="VD: Số liệu ngày công chưa khớp, thiếu bảng chấm công..."
+                className="border border-paper-line rounded px-2.5 py-2 text-sm resize-none"
+              />
+            </label>
+            <div className="flex gap-2 mt-3">
+              <button onClick={confirmReject} className="bg-stamp-red text-white text-sm px-3 py-1.5 rounded-md hover:opacity-90">Xác nhận trả về</button>
+              <button onClick={() => { setRejectTarget(null); setRejectReason(""); }} className="border border-paper-line text-sm px-3 py-1.5 rounded-md text-muted">Huỷ</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- Overlay XÁC NHẬN XÓA dữ liệu lương một nhân viên ---------- */}
+      {deleteTarget && (
         <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-6">
           <div className="bg-white rounded-lg p-5 w-full max-w-sm shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="ktns-serif font-semibold text-ink mb-1 flex items-center gap-1.5"><UserCheck size={15} /> Sếp xác nhận chi trả</h3>
-            <p className="text-xs text-muted mb-3">Xác nhận chi trả lương <strong className="text-charcoal">{fmtVND(bossConfirmTarget.net)}</strong> cho <strong className="text-charcoal">{bossConfirmTarget.name}</strong> — kỳ {reportMonth}/{reportYear}. Kế toán đã duyệt số liệu, cần đúng mật khẩu giám đốc để xác nhận bước cuối.</p>
-            <input type="password" value={bossPassword} onChange={(e) => setBossPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && confirmBossApproval()} placeholder="Mật khẩu giám đốc" className="w-full border border-paper-line rounded px-3 py-2 text-sm ktns-mono" autoFocus />
-            {bossConfirmError && <p className="text-xs text-stamp-red mt-2 flex items-center gap-1"><AlertTriangle size={12} /> {bossConfirmError}</p>}
+            <h3 className="ktns-serif font-semibold text-stamp-red mb-1 flex items-center gap-1.5"><Trash2 size={15} /> Xóa dữ liệu lương của nhân viên</h3>
+            <p className="text-xs text-muted mb-3">
+              Xóa toàn bộ dữ liệu lương của <strong className="text-charcoal">{deleteTarget.name}</strong> — kỳ {reportMonth}/{reportYear}?
+              Hồ sơ xét duyệt, lịch sử duyệt, trạng thái đã chi trả và giao dịch Thu Chi liên kết của kỳ này sẽ bị xóa. Hồ sơ nhân sự, lương cơ bản và chấm công không bị xóa; sau đó chỉ chính nhân viên mới có thể tạo đề xuất lại từ đầu.
+            </p>
             <div className="flex gap-2 mt-3">
-              <button onClick={confirmBossApproval} className="bg-ledger-green text-white text-sm px-3 py-1.5 rounded-md">Xác nhận</button>
-              <button onClick={() => setBossConfirmTarget(null)} className="border border-paper-line text-sm px-3 py-1.5 rounded-md text-muted">Huỷ</button>
+              <button onClick={confirmDeleteApproval} className="bg-stamp-red text-white text-sm px-3 py-1.5 rounded-md hover:opacity-90">Xóa dữ liệu kỳ này</button>
+              <button onClick={() => setDeleteTarget(null)} className="border border-paper-line text-sm px-3 py-1.5 rounded-md text-muted">Huỷ</button>
             </div>
           </div>
         </div>
@@ -10937,8 +14973,45 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
               </div>
               {/* Thân cuộn độc lập */}
               <div className="overflow-y-auto px-6 py-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-5">
+                {approval && (() => {
+                  const proposal = proposalNumbersOf(approval);
+                  return (
+                    <div className="md:col-span-2 xl:col-span-4 rounded-xl border border-[#315fae]/25 bg-[#315fae]/5 p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="text-[11px] uppercase font-semibold text-[#315fae]">Hồ sơ đề xuất do nhân viên gửi</div>
+                          <div className="text-xs text-muted mt-1">Gửi lúc {approval.submittedAt || "—"} bởi {approval.submittedByName || approval.submittedByEmail || r.name}</div>
+                        </div>
+                        <div className="text-xl font-bold ktns-mono text-ink">{fmtVND(proposal.amount)}</div>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mt-4">
+                        <Row label="Ngày công đề nghị" value={proposal.requestedWorkDays.toFixed(1)} />
+                        <Row label="Lương đề nghị / ngày" value={fmtVND(proposal.requestedDailySalary)} />
+                        <Row label="Tiền lương (ngày × đơn giá)" value={fmtVND(proposal.requestedSalaryByDays)} strong />
+                        <Row label="Thưởng / KPI" value={fmtVND(proposal.requestedBonus)} />
+                        <Row label="Phụ cấp" value={fmtVND(proposal.requestedAllowance)} />
+                        <Row label="Tổng khấu trừ" value={`-${fmtVND(proposal.requestedDeduction)}`} red />
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3 rounded-lg border border-[#315fae]/15 bg-white/60 px-3 py-2 text-[10px] text-muted">
+                        <div>BH nhân viên: <strong className="ktns-mono text-ink">{fmtVND(proposal.requestedInsuranceDeduction)}</strong></div>
+                        <div>Thuế TNCN: <strong className="ktns-mono text-ink">{fmtVND(proposal.requestedTaxDeduction)}</strong></div>
+                        <div>Tạm ứng: <strong className="ktns-mono text-ink">{fmtVND(proposal.requestedAdvanceDeduction)}</strong></div>
+                        <div>Khấu trừ khác: <strong className="ktns-mono text-ink">{fmtVND(proposal.requestedOtherDeduction)}</strong></div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4 pt-4 border-t border-[#315fae]/15 text-xs">
+                        <div><span className="font-semibold text-ink">Lý do/căn cứ:</span> <span className="text-muted whitespace-pre-wrap">{approval.proposalReason || "—"}</span></div>
+                        <div><span className="font-semibold text-ink">Công việc/kết quả:</span> <span className="text-muted whitespace-pre-wrap">{approval.proposalDetails || "—"}</span></div>
+                        {approval.proposalNote && <div className="md:col-span-2"><span className="font-semibold text-ink">Ghi chú:</span> <span className="text-muted whitespace-pre-wrap">{approval.proposalNote}</span></div>}
+                      </div>
+                    </div>
+                  );
+                })()}
+                <div className="md:col-span-2 xl:col-span-4 rounded-lg border border-gold/25 bg-gold/5 px-4 py-3 text-xs text-muted leading-5">
+                  <strong className="text-ink">Phần dưới là dữ liệu hệ thống tham chiếu, không phải nội dung nhân viên đề xuất.</strong>
+                  Ngày công chỉnh tại <strong className="text-ink">Chấm công</strong>; lương cơ bản, hợp đồng, bảo hiểm, người phụ thuộc và phụ cấp chỉnh tại <strong className="text-ink">Nhân sự</strong>; tạm ứng chỉnh tại <strong className="text-ink">Thu Chi/Tạm ứng</strong>. Giảm trừ gia cảnh chỉ làm giảm thu nhập tính thuế, không bị trừ thẳng khỏi lương.
+                </div>
                 <div className="bg-paper/50 rounded-lg border border-paper-line p-4">
-                  <div className="text-[11px] font-semibold text-ink uppercase mb-2">A. Thông tin nhân sự</div>
+                  <div className="text-[11px] font-semibold text-ink uppercase mb-2">A. Nhân sự hệ thống (tham chiếu)</div>
                   <Row label="Họ tên" value={r.name} strong />
                   <Row label="Chức vụ" value={r.position || ROLE_META[r.roleType]?.label} />
                   <Row label="Hợp đồng" value={r.contractLabel} />
@@ -10946,7 +15019,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                   <Row label="Lương cơ bản niêm yết" value={fmtVND(r.baseSalary)} />
                 </div>
                 <div className="bg-paper/50 rounded-lg border border-paper-line p-4">
-                  <div className="text-[11px] font-semibold text-ink uppercase mb-2">B. Cấu thành thu nhập</div>
+                  <div className="text-[11px] font-semibold text-ink uppercase mb-2">B. Thu nhập hệ thống tính (tham chiếu)</div>
                   {r.usesRevenueModel
                     ? <Row label="Lương theo doanh số" value={fmtVND(r.mainSalary || 0)} />
                     : <Row label={`Lương theo ngày công (${fmtVND(r.daySalary || 0)}/ngày)`} value={fmtVND(r.salaryByDays || 0)} />}
@@ -10960,9 +15033,9 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                   <Row label="TỔNG THU NHẬP" value={fmtVND(r.grossIncome)} strong />
                 </div>
                 <div className="bg-paper/50 rounded-lg border border-paper-line p-4">
-                  <div className="text-[11px] font-semibold text-ink uppercase mb-2">C. Khấu trừ</div>
+                  <div className="text-[11px] font-semibold text-ink uppercase mb-2">C. Khấu trừ hệ thống tính (tham chiếu)</div>
                   <Row label="BHXH-BHYT-BHTN (NV đóng)" value={`-${fmtVND(r.employeeInsurance)}`} red />
-                  <Row label="Giảm trừ gia cảnh" value={`-${fmtVND(r.personalDeduction)}`} />
+                  <Row label="Giảm trừ gia cảnh (chỉ để tính thuế)" value={fmtVND(r.personalDeduction)} />
                   <Row label="Thuế TNCN" value={`-${fmtVND(r.thueTNCN)}`} red />
                   {(r.advance ?? 0) > 0 && <Row label="Tạm ứng đã nhận" value={`-${fmtVND(r.advance)}`} red />}
                   <Row label="THỰC LÃNH" value={fmtVND(r.net)} strong />
@@ -10973,21 +15046,33 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                 </div>
                 <div className="bg-paper/50 rounded-lg border border-paper-line p-4">
                   <div className="text-[11px] font-semibold text-ink uppercase mb-2">D. Thanh toán &amp; duyệt</div>
-                  <Row label="Kế toán duyệt" value={approval ? (approval.accountantApprovedAt || "Đã duyệt") : "Chưa duyệt"} />
-                  <Row label="Giám đốc duyệt" value={approval?.status === "da_duyet_cho_thanh_toan" ? (approval.bossApprovedAt || "Đã xác nhận") : "Chưa xác nhận"} />
+                  <Row label="Trạng thái xét duyệt" value={approvalStatusLabel(approval, paid)} strong />
+                  <Row label="Kế toán rà soát" value={approval?.accountantApprovedAt ? `${approval.accountantApprovedByName || approval.accountantApprovedByEmail || "Kế toán"} · ${approval.accountantApprovedAt}` : "Chưa duyệt"} />
+                  <Row label="Sếp duyệt" value={approval?.bossApprovedAt ? `${approval.bossApprovedByName || approval.bossApprovedByEmail || "Sếp"} · ${approval.bossApprovedAt}` : "Chưa xác nhận"} />
                   <Row label="Đã chi trả" value={paid ? "Rồi" : "Chưa"} strong={!!paid} />
+                  {paid && <Row label="Người chi trả" value={paid.paidByName || paid.paidByEmail || "—"} />}
                   {paid && <Row label="Ngày chi trả" value={paid.paidAt || "—"} />}
                   {paid && <Row label="Giao dịch Thu Chi liên kết" value={`#${String(paid.linkedTxId || "").slice(-8)}`} />}
+                  {Array.isArray(approval?.approvalHistory) && approval.approvalHistory.length > 0 && (
+                    <div className="mt-3 border-t border-paper-line pt-3">
+                      <div className="text-[10px] font-semibold uppercase text-muted">Lưu vết xét duyệt</div>
+                      <div className="mt-2 space-y-1.5">
+                        {approval.approvalHistory.map((item) => (
+                          <div key={item.id} className="rounded bg-white px-2 py-1.5 text-[10px] text-muted">
+                            <div className="font-medium text-ink">{item.label}</div>
+                            <div>{item.name || item.email || "—"} · {item.at || "—"}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
               {/* Footer cố định — thao tác duyệt */}
               <div className="shrink-0 px-6 py-3.5 border-t border-paper-line bg-paper/60 flex items-center justify-between gap-3">
-                <span className="text-xs text-muted">Thực lãnh kỳ này: <strong className="ktns-mono text-ink text-sm">{fmtVND(r.net)}</strong></span>
+                <span className="text-xs text-muted">Tổng đề xuất nhân viên: <strong className="ktns-mono text-ink text-sm">{fmtVND(approval ? proposalNumbersOf(approval).amount : 0)}</strong> <span className="ml-2 text-[10px]">· Hệ thống tham chiếu: {fmtVND(r.net)}</span></span>
                 <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                  {paid ? <StampBadge text="ĐÃ CHI TRẢ" gold />
-                    : approval?.status === "da_duyet_cho_thanh_toan" ? <button onClick={() => { togglePaid(r); }} className="text-xs bg-ledger-green text-white px-3 py-2 rounded-md flex items-center gap-1"><CheckCircle2 size={12} /> Đã duyệt đủ — Chi trả ngay</button>
-                    : approval?.status === "cho_sep_xac_nhan" ? <button onClick={() => openBossConfirm(r)} className="text-xs border border-gold text-gold px-3 py-2 rounded-md flex items-center gap-1"><UserCheck size={12} /> Chờ sếp xác nhận</button>
-                    : <button onClick={() => accountantApprove(r)} className="text-xs border border-paper-line text-ink px-3 py-2 rounded-md flex items-center gap-1"><CheckCircle2 size={12} /> Kế toán duyệt</button>}
+                  {renderPayrollApprovalAction(r, false)}
                   <button onClick={() => setDetailRowId(null)} className="text-xs border border-paper-line text-muted px-3 py-2 rounded-md">Đóng</button>
                 </div>
               </div>
@@ -10996,15 +15081,43 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
         );
       })()}
 
+      {midMonthRejectTarget && (
+        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-6">
+          <div className="bg-white rounded-lg p-5 w-full max-w-md shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h3 className="ktns-serif font-semibold text-stamp-red mb-1 flex items-center gap-1.5"><X size={15} /> Không duyệt đề xuất lương giữa tháng</h3>
+            <p className="text-xs text-muted mb-3">
+              Đề xuất của <strong className="text-charcoal">{employees.find((employee) => Number(employee.id) === Number(midMonthRejectTarget.request.employeeId))?.name || "—"}</strong> sẽ được trả về{" "}
+              <strong className="text-charcoal">{midMonthRejectTarget.level === "accountant" ? "nhân viên" : "Kế toán"}</strong> để xử lý lại.
+            </p>
+            <label className="text-xs text-muted flex flex-col gap-1">
+              Lý do không duyệt
+              <textarea
+                value={midMonthRejectReason}
+                onChange={(e) => setMidMonthRejectReason(e.target.value)}
+                rows={3}
+                autoFocus
+                placeholder="VD: Số tiền chưa khớp số ngày công thực tế..."
+                className="border border-paper-line rounded px-2.5 py-2 text-sm resize-none"
+              />
+            </label>
+            <div className="flex gap-2 mt-3">
+              <button onClick={confirmMidMonthReject} className="bg-stamp-red text-white text-sm px-3 py-1.5 rounded-md">Xác nhận trả về</button>
+              <button onClick={() => { setMidMonthRejectTarget(null); setMidMonthRejectReason(""); }} className="border border-paper-line text-sm px-3 py-1.5 rounded-md text-muted">Huỷ</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {midMonthBossTarget && (
         <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-6">
           <div className="bg-white rounded-lg p-5 w-full max-w-sm shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <h3 className="ktns-serif font-semibold text-ink mb-1 flex items-center gap-1.5"><UserCheck size={15} /> Sếp xác nhận chi trả giữa tháng</h3>
-            <p className="text-xs text-muted mb-3">Xác nhận chi trả <strong className="text-charcoal">{fmtVND(midMonthBossTarget.amount)}</strong> cho <strong className="text-charcoal">{employees.find((e) => e.id === midMonthBossTarget.employeeId)?.name || "—"}</strong> — {midMonthBossTarget.reason}.</p>
-            <input type="password" value={midMonthBossPassword} onChange={(e) => setMidMonthBossPassword(e.target.value)} onKeyDown={(e) => e.key === "Enter" && confirmMidMonthBossApproval()} placeholder="Mật khẩu giám đốc" className="w-full border border-paper-line rounded px-3 py-2 text-sm ktns-mono" autoFocus />
-            {midMonthBossError && <p className="text-xs text-stamp-red mt-2 flex items-center gap-1"><AlertTriangle size={12} /> {midMonthBossError}</p>}
+            <h3 className="ktns-serif font-semibold text-ink mb-1 flex items-center gap-1.5"><UserCheck size={15} /> Sếp xét duyệt lương giữa tháng</h3>
+            <p className="text-xs text-muted mb-3">Xét duyệt khoản <strong className="text-charcoal">{fmtVND(midMonthBossTarget.amount)}</strong> cho <strong className="text-charcoal">{employees.find((e) => e.id === midMonthBossTarget.employeeId)?.name || "—"}</strong> — {midMonthBossTarget.reason}. Sau xác nhận, yêu cầu được đóng dấu ĐÃ DUYỆT.</p>
+            <div className="rounded-md border border-ledger-green/20 bg-ledger-green/5 px-3 py-2 text-xs text-muted">
+              Tài khoản Sếp hiện tại sẽ được ghi nhận là người duyệt. Không cần nhập lại mật khẩu.
+            </div>
             <div className="flex gap-2 mt-3">
-              <button onClick={confirmMidMonthBossApproval} className="bg-ledger-green text-white text-sm px-3 py-1.5 rounded-md">Xác nhận</button>
+              <button onClick={confirmMidMonthBossApproval} className="bg-ledger-green text-white text-sm px-3 py-1.5 rounded-md">Duyệt khoản lương</button>
               <button onClick={() => setMidMonthBossTarget(null)} className="border border-paper-line text-sm px-3 py-1.5 rounded-md text-muted">Huỷ</button>
             </div>
           </div>
@@ -11037,7 +15150,9 @@ function exportQuarterExcel(monthSnapshots, quarter, year) {
   XLSX.writeFile(wb, `DOMIX_Bao_cao_Quy${quarter}_${year}.xlsx`);
 }
 
-function QuarterReport({ transactions, orders, marketingLogs, employees, reportYear, reportMonth }) {
+function QuarterReport({ transactions, orders, marketingLogs, employees, reportYear, reportMonth, dataLoader }) {
+  const [activeTableView, setActiveTableView] = useState("quarter");
+  const lazyTableData = useLazyTableData(activeTableView, { quarter: ["transactions", "orders", "marketingLogs"], accounts: ["transactions"], tax: ["transactions", "orders", "marketingLogs"] }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   const [year, setYear] = useState(reportYear);
   const [quarter, setQuarter] = useState(quarterOf(reportMonth));
   const months = quarterMonths(year, quarter);
@@ -11072,13 +15187,32 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
 
   const yearOptions = [2025, 2026, 2027];
 
+  if (!lazyTableData.ready) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={[{ id: "quarter", label: "Báo cáo quý", icon: FileSpreadsheet }, { id: "accounts", label: "Phát sinh tài khoản", icon: Landmark }, { id: "tax", label: "Thuế TNDN năm", icon: Calculator }]} />
+        <DataLoadingPanel title="Đang tải dữ liệu báo cáo" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
+      <SectionViewSwitcher
+        value={activeTableView}
+        onChange={setActiveTableView}
+        options={[
+          { id: "quarter", label: "Báo cáo quý", icon: FileSpreadsheet },
+          { id: "accounts", label: "Phát sinh tài khoản", icon: Landmark },
+          { id: "tax", label: "Thuế TNDN năm", icon: Calculator },
+        ]}
+      />
       <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
         <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
         <span>Mỗi tháng tính riêng theo đúng dữ liệu Thu Chi/CRM/Marketing/Chấm công của tháng đó — xem cạnh nhau theo quý để đối chiếu và kê khai thuế cho dễ.</span>
       </div>
 
+      {activeTableView === "tax" && (
       <div className="bg-white rounded-lg border border-stamp-red/40 p-4">
         <div className="text-xs font-semibold text-stamp-red uppercase mb-1 flex items-center gap-1.5"><AlertTriangle size={13} /> Thuế TNDN dự kiến — Năm {year} (trước đây app CHƯA từng tính khoản này)</div>
         <p className="text-[11px] text-muted mb-3">Tính theo Nghị định 320/2025/NĐ-CP: doanh thu năm ≤3 tỷ → 15%, 3-50 tỷ → 17%, trên 50 tỷ → 20%. Đã tự CỘNG NGƯỢC các khoản chi tiền mặt ≥5 triệu vào thu nhập chịu thuế (vì thuế không cho trừ khoản này) — đây vẫn là ước tính, còn nhiều khoản chi không hợp lý khác theo Điều 10 Luật Thuế TNDN mà app chưa nhận diện được hết, kế toán cần rà lại kỹ trước khi kê khai chính thức.</p>
@@ -11119,7 +15253,9 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
           </div>
         </div>
       </div>
+      )}
 
+      {activeTableView === "quarter" && (<>
       {(() => {
         const marginNet = quarterTotal.thu > 0 ? (quarterTotal.profit / quarterTotal.thu) * 100 : 0;
         const payrollRatio = quarterTotal.thu > 0 ? (quarterTotal.payrollTotal / quarterTotal.thu) * 100 : 0;
@@ -11205,7 +15341,9 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
       </div>
       <p className="text-xs text-muted">* Mỗi tháng tự tính lại từ dữ liệu gốc (Thu Chi, CRM, Marketing, Chấm công) của đúng tháng đó — không cộng dồn nhầm sang tháng khác. Dùng bảng này để đối chiếu khi kê khai thuế GTGT/TNCN theo quý.</p>
 
-      {(() => {
+      </>)}
+
+      {activeTableView === "accounts" && (() => {
         const qFrom = `${year}-${String((quarter - 1) * 3 + 1).padStart(2, "0")}-01`;
         const qToMonth = quarter * 3;
         const qTo = `${year}-${String(qToMonth).padStart(2, "0")}-31`;
@@ -11261,7 +15399,13 @@ function roleEfficiency(group) {
   return { ratio, label: "Hiệu quả thấp — cân nhắc tối ưu chi phí hoặc cơ cấu lại vị trí", tone: "red" };
 }
 
-function HoachDinhNganSach({ prevSnapshot, prevPeriod, roleGroupStats, company }) {
+function HoachDinhNganSach({ prevSnapshot, prevPeriod, roleGroupStats, company, dataLoader }) {
+  const [activeTableView, setActiveTableView] = useState("efficiency");
+  const lazyTableData = useLazyTableData(activeTableView, {
+    efficiency: ["transactions", "orders", "marketingLogs", "kpiTiers"],
+    budget: ["transactions", "orders", "marketingLogs", "kpiTiers"],
+    ai: ["transactions", "orders", "marketingLogs", "kpiTiers"],
+  }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   const [pcts, setPcts] = useState(Object.fromEntries(BUDGET_CATEGORIES.map((c) => [c.key, c.defaultPct])));
   const [targetRevenue, setTargetRevenue] = useState(Math.round(prevSnapshot.thu));
   const totalPct = Object.values(pcts).reduce((a, b) => a + (Number(b) || 0), 0);
@@ -11330,9 +15474,31 @@ Hãy soạn một bản "Kế hoạch phân bổ ngân sách & nhân sự tháng
     }
   };
 
+  if (!lazyTableData.ready) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={[
+          { id: "efficiency", label: "Hiệu quả nhân sự", icon: Gauge },
+          { id: "budget", label: "Phân bổ ngân sách", icon: PieChart },
+          { id: "ai", label: "Kế hoạch AI", icon: Sparkles },
+        ]} />
+        <DataLoadingPanel title="Đang tải dữ liệu bảng đã chọn" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div ref={printRef} className="ktns-print-area"></div>
+      <SectionViewSwitcher
+        value={activeTableView}
+        onChange={setActiveTableView}
+        options={[
+          { id: "efficiency", label: "Hiệu quả nhân sự", icon: Gauge, count: roleRows.length },
+          { id: "budget", label: "Phân bổ ngân sách", icon: PieChart, count: BUDGET_CATEGORIES.length },
+          { id: "ai", label: "Kế hoạch AI", icon: Sparkles, count: messages.length },
+        ]}
+      />
       <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
         <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
         <span>Dựa trên số liệu thật tháng {prevPeriod.month}/{prevPeriod.year}, đề xuất phân bổ ngân sách và nhân sự hợp lý cho tháng tới — chỉnh % nếu công ty có tỷ lệ ngân sách riêng.</span>
@@ -11345,6 +15511,7 @@ Hãy soạn một bản "Kế hoạch phân bổ ngân sách & nhân sự tháng
         <KpiCard icon={PieChart} label="Tỷ trọng chi phí NS/Doanh thu" value={prevSnapshot.thu > 0 ? `${Math.round((prevSnapshot.employerCost / prevSnapshot.thu) * 100)}%` : "—"} tone={prevSnapshot.thu > 0 && prevSnapshot.employerCost / prevSnapshot.thu > 0.35 ? "down" : "up"} />
       </div>
 
+      {activeTableView === "efficiency" && (
       <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><Gauge size={13} /> Hiệu quả chi phí từng nhóm vị trí (tháng {prevPeriod.month}/{prevPeriod.year})</div>
         <table className="w-full text-sm">
@@ -11375,7 +15542,9 @@ Hãy soạn một bản "Kế hoạch phân bổ ngân sách & nhân sự tháng
         </table>
         <p className="px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Tỷ lệ = doanh thu đóng góp / chi phí nhóm. ≥3x: hiệu quả cao, nên cân nhắc mở rộng. 1.5-3x: ổn định. Dưới 1.5x: cần tối ưu. Kỹ thuật/vị trí khác không có doanh thu trực tiếp nên đánh giá qua tab Hiệu suất/Giao việc thay vì tỷ lệ này.</p>
       </div>
+      )}
 
+      {activeTableView === "budget" && (
       <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="px-4 pt-3 pb-2 flex items-center justify-between flex-wrap gap-2">
           <div className="text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><PieChart size={13} /> Đề xuất phân bổ ngân sách tháng tới</div>
@@ -11410,7 +15579,9 @@ Hãy soạn một bản "Kế hoạch phân bổ ngân sách & nhân sự tháng
         </table>
         {totalPct !== 100 && <p className="px-4 py-2 text-[11px] text-stamp-red border-t border-paper-line flex items-center gap-1"><AlertTriangle size={11} /> Tổng tỷ trọng chưa đủ 100% — điều chỉnh lại cho cân đối.</p>}
       </div>
+      )}
 
+      {activeTableView === "ai" && (
       <div className="bg-white rounded-lg border border-paper-line flex flex-col overflow-hidden">
         <div className="px-4 py-3 border-b border-paper-line flex items-center justify-between">
           <div className="text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><Sparkles size={13} /> AI phân tích thị trường & đề xuất chi tiết</div>
@@ -11449,6 +15620,7 @@ Hãy soạn một bản "Kế hoạch phân bổ ngân sách & nhân sự tháng
           </div>
         )}
       </div>
+      )}
       <p className="text-[11px] text-muted">* Tỷ lệ ngân sách mặc định (28% nhân sự, 15% marketing...) là mốc tham khảo phổ biến cho SME dịch vụ tại Việt Nam, không phải chuẩn bắt buộc — điều chỉnh theo đặc thù ngành của công ty bạn. Đề xuất của AI dựa trên số liệu nội bộ, không thay thế tư vấn tài chính chuyên nghiệp.</p>
     </div>
   );
@@ -11467,7 +15639,9 @@ function parseCvVerdict(text) {
   }
 }
 
-function TuyenDungAI({ cvReviews, setCvReviews, employees, masterRanking, company, queue, setQueue, processing, setProcessing, progress, setProgress, setPrefillEmployee, setTab, setShowEmpForm }) {
+function TuyenDungAI({ cvReviews, setCvReviews, employees, masterRanking, company, queue, setQueue, processing, setProcessing, progress, setProgress, setPrefillEmployee, setTab, setShowEmpForm, dataLoader }) {
+  const [activeTableView, setActiveTableView] = useState("intake");
+  const lazyTableData = useLazyTableData(activeTableView, { intake: [], results: ["cvReviews"] }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   const [candidateName, setCandidateName] = useState("");
   const [position, setPosition] = useState("sale");
   const [cvText, setCvText] = useState("");
@@ -11581,13 +15755,31 @@ Lưu ý: đây là công cụ HỖ TRỢ sàng lọc ban đầu, quyết định
     consider: { label: "CÂN NHẮC THÊM", tone: "muted" },
   };
 
+  if (!lazyTableData.ready) {
+    return (
+      <div className="flex flex-col gap-4">
+        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={[{ id: "intake", label: "Tiếp nhận CV", icon: UserPlus }, { id: "results", label: "Kết quả sàng lọc", icon: ClipboardList }]} />
+        <DataLoadingPanel title="Đang tải lịch sử sàng lọc" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col gap-4">
+      <SectionViewSwitcher
+        value={activeTableView}
+        onChange={setActiveTableView}
+        options={[
+          { id: "intake", label: "Tiếp nhận CV", icon: UserPlus, count: queue.length },
+          { id: "results", label: "Kết quả sàng lọc", icon: ClipboardList, count: cvReviews.length },
+        ]}
+      />
       <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
         <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
         <span>AI đọc CV, đánh giá phù hợp với vị trí ứng tuyển, và đối chiếu với dữ liệu thật của công ty (đang thiếu người ở vị trí đó không, có ai đang yếu cần thay thế không — lấy từ tab Hiệu suất). Đây là công cụ hỗ trợ sàng lọc ban đầu, quyết định cuối cùng vẫn cần phỏng vấn trực tiếp.</span>
       </div>
 
+      {activeTableView === "intake" && (<>
       <div className="bg-white rounded-lg border border-paper-line p-5">
         <h3 className="ktns-serif font-semibold text-ink mb-4">Duyệt CV ứng viên mới</h3>
         <div className="grid grid-cols-2 gap-3">
@@ -11655,7 +15847,9 @@ Lưu ý: đây là công cụ HỖ TRỢ sàng lọc ban đầu, quyết định
         </div>
       )}
 
-      {cvReviews.length > 0 && (
+      </>)}
+
+      {activeTableView === "results" && (
         <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
           <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Lịch sử duyệt CV — bấm vào 1 dòng để xem đầy đủ lý do</div>
           <div className="max-h-[420px] overflow-y-auto">
@@ -12559,6 +16753,17 @@ function LoginScreen({ onLogin, onRegistered }) {
   const [registerMessage, setRegisterMessage] = useState("");
   const [resendSeconds, setResendSeconds] = useState(0);
 
+  const [forgotStep, setForgotStep] = useState("email");
+  const [forgotEmail, setForgotEmail] = useState("");
+  const [forgotOtp, setForgotOtp] = useState("");
+  const [forgotPassword, setForgotPassword] = useState("");
+  const [forgotConfirmPassword, setForgotConfirmPassword] = useState("");
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [showForgotConfirmPassword, setShowForgotConfirmPassword] = useState(false);
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotMessage, setForgotMessage] = useState("");
+  const [forgotResendSeconds, setForgotResendSeconds] = useState(0);
+
   useEffect(() => {
     if (resendSeconds <= 0) return undefined;
     const timer = window.setInterval(() => {
@@ -12567,10 +16772,19 @@ function LoginScreen({ onLogin, onRegistered }) {
     return () => window.clearInterval(timer);
   }, [resendSeconds]);
 
+  useEffect(() => {
+    if (forgotResendSeconds <= 0) return undefined;
+    const timer = window.setInterval(() => {
+      setForgotResendSeconds((value) => Math.max(value - 1, 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [forgotResendSeconds]);
+
   const switchMode = (nextMode) => {
     setMode(nextMode);
     setError("");
     setRegisterMessage("");
+    setForgotMessage("");
   };
 
   const submitLogin = async (event) => {
@@ -12636,6 +16850,60 @@ function LoginScreen({ onLogin, onRegistered }) {
       setError(err.message || "Không xác thực được mã OTP");
     } finally {
       setRegisterLoading(false);
+    }
+  };
+
+  const sendForgotOtp = async (event) => {
+    event?.preventDefault?.();
+    setError("");
+    setForgotMessage("");
+    if (!forgotEmail.trim()) {
+      setError("Vui lòng nhập email tài khoản");
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      const result = await requestPasswordResetOtp(forgotEmail.trim());
+      setForgotStep("reset");
+      setForgotOtp("");
+      setForgotResendSeconds(Number(result.resendAfter) || 60);
+      setForgotMessage(`Nếu ${forgotEmail.trim()} tồn tại trong hệ thống, mã OTP đã được gửi tới email này.`);
+    } catch (err) {
+      setError(err.message || "Không gửi được mã OTP");
+    } finally {
+      setForgotLoading(false);
+    }
+  };
+
+  const submitPasswordReset = async (event) => {
+    event.preventDefault();
+    setError("");
+    setForgotMessage("");
+    if (!/^\d{6}$/.test(forgotOtp)) {
+      setError("Vui lòng nhập đủ mã OTP gồm 6 chữ số");
+      return;
+    }
+    if (forgotPassword.length < 8) {
+      setError("Mật khẩu mới phải có ít nhất 8 ký tự");
+      return;
+    }
+    if (forgotPassword !== forgotConfirmPassword) {
+      setError("Mật khẩu xác nhận không khớp");
+      return;
+    }
+    setForgotLoading(true);
+    try {
+      const user = await resetPasswordWithOtp(
+        forgotEmail.trim(),
+        forgotOtp,
+        forgotPassword,
+        forgotConfirmPassword
+      );
+      onRegistered(user);
+    } catch (err) {
+      setError(err.message || "Không đặt lại được mật khẩu");
+    } finally {
+      setForgotLoading(false);
     }
   };
 
@@ -12711,7 +16979,7 @@ function LoginScreen({ onLogin, onRegistered }) {
         </section>
 
         <form
-          onSubmit={mode === "login" ? submitLogin : (registerStep === "otp" ? verifyOtp : sendOtp)}
+          onSubmit={mode === "login" ? submitLogin : (mode === "register" ? (registerStep === "otp" ? verifyOtp : sendOtp) : (forgotStep === "reset" ? submitPasswordReset : sendForgotOtp))}
           className="domix-login-card rounded-[22px] p-6 sm:p-8 lg:p-9 flex flex-col gap-5"
         >
           <div className="domix-login-panel flex flex-col gap-5">
@@ -12721,25 +16989,39 @@ function LoginScreen({ onLogin, onRegistered }) {
                   <Sparkles size={12} /> Secure workspace
                 </div>
                 <h2 className="domix-login-title ktns-serif text-3xl font-bold leading-tight">
-                  {mode === "login" ? "Chào mừng bạn" : (registerStep === "otp" ? "Xác thực email" : "Tạo tài khoản")}
+                  {mode === "login"
+                    ? "Chào mừng bạn"
+                    : mode === "register"
+                      ? (registerStep === "otp" ? "Xác thực email" : "Tạo tài khoản")
+                      : (forgotStep === "reset" ? "Đặt lại mật khẩu" : "Quên mật khẩu")}
                 </h2>
                 <p className="domix-login-subtitle text-sm mt-2 leading-relaxed">
                   {mode === "login"
                     ? "Truy cập nhanh vào không gian làm việc nội bộ của bạn."
-                    : (registerStep === "otp"
-                      ? "Nhập mã OTP đã gửi về email để hoàn tất đăng ký."
-                      : "Tài khoản mới được tạo với quyền User sau khi xác thực OTP.")}
+                    : mode === "register"
+                      ? (registerStep === "otp"
+                        ? "Nhập mã OTP đã gửi về email để hoàn tất đăng ký."
+                        : "Tài khoản mới được tạo với quyền User sau khi xác thực OTP.")
+                      : (forgotStep === "reset"
+                        ? "Nhập OTP và mật khẩu mới để khôi phục quyền truy cập."
+                        : "Nhập email tài khoản để nhận mã OTP đặt lại mật khẩu.")}
                 </p>
               </div>
               <div className="domix-login-icon w-11 h-11 rounded-xl flex items-center justify-center shrink-0">
-                {mode === "login" ? <Building2 size={21} /> : <UserPlus size={21} />}
+                {mode === "login" ? <Building2 size={21} /> : (mode === "register" ? <UserPlus size={21} /> : <KeyRound size={21} />)}
               </div>
             </div>
 
-            <div className="domix-auth-switch">
-              <button type="button" className={mode === "login" ? "active" : ""} onClick={() => switchMode("login")}>Đăng nhập</button>
-              <button type="button" className={mode === "register" ? "active" : ""} onClick={() => switchMode("register")}>Đăng ký</button>
-            </div>
+            {mode === "forgot" ? (
+              <button type="button" className="domix-auth-link inline-flex w-fit items-center gap-1" onClick={() => switchMode("login")}>
+                <ChevronLeft size={13} /> Quay lại đăng nhập
+              </button>
+            ) : (
+              <div className="domix-auth-switch">
+                <button type="button" className={mode === "login" ? "active" : ""} onClick={() => switchMode("login")}>Đăng nhập</button>
+                <button type="button" className={mode === "register" ? "active" : ""} onClick={() => switchMode("register")}>Đăng ký</button>
+              </div>
+            )}
 
             <div className="domix-login-divider h-px" />
 
@@ -12775,8 +17057,24 @@ function LoginScreen({ onLogin, onRegistered }) {
                     <PasswordToggle visible={showPassword} onToggle={() => setShowPassword((value) => !value)} label="mật khẩu" />
                   </div>
                 </label>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    className="domix-auth-link text-xs"
+                    onClick={() => {
+                      setForgotEmail(email.trim());
+                      setForgotStep("email");
+                      setForgotOtp("");
+                      setForgotPassword("");
+                      setForgotConfirmPassword("");
+                      switchMode("forgot");
+                    }}
+                  >
+                    Quên mật khẩu?
+                  </button>
+                </div>
               </>
-            ) : registerStep === "details" ? (
+            ) : mode === "register" ? (registerStep === "details" ? (
               <>
                 <label className="domix-login-label text-xs flex flex-col gap-2">
                   Email đăng ký
@@ -12861,23 +17159,115 @@ function LoginScreen({ onLogin, onRegistered }) {
                   </button>
                 </div>
               </>
+            )) : forgotStep === "email" ? (
+              <>
+                <label className="domix-login-label text-xs flex flex-col gap-2">
+                  Email tài khoản
+                  <input
+                    type="email"
+                    value={forgotEmail}
+                    onChange={(e) => setForgotEmail(e.target.value)}
+                    className="domix-login-input rounded-lg px-4 py-3 text-sm"
+                    autoComplete="email"
+                    placeholder="ten@gmail.com"
+                    autoFocus
+                    required
+                  />
+                </label>
+                <div className="domix-register-note rounded-lg px-3 py-3 text-xs leading-relaxed">
+                  DOMIX sẽ gửi mã OTP về email đã đăng ký. Mã chỉ dùng một lần và hết hạn sau 10 phút.
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="domix-register-note rounded-lg px-3 py-3 text-xs leading-relaxed">
+                  Nếu tài khoản tồn tại, OTP đã được gửi tới <strong className="text-white">{forgotEmail}</strong>. Mã có hiệu lực trong 10 phút.
+                </div>
+                <label className="domix-login-label text-xs flex flex-col gap-2">
+                  Mã OTP
+                  <input
+                    type="text"
+                    value={forgotOtp}
+                    onChange={(e) => setForgotOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                    className="domix-login-input domix-otp-input rounded-lg px-4 py-3"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder="000000"
+                    maxLength={6}
+                    autoFocus
+                    required
+                  />
+                </label>
+                <label className="domix-login-label text-xs flex flex-col gap-2">
+                  Mật khẩu mới
+                  <div className="relative">
+                    <input
+                      type={showForgotPassword ? "text" : "password"}
+                      value={forgotPassword}
+                      onChange={(e) => setForgotPassword(e.target.value)}
+                      className="domix-login-input rounded-lg pl-4 pr-12 py-3 text-sm"
+                      autoComplete="new-password"
+                      placeholder="Tối thiểu 8 ký tự"
+                      required
+                    />
+                    <PasswordToggle visible={showForgotPassword} onToggle={() => setShowForgotPassword((value) => !value)} label="mật khẩu mới" />
+                  </div>
+                </label>
+                <label className="domix-login-label text-xs flex flex-col gap-2">
+                  Xác nhận mật khẩu mới
+                  <div className="relative">
+                    <input
+                      type={showForgotConfirmPassword ? "text" : "password"}
+                      value={forgotConfirmPassword}
+                      onChange={(e) => setForgotConfirmPassword(e.target.value)}
+                      className="domix-login-input rounded-lg pl-4 pr-12 py-3 text-sm"
+                      autoComplete="new-password"
+                      placeholder="Nhập lại mật khẩu mới"
+                      required
+                    />
+                    <PasswordToggle visible={showForgotConfirmPassword} onToggle={() => setShowForgotConfirmPassword((value) => !value)} label="mật khẩu xác nhận" />
+                  </div>
+                </label>
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <button
+                    type="button"
+                    className="domix-auth-link inline-flex items-center gap-1"
+                    onClick={() => { setForgotStep("email"); setForgotOtp(""); setError(""); setForgotMessage(""); }}
+                  >
+                    <ChevronLeft size={13} /> Sửa email
+                  </button>
+                  <button
+                    type="button"
+                    className="domix-auth-link"
+                    disabled={forgotLoading || forgotResendSeconds > 0}
+                    onClick={sendForgotOtp}
+                  >
+                    {forgotResendSeconds > 0 ? `Gửi lại sau ${forgotResendSeconds}s` : "Gửi lại OTP"}
+                  </button>
+                </div>
+              </>
             )}
 
             {error && <div className="text-xs text-red-200 bg-red-500/10 border border-red-300/20 rounded-lg px-3 py-2.5">{error}</div>}
             {registerMessage && mode === "register" && <div className="text-xs text-emerald-100 bg-emerald-500/10 border border-emerald-300/20 rounded-lg px-3 py-2.5">{registerMessage}</div>}
+            {forgotMessage && mode === "forgot" && <div className="text-xs text-emerald-100 bg-emerald-500/10 border border-emerald-300/20 rounded-lg px-3 py-2.5">{forgotMessage}</div>}
 
             <button
               type="submit"
-              disabled={mode === "login" ? loading : registerLoading}
+              disabled={mode === "login" ? loading : (mode === "register" ? registerLoading : forgotLoading)}
               className="domix-login-button rounded-lg text-sm font-bold px-4 py-3.5 flex items-center justify-center gap-2"
             >
-              {(mode === "login" ? loading : registerLoading) && <Loader2 size={15} className="animate-spin" />}
+              {(mode === "login" ? loading : (mode === "register" ? registerLoading : forgotLoading)) && <Loader2 size={15} className="animate-spin" />}
               <span>
                 {mode === "login"
                   ? (loading ? "Đang xác thực..." : "Đăng nhập hệ thống")
-                  : (registerLoading
-                    ? "Đang xử lý..."
-                    : (registerStep === "otp" ? "Xác thực và tạo tài khoản" : "Gửi mã OTP"))}
+                  : mode === "register"
+                    ? (registerLoading
+                      ? "Đang xử lý..."
+                      : (registerStep === "otp" ? "Xác thực và tạo tài khoản" : "Gửi mã OTP"))
+                    : (forgotLoading
+                      ? "Đang xử lý..."
+                      : (forgotStep === "reset" ? "Xác thực và đặt mật khẩu mới" : "Gửi mã OTP"))}
               </span>
             </button>
 
@@ -12886,7 +17276,9 @@ function LoginScreen({ onLogin, onRegistered }) {
               <div className="domix-login-muted text-[11px] leading-relaxed">
                 {mode === "login"
                   ? "Phiên đăng nhập được bảo vệ bằng token và tự hết hạn sau 12 giờ."
-                  : "Mật khẩu được mã hóa một chiều. Tài khoản chỉ được tạo sau khi OTP email hợp lệ."}
+                  : mode === "register"
+                    ? "Mật khẩu được mã hóa một chiều. Tài khoản chỉ được tạo sau khi OTP email hợp lệ."
+                    : "Sau khi đặt lại mật khẩu, toàn bộ phiên đăng nhập cũ sẽ bị thu hồi để bảo vệ tài khoản."}
               </div>
             </div>
           </div>
@@ -12899,6 +17291,17 @@ function LoginScreen({ onLogin, onRegistered }) {
 export default function App() {
   const [authUser, setAuthUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [sessionExpiredMessage, setSessionExpiredMessage] = useState("");
+
+  useEffect(() => {
+    const handleSessionExpired = () => {
+      setAuthUser(null);
+      setAuthLoading(false);
+      setSessionExpiredMessage("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+    };
+    window.addEventListener("domix:auth-expired", handleSessionExpired);
+    return () => window.removeEventListener("domix:auth-expired", handleSessionExpired);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -12917,10 +17320,12 @@ export default function App() {
 
   const handleLogin = async (email, password) => {
     const user = await login(email, password);
+    setSessionExpiredMessage("");
     setAuthUser(user);
   };
 
   const handleRegistered = (user) => {
+    setSessionExpiredMessage("");
     setAuthUser(user);
   };
 
@@ -12937,7 +17342,12 @@ export default function App() {
       </div>
     );
   } else if (!authUser) {
-    screen = <LoginScreen onLogin={handleLogin} onRegistered={handleRegistered} />;
+    screen = (
+      <>
+        <LoginScreen onLogin={handleLogin} onRegistered={handleRegistered} />
+        {sessionExpiredMessage && <div className="fixed left-1/2 top-5 z-[100] -translate-x-1/2 rounded-lg border border-gold/40 bg-[#201a0d] px-4 py-2.5 text-sm text-[#f4cf72] shadow-xl">{sessionExpiredMessage}</div>}
+      </>
+    );
   } else {
     screen = <DomixApp authUser={authUser} onLogout={handleLogout} />;
   }

@@ -31,4 +31,6 @@ __pycache__/
 .env
 .env.*
 *.zip
+*.
+*.xlsx
 *.exe

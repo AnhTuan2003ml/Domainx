@@ -6,7 +6,7 @@ ROOT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_DB_PATH = ROOT_DIR / "data" / "domix.sqlite3"
 DIST_DIR = ROOT_DIR / "dist"
 SESSION_HOURS = 12
-ROLES = {"admin", "user"}
+ROLES = {"admin", "accountant", "user"}
 DEFAULT_ADMIN_EMAIL = "admin@gmail.com"
 DEFAULT_ADMIN_PASSWORD = "admin123@"
 
@@ -52,6 +52,8 @@ SMTP_PORT = int(os.environ.get("DOMIX_SMTP_PORT", "465"))
 SMTP_EMAIL = os.environ.get("DOMIX_SMTP_EMAIL", "").strip()
 SMTP_APP_PASSWORD = os.environ.get("DOMIX_SMTP_APP_PASSWORD", "").strip()
 SMTP_TIMEOUT_SECONDS = int(os.environ.get("DOMIX_SMTP_TIMEOUT_SECONDS", "20"))
+ALERT_DAYS_BEFORE_EXPIRY = int(os.environ.get("DOMIX_ALERT_DAYS_BEFORE_EXPIRY", "5"))
+ALERT_CHECK_INTERVAL_SECONDS = int(os.environ.get("DOMIX_ALERT_CHECK_INTERVAL_SECONDS", "3600"))
 OTP_EXPIRY_MINUTES = int(os.environ.get("DOMIX_OTP_EXPIRY_MINUTES", "10"))
 OTP_RESEND_SECONDS = int(os.environ.get("DOMIX_OTP_RESEND_SECONDS", "60"))
 OTP_MAX_ATTEMPTS = int(os.environ.get("DOMIX_OTP_MAX_ATTEMPTS", "5"))

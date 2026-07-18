@@ -5,7 +5,7 @@ from db import user_store
 
 
 def ensure_admin_from_env(db_path):
-    if user_store.user_count(db_path) > 0:
+    if user_store.has_admin(db_path):
         return False
     email = os.environ.get("DOMIX_ADMIN_EMAIL", DEFAULT_ADMIN_EMAIL).strip().lower()
     password = os.environ.get("DOMIX_ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD)
@@ -14,7 +14,7 @@ def ensure_admin_from_env(db_path):
 
 
 def setup_message_if_needed(db_path):
-    if user_store.user_count(db_path) > 0:
+    if user_store.has_admin(db_path):
         return ""
     return (
         "No admin account exists. Restart the server to create the default admin, "
@@ -28,6 +28,10 @@ def create_or_update_user(db_path, email, password, role, active=1):
 
 def list_users(db_path):
     return user_store.list_users(db_path)
+
+
+def update_role(db_path, email, role):
+    return user_store.update_role(db_path, email, role)
 
 
 def delete_user(db_path, email):

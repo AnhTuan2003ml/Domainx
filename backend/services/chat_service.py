@@ -2,8 +2,8 @@ from db import chat_store
 
 
 def _require_admin(user):
-    if user["role"] != "admin":
-        raise ValueError("Chỉ admin mới có quyền quản trị nhóm")
+    if user["role"] not in {"admin", "accountant"}:
+        raise ValueError("Chỉ Sếp hoặc Kế toán mới có quyền quản trị nhóm")
 
 
 def conversations(db_path, user):
@@ -24,12 +24,16 @@ def unread(db_path, user):
     return {"unread": chat_store.unread_total(db_path, user["id"])}
 
 
-def messages(db_path, user, peer_email):
-    return {"messages": chat_store.list_messages(db_path, user["id"], peer_email)}
+def messages(db_path, user, peer_email, limit=40, before_id=0, after_id=0):
+    return chat_store.list_messages(db_path, user["id"], peer_email, limit, before_id, after_id)
 
 
-def group_messages(db_path, user, group_id):
-    return {"messages": chat_store.list_group_messages(db_path, user["id"], int(group_id))}
+def read_receipts(db_path, user, peer_email, after_id=0):
+    return {"receipts": chat_store.list_read_receipts(db_path, user["id"], peer_email, after_id)}
+
+
+def group_messages(db_path, user, group_id, limit=40, before_id=0, after_id=0):
+    return chat_store.list_group_messages(db_path, user["id"], int(group_id), limit, before_id, after_id)
 
 
 def send_message(db_path, user, recipient_email, body):
@@ -70,11 +74,23 @@ def delete_group(db_path, user, group_id):
 
 def delete_message(db_path, user, message_id):
     _require_admin(user)
-    chat_store.delete_message(db_path, user["id"], int(message_id), user["role"] == "admin")
+    chat_store.delete_message(db_path, user["id"], int(message_id), user["role"] in {"admin", "accountant"})
+    return unread(db_path, user)
+
+
+def clear_conversation(db_path, user, peer_email):
+    _require_admin(user)
+    chat_store.clear_conversation(db_path, user["id"], peer_email, user["role"] in {"admin", "accountant"})
     return unread(db_path, user)
 
 
 def delete_group_message(db_path, user, message_id):
     _require_admin(user)
-    chat_store.delete_group_message(db_path, user["id"], int(message_id), user["role"] == "admin")
+    chat_store.delete_group_message(db_path, user["id"], int(message_id), user["role"] in {"admin", "accountant"})
+    return unread(db_path, user)
+
+
+def clear_group_conversation(db_path, user, group_id):
+    _require_admin(user)
+    chat_store.clear_group_conversation(db_path, user["id"], int(group_id), user["role"] in {"admin", "accountant"})
     return unread(db_path, user)

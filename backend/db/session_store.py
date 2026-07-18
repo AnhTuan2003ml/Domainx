@@ -55,3 +55,8 @@ def prune_other_sessions(db_path, user_id):
             """,
             (user_id, user_id),
         )
+
+
+def logout_user_sessions(db_path, user_id):
+    with connect(db_path) as conn:
+        conn.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))

@@ -1,5 +1,6 @@
 import json
 import sqlite3
+import unicodedata
 
 from db.connection import connect
 
@@ -21,6 +22,7 @@ FIELD_SPEC = [
     ("position", "position", "text"),
     ("dept", "dept", "text"),
     ("baseSalary", "base_salary", "real"),
+    ("dailySalary", "daily_salary", "real"),
     ("bonusTarget", "bonus_target", "real"),
     ("kpi", "kpi", "real"),
     ("joined", "joined", "text"),
@@ -82,6 +84,30 @@ FIELD_SPEC = [
 ]
 
 _SQL_TYPE = {"text": "TEXT", "int": "INTEGER", "real": "REAL", "json": "TEXT"}
+
+
+def _normalize_account_role(value):
+    role = str(value or "").strip().lower()
+    if role in {"admin", "boss"}:
+        return "admin"
+    if role == "accountant":
+        return "accountant"
+    return "user"
+
+
+def _normalize_role_text(value):
+    text = unicodedata.normalize("NFD", str(value or ""))
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    text = text.replace("đ", "d").replace("Đ", "D").lower()
+    return " ".join("".join(ch if ch.isalnum() else " " for ch in text).split())
+
+
+def _employee_is_accountant(emp):
+    role_token = _normalize_role_text(emp.get("roleType")).replace(" ", "_")
+    if role_token in {"ke_toan", "ketoan", "accountant", "accounting", "finance"}:
+        return True
+    description = _normalize_role_text(f"{emp.get('position') or ''} {emp.get('dept') or ''}")
+    return any(token in description for token in ("ke toan", "tai chinh", "accountant", "accounting", "finance"))
 
 
 def _column_defs():
@@ -178,12 +204,11 @@ def _account_id_for_email(conn, email):
 
 
 def replace_all(db_path, employees):
-    """Ghi đè toàn bộ bảng nhân sự theo danh sách từ client (nguồn sự thật).
+    """Ghi đè bảng nhân sự và đồng bộ users.role theo 3 quyền chuẩn.
 
-    Xóa sạch rồi chèn lại — giống cách app_state ghi đè toàn khối, nên mọi thao
-    tác thêm/sửa/xóa/đổi email ở frontend đều phản ánh đúng, không kẹt ràng buộc
-    khi hoán đổi email giữa hai nhân sự. account_id được suy ra từ email khớp với
-    bảng users để giữ liên kết tài khoản <-> nhân sự.
+    - admin được giữ nguyên hoặc được chọn rõ trong hồ sơ
+    - Kế toán/Tài chính -> accountant
+    - các nhân viên còn lại -> user
     """
     if not isinstance(employees, list):
         raise ValueError("employees phải là danh sách")
@@ -200,10 +225,20 @@ def replace_all(db_path, employees):
             emp_id = int(emp["id"])
             email = _normalize_email(emp.get("email"))
             account_id = _account_id_for_email(conn, email)
+            account = conn.execute("SELECT id, role FROM users WHERE id = ?", (account_id,)).fetchone() if account_id is not None else None
+            requested_role = _normalize_account_role(emp.get("accountRole"))
+            current_role = _normalize_account_role(account["role"]) if account else "user"
+            if current_role == "admin" or requested_role == "admin":
+                desired_role = "admin"
+            elif requested_role == "accountant" or _employee_is_accountant(emp):
+                desired_role = "accountant"
+            else:
+                desired_role = "user"
+            normalized_emp = dict(emp)
+            normalized_emp["accountRole"] = desired_role
             values = [emp_id, account_id]
             for js_key, _, kind in FIELD_SPEC:
-                # Email rỗng -> NULL (không đụng UNIQUE); email thật vẫn phải duy nhất.
-                raw = (email or None) if js_key == "email" else emp.get(js_key)
+                raw = (email or None) if js_key == "email" else normalized_emp.get(js_key)
                 values.append(_to_db_value(kind, raw))
             try:
                 conn.execute(
@@ -212,6 +247,8 @@ def replace_all(db_path, employees):
                 )
             except sqlite3.IntegrityError:
                 raise ValueError(f"Email nhân sự bị trùng: {email or '(trống)'}")
+            if account_id is not None:
+                conn.execute("UPDATE users SET role = ? WHERE id = ?", (desired_role, account_id))
     return list_employees(db_path)
 
 
@@ -244,13 +281,13 @@ def delete_employee(db_path, employee_id, current_user_email=""):
                 "SELECT id, role, active FROM users WHERE id = ?",
                 (account_id,),
             ).fetchone()
-            if account and account["role"] == "admin" and bool(account["active"]):
+            if account and _normalize_account_role(account["role"]) == "admin" and bool(account["active"]):
                 other_active_admins = conn.execute(
                     "SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1 AND id <> ?",
                     (account_id,),
                 ).fetchone()[0]
                 if other_active_admins < 1:
-                    raise ValueError("Không thể xóa Admin đang hoạt động cuối cùng. Hãy tạo hoặc mở khóa một Admin khác trước.")
+                    raise ValueError("Không thể xóa Sếp đang hoạt động cuối cùng. Hãy tạo hoặc mở khóa một tài khoản Sếp khác trước.")
 
         conn.execute("DELETE FROM employees WHERE id = ?", (employee_id,))
         if account_id is not None:

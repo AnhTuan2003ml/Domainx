@@ -1,12 +1,27 @@
+import unicodedata
+
 from db import session_store, user_store
 from security import verify_password
+
+
+def _password_candidates(password):
+    raw = password if isinstance(password, str) else ""
+    candidates = [raw]
+    # Một số bàn phím/clipboard trên trình duyệt chèn BOM, zero-width hoặc xuống dòng.
+    # Chỉ dùng bản làm sạch như phương án dự phòng; mật khẩu gốc luôn được thử trước.
+    cleaned = unicodedata.normalize("NFKC", raw)
+    cleaned = cleaned.replace("\ufeff", "").replace("\u200b", "").replace("\u200c", "").replace("\u200d", "")
+    cleaned = cleaned.strip("\r\n\t ")
+    if cleaned and cleaned not in candidates:
+        candidates.append(cleaned)
+    return candidates
 
 
 def login(db_path, email, password):
     if not user_store.is_email(email):
         return None
     row = user_store.get_user_by_email(db_path, email, active_only=True)
-    if not row or not verify_password(password, row["password_hash"]):
+    if not row or not any(verify_password(candidate, row["password_hash"]) for candidate in _password_candidates(password)):
         return None
     token = session_store.create_session(db_path, row["id"])
     return {"token": token, "user": user_store.public_user(row)}
