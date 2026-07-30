@@ -1,7 +1,7 @@
 {
   "name": "domix-app-build",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "backend": "python backend/server.py --host 0.0.0.0 --port 8000",
@@ -9,7 +9,10 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f --tail=200"
   },
   "dependencies": {
     "lucide-react": "^1.24.0",

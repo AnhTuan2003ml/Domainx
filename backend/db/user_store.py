@@ -36,7 +36,7 @@ def get_user_by_email(db_path, email, active_only=False):
 
 def user_count(db_path):
     with connect(db_path) as conn:
-        return conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
+        return conn.execute("SELECT COUNT(*) AS total FROM users").fetchone()["total"]
 
 
 def has_admin(db_path):
@@ -136,9 +136,9 @@ def delete_user(db_path, email):
             raise ValueError("Tài khoản không tồn tại")
         if normalize_role(row["role"]) == "admin" and row["active"]:
             remaining_active_admin = conn.execute(
-                "SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1 AND username <> ?",
+                "SELECT COUNT(*) AS total FROM users WHERE role = 'admin' AND active = 1 AND username <> ?",
                 (email,),
-            ).fetchone()[0]
+            ).fetchone()["total"]
             if remaining_active_admin < 1:
                 raise ValueError("Phải còn ít nhất 1 tài khoản Sếp đang hoạt động")
         conn.execute("DELETE FROM sessions WHERE user_id = ?", (row["id"],))

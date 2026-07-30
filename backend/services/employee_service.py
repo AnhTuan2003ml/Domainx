@@ -9,6 +9,10 @@ def replace_all(db_path, employees):
     return employee_store.replace_all(db_path, employees)
 
 
+
+def upsert_with_account(db_path, employee, password=""):
+    return employee_store.upsert_with_account(db_path, employee, password)
+
 def employee_emails_by_id(db_path):
     return employee_store.employee_emails_by_id(db_path)
 

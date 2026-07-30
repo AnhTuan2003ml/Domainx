@@ -1,8 +1,8 @@
 import json
-import sqlite3
 import unicodedata
 
-from db.connection import connect
+from db.connection import DatabaseIntegrityError, connect, table_columns
+from security import password_hash
 
 # ---------------------------------------------------------------------------
 # Bảng nhân sự (employees) — TÁCH RIÊNG khỏi bảng tài khoản (users).
@@ -81,6 +81,7 @@ FIELD_SPEC = [
     ("avatarType", "avatar_type", "text"),
     # Chấm công là map lồng nhau -> lưu JSON trong một cột riêng
     ("attendance", "attendance", "json"),
+    ("attendanceTimes", "attendance_times", "json"),
 ]
 
 _SQL_TYPE = {"text": "TEXT", "int": "INTEGER", "real": "REAL", "json": "TEXT"}
@@ -120,7 +121,7 @@ def create_employees_table(conn):
     conn.execute(
         f"""
         CREATE TABLE IF NOT EXISTS employees (
-                id INTEGER PRIMARY KEY,
+                id BIGINT PRIMARY KEY,
                 account_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
                 {_column_defs()},
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -134,7 +135,12 @@ def create_employees_table(conn):
     # Migrate DB đang dùng: CREATE TABLE IF NOT EXISTS không tự bổ sung cột mới.
     # Mỗi lần khởi động, tự thêm các cột trong FIELD_SPEC còn thiếu để bản vá có thể
     # ghi đè trực tiếp mà không cần người dùng chạy lệnh migrate thủ công.
-    existing_columns = {row["name"] for row in conn.execute("PRAGMA table_info(employees)").fetchall()}
+    existing_columns = set(table_columns(conn, "employees"))
+    # Frontend tạo mã hồ sơ bằng Date.now() (13 chữ số). PostgreSQL INTEGER chỉ có
+    # 32-bit nên lần lưu hồ sơ trước đây có thể thất bại sau khi tài khoản đã được tạo,
+    # để lại tài khoản mồ côi. BIGINT giữ nguyên mã cũ và an toàn cho nhiều năm vận hành.
+    if getattr(conn, "backend_name", "sqlite") == "postgresql":
+        conn.execute("ALTER TABLE employees ALTER COLUMN id TYPE BIGINT")
     for _, db_col, kind in FIELD_SPEC:
         if db_col not in existing_columns:
             conn.execute(f"ALTER TABLE employees ADD COLUMN {db_col} {_SQL_TYPE[kind]}")
@@ -145,6 +151,10 @@ def create_employees_table(conn):
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_email ON employees(email) WHERE email IS NOT NULL"
     )
     conn.execute("CREATE INDEX IF NOT EXISTS idx_employees_account ON employees(account_id)")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_employees_account_unique "
+        "ON employees(account_id) WHERE account_id IS NOT NULL"
+    )
 
 
 def _to_db_value(kind, value):
@@ -180,15 +190,72 @@ def _from_db_value(kind, value):
 
 
 def row_to_dict(row):
-    result = {"id": row["id"], "account_id": row["account_id"]}
+    result = {"id": row["id"], "account_id": row["account_id"], "user_id": row["account_id"]}
     for js_key, db_col, kind in FIELD_SPEC:
         result[js_key] = _from_db_value(kind, row[db_col])
     return result
 
 
+
+
+def repair_account_links(conn):
+    """Sửa quan hệ employees.account_id bằng khóa tài khoản thật.
+
+    Ưu tiên email chuẩn hoá. Với dữ liệu legacy thiếu email, chỉ tự liên kết Kế toán
+    khi cả hai phía đều có đúng một ứng viên duy nhất; không suy đoán mơ hồ.
+    """
+    conn.execute(
+        """
+        UPDATE employees
+        SET account_id = (
+            SELECT users.id FROM users
+            WHERE LOWER(TRIM(users.username)) = LOWER(TRIM(employees.email))
+            LIMIT 1
+        ), updated_at = CURRENT_TIMESTAMP
+        WHERE account_id IS NULL
+          AND COALESCE(TRIM(email), '') <> ''
+          AND EXISTS (
+            SELECT 1 FROM users
+            WHERE LOWER(TRIM(users.username)) = LOWER(TRIM(employees.email))
+          )
+        """
+    )
+
+    unlinked_accountants = conn.execute(
+        """
+        SELECT id FROM employees
+        WHERE account_id IS NULL
+          AND (
+            LOWER(COALESCE(account_role, '')) = 'accountant'
+            OR LOWER(COALESCE(role_type, '')) IN ('ke_toan', 'ketoan', 'accountant', 'finance')
+            OR LOWER(COALESCE(position, '')) LIKE '%kế toán%'
+            OR LOWER(COALESCE(dept, '')) LIKE '%tài chính%'
+          )
+        """
+    ).fetchall()
+    free_accounts = conn.execute(
+        """
+        SELECT u.id, u.username FROM users u
+        LEFT JOIN employees e ON e.account_id = u.id
+        WHERE u.role = 'accountant' AND u.active = 1 AND e.id IS NULL
+        """
+    ).fetchall()
+    if len(unlinked_accountants) == 1 and len(free_accounts) == 1:
+        employee_id = unlinked_accountants[0]["id"]
+        account_id = free_accounts[0]["id"]
+        email = str(free_accounts[0]["username"] or "").strip().lower()
+        conn.execute(
+            "UPDATE employees SET account_id = ?, email = COALESCE(NULLIF(email, ''), ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (account_id, email, employee_id),
+        )
+
+
 def list_employees(db_path):
     with connect(db_path) as conn:
-        rows = conn.execute("SELECT * FROM employees ORDER BY name COLLATE NOCASE").fetchall()
+        repair_account_links(conn)
+        # LOWER hoạt động đồng nhất trên PostgreSQL và SQLite; tránh phụ thuộc collation
+        # NOCASE đặc thù SQLite khi tải hồ sơ nhân sự trên máy chủ Docker.
+        rows = conn.execute("SELECT * FROM employees ORDER BY LOWER(COALESCE(name, '')), id").fetchall()
     return [row_to_dict(row) for row in rows]
 
 
@@ -203,12 +270,91 @@ def _account_id_for_email(conn, email):
     return row["id"] if row else None
 
 
-def replace_all(db_path, employees):
-    """Ghi đè bảng nhân sự và đồng bộ users.role theo 3 quyền chuẩn.
+def upsert_with_account(db_path, employee, password="", create_password=False):
+    """Tạo/cập nhật hồ sơ và tài khoản liên kết trong cùng một DB transaction."""
+    if not isinstance(employee, dict) or employee.get("id") is None:
+        raise ValueError("Hồ sơ nhân sự không hợp lệ.")
+    emp_id = int(employee["id"])
+    email = _normalize_email(employee.get("email"))
+    if not email:
+        raise ValueError("Email đăng nhập là bắt buộc.")
+    desired_role = _normalize_account_role(employee.get("accountRole"))
+    if desired_role == "user" and _employee_is_accountant(employee):
+        desired_role = "accountant"
+    active = 0 if employee.get("status") == "inactive" else 1
 
-    - admin được giữ nguyên hoặc được chọn rõ trong hồ sơ
-    - Kế toán/Tài chính -> accountant
-    - các nhân viên còn lại -> user
+    db_columns = [db_col for _, db_col, _ in FIELD_SPEC]
+    insert_cols = ["id", "account_id"] + db_columns
+    placeholders = ",".join("?" for _ in insert_cols)
+    update_cols = ["account_id"] + db_columns
+    update_clause = ",".join(f"{column} = ?" for column in update_cols)
+
+    with connect(db_path) as conn:
+        existing_user = conn.execute("SELECT * FROM users WHERE username = ?", (email,)).fetchone()
+        if existing_user:
+            account_id = existing_user["id"]
+            if password:
+                conn.execute(
+                    "UPDATE users SET password_hash = ?, role = ?, active = ? WHERE id = ?",
+                    (password_hash(password), desired_role, active, account_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE users SET role = ?, active = ? WHERE id = ?",
+                    (desired_role, active, account_id),
+                )
+        else:
+            if not password:
+                raise ValueError("Cần mật khẩu tạm khi tạo tài khoản mới.")
+            conn.execute(
+                "INSERT INTO users (username, password_hash, role, active) VALUES (?, ?, ?, ?)",
+                (email, password_hash(password), desired_role, active),
+            )
+            account_id = conn.execute("SELECT id FROM users WHERE username = ?", (email,)).fetchone()["id"]
+
+        linked = conn.execute(
+            "SELECT id FROM employees WHERE account_id = ? AND id <> ?",
+            (account_id, emp_id),
+        ).fetchone()
+        if linked:
+            raise ValueError("Tài khoản này đã liên kết với một hồ sơ nhân sự khác.")
+        email_owner = conn.execute(
+            "SELECT id FROM employees WHERE LOWER(COALESCE(email, '')) = ? AND id <> ?",
+            (email, emp_id),
+        ).fetchone()
+        if email_owner:
+            raise ValueError("Email này đang thuộc một hồ sơ nhân sự khác.")
+
+        normalized_emp = dict(employee)
+        normalized_emp["email"] = email
+        normalized_emp["accountRole"] = desired_role
+        db_values = []
+        for js_key, _, kind in FIELD_SPEC:
+            raw = email if js_key == "email" else normalized_emp.get(js_key)
+            db_values.append(_to_db_value(kind, raw))
+        exists = conn.execute("SELECT id FROM employees WHERE id = ?", (emp_id,)).fetchone()
+        try:
+            if exists:
+                conn.execute(
+                    f"UPDATE employees SET {update_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    [account_id, *db_values, emp_id],
+                )
+            else:
+                conn.execute(
+                    f"INSERT INTO employees ({','.join(insert_cols)}) VALUES ({placeholders})",
+                    [emp_id, account_id, *db_values],
+                )
+        except DatabaseIntegrityError as exc:
+            raise ValueError(f"Không thể lưu hồ sơ hoặc liên kết tài khoản: {exc}") from exc
+    return list_employees(db_path)
+
+
+def replace_all(db_path, employees):
+    """Upsert hồ sơ nhân sự và đồng bộ users.role theo 3 quyền chuẩn.
+
+    API cũ gửi toàn bộ danh sách từ frontend, nhưng máy chủ KHÔNG xóa những hồ sơ vắng
+    mặt trong payload. Quy tắc này ngăn một tab trình duyệt cũ hoặc request tải lỗi xóa
+    nhân sự vừa được người khác thêm. Xóa thật luôn đi qua delete_employee().
     """
     if not isinstance(employees, list):
         raise ValueError("employees phải là danh sách")
@@ -216,16 +362,40 @@ def replace_all(db_path, employees):
     db_columns = [db_col for _, db_col, _ in FIELD_SPEC]
     insert_cols = ["id", "account_id"] + db_columns
     placeholders = ",".join("?" for _ in insert_cols)
+    update_cols = ["account_id"] + db_columns
+    update_clause = ",".join(f"{column} = ?" for column in update_cols)
 
     with connect(db_path) as conn:
-        conn.execute("DELETE FROM employees")
+        existing_count = conn.execute("SELECT COUNT(*) AS total FROM employees").fetchone()["total"]
+        if existing_count > 0 and len(employees) == 0:
+            raise ValueError("Từ chối ghi danh sách nhân sự rỗng vì máy chủ đang có dữ liệu. Hãy xóa từng hồ sơ bằng chức năng Xóa nhân sự.")
+
         for emp in employees:
             if not isinstance(emp, dict) or emp.get("id") is None:
                 continue
             emp_id = int(emp["id"])
             email = _normalize_email(emp.get("email"))
-            account_id = _account_id_for_email(conn, email)
-            account = conn.execute("SELECT id, role FROM users WHERE id = ?", (account_id,)).fetchone() if account_id is not None else None
+            explicit_account_id = emp.get("user_id", emp.get("account_id"))
+            try:
+                explicit_account_id = int(explicit_account_id) if explicit_account_id not in (None, "") else None
+            except (TypeError, ValueError):
+                explicit_account_id = None
+            account_id = explicit_account_id or _account_id_for_email(conn, email)
+            account = conn.execute("SELECT id, username, role FROM users WHERE id = ?", (account_id,)).fetchone() if account_id is not None else None
+            if explicit_account_id is not None and not account:
+                raise ValueError(f"Tài khoản liên kết không tồn tại cho hồ sơ {emp_id}.")
+            if account:
+                linked = conn.execute(
+                    "SELECT id FROM employees WHERE account_id = ? AND id <> ?",
+                    (account_id, emp_id),
+                ).fetchone()
+                if linked:
+                    raise ValueError("Một tài khoản không thể liên kết với hai hồ sơ nhân sự.")
+                account_email = _normalize_email(account["username"])
+                if not email:
+                    email = account_email
+                elif account_email and email != account_email:
+                    raise ValueError("Email hồ sơ không khớp tài khoản đã liên kết.")
             requested_role = _normalize_account_role(emp.get("accountRole"))
             current_role = _normalize_account_role(account["role"]) if account else "user"
             if current_role == "admin" or requested_role == "admin":
@@ -234,21 +404,78 @@ def replace_all(db_path, employees):
                 desired_role = "accountant"
             else:
                 desired_role = "user"
+
             normalized_emp = dict(emp)
             normalized_emp["accountRole"] = desired_role
-            values = [emp_id, account_id]
+            db_values = []
             for js_key, _, kind in FIELD_SPEC:
                 raw = (email or None) if js_key == "email" else normalized_emp.get(js_key)
-                values.append(_to_db_value(kind, raw))
+                db_values.append(_to_db_value(kind, raw))
+
             try:
-                conn.execute(
-                    f"INSERT INTO employees ({','.join(insert_cols)}) VALUES ({placeholders})",
-                    values,
-                )
-            except sqlite3.IntegrityError:
+                exists = conn.execute("SELECT id FROM employees WHERE id = ?", (emp_id,)).fetchone()
+                if exists:
+                    conn.execute(
+                        f"UPDATE employees SET {update_clause}, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        [account_id, *db_values, emp_id],
+                    )
+                else:
+                    conn.execute(
+                        f"INSERT INTO employees ({','.join(insert_cols)}) VALUES ({placeholders})",
+                        [emp_id, account_id, *db_values],
+                    )
+            except DatabaseIntegrityError:
                 raise ValueError(f"Email nhân sự bị trùng: {email or '(trống)'}")
+
             if account_id is not None:
                 conn.execute("UPDATE users SET role = ? WHERE id = ?", (desired_role, account_id))
+
+    return list_employees(db_path)
+
+def link_account(db_path, employee_id, account_id):
+    """Liên kết một tài khoản với đúng một hồ sơ nhân sự trong transaction."""
+    try:
+        employee_id = int(employee_id)
+        account_id = int(account_id)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Mã hồ sơ hoặc tài khoản không hợp lệ.") from exc
+    with connect(db_path) as conn:
+        employee = conn.execute("SELECT id, email FROM employees WHERE id = ?", (employee_id,)).fetchone()
+        account = conn.execute("SELECT id, username, role FROM users WHERE id = ?", (account_id,)).fetchone()
+        if not employee:
+            raise ValueError("Không tìm thấy hồ sơ nhân sự cần liên kết.")
+        if not account:
+            raise ValueError("Không tìm thấy tài khoản cần liên kết.")
+        duplicate = conn.execute(
+            "SELECT id FROM employees WHERE account_id = ? AND id <> ?",
+            (account_id, employee_id),
+        ).fetchone()
+        if duplicate:
+            raise ValueError("Tài khoản này đã liên kết với một hồ sơ nhân sự khác.")
+        email = _normalize_email(account["username"])
+        email_owner = conn.execute(
+            "SELECT id FROM employees WHERE LOWER(COALESCE(email, '')) = ? AND id <> ?",
+            (email, employee_id),
+        ).fetchone()
+        if email_owner:
+            raise ValueError("Email tài khoản đang thuộc một hồ sơ nhân sự khác.")
+        conn.execute(
+            "UPDATE employees SET account_id = ?, email = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (account_id, email or None, employee_id),
+        )
+    return list_employees(db_path)
+
+
+def unlink_account(db_path, employee_id):
+    try:
+        employee_id = int(employee_id)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Mã hồ sơ không hợp lệ.") from exc
+    with connect(db_path) as conn:
+        conn.execute(
+            "UPDATE employees SET account_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (employee_id,),
+        )
     return list_employees(db_path)
 
 
@@ -278,14 +505,17 @@ def delete_employee(db_path, employee_id, current_user_email=""):
         account_id = row["account_id"]
         if account_id is not None:
             account = conn.execute(
-                "SELECT id, role, active FROM users WHERE id = ?",
+                "SELECT id, username, role, active FROM users WHERE id = ?",
                 (account_id,),
             ).fetchone()
+            if account and _normalize_email(account["username"]) == _normalize_email(current_user_email):
+                raise ValueError("Không thể tự xóa hồ sơ và tài khoản đang dùng để đăng nhập.")
+
             if account and _normalize_account_role(account["role"]) == "admin" and bool(account["active"]):
                 other_active_admins = conn.execute(
-                    "SELECT COUNT(*) FROM users WHERE role = 'admin' AND active = 1 AND id <> ?",
+                    "SELECT COUNT(*) AS total FROM users WHERE role = 'admin' AND active = 1 AND id <> ?",
                     (account_id,),
-                ).fetchone()[0]
+                ).fetchone()["total"]
                 if other_active_admins < 1:
                     raise ValueError("Không thể xóa Sếp đang hoạt động cuối cùng. Hãy tạo hoặc mở khóa một tài khoản Sếp khác trước.")
 

@@ -48,17 +48,17 @@ def unread_total(db_path, user_id):
     with connect(db_path) as conn:
         direct = conn.execute(
             """
-            SELECT COUNT(*)
+            SELECT COUNT(*) AS total
             FROM chat_messages
             WHERE recipient_id = ?
               AND read_at IS NULL
               AND deleted_at IS NULL
             """,
             (user_id,),
-        ).fetchone()[0]
+        ).fetchone()["total"]
         groups = conn.execute(
             """
-            SELECT COUNT(*)
+            SELECT COUNT(*) AS total
             FROM chat_group_messages m
             JOIN chat_group_members member ON member.group_id = m.group_id AND member.user_id = ?
             JOIN chat_groups g ON g.id = m.group_id AND g.deleted_at IS NULL
@@ -68,7 +68,7 @@ def unread_total(db_path, user_id):
               AND m.id > COALESCE(r.last_read_message_id, 0)
             """,
             (user_id, user_id, user_id),
-        ).fetchone()[0]
+        ).fetchone()["total"]
     return direct + groups
 
 
@@ -109,7 +109,7 @@ def list_conversations(db_path, user_id):
                 ) AS unread_count
             FROM users u
             WHERE u.active = 1 AND u.id != ?
-            ORDER BY COALESCE(last_at, '') DESC, u.username ASC
+            ORDER BY 6 DESC NULLS LAST, u.username ASC
             """,
             (user_id, user_id, user_id, user_id, user_id, user_id),
         ).fetchall()
@@ -240,10 +240,11 @@ def send_message(db_path, sender_id, recipient_email, body):
             """,
             (recipient["id"], sender_id),
         )
-        cursor = conn.execute(
-            "INSERT INTO chat_messages (sender_id, recipient_id, body) VALUES (?, ?, ?)",
+        inserted = conn.execute(
+            "INSERT INTO chat_messages (sender_id, recipient_id, body) VALUES (?, ?, ?) RETURNING id",
             (sender_id, recipient["id"], body),
-        )
+        ).fetchone()
+        message_id = inserted["id"]
         row = conn.execute(
             """
             SELECT
@@ -258,7 +259,7 @@ def send_message(db_path, sender_id, recipient_email, body):
             JOIN users recipient ON recipient.id = m.recipient_id
             WHERE m.id = ?
             """,
-            (cursor.lastrowid,),
+            (message_id,),
         ).fetchone()
     return _message_from_row(row)
 
@@ -395,7 +396,7 @@ def list_groups(db_path, user_id):
             JOIN chat_group_members member ON member.group_id = g.id AND member.user_id = ?
             JOIN users creator ON creator.id = g.created_by
             WHERE g.deleted_at IS NULL
-            ORDER BY COALESCE(last_at, g.created_at) DESC, g.name ASC
+            ORDER BY 6 DESC NULLS LAST, g.created_at DESC, g.name ASC
             """,
             (user_id, user_id, user_id),
         ).fetchall()
@@ -422,11 +423,11 @@ def create_group(db_path, name, member_emails, admin_user_id):
     member_ids = set(_active_user_ids_by_email(db_path, member_emails))
     member_ids.add(admin_user_id)
     with connect(db_path) as conn:
-        cursor = conn.execute(
-            "INSERT INTO chat_groups (name, created_by) VALUES (?, ?)",
+        inserted = conn.execute(
+            "INSERT INTO chat_groups (name, created_by) VALUES (?, ?) RETURNING id",
             (name, admin_user_id),
-        )
-        group_id = cursor.lastrowid
+        ).fetchone()
+        group_id = inserted["id"]
         for user_id in member_ids:
             conn.execute(
                 "INSERT OR IGNORE INTO chat_group_members (group_id, user_id) VALUES (?, ?)",
@@ -514,10 +515,11 @@ def send_group_message(db_path, user_id, group_id, body):
         raise ValueError("Tin nhắn quá dài")
     with connect(db_path) as conn:
         _ensure_group_member(conn, group_id, user_id)
-        cursor = conn.execute(
-            "INSERT INTO chat_group_messages (group_id, sender_id, body) VALUES (?, ?, ?)",
+        inserted = conn.execute(
+            "INSERT INTO chat_group_messages (group_id, sender_id, body) VALUES (?, ?, ?) RETURNING id",
             (group_id, user_id, body),
-        )
+        ).fetchone()
+        message_id = inserted["id"]
         # Gửi phản hồi trong nhóm đồng nghĩa người dùng đã đọc toàn bộ luồng đến tin vừa gửi.
         conn.execute(
             """
@@ -527,7 +529,7 @@ def send_group_message(db_path, user_id, group_id, body):
                 last_read_at = CURRENT_TIMESTAMP,
                 last_read_message_id = excluded.last_read_message_id
             """,
-            (group_id, user_id, cursor.lastrowid),
+            (group_id, user_id, message_id),
         )
         row = conn.execute(
             """
@@ -541,7 +543,7 @@ def send_group_message(db_path, user_id, group_id, body):
             JOIN users sender ON sender.id = m.sender_id
             WHERE m.id = ?
             """,
-            (cursor.lastrowid,),
+            (message_id,),
         ).fetchone()
     return _group_message_from_row(row)
 
@@ -551,13 +553,13 @@ def mark_group_read(db_path, user_id, group_id):
         _ensure_group_member(conn, group_id, user_id)
         last_message_id = conn.execute(
             """
-            SELECT COALESCE(MAX(id), 0)
+            SELECT COALESCE(MAX(id), 0) AS last_id
             FROM chat_group_messages
             WHERE group_id = ?
               AND deleted_at IS NULL
             """,
             (group_id,),
-        ).fetchone()[0]
+        ).fetchone()["last_id"]
         conn.execute(
             """
             INSERT INTO chat_group_reads (group_id, user_id, last_read_at, last_read_message_id)

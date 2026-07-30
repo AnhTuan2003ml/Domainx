@@ -1,36 +1,59 @@
-# Logs
-logs
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# Dependencies and generated frontend files
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
 
-node_modules
-dist
-dist-ssr
-*.local
-data/*.sqlite3
-data/*.sqlite3-*
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-
-__pycache__/
-
-# Local secrets and runtime environment
+# Environment variables and secrets
 .env
 .env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+.cloudflared/
+
+# Python virtual environments and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Runtime data, databases and logs
+data/
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.log
+logs/
+uploads/
+tmp/
+temp/
+backups/
+*.dump
+
+# IDE and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local tools and exported artifacts
+*.bak
 *.zip
-*.
 *.xlsx
-*.exe
+.claude/
+.codegraph/

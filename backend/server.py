@@ -4,14 +4,19 @@ import json
 import mimetypes
 import ssl
 import calendar
-from datetime import date
+import traceback
+import uuid
+from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from config import DEFAULT_DB_PATH, DIST_DIR
+from config import CORS_ORIGIN, DEFAULT_DB_PATH, DEFAULT_DB_TARGET, DIST_DIR, MAX_REQUEST_BODY_BYTES
+from db.connection import database_backend, is_postgres_target
 from db.schema import init_db
-from db.state_store import read_state, write_state
-from services import auth_service, chat_service, employee_service, inventory_expiry_service, password_reset_service, registration_service, user_service
+from db.state_store import read_state, update_state
+from routes import dispatch
+from services import auth_service, chat_service, email_service, employee_service, inventory_expiry_service, password_reset_service, registration_service, user_service
+from services.business_sync_service import reconcile_company_data
 
 
 def _query_int(query, key, default=0):
@@ -39,18 +44,20 @@ ACCOUNTANT_WRITABLE_STATE_FIELDS = {
     "distributionPartners", "distributionOrders", "distributionSettlements",
     "inventory", "stockMovements", "contracts", "marketingLogs", "marketingPages",
     "supportCases", "leads", "payrollApprovals", "midMonthRequests", "payrollPayments",
+    "paymentLedger",
 }
 USER_READABLE_STATE_FIELDS = {
     "lang", "company", "announcements", "unlockedMonths", "tasks",
     "payrollApprovals", "midMonthRequests", "payrollPayments", "kpiTiers",
     # Nhân viên được xem toàn bộ danh mục Kho hàng ở chế độ chỉ đọc.
-    "inventory",
+    "inventory", "attendanceRequests",
     # Chỉ các bản ghi thuộc chính nhân viên được giữ lại để tính lương tham chiếu.
     "transactions", "orders", "marketingLogs", "supportCases",
 }
 SAFE_COMPANY_FIELDS = {
     "name", "address", "phone", "email", "taxCode", "representative",
-    "establishedDate", "registeredCharterCapital", "taskReminderIntervalHours",
+    "establishedDate", "registeredCharterCapital", "openingCashBalance", "taskReminderIntervalHours",
+    "directorPasswordConfigured", "directorPasswordConfiguredAt",
 }
 APPROVED_PAYROLL_STATUSES = {"cho_ke_toan_chi_tra", "da_duyet_cho_thanh_toan"}
 PAYROLL_PROPOSAL_NUMBER_FIELDS = {
@@ -59,7 +66,7 @@ PAYROLL_PROPOSAL_NUMBER_FIELDS = {
     "requestedInsuranceDeduction", "requestedTaxDeduction",
     "requestedAdvanceDeduction", "requestedOtherDeduction", "requestedDeduction",
 }
-PAYROLL_PROPOSAL_TEXT_FIELDS = {"proposalReason", "proposalDetails", "proposalNote"}
+PAYROLL_PROPOSAL_TEXT_FIELDS = {"proposalReason", "proposalDetails", "proposalNote", "varianceReason"}
 SELF_PROFILE_FIELDS = {"avatarData", "avatarName", "avatarType"}
 EMPLOYEE_PRIVATE_FIELDS = {
     "baseSalary", "dailySalary", "bonusTarget", "kpi", "contractType", "probationRate", "dependents",
@@ -67,6 +74,7 @@ EMPLOYEE_PRIVATE_FIELDS = {
     "salesTarget", "salesActual", "dealsClosed", "leadsHandled", "adSpend", "adRevenue",
     "conversions", "ctr", "tasksAssigned", "tasksCompleted", "tasksOnTime", "bugsFixed",
     "upsaleValue", "dob", "hometown", "bankName", "bankAccount", "phone", "idNumber",
+    "attendanceTimes",
     "education", "major", "resumeSummary", "idFrontData", "idFrontName", "idFrontType",
     "idBackData", "idBackName", "idBackType", "resumeFileData", "resumeFileName",
     "resumeFileType",
@@ -262,15 +270,19 @@ def _filter_payroll_data_for_user(db_path, data, user):
         visible_transactions = []
         for tx in transactions:
             # Nhân viên không nhận dữ liệu Thu Chi chung của công ty. Chỉ phiếu/giao dịch
-            # lương liên kết với chính họ mới được trả về để xem lịch sử cá nhân.
-            if not isinstance(tx, dict) or tx.get("source") != "bangluong":
+            # lương và khoản thu/chi được gắn trực tiếp với chính họ mới được trả về.
+            if not isinstance(tx, dict):
                 continue
             source_id = tx.get("sourceOrderId")
             try:
                 source_id = int(source_id)
             except (TypeError, ValueError):
                 source_id = None
-            if source_id == employee_id or source_id in own_mid_ids:
+            is_own_payroll = tx.get("source") == "bangluong" and (source_id == employee_id or source_id in own_mid_ids)
+            is_own_operating_entry = _record_belongs_to_employee(
+                tx, employee_id, "employeeId", "assignedEmployeeId", "sourceEmployeeId"
+            )
+            if is_own_payroll or is_own_operating_entry:
                 visible_transactions.append(tx)
         filtered["transactions"] = visible_transactions
     return filtered
@@ -300,6 +312,17 @@ def _safe_company(company):
     if not isinstance(company, dict):
         return company
     return {key: company.get(key) for key in SAFE_COMPANY_FIELDS if key in company}
+
+
+def _public_company_for_admin(company):
+    """Admin được xem cấu hình công ty nhưng tuyệt đối không nhận hash mật khẩu."""
+    if not isinstance(company, dict):
+        return company
+    result = dict(company)
+    result.pop("directorPassword", None)
+    result.pop("directorPasswordHash", None)
+    result["directorPasswordConfigured"] = bool(company.get("directorPasswordHash") or company.get("directorPasswordConfigured"))
+    return result
 
 
 def _record_belongs_to_employee(record, employee_id, *field_names):
@@ -379,6 +402,13 @@ def _user_visible_data(db_path, data, user):
             filtered["supportCases"] = support_cases
         else:
             filtered["supportCases"] = [item for item in support_cases if _record_belongs_to_employee(item, employee_id, "employeeId", "assignedEmployeeId", "supportEmployeeId")]
+
+    attendance_requests = data.get("attendanceRequests")
+    if isinstance(attendance_requests, list):
+        filtered["attendanceRequests"] = [
+            item for item in attendance_requests
+            if _record_belongs_to_employee(item, employee_id, "employeeId")
+        ]
     return filtered
 
 
@@ -391,7 +421,11 @@ def filter_state_for_user(db_path, state, user):
 
     role = _normalized_account_role(user.get("role"))
     if role in {"admin", "accountant"}:
-        filtered_data = data
+        filtered_data = dict(data)
+        if "company" in filtered_data:
+            filtered_data["company"] = _public_company_for_admin(filtered_data.get("company"))
+        if role == "accountant":
+            filtered_data.pop("securityAuditLog", None)
     elif _employee_context(db_path, user)[2]:
         # Hồ sơ nhân sự Kế toán/Tài chính được đồng bộ về role accountant:
         # chỉ được đọc dữ liệu nghiệp vụ, không nhận cấu hình quản trị nhạy cảm.
@@ -600,6 +634,10 @@ def _sanitize_employee_submission(record, user, employee, old=None):
         "employeeId": employee_id,
         "year": year,
         "month": month,
+        "systemWorkDaysAtSubmit": system_inputs["requestedWorkDays"],
+        "systemDailySalaryAtSubmit": system_inputs["requestedDailySalary"],
+        "systemReferenceAtSubmit": max(0.0, float(record.get("systemReferenceAtSubmit") or proposal["amount"] or 0)),
+        "systemReferenceCapturedAt": str(record.get("systemReferenceCapturedAt") or datetime.now(timezone.utc).isoformat()),
         "status": "cho_ke_toan_duyet",
         "submittedAt": record.get("submittedAt") or now_record.get("submittedAt"),
         "submittedByEmail": _normalized_email(user.get("email")),
@@ -952,33 +990,104 @@ def _merge_assigned_stock_movements(existing_movements, incoming_movements, assi
     return existing_movements + allowed_new
 
 
-def preserve_restricted_state_fields(db_path, incoming_data, user):
+def _merge_regular_attendance_requests(old_requests, incoming_requests, employee_id):
+    """Nhân viên chỉ được tạo yêu cầu chấm công của chính mình cho ngày hiện tại.
+
+    Bản ghi đã duyệt/từ chối hoặc của người khác luôn được giữ nguyên. Việc cập nhật
+    attendance chính thức chỉ do Admin/Kế toán thực hiện sau khi duyệt trên giao diện.
+    """
+    old_list = [item for item in (old_requests or []) if isinstance(item, dict)]
+    if employee_id is None or not isinstance(incoming_requests, list):
+        return old_list
+
+    today_text = date.today().isoformat()
+    result = list(old_list)
+    existing_keys = {
+        (str(item.get("employeeId")), str(item.get("date"))): item
+        for item in old_list
+    }
+    old_ids = {str(item.get("id")) for item in old_list if item.get("id") is not None}
+    for item in incoming_requests:
+        if not isinstance(item, dict):
+            continue
+        if item.get("id") is not None and str(item.get("id")) in old_ids:
+            # Đây chỉ là bản ghi lịch sử frontend gửi lại; không tạo trùng.
+            continue
+        try:
+            item_employee_id = int(item.get("employeeId"))
+        except (TypeError, ValueError):
+            continue
+        if item_employee_id != int(employee_id) or str(item.get("date") or "") != today_text:
+            continue
+        key = (str(employee_id), today_text)
+        existing = existing_keys.get(key)
+        if existing and existing.get("status") != "rejected":
+            # Nhân viên không thể sửa trạng thái hoặc giờ của yêu cầu đang chờ/đã duyệt.
+            continue
+        request_id = item.get("id") or int(datetime.now(timezone.utc).timestamp() * 1000)
+        clean = {
+            "id": request_id,
+            "employeeId": int(employee_id),
+            "employeeName": str(item.get("employeeName") or "").strip(),
+            "date": today_text,
+            "code": str(item.get("code") or "X").strip().upper() if str(item.get("code") or "X").strip().upper() in {"X", "P", "N", "K", "L", "O"} else "X",
+            "status": "pending",
+            "checkInAt": datetime.now(timezone.utc).isoformat(),
+            "submittedAt": datetime.now(timezone.utc).isoformat(),
+            "submittedByEmail": str(item.get("submittedByEmail") or "").strip().lower(),
+        }
+        result.append(clean)
+        existing_keys[key] = clean
+    return result
+
+
+def preserve_restricted_state_fields(db_path, incoming_data, user, existing_data_override=None):
     if not isinstance(incoming_data, dict):
         return incoming_data
-    existing = read_state(db_path)
-    existing_data = existing.get("data") if existing else None
+    if existing_data_override is None:
+        existing = read_state(db_path)
+        existing_data = existing.get("data") if existing else None
+    else:
+        existing_data = existing_data_override
     if not isinstance(existing_data, dict):
         return incoming_data
 
     merged = dict(incoming_data)
+    # Các sổ bất biến chỉ được thay đổi qua endpoint nghiệp vụ nguyên tử. Không cho
+    # request autosave chung từ trình duyệt ghi đè bằng bản cũ khi nhiều người cùng làm.
+    merged["paymentLedger"] = existing_data.get("paymentLedger", [])
+    merged["securityAuditLog"] = existing_data.get("securityAuditLog", [])
     old_approvals = existing_data.get("payrollApprovals", [])
     old_mid = existing_data.get("midMonthRequests", [])
     old_payments = existing_data.get("payrollPayments", [])
+    old_attendance_requests = existing_data.get("attendanceRequests", [])
 
     if _is_admin(user):
+        merged["attendanceRequests"] = incoming_data.get("attendanceRequests", old_attendance_requests)
         incoming_approvals = incoming_data.get("payrollApprovals", [])
         incoming_mid = incoming_data.get("midMonthRequests", [])
         incoming_approval_ids = set(_index_records(incoming_approvals))
         incoming_mid_ids = set(_index_records(incoming_mid))
 
+        # Phiếu chi là chứng từ bất biến. Kỳ lương đã phát sinh thanh toán không được
+        # phép mất hồ sơ duyệt chỉ vì một tab Admin đang giữ snapshot cũ hoặc xóa dòng.
+        paid_period_keys = {
+            _record_period_key(item)
+            for item in old_payments if isinstance(item, dict)
+            and not item.get("reversedAt")
+            and _record_period_key(item) is not None
+        }
+
         # Việc một hồ sơ biến mất khỏi dữ liệu Admin chỉ được chấp nhận khi hồ sơ cũ
-        # đã được duyệt/đóng dấu. Hồ sơ đang chờ ở bất kỳ bước nào sẽ được giữ lại.
+        # đã được duyệt/đóng dấu VÀ chưa phát sinh chi trả. Hồ sơ đang chờ hoặc đã chi
+        # luôn được giữ để đối soát với sổ Chi.
         deleted_approval_keys = {
             _record_period_key(item)
             for item in old_approvals if isinstance(item, dict)
             and item.get("status") in APPROVED_PAYROLL_STATUSES
             and str(item.get("id")) not in incoming_approval_ids
             and _record_period_key(item) is not None
+            and _record_period_key(item) not in paid_period_keys
         }
         deleted_mid_ids = {
             int(item.get("id"))
@@ -989,6 +1098,18 @@ def preserve_restricted_state_fields(db_path, incoming_data, user):
         }
 
         merged["payrollApprovals"] = _merge_admin_approvals(old_approvals, incoming_approvals)
+        # Phòng vệ thêm cho dữ liệu legacy: nếu đã có phiếu chi nhưng trạng thái hồ sơ
+        # chưa kịp chuyển sang ``da_chi_tra``, vẫn phải giữ hồ sơ duyệt nguồn.
+        merged_period_keys = {
+            _record_period_key(item)
+            for item in merged["payrollApprovals"] if isinstance(item, dict)
+            and _record_period_key(item) is not None
+        }
+        for old_item in old_approvals if isinstance(old_approvals, list) else []:
+            period_key = _record_period_key(old_item)
+            if period_key in paid_period_keys and period_key not in merged_period_keys:
+                merged["payrollApprovals"].append(old_item)
+                merged_period_keys.add(period_key)
         merged["midMonthRequests"] = _merge_admin_mid_month(old_mid, incoming_mid)
 
         # Admin không tạo/đổi phiếu chi. Khi Admin xóa một đề xuất đã đóng dấu thì
@@ -1003,7 +1124,8 @@ def preserve_restricted_state_fields(db_path, incoming_data, user):
                     pass
                 continue
             kept_payments.append(payment)
-        merged["payrollPayments"] = kept_payments
+        # Phiếu chi lương là sổ giao dịch máy chủ; không xóa qua autosave chung.
+        merged["payrollPayments"] = old_payments
 
         for request in old_mid if isinstance(old_mid, list) else []:
             try:
@@ -1040,11 +1162,18 @@ def preserve_restricted_state_fields(db_path, incoming_data, user):
                 continue
             kept_salary_transactions.append(transaction)
 
+        server_payroll_transactions = [
+            item for item in existing_data.get("transactions", [])
+            if isinstance(item, dict) and str(item.get("sourceModule") or item.get("source") or "").lower() == "payroll_payment"
+        ]
         incoming_non_salary = [
             item for item in incoming_data.get("transactions", [])
-            if not isinstance(item, dict) or item.get("source") != "bangluong"
+            if not isinstance(item, dict) or (
+                item.get("source") != "bangluong"
+                and str(item.get("sourceModule") or item.get("source") or "").lower() != "payroll_payment"
+            )
         ]
-        merged["transactions"] = incoming_non_salary + kept_salary_transactions
+        merged["transactions"] = incoming_non_salary + kept_salary_transactions + server_payroll_transactions
         return merged
 
     if "tasks" in existing_data:
@@ -1053,12 +1182,17 @@ def preserve_restricted_state_fields(db_path, incoming_data, user):
     _, employee, is_accountant = _employee_context(db_path, user)
     employee_id = int(employee["id"]) if employee else None
     if is_accountant:
+        merged["attendanceRequests"] = incoming_data.get("attendanceRequests", old_attendance_requests)
         # Tài khoản role accountant có toàn quyền với dữ liệu hệ thống giống Sếp/Admin.
         # Riêng hồ sơ lương vẫn đi qua bộ trộn Kế toán để không thể tự ghi luôn chữ ký Sếp
         # và vẫn giữ đúng lịch sử hai cấp thẩm định.
         merged["payrollApprovals"] = _merge_accountant_approvals(old_approvals, incoming_data.get("payrollApprovals", []))
         merged["midMonthRequests"] = _merge_accountant_mid_month(old_mid, incoming_data.get("midMonthRequests", []))
-        merged["payrollPayments"] = incoming_data.get("payrollPayments", old_payments)
+        merged["payrollPayments"] = old_payments
+        # Bút toán chi lương chỉ được ghi bởi endpoint /payroll-payments.
+        existing_payroll_tx = [item for item in existing_data.get("transactions", []) if isinstance(item, dict) and str(item.get("sourceModule") or item.get("source") or "").lower() == "payroll_payment"]
+        incoming_non_payroll_tx = [item for item in incoming_data.get("transactions", []) if not isinstance(item, dict) or str(item.get("sourceModule") or item.get("source") or "").lower() != "payroll_payment"]
+        merged["transactions"] = incoming_non_payroll_tx + existing_payroll_tx
         merged["tasks"] = incoming_data.get("tasks", existing_data.get("tasks", []))
     else:
         # Nhân viên mặc định chỉ sửa dữ liệu cá nhân. Một số nhóm vị trí được cấp thêm quyền
@@ -1088,6 +1222,9 @@ def preserve_restricted_state_fields(db_path, incoming_data, user):
                     existing_data.get("stockMovements", []), incoming_data.get("stockMovements", []), assigned_ids
                 )
 
+        merged["attendanceRequests"] = _merge_regular_attendance_requests(
+            old_attendance_requests, incoming_data.get("attendanceRequests", []), employee_id
+        )
         merged["payrollApprovals"] = _merge_regular_payroll_approvals(old_approvals, incoming_data.get("payrollApprovals", []), user, employee)
         merged["midMonthRequests"] = _merge_regular_mid_month(old_mid, incoming_data.get("midMonthRequests", []), user, employee_id)
         merged["payrollPayments"] = old_payments
@@ -1098,9 +1235,12 @@ def preserve_restricted_state_fields(db_path, incoming_data, user):
 
 def update_employees_for_user(db_path, incoming_employees, user):
     existing = employee_service.list_employees(db_path)
-    if _is_full_admin(user):
-        # Sếp và Kế toán được toàn quyền sửa hồ sơ và toàn bộ lịch sử chấm công.
+    account_role = _normalized_account_role((user or {}).get("role"))
+    if account_role == "admin":
+        # Chỉ Sếp/Admin được sửa hồ sơ nhân sự. Kế toán chỉ đọc để xử lý lương.
         return employee_service.replace_all(db_path, incoming_employees)
+    if account_role == "accountant":
+        raise ValueError("Kế toán không được thêm, sửa hoặc xóa hồ sơ nhân sự.")
 
     _, current_employee, is_accountant = _employee_context(db_path, user)
     current_employee_id = int(current_employee["id"]) if current_employee else None
@@ -1109,11 +1249,6 @@ def update_employees_for_user(db_path, incoming_employees, user):
         for item in incoming_employees
         if isinstance(item, dict) and item.get("id") is not None
     } if isinstance(incoming_employees, list) else {}
-
-    today = date.today()
-    today_month_key = f"{today.year}-{today.month:02d}"
-    today_day_key = str(today.day)
-    allowed_self_codes = {"X", "P", "N", "K", "L", "O"}
 
     merged = []
     for employee in existing:
@@ -1127,30 +1262,76 @@ def update_employees_for_user(db_path, incoming_employees, user):
             if field in candidate:
                 updated[field] = candidate[field]
 
-        if not is_accountant:
-            # Nhân viên/Nhân sự chỉ được tự chấm công cho chính mình trong đúng ngày hiện tại.
-            # Không được sửa ngày cũ, ngày tương lai, tháng khác hoặc chấm cho người khác.
-            current_attendance = updated.get("attendance") if isinstance(updated.get("attendance"), dict) else {}
-            next_attendance = dict(current_attendance)
-            current_month = current_attendance.get(today_month_key) if isinstance(current_attendance.get(today_month_key), dict) else {}
-            next_month = dict(current_month)
+        # Nhân viên thường không được ghi thẳng vào attendance. Họ chỉ tạo
+        # attendanceRequests; ngày công chính thức chỉ được Admin/Kế toán ghi sau khi duyệt.
+        # Vì vậy giữ nguyên attendance và attendanceTimes đang có trong database.
 
-            candidate_attendance = candidate.get("attendance") if isinstance(candidate.get("attendance"), dict) else {}
-            candidate_month = candidate_attendance.get(today_month_key) if isinstance(candidate_attendance.get(today_month_key), dict) else None
-            if candidate_month is not None:
-                raw_code = candidate_month.get(today_day_key, candidate_month.get(today.day))
-                code = str(raw_code or "").strip().upper()
-                if code in allowed_self_codes:
-                    next_month[today_day_key] = code
-                elif raw_code in (None, ""):
-                    next_month.pop(today_day_key, None)
-                    next_month.pop(today.day, None)
-            next_attendance[today_month_key] = next_month
-            updated["attendance"] = next_attendance
-
-        # Kế toán chỉ xem toàn bộ chấm công, không được thay đổi dữ liệu chấm công.
         merged.append(updated)
     return employee_service.replace_all(db_path, merged)
+
+
+SUPPORT_ASSIGNABLE_POSITION_ROLES = {"ky_thuat", "it", "nhan_su", "van_hanh", "cskh", "sale"}
+SUPPORT_TYPE_LABELS = {
+    "kich_hoat": "Kích hoạt / Setup mới",
+    "su_co": "Xử lý sự cố",
+    "cham_soc": "Chăm sóc định kỳ",
+    "upsale": "Tư vấn nâng cấp / Upsale",
+}
+SUPPORT_CHANNEL_LABELS = {
+    "phone": "Gọi điện",
+    "zalo": "Zalo / Nhắn tin",
+    "email": "Email",
+    "remote": "Hỗ trợ từ xa / Họp online",
+    "onsite": "Hỗ trợ trực tiếp",
+}
+
+
+def _employee_contact_email(db_path, employee):
+    account_id = (employee or {}).get("account_id")
+    try:
+        account_id = int(account_id)
+    except (TypeError, ValueError):
+        account_id = None
+    if account_id is not None:
+        for account in user_service.list_users(db_path):
+            try:
+                if int(account.get("id")) == account_id and account.get("active"):
+                    account_email = _normalized_email(account.get("email"))
+                    if account_email:
+                        return account_email
+            except (TypeError, ValueError):
+                continue
+    return _normalized_email((employee or {}).get("email"))
+
+
+def _support_assignment_message(data, sender_name, recipient_name):
+    support_type = SUPPORT_TYPE_LABELS.get(str(data.get("supportType") or ""), "Yêu cầu hỗ trợ")
+    support_channel = SUPPORT_CHANNEL_LABELS.get(str(data.get("supportChannel") or ""), "Theo trao đổi")
+    order_id = str(data.get("orderId") or "—")
+    customer_name = str(data.get("customerName") or "—").strip()
+    customer_phone = str(data.get("customerPhone") or "—").strip()
+    customer_email = str(data.get("customerEmail") or "—").strip()
+    product_name = str(data.get("productName") or "—").strip()
+    duration_label = str(data.get("durationLabel") or "—").strip()
+    issue = str(data.get("issue") or "").strip()
+    details = str(data.get("details") or "").strip()
+    lines = [
+        "[YÊU CẦU HỖ TRỢ KHÁCH HÀNG]",
+        f"Người tiếp nhận: {recipient_name}",
+        f"Người giao: {sender_name}",
+        f"Loại yêu cầu: {support_type}",
+        f"Cách thức hỗ trợ: {support_channel}",
+        f"Đơn hàng: #{order_id} · ngày {str(data.get('orderDate') or '—')}",
+        f"Khách hàng: {customer_name}",
+        f"Liên hệ khách: {customer_phone} · {customer_email}",
+        f"Sản phẩm: {product_name}",
+        f"Thời hạn: {duration_label}",
+        f"Vấn đề cần hỗ trợ: {issue}",
+        f"Nội dung cần hỗ trợ: {details}",
+        "Vui lòng mở DOMIX để kiểm tra và cập nhật kết quả xử lý.",
+    ]
+    return "\n".join(lines)
+
 
 
 class DomixHandler(BaseHTTPRequestHandler):
@@ -1158,7 +1339,7 @@ class DomixHandler(BaseHTTPRequestHandler):
     static_dir = DIST_DIR
 
     def end_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Access-Control-Allow-Origin", CORS_ORIGIN)
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
         self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         super().end_headers()
@@ -1167,473 +1348,106 @@ class DomixHandler(BaseHTTPRequestHandler):
         self.send_response(204)
         self.end_headers()
 
+    def _dispatch_request(self, method, route, parsed):
+        """Không để exception của API làm Nginx nhận upstream đóng kết nối và trả 502.
+
+        Mọi lỗi nghiệp vụ được trả JSON 400; lỗi máy chủ có mã đối soát và được ghi
+        traceback trong log container. Frontend nhờ đó hiển thị đúng nguyên nhân thay
+        vì mất hồ sơ cục bộ hoặc chỉ báo Bad Gateway chung chung.
+        """
+        try:
+            return dispatch(method, self, route, parsed)
+        except ValueError as exc:
+            self.send_json({"error": str(exc)}, 400)
+            return True
+        except Exception as exc:
+            request_id = uuid.uuid4().hex[:12]
+            print(f"[DOMIX API ERROR] request_id={request_id} method={method} route={route}")
+            traceback.print_exc()
+            try:
+                self.send_json({
+                    "error": "Máy chủ không thể hoàn tất thao tác. Dữ liệu chưa được ghi.",
+                    "detail": str(exc),
+                    "requestId": request_id,
+                }, 500)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            return True
+
     def do_GET(self):
         parsed = urlparse(self.path)
         route = parsed.path
-        if route == "/api/health":
-            return self.send_json({"ok": True})
-        if route == "/api/auth/me":
-            user = self.require_user()
-            return self.send_json({"user": user}) if user else None
-        if route == "/api/users":
-            if not self.require_user({"admin", "accountant"}):
-                return
-            return self.send_json({"users": user_service.list_users(self.db_path)})
-        if route == "/api/chat/conversations":
-            user = self.require_user()
-            if not user:
-                return
-            return self.send_json(chat_service.conversations(self.db_path, user))
-        if route == "/api/chat/unread":
-            user = self.require_user()
-            if not user:
-                return
-            return self.send_json(chat_service.unread(self.db_path, user))
-        if route == "/api/chat/groups":
-            user = self.require_user()
-            if not user:
-                return
-            return self.send_json(chat_service.groups(self.db_path, user))
-        if route == "/api/chat/messages":
-            user = self.require_user()
-            if not user:
-                return
-            query = parse_qs(parsed.query)
-            peer_email = query.get("peer", [""])[0]
-            try:
-                return self.send_json(chat_service.messages(
-                    self.db_path,
-                    user,
-                    peer_email,
-                    _query_int(query, "limit", 40),
-                    _query_int(query, "beforeId", 0),
-                    _query_int(query, "afterId", 0),
-                ))
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-        if route == "/api/chat/messages/read-receipts":
-            user = self.require_user()
-            if not user:
-                return
-            query = parse_qs(parsed.query)
-            try:
-                return self.send_json(chat_service.read_receipts(
-                    self.db_path,
-                    user,
-                    query.get("peer", [""])[0],
-                    _query_int(query, "afterId", 0),
-                ))
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-        if route == "/api/chat/group-messages":
-            user = self.require_user()
-            if not user:
-                return
-            query = parse_qs(parsed.query)
-            group_id = query.get("groupId", ["0"])[0]
-            try:
-                return self.send_json(chat_service.group_messages(
-                    self.db_path,
-                    user,
-                    group_id,
-                    _query_int(query, "limit", 40),
-                    _query_int(query, "beforeId", 0),
-                    _query_int(query, "afterId", 0),
-                ))
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-        if route == "/api/employees":
-            user = self.require_user()
-            if not user:
-                return
-            employees = employee_service.list_employees(self.db_path)
-            return self.send_json({"employees": filter_employees_for_user(self.db_path, employees, user)})
-        if route == "/api/payroll/workflow":
-            user = self.require_user()
-            if not user:
-                return
-            state = read_state(self.db_path) or {}
-            data = state.get("data") if isinstance(state.get("data"), dict) else {}
-            visible = _filter_payroll_data_for_user(self.db_path, data, user)
-            return self.send_json({
-                "payrollApprovals": visible.get("payrollApprovals", []),
-                "midMonthRequests": visible.get("midMonthRequests", []),
-                "payrollPayments": visible.get("payrollPayments", []),
-                "updatedAt": state.get("updatedAt"),
-            })
-        if route == "/api/tasks":
-            user = self.require_user()
-            if not user:
-                return
-            state = read_state(self.db_path) or {}
-            visible_state = filter_state_for_user(self.db_path, state, user)
-            data = visible_state.get("data") if isinstance(visible_state.get("data"), dict) else {}
-            return self.send_json({
-                "tasks": data.get("tasks", []),
-                "updatedAt": state.get("updatedAt"),
-            })
-        if route == "/api/data/fields":
-            user = self.require_user()
-            if not user:
-                return
-            state = read_state(self.db_path)
-            if not state or not isinstance(state.get("data"), dict):
-                return self.send_json({"exists": False, "data": {}, "updatedAt": None})
-            visible_state = filter_state_for_user(self.db_path, state, user)
-            visible_data = visible_state.get("data") if isinstance(visible_state.get("data"), dict) else {}
-            query = parse_qs(parsed.query)
-            names = []
-            for raw_name in query.get("names", []):
-                names.extend(part.strip() for part in str(raw_name).split(",") if part.strip())
-            selected = {name: visible_data.get(name) for name in dict.fromkeys(names)}
-            return self.send_json({
-                "exists": True,
-                "data": selected,
-                "updatedAt": state.get("updatedAt"),
-            })
-        if route == "/api/data":
-            user = self.require_user()
-            if not user:
-                return
-            state = read_state(self.db_path)
-            state = filter_state_for_user(self.db_path, state, user)
-            return self.send_json(state or {"data": None, "updatedAt": None})
+        if self._dispatch_request("GET", route, parsed):
+            return
         if route.startswith("/api/"):
-            return self.send_error(404, "Not found")
+            return self.send_json({"error": "API không tồn tại"}, 404)
         return self.serve_static()
 
     def do_POST(self):
         parsed = urlparse(self.path)
         route = parsed.path
-        if route == "/api/auth/login":
-            data = self.read_json()
-            if data is None:
-                return
-            result = auth_service.login(
-                self.db_path,
-                data.get("email", ""),
-                data.get("password", ""),
-            )
-            if not result:
-                return self.send_json({"error": "Sai tài khoản hoặc mật khẩu"}, 401)
-            result["user"] = _effective_user(self.db_path, result.get("user"), persist=True)
-            return self.send_json(result)
-        if route == "/api/auth/register/request-otp":
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                result = registration_service.request_registration_otp(
-                    self.db_path,
-                    data.get("email", ""),
-                    data.get("password", ""),
-                    data.get("confirmPassword", ""),
-                )
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-            except Exception as exc:
-                print(f"[OTP EMAIL ERROR] {exc}")
-                return self.send_json({"error": "Không gửi được OTP. Vui lòng kiểm tra cấu hình email gửi mã."}, 503)
-            return self.send_json(result)
-        if route == "/api/auth/register/verify":
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                result = registration_service.verify_registration_otp(
-                    self.db_path,
-                    data.get("email", ""),
-                    data.get("otp", ""),
-                )
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-            return self.send_json(result)
-        if route == "/api/auth/forgot-password/request-otp":
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                result = password_reset_service.request_password_reset_otp(
-                    self.db_path,
-                    data.get("email", ""),
-                )
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-            except Exception as exc:
-                print(f"[PASSWORD RESET OTP EMAIL ERROR] {exc}")
-                return self.send_json({"error": "Không gửi được OTP. Vui lòng kiểm tra cấu hình email gửi mã."}, 503)
-            return self.send_json(result)
-        if route == "/api/auth/forgot-password/reset":
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                result = password_reset_service.reset_password_with_otp(
-                    self.db_path,
-                    data.get("email", ""),
-                    data.get("otp", ""),
-                    data.get("newPassword", ""),
-                    data.get("confirmPassword", ""),
-                )
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-            result["user"] = _effective_user(self.db_path, result.get("user"), persist=True)
-            return self.send_json(result)
-        if route == "/api/auth/logout":
-            auth_service.logout(self.db_path, self.bearer_token())
-            return self.send_json({"ok": True})
-        if route == "/api/auth/password":
-            user = self.require_user()
-            if not user:
-                return
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                auth_service.change_password(
-                    self.db_path,
-                    user["email"],
-                    data.get("currentPassword", ""),
-                    data.get("newPassword", ""),
-                )
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-            return self.send_json({"ok": True})
-        if route == "/api/chat/messages":
-            user = self.require_user()
-            if not user:
-                return
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                return self.send_json(chat_service.send_message(
-                    self.db_path,
-                    user,
-                    data.get("recipientEmail", ""),
-                    data.get("body", ""),
-                ))
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-        if route == "/api/chat/messages/delete":
-            user = self.require_user()
-            if not user:
-                return
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                return self.send_json(chat_service.delete_message(self.db_path, user, data.get("messageId", 0)))
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-        if route == "/api/chat/messages/clear":
-            user = self.require_user()
-            if not user:
-                return
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                return self.send_json(chat_service.clear_conversation(self.db_path, user, data.get("peerEmail", "")))
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-        if route == "/api/chat/group-messages":
-            user = self.require_user()
-            if not user:
-                return
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                return self.send_json(chat_service.send_group_message(
-                    self.db_path,
-                    user,
-                    data.get("groupId", 0),
-                    data.get("body", ""),
-                ))
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-        if route == "/api/chat/group-messages/delete":
-            user = self.require_user()
-            if not user:
-                return
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                return self.send_json(chat_service.delete_group_message(self.db_path, user, data.get("messageId", 0)))
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-        if route == "/api/chat/group-messages/clear":
-            user = self.require_user()
-            if not user:
-                return
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                return self.send_json(chat_service.clear_group_conversation(self.db_path, user, data.get("groupId", 0)))
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-        if route == "/api/chat/read":
-            user = self.require_user()
-            if not user:
-                return
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                return self.send_json(chat_service.mark_read(self.db_path, user, data.get("peerEmail", "")))
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-        if route == "/api/chat/group-read":
-            user = self.require_user()
-            if not user:
-                return
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                return self.send_json(chat_service.mark_group_read(self.db_path, user, data.get("groupId", 0)))
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-        if route == "/api/chat/groups":
-            user = self.require_user()
-            if not user:
-                return
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                return self.send_json(chat_service.create_group(
-                    self.db_path,
-                    user,
-                    data.get("name", ""),
-                    data.get("memberEmails", []),
-                ))
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-        if route == "/api/chat/groups/members":
-            user = self.require_user()
-            if not user:
-                return
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                return self.send_json(chat_service.update_group_members(
-                    self.db_path,
-                    user,
-                    data.get("groupId", 0),
-                    data.get("name", ""),
-                    data.get("memberEmails", []),
-                ))
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-        if route == "/api/chat/groups/delete":
-            user = self.require_user()
-            if not user:
-                return
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                return self.send_json(chat_service.delete_group(self.db_path, user, data.get("groupId", 0)))
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-        if route == "/api/users":
-            if not self.require_user({"admin", "accountant"}):
-                return
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                user_service.create_or_update_user(
-                    self.db_path,
-                    data.get("email", ""),
-                    data.get("password", ""),
-                    data.get("role", "user"),
-                    data.get("active", 1),
-                )
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-            return self.send_json({"ok": True, "users": user_service.list_users(self.db_path)})
-        self.send_error(404, "Not found")
+        if self._dispatch_request("POST", route, parsed):
+            return
+        self.send_json({"error": "API không tồn tại"}, 404)
 
     def do_DELETE(self):
-        route = urlparse(self.path).path
-        user = self.require_user({"admin", "accountant"})
-        if not user:
+        parsed = urlparse(self.path)
+        route = parsed.path
+        if self._dispatch_request("DELETE", route, parsed):
             return
-        data = self.read_json()
-        if data is None:
-            return
-        if route == "/api/users":
-            email = (data.get("email") or "").strip().lower()
-            deleted_current_user = email == user["email"]
-            try:
-                user_service.delete_user(self.db_path, email)
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-            return self.send_json({"ok": True, "users": user_service.list_users(self.db_path), "deletedCurrentUser": deleted_current_user})
-        if route == "/api/employees":
-            try:
-                employee_service.delete_employee(self.db_path, data.get("employeeId"), user.get("email", ""))
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-            employees = employee_service.list_employees(self.db_path)
-            return self.send_json({"ok": True, "employees": employees})
-        self.send_error(404, "Not found")
+        self.send_json({"error": "API không tồn tại"}, 404)
 
     def do_PUT(self):
-        route = urlparse(self.path).path
-        if route == "/api/data/fields":
-            user = self.require_user()
-            if not user:
-                return
-            body = self.read_json()
-            if body is None:
-                return
-            patch = body.get("data") if isinstance(body, dict) else None
-            if not isinstance(patch, dict):
-                return self.send_json({"error": "Dữ liệu cập nhật không hợp lệ"}, 400)
-            state = read_state(self.db_path) or {"data": {}, "updatedAt": None}
-            existing_data = state.get("data") if isinstance(state.get("data"), dict) else {}
-            merged_data = dict(existing_data)
-            merged_data.update(patch)
-            merged_data = preserve_restricted_state_fields(self.db_path, merged_data, user)
-            write_state(self.db_path, merged_data)
-            visible_state = filter_state_for_user(self.db_path, read_state(self.db_path), user) or {}
-            visible_data = visible_state.get("data") if isinstance(visible_state.get("data"), dict) else {}
-            return self.send_json({
-                "ok": True,
-                "data": {key: visible_data.get(key) for key in patch.keys() if key in visible_data},
-                "updatedAt": visible_state.get("updatedAt"),
-            })
-        if route == "/api/employees":
-            user = self.require_user()
-            if not user:
-                return
-            data = self.read_json()
-            if data is None:
-                return
-            try:
-                employees = update_employees_for_user(self.db_path, data.get("employees", []), user)
-            except ValueError as exc:
-                return self.send_json({"error": str(exc)}, 400)
-            return self.send_json({"ok": True, "employees": filter_employees_for_user(self.db_path, employees, user)})
-        if route != "/api/data":
-            self.send_error(404, "Not found")
+        parsed = urlparse(self.path)
+        route = parsed.path
+        if self._dispatch_request("PUT", route, parsed):
             return
-        user = self.require_user()
-        if not user:
-            return
-        data = self.read_json()
-        if data is None:
-            return
-        data = preserve_restricted_state_fields(self.db_path, data, user)
-        write_state(self.db_path, data)
-        self.send_json({"ok": True})
+        self.send_json({"error": "API không tồn tại"}, 404)
+
+    def database_backend(self):
+        return database_backend(self.db_path)
+
+    def effective_user(self, user, persist=True):
+        return _effective_user(self.db_path, user, persist=persist)
+
+    def filter_employees(self, employees, user):
+        return filter_employees_for_user(self.db_path, employees, user)
+
+    def update_employees(self, employees, user):
+        return update_employees_for_user(self.db_path, employees, user)
+
+    def filter_payroll_data(self, data, user):
+        return _filter_payroll_data_for_user(self.db_path, data, user)
+
+    def filter_state(self, state, user):
+        return filter_state_for_user(self.db_path, state, user)
+
+    def preserve_restricted_state(self, data, user, existing_data=None):
+        return preserve_restricted_state_fields(self.db_path, data, user, existing_data)
+
+    def employee_context(self, user):
+        return _employee_context(self.db_path, user)
+
+    def employee_position_role(self, employee):
+        return _employee_position_role(employee)
+
+    def is_full_admin(self, user):
+        return _is_full_admin(user)
+
+    def support_assignable_roles(self):
+        return SUPPORT_ASSIGNABLE_POSITION_ROLES
+
+    def employee_contact_email(self, employee):
+        return _employee_contact_email(self.db_path, employee)
+
+    def support_assignment_message(self, data, sender_name, recipient_name):
+        return _support_assignment_message(data, sender_name, recipient_name)
+
+    def support_type_label(self, value):
+        return SUPPORT_TYPE_LABELS.get(str(value or ""), "Yêu cầu hỗ trợ")
+
+    def support_channel_label(self, value):
+        return SUPPORT_CHANNEL_LABELS.get(str(value or ""), "Theo trao đổi")
 
     def bearer_token(self):
         auth = self.headers.get("Authorization", "")
@@ -1657,14 +1471,17 @@ class DomixHandler(BaseHTTPRequestHandler):
     def read_json(self):
         try:
             content_length = int(self.headers.get("Content-Length", "0"))
+            if content_length < 0 or content_length > MAX_REQUEST_BODY_BYTES:
+                self.send_json({"error": "Dữ liệu gửi lên vượt quá giới hạn cho phép."}, 413)
+                return None
             body = self.rfile.read(content_length).decode("utf-8")
             return json.loads(body or "{}")
-        except (ValueError, json.JSONDecodeError) as exc:
+        except (ValueError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             self.send_json({"error": f"JSON không hợp lệ: {exc}"}, 400)
             return None
 
     def send_json(self, payload, status=200):
-        body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -1678,7 +1495,9 @@ class DomixHandler(BaseHTTPRequestHandler):
         relative = Path(request_path or "index.html")
         candidate = (self.static_dir / relative).resolve()
         static_root = self.static_dir.resolve()
-        if not str(candidate).startswith(str(static_root)):
+        try:
+            candidate.relative_to(static_root)
+        except ValueError:
             return self.send_error(403, "Forbidden")
         if not candidate.exists() or candidate.is_dir():
             candidate = static_root / "index.html"
@@ -1693,17 +1512,39 @@ class DomixHandler(BaseHTTPRequestHandler):
         return
 
 
+def _reconcile_existing_company_state(db_path):
+    """Chuẩn hóa dữ liệu doanh nghiệp đã có khi backend khởi động.
+
+    Việc này giúp các bản ghi được tạo trước bản vá lập tức có quan hệ Kho → Đơn
+    hàng → Công nợ/Thu Chi và loại doanh thu phân phối liên kết bị tính hai lần.
+    Dữ liệu không hợp lệ (ví dụ tồn kho âm) không làm server ngừng chạy; lỗi được
+    ghi rõ để quản trị viên sửa từ giao diện.
+    """
+    state = read_state(db_path)
+    current = state.get("data") if isinstance(state, dict) else None
+    if not isinstance(current, dict) or not current:
+        return
+    try:
+        update_state(db_path, reconcile_company_data)
+        print("Business data relationships reconciled successfully.")
+    except ValueError as exc:
+        print(f"WARNING: Business data reconciliation skipped: {exc}")
+    except Exception:
+        print("WARNING: Unexpected error while reconciling business data:")
+        traceback.print_exc()
+
+
 def main():
-    parser = argparse.ArgumentParser(description="DOMIX SQLite server")
+    parser = argparse.ArgumentParser(description="DOMIX company server")
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--port", type=int, default=8000)
-    parser.add_argument("--db", default=str(DEFAULT_DB_PATH))
+    parser.add_argument("--db", default=str(DEFAULT_DB_TARGET))
     parser.add_argument("--certfile", default="")
     parser.add_argument("--keyfile", default="")
     parser.add_argument("--create-user", nargs=3, metavar=("EMAIL", "PASSWORD", "ROLE"))
     args = parser.parse_args()
 
-    DomixHandler.db_path = Path(args.db)
+    DomixHandler.db_path = args.db if is_postgres_target(args.db) else Path(args.db)
     init_db(DomixHandler.db_path)
 
     if args.create_user:
@@ -1717,6 +1558,7 @@ def main():
     if setup_message:
         print(setup_message)
 
+    _reconcile_existing_company_state(DomixHandler.db_path)
     inventory_expiry_service.start_inventory_expiry_worker(DomixHandler.db_path)
     server = ThreadingHTTPServer((args.host, args.port), DomixHandler)
     protocol = "http"
@@ -1726,7 +1568,7 @@ def main():
         server.socket = context.wrap_socket(server.socket, server_side=True)
         protocol = "https"
     print(f"DOMIX server running at {protocol}://{args.host}:{args.port}")
-    print(f"SQLite database: {DomixHandler.db_path}")
+    print(f"Database ({database_backend(DomixHandler.db_path)}): {DomixHandler.db_path}")
     print("Build frontend with: npm.cmd run build")
     server.serve_forever()
 

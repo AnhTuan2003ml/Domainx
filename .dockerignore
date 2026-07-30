@@ -1,0 +1,16 @@
+.git
+.env
+node_modules
+dist
+__pycache__
+*.pyc
+*.pyo
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+data
+*.bak
+*.md
+*.txt
+backups
+*.dump

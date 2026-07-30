@@ -1,9 +1,12 @@
-from db.connection import configure_database, connect
+from pathlib import Path
+
+from db.connection import configure_database, connect, is_postgres_target, table_columns, table_exists
 from db.employee_store import create_employees_table
 
 
 def init_db(db_path):
-    db_path.parent.mkdir(parents=True, exist_ok=True)
+    if not is_postgres_target(db_path):
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     configure_database(db_path)
     with connect(db_path) as conn:
         conn.execute(
@@ -149,6 +152,121 @@ def init_db(db_path):
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_group_messages ON chat_group_messages(group_id, created_at)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_group_messages_id ON chat_group_messages(group_id, id)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS cash_transactions (
+                id TEXT PRIMARY KEY,
+                transaction_code TEXT NOT NULL,
+                transaction_type TEXT NOT NULL CHECK(transaction_type IN ('thu', 'chi')),
+                category TEXT NOT NULL DEFAULT '',
+                amount REAL NOT NULL CHECK(amount >= 0),
+                transaction_date TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'posted' CHECK(status IN ('posted', 'reversed')),
+                source_type TEXT NOT NULL DEFAULT 'manual',
+                source_id TEXT,
+                description TEXT NOT NULL DEFAULT '',
+                payment_method TEXT NOT NULL DEFAULT '',
+                reference_no TEXT NOT NULL DEFAULT '',
+                created_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                reversed_at TEXT,
+                reversed_by TEXT NOT NULL DEFAULT '',
+                reversal_reason TEXT NOT NULL DEFAULT '',
+                sync_origin TEXT NOT NULL DEFAULT 'app_state'
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_cash_transactions_date ON cash_transactions(transaction_date, transaction_type, status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_cash_transactions_source ON cash_transactions(source_type, source_id)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS debt_payments (
+                id TEXT PRIMARY KEY,
+                payment_code TEXT NOT NULL UNIQUE,
+                idempotency_key TEXT UNIQUE,
+                debt_id TEXT NOT NULL,
+                customer_id TEXT,
+                order_id TEXT,
+                amount REAL NOT NULL CHECK(amount > 0),
+                payment_method TEXT NOT NULL,
+                paid_at TEXT NOT NULL,
+                note TEXT NOT NULL DEFAULT '',
+                receipt_transaction_id TEXT NOT NULL UNIQUE,
+                created_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                status TEXT NOT NULL DEFAULT 'posted' CHECK(status IN ('posted', 'reversed')),
+                reversed_at TEXT,
+                reversed_by TEXT NOT NULL DEFAULT '',
+                reversal_reason TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_debt_payments_debt ON debt_payments(debt_id, paid_at, status)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS payroll_payment_ledger (
+                id TEXT PRIMARY KEY,
+                payroll_key TEXT NOT NULL UNIQUE,
+                employee_id TEXT NOT NULL,
+                payroll_year INTEGER NOT NULL,
+                payroll_month INTEGER NOT NULL,
+                amount REAL NOT NULL CHECK(amount > 0),
+                payment_method TEXT NOT NULL,
+                paid_at TEXT NOT NULL,
+                cash_account TEXT NOT NULL DEFAULT 'quy_cong_ty',
+                reference_no TEXT NOT NULL DEFAULT '',
+                note TEXT NOT NULL DEFAULT '',
+                expense_transaction_id TEXT NOT NULL UNIQUE,
+                status TEXT NOT NULL DEFAULT 'posted' CHECK(status IN ('posted', 'reversed')),
+                created_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                reversed_at TEXT,
+                reversed_by TEXT NOT NULL DEFAULT '',
+                reversal_reason TEXT NOT NULL DEFAULT ''
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_payroll_payment_period ON payroll_payment_ledger(payroll_year, payroll_month, status)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS inventory_movements (
+                id TEXT PRIMARY KEY,
+                product_id TEXT NOT NULL,
+                product_name TEXT NOT NULL DEFAULT '',
+                movement_type TEXT NOT NULL,
+                quantity_change REAL NOT NULL,
+                quantity_before REAL NOT NULL DEFAULT 0,
+                quantity_after REAL NOT NULL DEFAULT 0,
+                movement_date TEXT NOT NULL,
+                source_type TEXT NOT NULL,
+                source_id TEXT,
+                reason TEXT NOT NULL DEFAULT '',
+                created_by TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                status TEXT NOT NULL DEFAULT 'posted' CHECK(status IN ('posted', 'reversed'))
+            )
+            """
+        )
+        movement_columns = set(table_columns(conn, "inventory_movements"))
+        if "product_name" not in movement_columns:
+            conn.execute("ALTER TABLE inventory_movements ADD COLUMN product_name TEXT NOT NULL DEFAULT ''")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_inventory_movements_product ON inventory_movements(product_id, movement_date, created_at)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_inventory_movements_source ON inventory_movements(source_type, source_id)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id TEXT PRIMARY KEY,
+                action TEXT NOT NULL,
+                entity_type TEXT NOT NULL DEFAULT 'system',
+                entity_id TEXT,
+                actor_email TEXT NOT NULL DEFAULT '',
+                detail TEXT NOT NULL DEFAULT '',
+                success INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id, created_at)")
         create_employees_table(conn)
         conn.execute("DELETE FROM sessions WHERE expires_at <= datetime('now')")
         conn.execute("DELETE FROM registration_otps WHERE expires_at <= datetime('now')")
@@ -158,7 +276,7 @@ def init_db(db_path):
     remove_non_email_users(db_path)
 
 
-def migrate_users_schema(db_path):
+def _migrate_users_schema_sqlite(db_path):
     """Chuẩn hóa bảng users chỉ còn 3 quyền: admin, accountant, user.
 
     - boss/admin cũ -> admin
@@ -269,6 +387,68 @@ def migrate_users_schema(db_path):
         conn.close()
 
 
+def migrate_users_schema(db_path):
+    """Chuẩn hóa vai trò và đồng bộ tài khoản với hồ sơ nhân sự trên cả hai DB."""
+    if not is_postgres_target(db_path):
+        return _migrate_users_schema_sqlite(db_path)
+
+    import unicodedata
+
+    def normalize_text(value):
+        text = unicodedata.normalize("NFD", str(value or ""))
+        text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+        text = text.replace("đ", "d").replace("Đ", "D").lower()
+        return " ".join("".join(ch if ch.isalnum() else " " for ch in text).split())
+
+    def is_accounting_employee(row):
+        role_token = normalize_text(row.get("role_type")).replace(" ", "_")
+        if role_token in {"ke_toan", "ketoan", "accountant", "accounting", "finance"}:
+            return True
+        description = normalize_text(f"{row.get('position') or ''} {row.get('dept') or ''}")
+        return any(token in description for token in ("ke toan", "tai chinh", "accountant", "accounting", "finance"))
+
+    with connect(db_path) as conn:
+        conn.execute(
+            """
+            UPDATE users
+            SET role = CASE
+                WHEN lower(trim(role)) IN ('admin', 'boss') THEN 'admin'
+                WHEN lower(trim(role)) = 'accountant' THEN 'accountant'
+                ELSE 'user'
+            END
+            """
+        )
+        if not table_exists(conn, "employees"):
+            return
+        employees = conn.execute(
+            "SELECT id, account_id, email, role_type, position, dept, account_role FROM employees"
+        ).fetchall()
+        for employee in employees:
+            account = None
+            if employee.get("account_id") is not None:
+                account = conn.execute(
+                    "SELECT id, role FROM users WHERE id = ?", (employee["account_id"],)
+                ).fetchone()
+            if account is None and employee.get("email"):
+                account = conn.execute(
+                    "SELECT id, role FROM users WHERE lower(username) = lower(?)",
+                    (employee["email"],),
+                ).fetchone()
+            if account is None:
+                continue
+            if account["role"] == "admin":
+                desired_role = "admin"
+            elif is_accounting_employee(employee) or str(employee.get("account_role") or "").strip().lower() == "accountant":
+                desired_role = "accountant"
+            else:
+                desired_role = "user"
+            conn.execute("UPDATE users SET role = ? WHERE id = ?", (desired_role, account["id"]))
+            conn.execute(
+                "UPDATE employees SET account_id = ?, account_role = ? WHERE id = ?",
+                (account["id"], desired_role, employee["id"]),
+            )
+
+
 def remove_non_email_users(db_path):
     with connect(db_path) as conn:
         rows = conn.execute("SELECT id, username FROM users").fetchall()
@@ -286,13 +466,13 @@ def remove_non_email_users(db_path):
 
 def migrate_chat_schema(db_path):
     with connect(db_path) as conn:
-        message_columns = [row["name"] for row in conn.execute("PRAGMA table_info(chat_messages)").fetchall()]
+        message_columns = set(table_columns(conn, "chat_messages"))
         if "deleted_at" not in message_columns:
             conn.execute("ALTER TABLE chat_messages ADD COLUMN deleted_at TEXT")
-        group_message_columns = [row["name"] for row in conn.execute("PRAGMA table_info(chat_group_messages)").fetchall()]
+        group_message_columns = set(table_columns(conn, "chat_group_messages"))
         if "deleted_at" not in group_message_columns:
             conn.execute("ALTER TABLE chat_group_messages ADD COLUMN deleted_at TEXT")
-        read_columns = [row["name"] for row in conn.execute("PRAGMA table_info(chat_group_reads)").fetchall()]
+        read_columns = set(table_columns(conn, "chat_group_reads"))
         if "last_read_message_id" not in read_columns:
             conn.execute("ALTER TABLE chat_group_reads ADD COLUMN last_read_message_id INTEGER NOT NULL DEFAULT 0")
             conn.execute(

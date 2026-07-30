@@ -1,7 +1,7 @@
 import unicodedata
 
 from db import session_store, user_store
-from security import verify_password
+from security import password_needs_rehash, verify_password
 
 
 def _password_candidates(password):
@@ -21,8 +21,13 @@ def login(db_path, email, password):
     if not user_store.is_email(email):
         return None
     row = user_store.get_user_by_email(db_path, email, active_only=True)
-    if not row or not any(verify_password(candidate, row["password_hash"]) for candidate in _password_candidates(password)):
+    if not row:
         return None
+    matched_password = next((candidate for candidate in _password_candidates(password) if verify_password(candidate, row["password_hash"])), None)
+    if matched_password is None:
+        return None
+    if password_needs_rehash(row["password_hash"]):
+        user_store.update_password(db_path, email, matched_password)
     token = session_store.create_session(db_path, row["id"])
     return {"token": token, "user": user_store.public_user(row)}
 

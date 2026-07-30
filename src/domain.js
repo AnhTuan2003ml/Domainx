@@ -12,6 +12,14 @@
 // ---------- Tiền tệ ----------
 export const roundVND = (n) => Math.round(Number(n) || 0);
 export const toNum = (n) => Number(n) || 0;
+export const localDateOnly = (value = new Date()) => {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
 
 // ---------- Phân quyền tập trung ----------
 // Chưa có role "kế toán" riêng trong bảng users (chỉ admin/user) — dùng roleType hồ sơ
@@ -327,7 +335,7 @@ export function recordDebtPayment(debt, { amount, date, paymentMethod, reference
   if (dupTx) return { error: "Lần thanh toán này đã có giao dịch Thu Chi — không tạo trùng." };
   const transaction = makeTransaction({
     id: paymentId + 1,
-    date: date || new Date().toISOString().slice(0, 10),
+    date: date || localDateOnly(),
     kind: debt.type === "thu" ? "thu" : "chi",
     category: debt.type === "thu" ? "Thu công nợ" : "Trả công nợ",
     desc: `${debt.type === "thu" ? "Thu nợ từ" : "Trả nợ cho"} ${debt.counterpartyName}${debt.settlementCode ? ` — ${debt.settlementCode}` : ""}${note ? " — " + note : ""}`,
@@ -452,7 +460,7 @@ export function buildStockMovement({ productId, movementType, quantity, date, so
     movementType,
     quantity: Math.abs(toNum(quantity) || 1),
     delta: sign * Math.abs(toNum(quantity) || 1),
-    date: date || new Date().toISOString().slice(0, 10),
+    date: date || localDateOnly(),
     sourceModule: sourceModule || "manual",
     sourceId: sourceId ?? null,
     note: note || "",
@@ -530,6 +538,211 @@ export function diffAudit(oldObj, newObj, fields, changedBy) {
   return entries;
 }
 
+
+// ---------- DOANH THU & LỢI NHUẬN TẬP TRUNG ----------
+// Đơn CRM là nguồn sự thật của DOANH THU GHI NHẬN. Bút toán Thu chỉ phản ánh tiền
+// thực tế đã về quỹ. Hai con số được tách riêng để báo cáo lợi nhuận không bỏ sót đơn
+// chưa thu và báo cáo dòng tiền không coi công nợ là tiền mặt.
+const CANCELLED_ORDER_STATUSES = new Set(["cancelled", "canceled", "deleted", "huy", "đã hủy", "da_huy"]);
+
+export function recognizedOrderAmount(order) {
+  if (!order || CANCELLED_ORDER_STATUSES.has(String(order.orderStatus || order.status || "").trim().toLowerCase())) return 0;
+  return Math.max(0, toNum(order.amount));
+}
+
+export function collectedOrderAmount(order) {
+  const recognized = recognizedOrderAmount(order);
+  if (!recognized) return 0;
+  const explicitPaid = Math.max(0, toNum(order.customerPaidAmount));
+  if (explicitPaid > 0) return Math.min(explicitPaid, recognized);
+  const status = String(order.customerPaymentStatus || "").toLowerCase();
+  if (status === "paid" || (!status && order.linkedTxId)) return recognized;
+  return 0;
+}
+
+function recognizedDistributionAmount(order) {
+  if (!order || order.orderKind === "purchase" || order.countsAsRevenue === false || order.sourceCrmOrderId) return 0;
+  if (CANCELLED_ORDER_STATUSES.has(String(order.orderStatus || order.status || "").trim().toLowerCase())) return 0;
+  return Math.max(0, toNum(order.revenue));
+}
+
+function collectedDistributionAmount(order) {
+  const recognized = recognizedDistributionAmount(order);
+  if (!recognized) return 0;
+  const paid = Math.max(0, toNum(order.customerPaidAmount));
+  if (paid > 0) return Math.min(paid, recognized);
+  return String(order.customerPaymentStatus || "").toLowerCase() === "paid" ? recognized : 0;
+}
+
+export function computeRevenueLedger({ transactions = [], orders = [], marketingLogs = [], distributionOrders = [] } = {}, year, month) {
+  const inPeriod = (dateValue) => {
+    const date = new Date(dateValue);
+    return !Number.isNaN(date.getTime()) && date.getFullYear() === Number(year) && date.getMonth() + 1 === Number(month);
+  };
+
+  const periodOrders = (orders || []).filter((order) => inPeriod(order.date));
+  const crmOrderIds = new Set(periodOrders.map((order) => String(order.id)));
+  const salesRevenue = periodOrders.reduce((sum, order) => sum + recognizedOrderAmount(order), 0);
+  const salesCollected = periodOrders.reduce((sum, order) => sum + collectedOrderAmount(order), 0);
+
+  // Bản ghi phân phối liên kết CRM chỉ phục vụ quyết toán đối tác. Nó không phải một
+  // lần bán thứ hai và luôn bị loại khỏi cả doanh thu lẫn tiền thu của công ty.
+  const standaloneDistributionOrders = (distributionOrders || []).filter(
+    (order) => inPeriod(order.date) && !order.sourceCrmOrderId && order.orderKind !== "purchase" && order.countsAsRevenue !== false
+  );
+  const standaloneDistributionIds = new Set(standaloneDistributionOrders.map((order) => String(order.id)));
+  const distributionRevenue = standaloneDistributionOrders.reduce((sum, order) => sum + recognizedDistributionAmount(order), 0);
+  const distributionCollected = standaloneDistributionOrders.reduce((sum, order) => sum + collectedDistributionAmount(order), 0);
+
+  const periodMarketing = (marketingLogs || []).filter((log) => inPeriod(log.date));
+  const marketingRevenue = periodMarketing.reduce((sum, log) => sum + toNum(log.revenue), 0);
+  const marketingSpend = periodMarketing.reduce((sum, log) => sum + toNum(log.adSpend), 0);
+
+  const validPeriodTransactions = (transactions || []).filter((transaction) => {
+    if (!inPeriod(transaction.date)) return false;
+    const status = String(transaction.status || "").trim().toLowerCase();
+    return !["cancelled", "canceled", "rejected", "huy", "đã hủy", "da_huy"].includes(status);
+  });
+
+  const otherIncome = validPeriodTransactions.filter((transaction) => {
+    if (transaction.kind !== "thu") return false;
+    const source = String(transaction.sourceModule || transaction.source || "").toLowerCase();
+    const linkedOrderId = transaction.orderId ?? transaction.sourceOrderId ?? transaction.sourceId;
+    // Giao dịch thanh toán của đơn/công nợ chỉ là dòng tiền của doanh thu đã ghi nhận,
+    // không phải một lần ghi nhận doanh thu mới.
+    if (["crm", "congno_payment", "payment_ledger", "marketing_daily"].includes(source)) return false;
+    if (linkedOrderId != null && crmOrderIds.has(String(linkedOrderId))) return false;
+    if (linkedOrderId != null && standaloneDistributionIds.has(String(linkedOrderId))) return false;
+    return true;
+  }).reduce((sum, transaction) => sum + toNum(transaction.amount), 0);
+
+  const totalCashIn = validPeriodTransactions
+    .filter((transaction) => transaction.kind === "thu")
+    .reduce((sum, transaction) => sum + toNum(transaction.amount), 0);
+  const totalCashOut = validPeriodTransactions
+    .filter((transaction) => transaction.kind === "chi")
+    .reduce((sum, transaction) => sum + toNum(transaction.amount), 0);
+
+  const manualOperatingExpense = validPeriodTransactions.filter((transaction) => {
+    if (transaction.kind !== "chi") return false;
+    const source = String(transaction.sourceModule || transaction.source || "").toLowerCase();
+    // Chi lương thực tế ảnh hưởng số dư quỹ nhưng chi phí nhân sự đã được tính theo
+    // employerCost trong báo cáo kết quả kinh doanh; không trừ lần hai ở đây.
+    return !["bangluong", "payroll", "payroll_payment", "marketing_daily"].includes(source);
+  }).reduce((sum, transaction) => sum + toNum(transaction.amount), 0);
+
+  // Doanh thu ghi nhận chỉ lấy từ đơn bán hợp lệ. Marketing và các khoản Thu khác
+  // là dữ liệu phân tích/dòng tiền, không phải một lần ghi nhận doanh thu.
+  const totalRevenue = roundVND(salesRevenue + distributionRevenue);
+  // Thu/Chi luôn lấy từ sổ giao dịch theo NGÀY giao dịch, không lấy customerPaidAmount
+  // theo ngày đơn. Nhờ đó khoản khách trả tháng sau không bị kéo ngược về tháng bán.
+  const totalCollected = roundVND(totalCashIn);
+  const operatingExpense = roundVND(totalCashOut);
+  return {
+    salesRevenue: roundVND(salesRevenue),
+    salesCollected: roundVND(salesCollected),
+    salesReceivable: roundVND(Math.max(0, salesRevenue - salesCollected)),
+    distributionRevenue: roundVND(distributionRevenue),
+    distributionCollected: roundVND(distributionCollected),
+    distributionReceivable: roundVND(Math.max(0, distributionRevenue - distributionCollected)),
+    marketingRevenue: roundVND(marketingRevenue),
+    otherIncome: roundVND(otherIncome),
+    totalRevenue,
+    totalCollected,
+    totalCashIn: roundVND(totalCashIn),
+    totalCashOut: roundVND(totalCashOut),
+    totalReceivable: roundVND(
+      Math.max(0, salesRevenue - salesCollected)
+      + Math.max(0, distributionRevenue - distributionCollected)
+    ),
+    manualOperatingExpense: roundVND(manualOperatingExpense),
+    marketingSpend: roundVND(marketingSpend),
+    operatingExpense,
+  };
+}
+
+// ---------- Danh mục Thu Chi chuẩn hoá (dùng chung cho form dropdown + báo cáo) ----------
+export const FINANCE_ENTRY_CATEGORIES = {
+  thu: [
+    ["doanh_thu_ban_hang", "Doanh thu bán hàng"],
+    ["doanh_thu_marketing", "Doanh thu Marketing"],
+    ["thu_cong_no", "Thu công nợ"],
+    ["thu_dich_vu", "Thu dịch vụ"],
+    ["thu_khac", "Thu khác"],
+  ],
+  chi: [
+    ["chi_phi_nhan_su", "Chi phí nhân sự"],
+    ["marketing_ads", "Marketing / quảng cáo"],
+    ["an_uong_tiep_khach", "Ăn uống / tiếp khách"],
+    ["phu_cap_an_trua", "Phụ cấp ăn trưa"],
+    ["luong_thuong", "Lương / thưởng"],
+    ["bhxh", "BHXH"],
+    ["bhyt", "BHYT"],
+    ["bhtn", "BHTN"],
+    ["van_phong", "Văn phòng / CCDC"],
+    ["mat_bang_dien_nuoc", "Mặt bằng / điện nước"],
+    ["nguyen_vat_lieu", "Nguyên vật liệu"],
+    ["di_lai_cong_tac", "Đi lại / công tác phí"],
+    ["chi_van_hanh", "Chi vận hành khác"],
+    ["chi_khac", "Khác"],
+  ],
+};
+
+// Nhãn hiển thị cho category cũ (chuỗi tự do trước khi có dropdown) không khớp danh mục
+// chuẩn nào ở trên — gộp về "Khác" khi hiển thị/lên báo cáo, không sửa dữ liệu gốc đã lưu.
+const FINANCE_CATEGORY_FALLBACK = "chi_khac";
+export function financeCategoryLabel(kind, categoryId) {
+  const list = FINANCE_ENTRY_CATEGORIES[kind === "thu" ? "thu" : "chi"];
+  const found = list.find(([id]) => id === categoryId);
+  return found ? found[1] : list.find(([id]) => id === FINANCE_CATEGORY_FALLBACK)?.[1] || "Khác";
+}
+
+const CHI_CATEGORY_IDS = new Set(FINANCE_ENTRY_CATEGORIES.chi.map(([id]) => id));
+
+// Nhãn "mục đích chi" cho các khoản Chi tự động sinh ra từ module khác (Lương, Hợp tác phân
+// phối...) — các khoản này không đi qua dropdown danh mục nên nhận diện qua sourceModule/source.
+const AUTO_EXPENSE_SOURCE_LABELS = {
+  ...SOURCE_MODULE_LABELS,
+  marketing_daily: "Marketing / quảng cáo",
+};
+
+const NON_ACTIVE_STATUSES = new Set(["cancelled", "canceled", "rejected", "huy", "đã hủy", "da_huy"]);
+
+// Gộp chi phí theo "mục đích chi" (danh mục chuẩn hoặc nguồn tự sinh) cho kỳ year/month —
+// cùng cấp với computeRevenueLedger nhưng cho phía Chi, để trực quan "chi bao nhiêu cho việc gì".
+export function computeExpenseBreakdown(transactions = [], year, month) {
+  const inPeriod = (dateValue) => {
+    const date = new Date(dateValue);
+    return !Number.isNaN(date.getTime()) && date.getFullYear() === Number(year) && date.getMonth() + 1 === Number(month);
+  };
+  const periodExpenses = (transactions || []).filter((t) => {
+    if (t.kind !== "chi" || !inPeriod(t.date)) return false;
+    return !NON_ACTIVE_STATUSES.has(String(t.status || "").trim().toLowerCase());
+  });
+
+  const buckets = new Map();
+  for (const t of periodExpenses) {
+    const rawCategory = String(t.category || "").trim();
+    const source = String(t.sourceModule || t.source || "").toLowerCase();
+    let key = FINANCE_CATEGORY_FALLBACK;
+    let label = "Khác";
+    if (rawCategory && CHI_CATEGORY_IDS.has(rawCategory)) {
+      key = rawCategory;
+      label = financeCategoryLabel("chi", rawCategory);
+    } else if (AUTO_EXPENSE_SOURCE_LABELS[source]) {
+      key = `source:${source}`;
+      label = AUTO_EXPENSE_SOURCE_LABELS[source];
+    }
+    const entry = buckets.get(key) || { category: key, label, amount: 0 };
+    entry.amount += toNum(t.amount);
+    buckets.set(key, entry);
+  }
+
+  return Array.from(buckets.values())
+    .map((entry) => ({ ...entry, amount: roundVND(entry.amount) }))
+    .sort((a, b) => b.amount - a.amount);
+}
+
 // ---------- MIGRATION TỔNG khi load dữ liệu (mục XIII) ----------
 export function migrateAppData(data) {
   if (!data || typeof data !== "object") return data;
@@ -547,9 +760,10 @@ export function migrateAppData(data) {
   out.orders = (out.orders || []).map((o) => ({
     ...o,
     customerId: o.customerId || orderCustomerIds[o.id] || null,
-    // CRM cũ tạo Thu ngay khi tạo đơn → coi như đã thanh toán đủ (giữ giao dịch cũ, mục XIII.2)
-    customerPaymentStatus: o.customerPaymentStatus || (o.linkedTxId ? "paid" : (o.customerPaymentStatus || "paid")),
-    customerPaidAmount: toNum(o.customerPaidAmount ?? (o.linkedTxId ? o.amount : o.amount)),
+    // Dữ liệu cũ chỉ được coi là đã thanh toán khi có bút toán Thu liên kết. Không tự
+    // biến mọi đơn thành đã trả vì điều đó làm mất công nợ và làm sai dòng tiền.
+    customerPaymentStatus: o.customerPaymentStatus || (o.linkedTxId ? "paid" : "unpaid"),
+    customerPaidAmount: toNum(o.customerPaidAmount ?? (o.linkedTxId ? o.amount : 0)),
     auditLog: o.auditLog || [],
   }));
   return out;

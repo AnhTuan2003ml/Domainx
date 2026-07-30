@@ -24,8 +24,14 @@ async function requestJson(path, options = {}) {
     }
   }
   if (!response.ok) {
-    const error = new Error(data.error || `Lỗi API (${response.status})`);
+    const summary = data.error || `Lỗi API (${response.status})`;
+    const detail = typeof data.detail === "string" ? data.detail.trim() : "";
+    const message = detail && detail !== summary ? `${summary}: ${detail}` : summary;
+    const error = new Error(message);
     error.status = response.status;
+    error.detail = detail;
+    error.requestId = data.requestId || "";
+    error.payload = data;
     throw error;
   }
   return data;
@@ -104,6 +110,74 @@ export async function saveAppFields(data) {
   });
 }
 
+
+export async function fetchFinancialSummary(year, month) {
+  return requestJson(appendQuery("/api/financial-summary", { year, month }), { cache: "no-store" });
+}
+
+export async function fetchFinancialSummarySeries(year, month, months = 6) {
+  return requestJson(appendQuery("/api/financial-summary/series", { year, month, months }), { cache: "no-store" });
+}
+
+export async function fetchDebtPaymentHistory(debtId) {
+  return requestJson(appendQuery("/api/company-data/debt-payments", { debtId }), { cache: "no-store" });
+}
+
+export async function fetchInventoryMovements(productId) {
+  return requestJson(appendQuery("/api/company-data/inventory-movements", { productId }), { cache: "no-store" });
+}
+
+export async function createDebtPayment(debtId, payment) {
+  const idempotencyKey = payment?.idempotencyKey || `debt-${debtId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return requestJson("/api/company-data/debt-payments", {
+    method: "POST",
+    headers: { "Idempotency-Key": idempotencyKey },
+    body: JSON.stringify({ debtId, payment: { ...payment, idempotencyKey }, idempotencyKey }),
+  });
+}
+
+export async function deleteDebtPayment(debtId, paymentId, reason) {
+  return requestJson("/api/company-data/debt-payments", {
+    method: "DELETE",
+    body: JSON.stringify({ debtId, paymentId, reason }),
+  });
+}
+
+export async function upsertInventoryProduct(product, openingStock = 0) {
+  return requestJson("/api/company-data/inventory-product", {
+    method: "POST",
+    body: JSON.stringify({ product, openingStock }),
+  });
+}
+
+export async function createPayrollPayment(payload) {
+  return requestJson("/api/company-data/payroll-payments", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function resolvePayrollReconciliation(payload) {
+  return requestJson("/api/company-data/payroll-reconciliation", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function setDirectorPassword(currentPassword, newPassword) {
+  return requestJson("/api/company-data/director-password", {
+    method: "POST",
+    body: JSON.stringify({ currentPassword, newPassword }),
+  });
+}
+
+export async function verifyDirectorPassword(password) {
+  return requestJson("/api/company-data/director-password/verify", {
+    method: "POST",
+    body: JSON.stringify({ password }),
+  });
+}
+
 export async function fetchPayrollWorkflow() {
   return requestJson("/api/payroll/workflow");
 }
@@ -127,6 +201,13 @@ export async function saveEmployees(employees) {
   return requestJson("/api/employees", {
     method: "PUT",
     body: JSON.stringify({ employees }),
+  });
+}
+
+export async function upsertEmployeeWithAccount(employee, password = "") {
+  return requestJson("/api/employees/upsert", {
+    method: "POST",
+    body: JSON.stringify({ employee, password }),
   });
 }
 
@@ -192,6 +273,13 @@ export async function sendChatMessage(recipientEmail, body) {
   return requestJson("/api/chat/messages", {
     method: "POST",
     body: JSON.stringify({ recipientEmail, body }),
+  });
+}
+
+export async function assignSupportRequest(payload) {
+  return requestJson("/api/support/assign", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 
@@ -269,5 +357,13 @@ export async function changePassword(currentPassword, newPassword) {
   return requestJson("/api/auth/password", {
     method: "POST",
     body: JSON.stringify({ currentPassword, newPassword }),
+  });
+}
+
+
+export async function sendAiMessage(payload) {
+  return requestJson("/api/ai/messages", {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
