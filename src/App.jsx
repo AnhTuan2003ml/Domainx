@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useRef, useEffect, useCallback, useLayoutEffect } from "react";
 import { assignSupportRequest, changePassword, clearChatConversation, clearChatGroupConversation, createChatGroup, createDebtPayment, createPayrollPayment, resolvePayrollReconciliation, deleteChatGroup, deleteChatGroupMessage, deleteChatMessage, deleteDebtPayment, deleteEmployee, deleteUser, fetchChatConversations, fetchChatGroupMessages, fetchChatGroups, fetchChatMessages, fetchChatReadReceipts, fetchChatUnread, fetchPayrollWorkflow, fetchTasks, fetchFinancialSummary, fetchFinancialSummarySeries, fetchDebtPaymentHistory, fetchInventoryMovements, getCurrentUser, listEmployees, listUsers, loadAppFields, login, logout, markChatGroupRead, markChatRead, requestPasswordResetOtp, requestRegistrationOtp, resetPasswordWithOtp, saveAppData, saveAppFields, saveEmployees, saveUser, sendChatGroupMessage, sendChatMessage, setDirectorPassword, updateChatGroupMembers, upsertEmployeeWithAccount, upsertInventoryProduct, verifyDirectorPassword, verifyRegistrationOtp, sendAiMessage } from "./api";
 import {
   roundVND, normalizePartner, normalizeDistributionOrder, normalizeDebt,
@@ -535,6 +535,23 @@ const GlobalStyle = () => (
     .ktns-app.dark .domix-db-table thead th { background: #1b2538; color: #aebbd0; border-color: rgba(255,255,255,.08); }
     .ktns-app.dark .domix-db-table tbody td { border-color: rgba(255,255,255,.07); }
     .ktns-app.dark .domix-db-table tbody tr:hover { background: rgba(255,255,255,.035); }
+    /* Viền lưới — mọi bảng dữ liệu trong app đều có viền dọc giữa cột và viền ngang giữa hàng,
+       để dễ dò theo đúng hàng/cột khi bảng nhiều dữ liệu san sát nhau. Khai báo trên chính ô
+       <td>/<th> (không phải <tr>) vì toàn app ép border-collapse: separate (index.css) — ở chế
+       độ này trình duyệt KHÔNG vẽ viền khai báo trên <tr>, chỉ vẽ viền khai báo trên ô. Áp dụng
+       chung 1 lần thay vì sửa từng bảng, trừ vùng in hóa đơn (đã có style in riêng). */
+    .ktns-app table:not(.ktns-print-area *) th,
+    .ktns-app table:not(.ktns-print-area *) td {
+      border-right: 1px solid var(--paper-line);
+      border-bottom: 1px solid var(--paper-line);
+    }
+    .ktns-app table:not(.ktns-print-area *) th:last-child,
+    .ktns-app table:not(.ktns-print-area *) td:last-child {
+      border-right: none;
+    }
+    .ktns-app table:not(.ktns-print-area *) tbody tr:last-child td {
+      border-bottom: none;
+    }
     /* Trung tâm tài chính dùng cùng hệ theme với toàn ứng dụng; light mode không còn
        biến thành một sản phẩm tối riêng biệt. Dark mode vẫn giữ tương phản gốc. */
     .ktns-app:not(.dark) .domix-finance-hub [class*="bg-[#0"],
@@ -551,6 +568,25 @@ const GlobalStyle = () => (
     .ktns-app:not(.dark) .domix-finance-hub [class*="text-[#9"],
     .ktns-app:not(.dark) .domix-finance-hub [class*="text-[#a"] { color: var(--muted) !important; }
     .ktns-app:not(.dark) .domix-finance-hub tbody tr:hover { background: var(--paper) !important; }
+    /* Thanh tổng cộng (chân bảng) trong Trung tâm tài chính LUÔN nền xanh đậm cố định, không đổi
+       theo theme — 2 luật tối màu chữ ở trên vô tình chui vào đây, biến chữ trắng thành chữ tối
+       trên nền tối (không đọc được). Loại vùng thanh tổng khỏi luật đó, trả lại đúng màu sáng. */
+    .ktns-app:not(.dark) .domix-finance-hub .finance-table-footer-dock .text-white,
+    .ktns-app:not(.dark) .domix-finance-hub .finance-table-footer-dock [class*="text-[#d"],
+    .ktns-app:not(.dark) .domix-finance-hub .finance-table-footer-dock [class*="text-[#c"],
+    .ktns-app:not(.dark) .domix-finance-hub .finance-table-footer-dock [class*="text-[#b"],
+    .ktns-app:not(.dark) .domix-finance-hub .finance-table-footer-dock [class*="text-[#7"],
+    .ktns-app:not(.dark) .domix-finance-hub .finance-table-footer-dock [class*="text-[#8"],
+    .ktns-app:not(.dark) .domix-finance-hub .finance-table-footer-dock [class*="text-[#9"],
+    .ktns-app:not(.dark) .domix-finance-hub .finance-table-footer-dock [class*="text-[#a"],
+    .ktns-app:not(.dark) .domix-finance-hub .domix-table-total-bar .text-white,
+    .ktns-app:not(.dark) .domix-finance-hub .domix-table-total-bar [class*="text-[#d"],
+    .ktns-app:not(.dark) .domix-finance-hub .domix-table-total-bar [class*="text-[#c"],
+    .ktns-app:not(.dark) .domix-finance-hub .domix-table-total-bar [class*="text-[#b"],
+    .ktns-app:not(.dark) .domix-finance-hub .domix-table-total-bar [class*="text-[#7"],
+    .ktns-app:not(.dark) .domix-finance-hub .domix-table-total-bar [class*="text-[#8"],
+    .ktns-app:not(.dark) .domix-finance-hub .domix-table-total-bar [class*="text-[#9"],
+    .ktns-app:not(.dark) .domix-finance-hub .domix-table-total-bar [class*="text-[#a"] { color: var(--domix-total-text) !important; }
     /* Modal nền kính mờ (glassmorphism) — sang trọng hơn hẳn nền tối phẳng, dùng chung cho cả 13
        khung popup trong app (Xác nhận, Hoá đơn, Xoá...) — sửa 1 chỗ, áp dụng khắp nơi ngay. */
     .ktns-app [class*="bg-ink/40"] { backdrop-filter: blur(6px) saturate(1.1); -webkit-backdrop-filter: blur(6px) saturate(1.1); animation: ktnsFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
@@ -1220,7 +1256,7 @@ const GlobalStyle = () => (
     /* ---------- Dark Mode — ghi đè trực tiếp lên các class Tailwind cố định (bg-white,
        text-charcoal...) bằng bộ chọn con dưới .dark, không cần sửa hàng nghìn className riêng lẻ. */
     .ktns-app.dark {
-      --paper: #12151C; --paper-line: #2A2F3A; --charcoal: #E7E5E0; --muted: #9CA3AF;
+      --paper: #12151C; --paper-line: #3A4152; --charcoal: #E7E5E0; --muted: #9CA3AF;
       /* Cột đầu/cuối "sticky" và card bảng trên di động (index.css) đọc 2 biến này với fallback
          trắng/xám sáng cứng — chưa từng được định nghĩa lại nên luôn hiện nền trắng lạc quẻ giữa
          nền tối dù chữ đã đổi màu đúng. Khớp với .bg-white/.bg-paper ở dark mode bên dưới. */
@@ -1235,12 +1271,12 @@ const GlobalStyle = () => (
     .ktns-app.dark .text-ink { color: #F2F1ED !important; }
     .ktns-app.dark .text-ink-light { color: #C7CAD3 !important; }
     .ktns-app.dark .text-muted { color: #8B90A0 !important; }
-    .ktns-app.dark .border-paper-line { border-color: #2A2F3A !important; }
+    .ktns-app.dark .border-paper-line { border-color: #3A4152 !important; }
     .ktns-app.dark input, .ktns-app.dark select, .ktns-app.dark textarea {
-      background-color: #171A22 !important; color: #E7E5E0 !important; border-color: #2A2F3A !important;
+      background-color: #171A22 !important; color: #E7E5E0 !important; border-color: #3A4152 !important;
     }
     .ktns-app.dark input::placeholder, .ktns-app.dark textarea::placeholder { color: #6B7080 !important; }
-    .ktns-app.dark .ktns-ledger-lines { background-image: repeating-linear-gradient(to bottom, transparent, transparent 34px, #2A2F3A 35px); }
+    .ktns-app.dark .ktns-ledger-lines { background-image: repeating-linear-gradient(to bottom, transparent, transparent 34px, #3A4152 35px); }
     .ktns-app.dark .ktns-warn-row { background: repeating-linear-gradient(135deg, rgba(181,52,46,0.10), rgba(181,52,46,0.10) 6px, transparent 6px, transparent 12px); }
     .ktns-app.dark ::-webkit-scrollbar-thumb { background: #4A5060; border-color: #12151C; }
     .ktns-app.dark ::-webkit-scrollbar-thumb:hover { background: #6B7280; }
@@ -2773,6 +2809,95 @@ function DomixApp({ authUser, onLogout }) {
   const [inventory, setInventory] = useState(initialInventory);
   const [tasks, setTasks] = useState(initialTasks);
   const [chatUnread, setChatUnread] = useState(0);
+  const chatButtonRef = useRef(null);
+  const chatButtonDragRef = useRef({
+    active: false,
+    pointerId: null,
+    startX: 0,
+    startY: 0,
+    originX: 0,
+    originY: 0,
+    moved: false,
+  });
+  const suppressChatButtonClickRef = useRef(false);
+  const [chatButtonDragging, setChatButtonDragging] = useState(false);
+  const [chatButtonPosition, setChatButtonPosition] = useState(() => {
+    if (typeof window === "undefined") return { x: 24, y: 24 };
+    const size = window.innerWidth >= 640 ? 56 : 48;
+    const fallback = {
+      x: Math.max(12, window.innerWidth - size - 24),
+      y: Math.max(12, window.innerHeight - size - 24),
+    };
+    try {
+      const stored = JSON.parse(window.localStorage.getItem("domix_chat_button_position_v1") || "null");
+      if (stored && Number.isFinite(stored.x) && Number.isFinite(stored.y)) return stored;
+    } catch {}
+    return fallback;
+  });
+  const clampChatButtonPosition = useCallback((position) => {
+    if (typeof window === "undefined") return position;
+    const buttonSize = chatButtonRef.current?.offsetWidth || (window.innerWidth >= 640 ? 56 : 48);
+    const margin = 12;
+    return {
+      x: Math.min(Math.max(margin, Number(position?.x) || margin), Math.max(margin, window.innerWidth - buttonSize - margin)),
+      y: Math.min(Math.max(margin, Number(position?.y) || margin), Math.max(margin, window.innerHeight - buttonSize - margin)),
+    };
+  }, []);
+  useLayoutEffect(() => {
+    const keepInsideViewport = () => setChatButtonPosition((current) => clampChatButtonPosition(current));
+    keepInsideViewport();
+    window.addEventListener("resize", keepInsideViewport);
+    return () => window.removeEventListener("resize", keepInsideViewport);
+  }, [clampChatButtonPosition]);
+  const handleChatButtonPointerDown = useCallback((event) => {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    const current = clampChatButtonPosition(chatButtonPosition);
+    chatButtonDragRef.current = {
+      active: true,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: current.x,
+      originY: current.y,
+      moved: false,
+    };
+    setChatButtonPosition(current);
+    setChatButtonDragging(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }, [chatButtonPosition, clampChatButtonPosition]);
+  const handleChatButtonPointerMove = useCallback((event) => {
+    const drag = chatButtonDragRef.current;
+    if (!drag.active || drag.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(deltaX, deltaY) >= 4) drag.moved = true;
+    if (!drag.moved) return;
+    event.preventDefault();
+    setChatButtonPosition(clampChatButtonPosition({
+      x: drag.originX + deltaX,
+      y: drag.originY + deltaY,
+    }));
+  }, [clampChatButtonPosition]);
+  const finishChatButtonDrag = useCallback((event) => {
+    const drag = chatButtonDragRef.current;
+    if (!drag.active || drag.pointerId !== event.pointerId) return;
+    drag.active = false;
+    setChatButtonDragging(false);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    if (drag.moved) {
+      suppressChatButtonClickRef.current = true;
+      setChatButtonPosition((current) => {
+        const next = clampChatButtonPosition(current);
+        try {
+          window.localStorage.setItem("domix_chat_button_position_v1", JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+      window.setTimeout(() => {
+        suppressChatButtonClickRef.current = false;
+      }, 350);
+    }
+  }, [clampChatButtonPosition]);
   const [seenTaskIds, setSeenTaskIds] = useState(() => readSeenTaskIds(authUser?.email));
   const [taskRealtimeNotice, setTaskRealtimeNotice] = useState(null);
   const [taskSummaryVisible, setTaskSummaryVisible] = useState(false);
@@ -3788,6 +3913,10 @@ function DomixApp({ authUser, onLogout }) {
   }, [attendancePendingCount, payrollCurrentIsBoss, payrollCurrentIsAccountant]);
 
   const allNavGroups = buildNavigationGroups({ lang, t });
+  // Các tab lấy bảng dữ liệu làm trọng tâm — trang không cuộn theo toàn bộ nội dung như
+  // trước nữa, mà chỉ vùng bảng bên trong tự cuộn, để bảng luôn chiếm phần lớn màn hình và
+  // thanh tổng kết (Tổng thu/Tổng chi...) đứng yên ở chân bảng dù cuộn tới đâu.
+  const TABLE_FOCUSED_TABS = ["chat", "marketing", "kho", "nhansu", "chamcong", "luong", "hieusuat", "tuyendung", "thuchi", "congno", "vongop", "taisan", "quy", "hoachdinh", "hoptac", "hopdong", "hotro", "giaoviec", "crm"];
   const effectiveAccountRole = useMemo(() => {
     if (isAdminRole(authUser?.role)) return "admin";
     if (isAccountantRole(authUser?.role)) return "accountant";
@@ -3974,7 +4103,7 @@ function DomixApp({ authUser, onLogout }) {
         isReviewer={payrollCurrentIsBoss || payrollCurrentIsAccountant}
       />
 
-      <main className={`min-w-0 flex-1 h-screen ktns-scrollbar overflow-x-hidden ${["chat", "marketing"].includes(tab) ? "overflow-hidden flex flex-col" : "overflow-y-auto"}`} style={{ position: "relative", zIndex: 1 }}>
+      <main className={`min-w-0 flex-1 h-screen ktns-scrollbar overflow-x-hidden ${TABLE_FOCUSED_TABS.includes(tab) ? "overflow-hidden flex flex-col" : "overflow-y-auto"}`} style={{ position: "relative", zIndex: 1 }}>
         <div data-domix-sticky-shell className="sticky top-0 z-30" style={{ boxShadow: "0 2px 8px rgba(20,20,15,0.05)" }}>
         <header className="flex flex-wrap items-center justify-between gap-3 border-b border-paper-line bg-white px-3 py-3 sm:px-4 lg:px-8 lg:py-4">
           <div className="flex min-w-0 items-center gap-3">
@@ -4044,7 +4173,7 @@ function DomixApp({ authUser, onLogout }) {
         })()}
         </div>
 
-        <div className={tab === "chat" ? "flex-1 min-h-0 p-0 overflow-hidden" : tab === "marketing" ? "flex-1 min-h-0 overflow-hidden p-2 pb-24 sm:p-3 sm:pb-24 xl:p-4 xl:pb-24" : "p-3 pb-24 sm:p-4 sm:pb-24 lg:p-8 lg:pb-24"} key={tab} style={{ animation: "ktnsFadeIn 0.2s ease" }}>
+        <div className={tab === "chat" ? "flex-1 min-h-0 p-0 overflow-hidden" : TABLE_FOCUSED_TABS.includes(tab) ? "flex-1 min-h-0 overflow-hidden p-2 sm:p-3 xl:p-4" : "p-3 pb-24 sm:p-4 sm:pb-24 lg:p-8 lg:pb-24"} key={tab} style={{ animation: "ktnsFadeIn 0.2s ease" }}>
           {!activeTabAllowed ? (
             <div className="rounded-xl border border-stamp-red/30 bg-stamp-red/5 p-6 text-sm text-stamp-red">Tài khoản của bạn không có quyền mở khu vực này.</div>
           ) : !activeTabDataReady ? (
@@ -4097,15 +4226,28 @@ function DomixApp({ authUser, onLogout }) {
       )}
 
       {tab !== "chat" && <button
+        ref={chatButtonRef}
         type="button"
-        onClick={() => setTab("chat")}
-        className="fixed bottom-[calc(1rem+env(safe-area-inset-bottom))] right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-ink text-white shadow-xl transition-all hover:bg-ink-light sm:bottom-6 sm:right-6 sm:h-14 sm:w-14"
-        title="Mở tin nhắn"
-        aria-label="Mở tin nhắn"
+        onClick={() => {
+          if (suppressChatButtonClickRef.current) {
+            suppressChatButtonClickRef.current = false;
+            return;
+          }
+          setTab("chat");
+        }}
+        onPointerDown={handleChatButtonPointerDown}
+        onPointerMove={handleChatButtonPointerMove}
+        onPointerUp={finishChatButtonDrag}
+        onPointerCancel={finishChatButtonDrag}
+        className="domix-draggable-chat-button fixed z-40 flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-ink text-white shadow-xl transition-[background-color,box-shadow,transform] hover:bg-ink-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gold focus-visible:ring-offset-2 sm:h-14 sm:w-14"
+        style={{ left: chatButtonPosition.x, top: chatButtonPosition.y }}
+        data-dragging={chatButtonDragging ? "true" : "false"}
+        title="Kéo để đổi vị trí · Bấm để mở tin nhắn"
+        aria-label="Mở tin nhắn; có thể kéo nút đến vị trí khác"
       >
         <MessageCircle size={25} />
         {chatUnread > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-6 h-6 px-1 rounded-full bg-stamp-red text-white text-xs font-bold flex items-center justify-center border-2 border-white">
+          <span className="pointer-events-none absolute -top-1 -right-1 min-w-6 h-6 px-1 rounded-full bg-stamp-red text-white text-xs font-bold flex items-center justify-center border-2 border-white">
             {chatUnread > 99 ? "99+" : chatUnread}
           </span>
         )}
@@ -5024,39 +5166,34 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-2">
       <div ref={printRef} className="ktns-print-area"></div>
 
       {blockedMsg && (
-        <div className="bg-stamp-red/10 border border-stamp-red text-stamp-red text-xs rounded-md px-3 py-2 flex items-center gap-2">
+        <div className="shrink-0 bg-stamp-red/10 border border-stamp-red text-stamp-red text-xs rounded-md px-3 py-2 flex items-center gap-2">
           <AlertTriangle size={13} /> {blockedMsg}
         </div>
       )}
 
-      <div style={{ display: activeTableView === "transactions" ? "grid" : "none" }} className="grid-cols-4 gap-3">
-        <KpiCard icon={TrendingUp} label="Tổng thu (đang lọc)" value={fmtVND(sumThu)} tone="up" />
-        <KpiCard icon={TrendingDown} label="Tổng chi (đang lọc)" value={fmtVND(sumChi)} tone="down" />
-        <KpiCard icon={Wallet} label="Chênh lệch" value={fmtVND(sumThu - sumChi)} tone={sumThu - sumChi >= 0 ? "up" : "down"} />
-        <KpiCard icon={AlertTriangle} label="Chờ bổ sung hóa đơn" value={missingCount} tone={missingCount > 0 ? "down" : "up"} />
+      <div className="shrink-0">
+        <SectionViewSwitcher
+          value={activeTableView}
+          onChange={setActiveTableView}
+          options={[
+            { id: "transactions", label: "Danh sách giao dịch", icon: Wallet, count: filteredTransactions.length },
+            { id: "vat_output", label: "VAT đầu ra", icon: TrendingUp, count: vatOutputRows.length },
+            { id: "vat_input", label: "VAT đầu vào", icon: TrendingDown, count: vatInputRows.length },
+          ]}
+        />
       </div>
 
-      <SectionViewSwitcher
-        value={activeTableView}
-        onChange={setActiveTableView}
-        options={[
-          { id: "transactions", label: "Danh sách giao dịch", icon: Wallet, count: filteredTransactions.length },
-          { id: "vat_output", label: "VAT đầu ra", icon: TrendingUp, count: vatOutputRows.length },
-          { id: "vat_input", label: "VAT đầu vào", icon: TrendingDown, count: vatInputRows.length },
-        ]}
-      />
-
-      <div style={{ display: activeTableView === "transactions" ? "flex" : "none" }} className="justify-between items-center flex-wrap gap-2">
+      <div style={{ display: activeTableView === "transactions" ? "flex" : "none" }} className="shrink-0 justify-between items-center flex-wrap gap-2">
         <p className="text-xs text-muted">Danh sách giao dịch và chứng từ trong kỳ.</p>
         <button onClick={() => { setForm(blankTx); setEditingId(null); setShowForm(true); }} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light"><Plus size={15} /> Thêm giao dịch</button>
       </div>
 
       {showForm && (
-        <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
+        <div className="shrink-0 domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
           <button type="button" className="absolute top-3 right-3 inline-flex min-h-10 min-w-10 items-center justify-center text-muted" onClick={closeForm} aria-label="Đóng biểu mẫu" title="Đóng"><X size={16} /></button>
           <h3 className="ktns-serif font-semibold text-ink mb-2">{isCrmLocked ? "Xử lý hoá đơn cho đơn từ CRM" : editingId ? "Sửa giao dịch" : "Giao dịch mới"}</h3>
           {isCrmLocked && (
@@ -5126,7 +5263,7 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-paper-line p-3 flex items-center gap-2 flex-wrap">
+      <div className="shrink-0 bg-white rounded-lg border border-paper-line p-3 flex items-center gap-2 flex-wrap">
         <RangeModePicker rangeMode={rangeMode} setRangeMode={setRangeMode} rangeFrom={rangeFrom} setRangeFrom={setRangeFrom} rangeTo={rangeTo} setRangeTo={setRangeTo} reportMonth={reportMonth} reportYear={reportYear} show={showRangePicker} setShow={setShowRangePicker} />
         <select value={filterKind} onChange={(e) => setFilterKind(e.target.value)} className="border border-paper-line rounded px-2.5 py-1.5 text-xs"><option value="all">Tất cả loại</option><option value="thu">Chỉ Thu</option><option value="chi">Chỉ Chi</option></select>
         <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="border border-paper-line rounded px-2.5 py-1.5 text-xs"><option value="all">Tất cả hóa đơn</option><option value="ok">Đã có hóa đơn</option><option value="missing">Chờ bổ sung hóa đơn</option></select>
@@ -5166,18 +5303,13 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
           );
         };
         return (
-          <div className="flex flex-col gap-3">
-            <div className="grid grid-cols-3 gap-3">
-              <KpiCard icon={isOutput ? TrendingUp : TrendingDown} label={isOutput ? "VAT đầu ra" : "VAT đầu vào"} value={fmtVND(vatAmount)} tone={isOutput ? "up" : "down"} />
-              <KpiCard icon={Landmark} label={vatPayable >= 0 ? "VAT phải nộp" : "VAT được khấu trừ"} value={fmtVND(Math.abs(vatPayable))} tone={vatPayable >= 0 ? "down" : "up"} />
-              <KpiCard icon={FileText} label="Số chứng từ" value={rows.length} />
-            </div>
-            <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
-              <div className={`px-4 py-3 text-xs font-semibold uppercase flex items-center gap-1.5 ${isOutput ? "text-ledger-green" : "text-stamp-red"}`}>
+          <div className="flex h-full min-h-0 flex-col gap-2">
+            <div className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
+              <div className={`shrink-0 px-4 py-3 text-xs font-semibold uppercase flex items-center gap-1.5 ${isOutput ? "text-ledger-green" : "text-stamp-red"}`}>
                 {isOutput ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
                 {isOutput ? "VAT đầu ra — công ty bán ra" : "VAT đầu vào — công ty mua vào"}
               </div>
-              <div className="max-h-[560px] overflow-y-auto">
+              <div className="min-h-0 flex-1 overflow-auto">
                 <table data-sticky-columns="true" data-mobile-cards="true" className="w-full text-sm">
                   <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-[10px] uppercase text-muted"><th className="px-3 py-2">Ngày</th><th className="px-3 py-2">Danh mục</th><th className="px-3 py-2">Mô tả</th><th className="px-3 py-2">Đối tác</th><th className="px-3 py-2 text-right">Số tiền</th><th className="px-3 py-2 text-right">VAT</th></tr></thead>
                   <tbody>
@@ -5186,13 +5318,20 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
                   </tbody>
                 </table>
               </div>
-              <p className="px-4 py-2.5 text-[10px] text-muted border-t border-paper-line">Chỉ tính giao dịch có hóa đơn GTGT. Giao dịch thu hộ đối tác mà VAT do đối tác chịu không được tính vào nghĩa vụ VAT của công ty.</p>
+              <div className="domix-table-total-bar shrink-0 border-t border-paper-line bg-paper px-3 py-2.5 font-semibold">
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
+                  <span className="text-muted">{isOutput ? "VAT đầu ra" : "VAT đầu vào"}: <strong className={isOutput ? "text-ledger-green" : "text-stamp-red"}>{fmtVND(vatAmount)}</strong></span>
+                  <span className="text-muted">{vatPayable >= 0 ? "VAT phải nộp" : "VAT được khấu trừ"}: <strong>{fmtVND(Math.abs(vatPayable))}</strong></span>
+                  <span className="text-muted">Số chứng từ: <strong className="text-ink">{rows.length}</strong></span>
+                </div>
+              </div>
+              <p className="shrink-0 px-4 py-2.5 text-[10px] text-muted border-t border-paper-line">Chỉ tính giao dịch có hóa đơn GTGT. Giao dịch thu hộ đối tác mà VAT do đối tác chịu không được tính vào nghĩa vụ VAT của công ty.</p>
             </div>
           </div>
         );
       })()}
 
-      <div style={{ display: activeTableView === "transactions" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line p-4">
+      <div style={{ display: activeTableView === "transactions" ? undefined : "none" }} className="shrink-0 bg-white rounded-lg border border-paper-line p-4">
         <div className="text-xs font-semibold text-ink uppercase mb-2 flex items-center gap-1.5"><Printer size={13} /> In hóa đơn theo khoảng ngày — phục vụ khi cơ quan thuế kiểm tra</div>
         <div className="flex items-end gap-3 flex-wrap">
           <label className="text-xs text-muted flex flex-col gap-1">Từ ngày<input type="date" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
@@ -5203,8 +5342,8 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
         </div>
       </div>
 
-      <div style={{ display: activeTableView === "transactions" ? undefined : "none" }} className="order-2 bg-white rounded-lg border border-paper-line overflow-hidden">
-        <div className="max-h-[520px] overflow-y-auto">
+      <div style={{ display: activeTableView === "transactions" ? "flex" : "none" }} className="order-2 min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
+        <div className="min-h-0 flex-1 overflow-auto">
         <table data-sticky-columns="true" data-mobile-cards="true" className="w-full text-sm">
           <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-4 py-2.5">STT</th><th className="px-4 py-2.5">Ngày</th><th className="px-4 py-2.5">Danh mục</th><th className="px-4 py-2.5">Mô tả</th><th className="px-4 py-2.5">Đối tác</th><th className="px-4 py-2.5 text-right">Số tiền</th><th className="px-4 py-2.5">Loại hóa đơn</th><th className="px-4 py-2.5">Đính kèm</th><th className="px-4 py-2.5">Trạng thái</th><th className="px-4 py-2.5"></th><th className="px-2 py-2.5"></th></tr></thead>
           <tbody>
@@ -5338,6 +5477,14 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
           </tbody>
         </table>
         </div>
+        <div className="domix-table-total-bar shrink-0 border-t border-paper-line bg-paper px-4 py-2.5 font-semibold">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
+            <span className="text-muted">Tổng thu (đang lọc): <strong className="text-ledger-green">{fmtVND(sumThu)}</strong></span>
+            <span className="text-muted">Tổng chi (đang lọc): <strong className="text-stamp-red">{fmtVND(sumChi)}</strong></span>
+            <span className="text-muted">Chênh lệch: <strong className={sumThu - sumChi >= 0 ? "text-ledger-green" : "text-stamp-red"}>{fmtVND(sumThu - sumChi)}</strong></span>
+            <span className={missingCount > 0 ? "text-stamp-red" : "text-muted"}>Chờ bổ sung hóa đơn: <strong>{missingCount}</strong></span>
+          </div>
+        </div>
       </div>
 
       {viewAttachment && (
@@ -5422,13 +5569,13 @@ function VonGop({ contributions, setContributions, company, setCompany, totalCon
   const daysLeft = company.establishedDate ? Math.ceil((new Date(company.establishedDate).getTime() + 90 * 86400000 - TODAY.getTime()) / 86400000) : null;
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <div className="shrink-0 bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
         <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
         <span>Vốn góp là tiền/tài sản chủ sở hữu-thành viên-cổ đông đưa vào công ty để vận hành, khác với doanh thu kinh doanh. Vốn góp bằng <strong className="text-charcoal">tiền mặt</strong> được cộng vào Số dư quỹ ở Dashboard; góp bằng <strong className="text-charcoal">nhà đất/tài sản khác</strong> tính vào vốn điều lệ nhưng không phải tiền mặt trong quỹ.</span>
       </div>
 
-      <div className="bg-white rounded-lg border border-paper-line p-5">
+      <div className="shrink-0 bg-white rounded-lg border border-paper-line p-5">
         <h3 className="ktns-serif font-semibold text-ink mb-4 flex items-center gap-2"><Landmark size={16} /> Vốn điều lệ đăng ký</h3>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
           <label className="text-xs text-muted flex flex-col gap-1">Vốn điều lệ đăng ký (theo GCN ĐKDN, đ)
@@ -5451,13 +5598,7 @@ function VonGop({ contributions, setContributions, company, setCompany, totalCon
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-4">
-        <KpiCard icon={Coins} label="Vốn điều lệ đăng ký" value={fmtVND(registeredCapital)} />
-        <KpiCard icon={Landmark} label="Đã góp thực tế" value={fmtVND(totalContributed)} tone="up" sub={registeredCapital > 0 ? `${contributedPct}% vốn điều lệ` : ""} />
-        <KpiCard icon={Users} label="Tổng tỷ lệ sở hữu đã ghi nhận" value={`${totalOwnershipPct}%`} tone={totalOwnershipPct === 100 ? "up" : totalOwnershipPct > 100 ? "down" : undefined} sub={totalOwnershipPct !== 100 ? "Nên khớp đủ 100%" : "Khớp đủ 100%"} />
-      </div>
-
-      <div className="flex justify-between items-center">
+      <div className="shrink-0 flex justify-between items-center">
         <p className="text-sm text-muted">{contributions.length} lượt góp vốn đã ghi nhận.</p>
         <div className="flex gap-2">
           <button onClick={() => exportCapitalExcel(contributions, company)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90">
@@ -5470,7 +5611,7 @@ function VonGop({ contributions, setContributions, company, setCompany, totalCon
       </div>
 
       {showForm && (
-        <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
+        <div className="shrink-0 domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
           <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={async () => { if ((form.contributorName || form.value) && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setSaveError(""); setShowForm(false); }}><X size={16} /></button>
           <h3 className="ktns-serif font-semibold text-ink mb-4">{editingContributionId ? "Sửa lượt góp vốn" : "Ghi nhận góp vốn"}</h3>
           <div className="grid grid-cols-4 gap-3">
@@ -5500,7 +5641,8 @@ function VonGop({ contributions, setContributions, company, setCompany, totalCon
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+      <div className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
+        <div className="min-h-0 flex-1 overflow-auto">
         <table data-sticky-columns="true" className="w-full text-sm">
           <thead>
             <tr className="bg-paper text-left text-xs uppercase text-muted">
@@ -5534,8 +5676,16 @@ function VonGop({ contributions, setContributions, company, setCompany, totalCon
             ))}
           </tbody>
         </table>
+        </div>
+        <div className="domix-table-total-bar shrink-0 border-t border-paper-line bg-paper px-4 py-2.5 font-semibold">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
+            <span className="text-muted">Vốn điều lệ đăng ký: <strong className="text-ink">{fmtVND(registeredCapital)}</strong></span>
+            <span className="text-muted">Đã góp thực tế: <strong className="text-ledger-green">{fmtVND(totalContributed)}</strong>{registeredCapital > 0 ? ` (${contributedPct}%)` : ""}</span>
+            <span className={totalOwnershipPct === 100 ? "text-ledger-green" : "text-stamp-red"}>Tổng tỷ lệ sở hữu: <strong>{totalOwnershipPct}%</strong>{totalOwnershipPct !== 100 ? " (nên khớp đủ 100%)" : ""}</span>
+          </div>
+        </div>
       </div>
-      <p className="text-xs text-muted">* Hình thức góp vốn hợp pháp theo Điều 34 Luật Doanh nghiệp 2020: Đồng Việt Nam, ngoại tệ tự do chuyển đổi, vàng, quyền sử dụng đất, quyền sở hữu trí tuệ/công nghệ/bí quyết kỹ thuật, tài sản khác định giá được bằng VNĐ. Thông tin ở đây mang tính tham khảo, không thay thế tư vấn của luật sư/kế toán khi làm thủ tục với cơ quan đăng ký kinh doanh.</p>
+      <p className="shrink-0 text-xs text-muted">* Hình thức góp vốn hợp pháp theo Điều 34 Luật Doanh nghiệp 2020: Đồng Việt Nam, ngoại tệ tự do chuyển đổi, vàng, quyền sử dụng đất, quyền sở hữu trí tuệ/công nghệ/bí quyết kỹ thuật, tài sản khác định giá được bằng VNĐ. Thông tin ở đây mang tính tham khảo, không thay thế tư vấn của luật sư/kế toán khi làm thủ tục với cơ quan đăng ký kinh doanh.</p>
     </div>
   );
 }
@@ -6080,7 +6230,8 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <div className="shrink-0 flex flex-col gap-4">
       <div style={{ display: activeTableView === "summary" ? undefined : "none" }} className="rounded-lg border border-paper-line bg-white px-3 py-2 text-xs text-muted">
         Tổng quan dòng tiền, hóa đơn và công nợ theo từng đối tác. Chọn một bảng phía trên để xử lý công việc cụ thể.
       </div>
@@ -6102,7 +6253,9 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
           { id: "purchases", label: "Đơn nhập hàng", icon: Package, count: purchaseOrders.length },
         ]}
       />
+      </div>
 
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
       {/* ---------- HỒ SƠ QUYẾT TOÁN (mục IV): hóa đơn ≠ tiền, duyệt ≠ tiền — tiền chỉ vào Thu Chi khi ghi nhận thanh toán ---------- */}
       <div style={{ display: activeTableView === "settlements" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="px-4 py-3 flex items-center justify-between flex-wrap gap-2 border-b border-paper-line bg-paper/60">
@@ -6834,6 +6987,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
           </div>
         );
       })()}
+      </div>
     </div>
   );
 }
@@ -6907,25 +7061,18 @@ function HopDong({ contracts, setContracts, partners, employees }) {
   const expiredCount = contracts.filter((c) => statusOf(c) === "het_han").length;
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <div className="shrink-0 bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
         <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
         <span>Lưu trữ hợp đồng với đối tác phân phối, khách hàng lớn, nhà cung cấp, nhân viên — kèm file scan thật, tự cảnh báo trước 30 ngày khi sắp hết hạn để kịp gia hạn/đàm phán lại.</span>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard icon={FileSignature} label="Tổng hợp đồng" value={contracts.length} />
-        <KpiCard icon={Wallet} label="Tổng giá trị" value={fmtVND(contracts.reduce((a, c) => a + c.value, 0))} />
-        <KpiCard icon={AlertTriangle} label="Sắp hết hạn (≤30 ngày)" value={expiringCount} tone={expiringCount > 0 ? "down" : "up"} />
-        <KpiCard icon={AlertTriangle} label="Đã hết hạn" value={expiredCount} tone={expiredCount > 0 ? "down" : "up"} />
-      </div>
-
-      <button onClick={() => { setEditingContractId(null); setForm(blankForm); setShowForm(true); }} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light w-fit">
+      <button onClick={() => { setEditingContractId(null); setForm(blankForm); setShowForm(true); }} className="shrink-0 flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light w-fit">
         <Plus size={15} /> Thêm hợp đồng
       </button>
 
       {showForm && (
-        <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-4">
+        <div className="shrink-0 domix-inline-form-modal bg-white rounded-lg border border-paper-line p-4">
           <div className="grid grid-cols-3 gap-3">
             <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Tên/số hợp đồng<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="VD: HĐ Nhượng quyền Say Media 2026" className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Loại
@@ -6951,8 +7098,8 @@ function HopDong({ contracts, setContracts, partners, employees }) {
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
-        <div className="max-h-[420px] overflow-y-auto">
+      <div className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
+        <div className="min-h-0 flex-1 overflow-auto">
         <table data-sticky-columns="true" className="w-full text-sm">
           <thead className="sticky top-0 z-10">
             <tr className="bg-paper text-left text-xs uppercase text-muted">
@@ -6988,6 +7135,14 @@ function HopDong({ contracts, setContracts, partners, employees }) {
             })}
           </tbody>
         </table>
+        </div>
+        <div className="domix-table-total-bar shrink-0 border-t border-paper-line bg-paper px-4 py-2.5 font-semibold">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
+            <span className="text-muted">Tổng hợp đồng: <strong className="text-ink">{contracts.length}</strong></span>
+            <span className="text-muted">Tổng giá trị: <strong className="text-ledger-green">{fmtVND(contracts.reduce((a, c) => a + c.value, 0))}</strong></span>
+            <span className={expiringCount > 0 ? "text-stamp-red" : "text-muted"}>Sắp hết hạn (≤30 ngày): <strong>{expiringCount}</strong></span>
+            <span className={expiredCount > 0 ? "text-stamp-red" : "text-muted"}>Đã hết hạn: <strong>{expiredCount}</strong></span>
+          </div>
         </div>
       </div>
 
@@ -7258,8 +7413,8 @@ function CongNo({ debts, setDebts, setTransactions, transactions, paymentLedger 
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={tableOptions} />
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <div className="shrink-0"><SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={tableOptions} /></div>
 
       {activeTableView === "summary" && (
         <div className="grid grid-cols-3 gap-4">
@@ -7288,8 +7443,8 @@ function CongNo({ debts, setDebts, setTransactions, transactions, paymentLedger 
         </div>
       )}
 
-      {activeTableView === "debts" && (<>
-      <div className="flex justify-between items-center flex-wrap gap-2">
+      {activeTableView === "debts" && (<div className="flex h-full min-h-0 flex-col gap-2">
+      <div className="shrink-0 flex justify-between items-center flex-wrap gap-2">
         <div className="flex gap-2 flex-wrap">
           {DEBT_GROUPS.map(([id, label]) => (
             <button key={id} onClick={() => setFilter(id)} className={`ktns-role-pill ${filter === id ? "active" : ""}`}>{label}</button>
@@ -7306,7 +7461,7 @@ function CongNo({ debts, setDebts, setTransactions, transactions, paymentLedger 
       </div>
 
       {showForm && (
-        <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
+        <div className="shrink-0 domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
           <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={async () => { if ((form.partner || form.amount) && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setSaveError(""); setShowForm(false); }}><X size={16} /></button>
           <h3 className="ktns-serif font-semibold text-ink mb-4">{editingDebtId ? "Sửa khoản công nợ" : "Khoản công nợ mới"}</h3>
           <div className="grid grid-cols-4 gap-3">
@@ -7336,8 +7491,8 @@ function CongNo({ debts, setDebts, setTransactions, transactions, paymentLedger 
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
-        <div className="max-h-[480px] overflow-y-auto">
+      <div className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
+        <div className="min-h-0 flex-1 overflow-auto">
         <table data-sticky-columns="true" data-mobile-cards="true" className="w-full text-sm">
           <thead className="sticky top-0 z-10">
             <tr className="bg-paper text-left text-xs uppercase text-muted">
@@ -7426,10 +7581,17 @@ function CongNo({ debts, setDebts, setTransactions, transactions, paymentLedger 
           </tbody>
         </table>
         </div>
+        <div className="domix-table-total-bar shrink-0 border-t border-paper-line bg-paper px-3 py-2.5 font-semibold">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
+            <span className="text-muted">Tổng phải thu: <strong className="text-ledger-green">{fmtVND(receivable)}</strong></span>
+            <span className="text-muted">Tổng phải trả: <strong className="text-stamp-red">{fmtVND(payable)}</strong></span>
+            <span className={overdue.length > 0 ? "text-stamp-red" : "text-muted"}>Khoản quá hạn: <strong>{overdue.length}</strong></span>
+          </div>
+        </div>
       </div>
-      <p className="text-xs text-muted">* Bấm vào dòng để xem lịch sử và dấu vết kiểm toán. Mỗi lần thu/trả có mã giao dịch riêng; thao tác hủy tạo bút toán đảo, không xóa dấu vết và số dư được tính lại từ sổ giao dịch.</p>
+      <p className="shrink-0 text-xs text-muted">* Bấm vào dòng để xem lịch sử và dấu vết kiểm toán. Mỗi lần thu/trả có mã giao dịch riêng; thao tác hủy tạo bút toán đảo, không xóa dấu vết và số dư được tính lại từ sổ giao dịch.</p>
 
-      </>)}
+      </div>)}
 
       {reversalTarget && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/45 p-4">
@@ -7557,20 +7719,13 @@ function TaiSanCoDinh({ assets, setAssets, setTransactions, reportYear, reportMo
   const totalMonthlyDep = assets.filter((a) => !isFullyDep(a)).reduce((a, x) => a + monthlyDep(x), 0);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <div className="shrink-0 bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
         <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
         <span>Theo dõi tài sản cố định (TK 211/214) và công cụ dụng cụ phân bổ dần (TK 242) — khấu hao/phân bổ tính theo đường thẳng (nguyên giá chia đều số tháng sử dụng). Bấm "Ghi nhận khấu hao tháng này" để tự động tạo đúng khoản Chi tương ứng bên Thu Chi, không cần nhập tay hàng tháng.</span>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
-        <KpiCard icon={Archive} label="Tổng nguyên giá" value={fmtVND(totalCost)} />
-        <KpiCard icon={Wallet} label="Giá trị còn lại" value={fmtVND(totalRemaining)} tone="up" />
-        <KpiCard icon={TrendingDown} label="Khấu hao/phân bổ mỗi tháng" value={fmtVND(totalMonthlyDep)} tone="down" />
-        <KpiCard icon={AlertTriangle} label="Chờ ghi nhận kỳ này" value={pendingThisMonth.length} tone={pendingThisMonth.length > 0 ? "down" : "up"} />
-      </div>
-
-      <div className="flex justify-between items-center">
+      <div className="shrink-0 flex justify-between items-center">
         <button onClick={recordDepreciation} disabled={pendingThisMonth.length === 0} className="flex items-center gap-1.5 text-sm bg-gold text-white px-3.5 py-2 rounded-md hover:opacity-90 disabled:opacity-40">
           <Calculator size={15} /> Ghi nhận khấu hao/phân bổ kỳ {reportMonth}/{reportYear} ({pendingThisMonth.length} tài sản)
         </button>
@@ -7580,7 +7735,7 @@ function TaiSanCoDinh({ assets, setAssets, setTransactions, reportYear, reportMo
       </div>
 
       {showForm && (
-        <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-4">
+        <div className="shrink-0 domix-inline-form-modal bg-white rounded-lg border border-paper-line p-4">
           <div className="grid grid-cols-3 gap-3">
             <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Tên tài sản<input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="VD: Laptop Dell, Máy in, Bàn ghế văn phòng..." className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Loại
@@ -7605,8 +7760,8 @@ function TaiSanCoDinh({ assets, setAssets, setTransactions, reportYear, reportMo
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
-        <div className="max-h-[420px] overflow-y-auto">
+      <div className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
+        <div className="min-h-0 flex-1 overflow-auto">
         <table data-sticky-columns="true" className="w-full text-sm">
           <thead className="sticky top-0 z-10">
             <tr className="bg-paper text-left text-xs uppercase text-muted">
@@ -7633,8 +7788,16 @@ function TaiSanCoDinh({ assets, setAssets, setTransactions, reportYear, reportMo
           </tbody>
         </table>
         </div>
+        <div className="domix-table-total-bar shrink-0 border-t border-paper-line bg-paper px-4 py-2.5 font-semibold">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
+            <span className="text-muted">Tổng nguyên giá: <strong className="text-ink">{fmtVND(totalCost)}</strong></span>
+            <span className="text-muted">Giá trị còn lại: <strong className="text-ledger-green">{fmtVND(totalRemaining)}</strong></span>
+            <span className="text-muted">Khấu hao/phân bổ mỗi tháng: <strong className="text-stamp-red">{fmtVND(totalMonthlyDep)}</strong></span>
+            <span className={pendingThisMonth.length > 0 ? "text-stamp-red" : "text-muted"}>Chờ ghi nhận kỳ này: <strong>{pendingThisMonth.length}</strong></span>
+          </div>
+        </div>
       </div>
-      <p className="text-[11px] text-muted">* Khấu hao TSCĐ hạch toán Nợ TK 642 / Có TK 214; phân bổ CCDC hạch toán Nợ TK 642 / Có TK 242 — đúng nguyên tắc TT133. Cách tính đường thẳng đơn giản, một số tài sản đặc thù có thể cần phương pháp khấu hao khác, kế toán rà soát lại nếu cần.</p>
+      <p className="shrink-0 text-[11px] text-muted">* Khấu hao TSCĐ hạch toán Nợ TK 642 / Có TK 214; phân bổ CCDC hạch toán Nợ TK 642 / Có TK 242 — đúng nguyên tắc TT133. Cách tính đường thẳng đơn giản, một số tài sản đặc thù có thể cần phương pháp khấu hao khác, kế toán rà soát lại nếu cần.</p>
     </div>
   );
 }
@@ -7928,23 +8091,18 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      <div style={{ display: activeTableView === "inventory" ? undefined : "none" }} className="rounded-lg border border-paper-line bg-white px-3 py-2 text-xs text-muted">{canManageInventory ? "Quản lý toàn bộ sản phẩm, tồn kho, ngày hết hạn và người phụ trách." : canEditAssignedInventory ? "Bạn chỉ thấy và được sửa các sản phẩm đã phân công cho mình. Không được tạo mới, xóa hoặc chuyển người phụ trách." : canViewAllInventory ? "Bạn được xem toàn bộ Kho hàng ở chế độ chỉ đọc." : "Bạn chỉ thấy sản phẩm được giao phụ trách; hiện chưa có sản phẩm nào được phân công."}</div>
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <div style={{ display: activeTableView === "inventory" ? undefined : "none" }} className="shrink-0 rounded-lg border border-paper-line bg-white px-3 py-2 text-xs text-muted">{canManageInventory ? "Quản lý toàn bộ sản phẩm, tồn kho, ngày hết hạn và người phụ trách." : canEditAssignedInventory ? "Bạn chỉ thấy và được sửa các sản phẩm đã phân công cho mình. Không được tạo mới, xóa hoặc chuyển người phụ trách." : canViewAllInventory ? "Bạn được xem toàn bộ Kho hàng ở chế độ chỉ đọc." : "Bạn chỉ thấy sản phẩm được giao phụ trách; hiện chưa có sản phẩm nào được phân công."}</div>
 
-      <SectionViewSwitcher
-        value={activeTableView}
-        onChange={setActiveTableView}
-        options={inventoryViewOptions}
-      />
-
-      <div style={{ display: activeTableView === "inventory" ? "grid" : "none" }} className="grid-cols-4 gap-3">
-        <KpiCard icon={Package} label="Số mặt hàng" value={visibleInventory.length} />
-        <KpiCard icon={Wallet} label="Giá trị tồn kho" value={fmtVND(totalValue)} tone="up" sub="Tính theo giá nhập" />
-        <KpiCard icon={AlertTriangle} label="Sắp hết hàng" value={lowStock.length} tone={lowStock.length > 0 ? "down" : "up"} />
-        <KpiCard icon={CalendarCheck} label="Còn hạn ≤ 5 ngày" value={expiringInventory.length} tone={expiringInventory.length > 0 || expiredInventory.length > 0 ? "down" : "up"} sub={expiredInventory.length > 0 ? `${expiredInventory.length} đã hết hạn` : "Email tự động"} />
+      <div className="shrink-0">
+        <SectionViewSwitcher
+          value={activeTableView}
+          onChange={setActiveTableView}
+          options={inventoryViewOptions}
+        />
       </div>
 
-      <div style={{ display: activeTableView === "inventory" ? "flex" : "none" }} className="justify-between items-center">
+      <div style={{ display: activeTableView === "inventory" ? "flex" : "none" }} className="shrink-0 justify-between items-center">
         <p className="text-xs text-muted">{visibleInventory.length} sản phẩm bạn được phép xem.</p>
         <div className="flex gap-2">
           <button onClick={() => exportInventoryExcel(visibleInventory, employees)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90">
@@ -8012,9 +8170,11 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
         </div>
       )}
 
+      <div className="min-h-0 flex-1 overflow-hidden">
       {productRevenue.length > 0 && (
-        <div style={{ display: activeTableView === "revenue" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
-          <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><TrendingUp size={13} /> Doanh thu theo sản phẩm — rõ của ai, qua đối tác nào</div>
+        <div style={{ display: activeTableView === "revenue" ? "flex" : "none" }} className="h-full flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
+          <div className="shrink-0 px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><TrendingUp size={13} /> Doanh thu theo sản phẩm — rõ của ai, qua đối tác nào</div>
+          <div className="min-h-0 flex-1 overflow-auto">
           <table data-sticky-columns="true" data-mobile-cards="true" className="w-full text-sm">
             <thead>
               <tr className="bg-paper text-left text-xs uppercase text-muted">
@@ -8055,12 +8215,14 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
               ))}
             </tbody>
           </table>
-          <p className="px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Chỉ tính đơn có gắn đúng sản phẩm trong kho (chọn từ danh sách khi tạo đơn ở CRM/Hợp tác phân phối, không phải gõ tay tự do). Tồn kho đã tự trừ khi các đơn này được tạo.</p>
+          </div>
+          <p className="shrink-0 px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Chỉ tính đơn có gắn đúng sản phẩm trong kho (chọn từ danh sách khi tạo đơn ở CRM/Hợp tác phân phối, không phải gõ tay tự do). Tồn kho đã tự trừ khi các đơn này được tạo.</p>
         </div>
       )}
 
-      <div style={{ display: activeTableView === "inventory" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
-        <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Danh mục sản phẩm — các gói thời hạn cùng 1 sản phẩm được gộp chung nhóm</div>
+      <div style={{ display: activeTableView === "inventory" ? "flex" : "none" }} className="h-full flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
+        <div className="shrink-0 px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Danh mục sản phẩm — các gói thời hạn cùng 1 sản phẩm được gộp chung nhóm</div>
+        <div className="min-h-0 flex-1 overflow-auto">
         <table data-sticky-columns="true" data-mobile-cards="true" className="w-full text-sm">
           <thead>
             <tr className="bg-paper text-left text-xs uppercase text-muted">
@@ -8129,13 +8291,22 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
             ))}
           </tbody>
         </table>
-        <p className="px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Giá bán hiển thị đã bao gồm VAT theo thuế suất khai báo cho từng sản phẩm — dòng nhỏ bên dưới tách rõ phần tiền hàng trước thuế và phần VAT.</p>
+        </div>
+        <div className="domix-table-total-bar shrink-0 border-t border-paper-line bg-paper px-4 py-2.5 font-semibold">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
+            <span className="text-muted">Số mặt hàng: <strong className="text-ink">{visibleInventory.length}</strong></span>
+            <span className="text-muted">Giá trị tồn kho: <strong className="text-ledger-green">{fmtVND(totalValue)}</strong></span>
+            <span className={lowStock.length > 0 ? "text-stamp-red" : "text-muted"}>Sắp hết hàng: <strong>{lowStock.length}</strong></span>
+            <span className={expiringInventory.length > 0 || expiredInventory.length > 0 ? "text-stamp-red" : "text-muted"}>Còn hạn ≤5 ngày: <strong>{expiringInventory.length}</strong>{expiredInventory.length > 0 ? ` · Đã hết hạn: ${expiredInventory.length}` : ""}</span>
+          </div>
+        </div>
+        <p className="shrink-0 px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Giá bán hiển thị đã bao gồm VAT theo thuế suất khai báo cho từng sản phẩm — dòng nhỏ bên dưới tách rõ phần tiền hàng trước thuế và phần VAT.</p>
       </div>
 
       {keyLedger.length > 0 && (
-        <div style={{ display: activeTableView === "keys" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
-          <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><CalendarCheck size={13} /> Theo dõi mã Key/Gói theo hạn — {keyLedger.filter((k) => k.status === "expiring").length} sắp hết hạn, {keyLedger.filter((k) => k.status === "expired").length} đã hết hạn</div>
-          <div className="max-h-[420px] overflow-y-auto">
+        <div style={{ display: activeTableView === "keys" ? "flex" : "none" }} className="h-full flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
+          <div className="shrink-0 px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><CalendarCheck size={13} /> Theo dõi mã Key/Gói theo hạn — {keyLedger.filter((k) => k.status === "expiring").length} sắp hết hạn, {keyLedger.filter((k) => k.status === "expired").length} đã hết hạn</div>
+          <div className="min-h-0 flex-1 overflow-auto">
           <table data-sticky-columns="true" data-mobile-cards="true" className="w-full text-sm">
             <thead className="sticky top-0 z-10">
               <tr className="bg-paper text-left text-xs uppercase text-muted">
@@ -8169,18 +8340,18 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
             </tbody>
           </table>
           </div>
-          <p className="px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Tự tính từ ngày bán (CRM/Hợp tác phân phối) + số tháng thời hạn khai báo ở sản phẩm. "Sắp hết hạn" là còn ≤7 ngày — dùng để nhắc khách/đối tác gia hạn trước khi mã hết hiệu lực.</p>
+          <p className="shrink-0 px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Tự tính từ ngày bán (CRM/Hợp tác phân phối) + số tháng thời hạn khai báo ở sản phẩm. "Sắp hết hạn" là còn ≤7 ngày — dùng để nhắc khách/đối tác gia hạn trước khi mã hết hiệu lực.</p>
         </div>
       )}
 
       {/* ---------- Nhật ký xuất/nhập kho (mục IX): mọi biến động tồn đều có nguồn gốc ---------- */}
-      <div style={{ display: activeTableView === "movements" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
-        <button onClick={() => setShowMovements((v) => !v)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-semibold text-ink uppercase hover:bg-paper/50">
+      <div style={{ display: activeTableView === "movements" ? "flex" : "none" }} className="h-full flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
+        <button onClick={() => setShowMovements((v) => !v)} className="shrink-0 w-full px-4 py-3 flex items-center justify-between text-xs font-semibold text-ink uppercase hover:bg-paper/50">
           <span className="flex items-center gap-1.5"><ClipboardList size={13} /> Nhật ký xuất/nhập kho ({movementRows.length} bút toán)</span>
           <ChevronRight size={14} className={`text-muted transition-transform ${showMovements ? "rotate-90" : ""}`} />
         </button>
         {showMovements && (
-          <div className="max-h-[360px] overflow-y-auto border-t border-paper-line">
+          <div className="min-h-0 flex-1 overflow-auto border-t border-paper-line">
             {movementLoadError && <div className="m-3 rounded-lg border border-stamp-red/30 bg-stamp-red/5 px-3 py-2 text-xs text-stamp-red">{movementLoadError}</div>}
             {!inventoryLedgerStatus.balanced && <div className="m-3 rounded-lg border border-stamp-red/30 bg-stamp-red/5 px-3 py-2 text-xs text-stamp-red"><strong>Sổ kho không cân.</strong> Có {inventoryLedgerStatus.issues.length} vấn đề cần đối soát trước khi dùng số tồn để quyết định nhập/bán hàng.</div>}
             {inventoryLedgerStatus.balanced && inventoryLedgerStatus.issues.some((issue) => ["duplicate_opening_removed", "duplicate_movement_removed"].includes(issue.type)) && <div className="m-3 rounded-lg border border-gold/30 bg-gold/5 px-3 py-2 text-xs text-muted">Máy chủ đã loại các bút toán tồn đầu/biến động trùng khi đối soát. Tồn hiện tại được tính từ chuỗi bút toán hợp lệ.</div>}
@@ -8210,6 +8381,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
             </table>
           </div>
         )}
+      </div>
       </div>
     </div>
   );
@@ -9680,7 +9852,8 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders, dataLoa
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <div className="shrink-0">
       <SectionViewSwitcher
         value={activeTableView}
         onChange={setActiveTableView}
@@ -9689,7 +9862,8 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders, dataLoa
           { id: "history", label: "Lịch sử hoàn tất", icon: Archive, count: cases.filter((item) => item.status === "hoan_tat").length },
         ]}
       />
-      <div className="flex items-start justify-between gap-3 rounded-lg border border-paper-line bg-white p-3 text-xs text-muted">
+      </div>
+      <div className="shrink-0 flex items-start justify-between gap-3 rounded-lg border border-paper-line bg-white p-3 text-xs text-muted">
         <span className="flex min-w-0 items-start gap-2"><Link2 size={13} className="mt-0.5 shrink-0 text-ink-light" /><span>Ca hỗ trợ liên kết với đơn CRM nhưng không hiển thị doanh thu. Hệ thống cảnh báo khách đang được xử lý và gửi kết quả về đúng đơn hàng.</span></span>
         <button type="button" onClick={() => setShowSupportHelp(true)} className="shrink-0 rounded-lg border border-paper-line px-3 py-2 font-semibold text-ink hover:border-gold" aria-label="Xem hướng dẫn hỗ trợ khách hàng">Xem hướng dẫn</button>
       </div>
@@ -9709,15 +9883,15 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders, dataLoa
         </div>
       )}
 
-      {activeTableView === "active" && (<>
-      <div className="grid grid-cols-4 gap-4">
+      {activeTableView === "active" && (<div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
+      <div className="shrink-0 grid grid-cols-4 gap-4">
         <KpiCard icon={Headphones} label="Đang hỗ trợ" value={activeCases.length} tone={activeCases.length > 0 ? "down" : "up"} />
         <KpiCard icon={UserCheck} label="Nhân viên đang bận" value={Object.keys(busyByEmployee).length} />
         <KpiCard icon={CheckCircle2} label="Đã hoàn tất hôm nay" value={cases.filter((c) => c.status === "hoan_tat" && c.completedAt?.startsWith(TODAY_STR)).length} tone="up" />
         <KpiCard icon={Users} label="Tổng nhân sự hỗ trợ/kỹ thuật" value={supportStaff.length} />
       </div>
 
-      <div className="bg-white rounded-lg border border-paper-line p-4">
+      <div className="shrink-0 bg-white rounded-lg border border-paper-line p-4">
         <div className="text-xs font-semibold text-ink uppercase mb-2">Trạng thái từng nhân viên — biết ngay ai rảnh</div>
         <div className="grid grid-cols-4 gap-3">
           {supportStaff.length === 0 && <p className="text-xs text-muted col-span-4">Chưa có nhân viên nào ở vị trí Hỗ trợ kỹ thuật/CSKH.</p>}
@@ -9737,12 +9911,12 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders, dataLoa
         </div>
       </div>
 
-      <button onClick={() => { setForm(blankForm); setShowForm(true); }} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light w-fit">
+      <button onClick={() => { setForm(blankForm); setShowForm(true); }} className="shrink-0 flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light w-fit">
         <Plus size={15} /> Bắt đầu ca hỗ trợ mới
       </button>
 
       {showForm && (
-        <div className="bg-white rounded-lg border border-paper-line p-4 relative">
+        <div className="shrink-0 bg-white rounded-lg border border-paper-line p-4 relative">
           <button
             className="absolute top-3 right-3 text-muted hover:text-ink"
             onClick={async () => { if ((form.customerName || form.phone) && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setFormError(""); setShowForm(false); }}
@@ -9775,9 +9949,9 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders, dataLoa
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
-        <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Đang hỗ trợ ({activeCases.length})</div>
-        <div className="max-h-[420px] overflow-y-auto">
+      <div className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
+        <div className="shrink-0 px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Đang hỗ trợ ({activeCases.length})</div>
+        <div className="min-h-0 flex-1 overflow-auto">
         <table data-sticky-columns="true" className="w-full text-sm">
           <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-4 py-2">STT</th><th className="px-4 py-2">Khách hàng</th><th className="px-4 py-2">SĐT/Zalo</th><th className="px-4 py-2">Vấn đề</th><th className="px-4 py-2">Nhân viên</th><th className="px-4 py-2">Bắt đầu lúc</th><th className="px-4 py-2"></th></tr></thead>
           <tbody>
@@ -9822,11 +9996,11 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders, dataLoa
         </div>
       </div>
 
-      </>)}
+      </div>)}
 
       {activeTableView === "history" && (
-        <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
-          <div className="px-4 pt-3 pb-1 flex items-center justify-between flex-wrap gap-2">
+        <div className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
+          <div className="shrink-0 px-4 pt-3 pb-1 flex items-center justify-between flex-wrap gap-2">
             <div className="text-xs font-semibold text-ink uppercase">Lịch sử đã hoàn tất</div>
             <div className="relative">
               <button onClick={() => setShowHistoryPicker((v) => !v)} className="text-xs px-2.5 py-1.5 rounded-md border border-paper-line text-ink-light flex items-center gap-1.5">
@@ -9850,7 +10024,7 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders, dataLoa
               )}
             </div>
           </div>
-          <div className="max-h-[420px] overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-auto">
           <table data-sticky-columns="true" className="w-full text-sm">
             <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-4 py-2">STT</th><th className="px-4 py-2">Khách hàng</th><th className="px-4 py-2">SĐT</th><th className="px-4 py-2">Vấn đề</th><th className="px-4 py-2">Kết quả</th><th className="px-4 py-2">Nhân viên</th><th className="px-4 py-2">Bắt đầu</th><th className="px-4 py-2">Hoàn tất</th><th className="px-4 py-2 text-right">Thao tác</th></tr></thead>
             <tbody>
@@ -10111,23 +10285,16 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
   };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <KpiCard icon={ClipboardList} label={viewMonthMode && currentCanReportTask ? "Việc đang làm của tôi" : (viewMonthMode ? `Nhiệm vụ kỳ ${reportMonth}/${reportYear}` : "Nhiệm vụ hôm nay")} value={filtered.length} />
-        <KpiCard icon={CheckCircle2} label="Đã đạt chỉ tiêu" value={doneCount} tone="up" />
-        <KpiCard icon={AlertTriangle} label={canReviewTasks ? "Chờ kiểm tra" : "Chờ xác nhận"} value={pendingReviewCount} tone={pendingReviewCount > 0 ? "down" : "up"} />
-        <KpiCard icon={UserCheck} label={isAdmin ? "Chưa được giao việc" : "Việc của tôi / công khai"} value={isAdmin ? unassigned.length : filtered.length} tone={isAdmin && unassigned.length > 0 ? "down" : "up"} />
-      </div>
-
-      {notice && <div className="bg-ledger-green/10 border border-ledger-green/20 rounded-lg px-3 py-2 text-xs text-ledger-green">{notice}</div>}
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      {notice && <div className="shrink-0 bg-ledger-green/10 border border-ledger-green/20 rounded-lg px-3 py-2 text-xs text-ledger-green">{notice}</div>}
       {currentCanReportTask && realtimeUnreadTaskIds.length > 0 && (
-        <div className="rounded-lg border border-[#4f7ee8]/35 bg-[#4f7ee8]/10 px-3 py-2 text-xs text-[#315fae] flex items-center gap-2">
+        <div className="shrink-0 rounded-lg border border-[#4f7ee8]/35 bg-[#4f7ee8]/10 px-3 py-2 text-xs text-[#315fae] flex items-center gap-2">
           <ClipboardList size={14} className="shrink-0" />
           <span><strong>{realtimeUnreadTaskIds.length} công việc mới</strong> vừa được đồng bộ. Danh sách tự cập nhật, không cần tải lại trang.</span>
         </div>
       )}
 
-      <div className="flex justify-between items-center flex-wrap gap-3">
+      <div className="shrink-0 flex justify-between items-center flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-wrap">
           <button onClick={() => setViewMonthMode((value) => !value)} className={`text-xs px-3 py-2 rounded-md border flex items-center gap-1.5 ${viewMonthMode ? "bg-ink text-white border-ink" : "border-paper-line text-ink-light"}`}>
             <CalendarCheck size={12} /> {currentCanReportTask ? (viewMonthMode ? "Việc đang làm của tôi" : "Xem theo ngày") : (viewMonthMode ? `Xem cả kỳ ${reportMonth}/${reportYear}` : "Xem theo ngày")}
@@ -10147,7 +10314,7 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
       </div>
 
       {isAdmin && unassigned.length > 0 && (
-        <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
+        <div className="shrink-0 bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
           <AlertTriangle size={13} className="text-gold shrink-0 mt-0.5" />
           <span>Chưa giao việc cho: <strong className="text-charcoal">{unassigned.map((employee) => employee.name).join(", ")}</strong>.</span>
         </div>
@@ -10241,8 +10408,8 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
-        <div className="max-h-[480px] overflow-y-auto ktns-scrollbar">
+      <div className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
+        <div className="min-h-0 flex-1 overflow-auto ktns-scrollbar">
           <table data-sticky-columns="true" className="w-full text-sm">
             <thead className="sticky top-0 z-10">
               <tr className="bg-paper text-left text-xs uppercase text-muted">
@@ -10284,6 +10451,14 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
               })}
             </tbody>
           </table>
+        </div>
+        <div className="domix-table-total-bar shrink-0 border-t border-paper-line bg-paper px-4 py-2.5 font-semibold">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
+            <span className="text-muted">{viewMonthMode && currentCanReportTask ? "Việc đang làm của tôi" : (viewMonthMode ? `Nhiệm vụ kỳ ${reportMonth}/${reportYear}` : "Nhiệm vụ hôm nay")}: <strong className="text-ink">{filtered.length}</strong></span>
+            <span className="text-muted">Đã đạt chỉ tiêu: <strong className="text-ledger-green">{doneCount}</strong></span>
+            <span className={pendingReviewCount > 0 ? "text-stamp-red" : "text-muted"}>{canReviewTasks ? "Chờ kiểm tra" : "Chờ xác nhận"}: <strong>{pendingReviewCount}</strong></span>
+            <span className={isAdmin && unassigned.length > 0 ? "text-stamp-red" : "text-muted"}>{isAdmin ? "Chưa được giao việc" : "Việc của tôi / công khai"}: <strong>{isAdmin ? unassigned.length : filtered.length}</strong></span>
+          </div>
         </div>
       </div>
     </div>
@@ -10369,7 +10544,93 @@ function FinanceHubMetric({ label, value, note, icon: Icon, tone = "blue" }) {
 }
 
 function FinanceScrollableTable({ children, minWidth = 980, className = "" }) {
-  return <div className={`min-h-0 flex-1 overflow-auto rounded-xl border border-[#29364f] bg-[#111823] ${className}`}><div style={{ minWidth }}>{children}</div></div>;
+  const viewportRef = useRef(null);
+  const footerViewportRef = useRef(null);
+  const tableRef = useRef(null);
+  const [columnWidths, setColumnWidths] = useState([]);
+  const [measuredTableWidth, setMeasuredTableWidth] = useState(minWidth);
+
+  const tableElement = React.Children.only(children);
+  const tableChildren = React.Children.toArray(tableElement.props.children);
+  const footerElement = tableChildren.find((child) => React.isValidElement(child) && child.type === "tfoot");
+  const mainTableChildren = footerElement ? tableChildren.filter((child) => child !== footerElement) : tableChildren;
+
+  useLayoutEffect(() => {
+    const table = tableRef.current;
+    const viewport = viewportRef.current;
+    if (!table || !viewport) return undefined;
+
+    let frame = 0;
+    const measure = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const headerCells = Array.from(table.querySelectorAll("thead tr:first-child > th"));
+        const fallbackCells = headerCells.length ? headerCells : Array.from(table.querySelectorAll("tbody tr:first-child > td"));
+        const widths = fallbackCells.map((cell) => Math.max(1, Math.round(cell.getBoundingClientRect().width)));
+        const nextWidth = Math.max(Number(minWidth) || 0, Math.ceil(table.scrollWidth || table.getBoundingClientRect().width || 0));
+        setColumnWidths((current) => current.length === widths.length && current.every((value, index) => value === widths[index]) ? current : widths);
+        setMeasuredTableWidth((current) => current === nextWidth ? current : nextWidth);
+      });
+    };
+
+    const syncFooterScroll = () => {
+      if (footerViewportRef.current) footerViewportRef.current.scrollLeft = viewport.scrollLeft;
+    };
+
+    measure();
+    syncFooterScroll();
+    viewport.addEventListener("scroll", syncFooterScroll, { passive: true });
+    window.addEventListener("resize", measure);
+
+    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    resizeObserver?.observe(table);
+    resizeObserver?.observe(viewport);
+
+    const mutationObserver = typeof MutationObserver !== "undefined" ? new MutationObserver(measure) : null;
+    mutationObserver?.observe(table, { childList: true, subtree: true, characterData: true });
+
+    return () => {
+      cancelAnimationFrame(frame);
+      viewport.removeEventListener("scroll", syncFooterScroll);
+      window.removeEventListener("resize", measure);
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
+    };
+  }, [children, minWidth]);
+
+  const mainTable = React.cloneElement(tableElement, {
+    ref: tableRef,
+    className: `${tableElement.props.className || ""} domix-system-table`.trim(),
+  }, mainTableChildren);
+
+  const footerTable = footerElement ? React.cloneElement(tableElement, {
+    className: `${tableElement.props.className || ""} domix-system-table domix-footer-table`.trim(),
+    style: { ...(tableElement.props.style || {}), width: measuredTableWidth, minWidth: measuredTableWidth },
+    "aria-hidden": undefined,
+  }, [
+    columnWidths.length > 0 ? (
+      <colgroup key="footer-colgroup">
+        {columnWidths.map((width, index) => <col key={index} style={{ width }} />)}
+      </colgroup>
+    ) : null,
+    React.cloneElement(footerElement, {
+      key: "footer-row",
+      className: `${footerElement.props.className || ""} finance-docked-footer`.trim(),
+    }),
+  ]) : null;
+
+  return (
+    <div className={`finance-table-shell min-h-0 flex-1 overflow-hidden rounded-xl border border-[#29364f] bg-[#111823] ${className}`}>
+      <div ref={viewportRef} className="finance-table-viewport min-h-0 flex-1 overflow-auto">
+        <div className="min-h-full" style={{ minWidth }}>{mainTable}</div>
+      </div>
+      {footerTable && (
+        <div ref={footerViewportRef} className="finance-table-footer-dock shrink-0 overflow-hidden" aria-label="Tổng cộng cố định">
+          <div style={{ width: measuredTableWidth, minWidth: measuredTableWidth }}>{footerTable}</div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFinancialSummary, transactions, setTransactions, orders, setOrders, leads, setLeads, employees, payrollRows, marketingLogs, reportYear, reportMonth, authUser, currentEmployee, revenueByEmployee, inventory, setInventory, distPartners, distOrders, setDistOrders, pages, setSupportCases, customers, setCustomers, moveStock, debts, setDebts, company, dataLoader }) {
@@ -10378,6 +10639,7 @@ function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFin
   const ownEmployeeId = currentEmployee?.id ? Number(currentEmployee.id) : null;
   const [employeeFilter, setEmployeeFilter] = useState(() => isFullAccess ? "all" : String(ownEmployeeId || ""));
   const [showEntryForm, setShowEntryForm] = useState(false);
+  const [showFinanceInsights, setShowFinanceInsights] = useState(false);
   const [editingEntryId, setEditingEntryId] = useState(null);
   const initialLedgerMonth = `${Number(reportYear)}-${String(Number(reportMonth)).padStart(2, "0")}`;
   const initialLedgerDate = Number(reportYear) === TODAY.getFullYear() && Number(reportMonth) === TODAY.getMonth() + 1 ? TODAY_STR : `${initialLedgerMonth}-01`;
@@ -10396,6 +10658,10 @@ function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFin
   useEffect(() => {
     if (!isFullAccess && ownEmployeeId) setEmployeeFilter(String(ownEmployeeId));
   }, [isFullAccess, ownEmployeeId]);
+
+  useEffect(() => {
+    setShowFinanceInsights(false);
+  }, [activeView]);
 
   useEffect(() => {
     const nextMonth = `${Number(reportYear)}-${String(Number(reportMonth)).padStart(2, "0")}`;
@@ -10516,6 +10782,51 @@ function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFin
     return { employee, payroll: row, salesRevenue, marketingRevenue, assignedRevenue, marketingSpend, directExpense, staffCost, totalExpense: staffCost + directExpense + marketingSpend };
   }), [visibleEmployees, visiblePayrollRows, periodOrders, periodMarketing, operatingExpenseRows]);
 
+  const overviewTableTotals = useMemo(() => employeeFinanceRows.reduce((total, row) => ({
+    assignedRevenue: total.assignedRevenue + (Number(row.assignedRevenue) || 0),
+    directExpense: total.directExpense + (Number(row.directExpense) || 0),
+    marketingSpend: total.marketingSpend + (Number(row.marketingSpend) || 0),
+    net: total.net + (Number(row.payroll?.net) || 0),
+    mealAllowance: total.mealAllowance + (Number(row.payroll?.mealAllowance) || 0),
+    employerInsurance: total.employerInsurance + (Number(row.payroll?.employerInsurance) || 0),
+    totalExpense: total.totalExpense + (Number(row.totalExpense) || 0),
+  }), { assignedRevenue: 0, directExpense: 0, marketingSpend: 0, net: 0, mealAllowance: 0, employerInsurance: 0, totalExpense: 0 }), [employeeFinanceRows]);
+
+  const payrollTableTotals = useMemo(() => visiblePayrollRows.reduce((total, row) => {
+    const bonus = (Number(row.kpiBonus) || 0) + (Number(row.commission) || 0) + (Number(row.compBonus) || 0)
+      + (Number(row.techUpsale) || 0) + (Number(row.otherBonus) || 0) + (Number(row.attendanceBonus) || 0)
+      + (Number(row.kpiMilestoneBonus) || 0);
+    const allowance = (Number(row.mealAllowance) || 0) + (Number(row.seniorityAllowance) || 0);
+    return {
+      salaryByDays: total.salaryByDays + (Number(row.salaryByDays) || 0),
+      bonus: total.bonus + bonus,
+      allowance: total.allowance + allowance,
+      employeeInsurance: total.employeeInsurance + (Number(row.employeeInsurance) || 0),
+      thueTNCN: total.thueTNCN + (Number(row.thueTNCN) || 0),
+      net: total.net + (Number(row.net) || 0),
+      employerInsurance: total.employerInsurance + (Number(row.employerInsurance) || 0),
+      employerTotalCost: total.employerTotalCost + (Number(row.employerTotalCost) || 0),
+    };
+  }, { salaryByDays: 0, bonus: 0, allowance: 0, employeeInsurance: 0, thueTNCN: 0, net: 0, employerInsurance: 0, employerTotalCost: 0 }), [visiblePayrollRows]);
+
+  const mealTableTotals = useMemo(() => visiblePayrollRows.reduce((total, row) => ({
+    configuredMealAllowance: total.configuredMealAllowance + (Number(row.configuredMealAllowance) || 0),
+    mealAllowancePerDay: total.mealAllowancePerDay + (Number(row.mealAllowancePerDay) || 0),
+    mealAllowance: total.mealAllowance + (Number(row.mealAllowance) || 0),
+    mealAllowanceDeducted: total.mealAllowanceDeducted + (Number(row.mealAllowanceDeducted) || 0),
+  }), { configuredMealAllowance: 0, mealAllowancePerDay: 0, mealAllowance: 0, mealAllowanceDeducted: 0 }), [visiblePayrollRows]);
+
+  const insuranceTableTotals = useMemo(() => visiblePayrollRows.reduce((total, row) => ({
+    bhxhNV: total.bhxhNV + (Number(row.bhxhNV) || 0),
+    bhytNV: total.bhytNV + (Number(row.bhytNV) || 0),
+    bhtnNV: total.bhtnNV + (Number(row.bhtnNV) || 0),
+    bhxhDN: total.bhxhDN + (Number(row.bhxhDN) || 0),
+    bhytDN: total.bhytDN + (Number(row.bhytDN) || 0),
+    bhtnDN: total.bhtnDN + (Number(row.bhtnDN) || 0),
+    bhtnldBnnDN: total.bhtnldBnnDN + (Number(row.bhtnldBnnDN) || 0),
+    combined: total.combined + (Number(row.employeeInsurance) || 0) + (Number(row.employerInsurance) || 0),
+  }), { bhxhNV: 0, bhytNV: 0, bhtnNV: 0, bhxhDN: 0, bhytDN: 0, bhtnDN: 0, bhtnldBnnDN: 0, combined: 0 }), [visiblePayrollRows]);
+
   const startAddEntry = (kind) => {
     if (!isFullAccess) return;
     const category = FINANCE_ENTRY_CATEGORIES[kind][0][0];
@@ -10604,89 +10915,85 @@ function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFin
     XLSX.writeFile(workbook, `DOMIX_${sheetName.replace(/\s+/g, "_")}_${periodFileLabel}.xlsx`);
   };
 
-  const renderTxTable = (rows, kind) => (
-    <FinanceScrollableTable minWidth={1160}>
-      <table className="w-full text-xs">
-        <thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]"><tr><th className="px-4 py-3">STT</th><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Nhân viên</th><th className="px-4 py-3">{kind === "thu" ? "Nhóm thu" : "Nhóm chi"}</th><th className="px-4 py-3">Nội dung</th><th className="px-4 py-3">Nguồn</th><th className="px-4 py-3">Thanh toán</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3 text-right">Thao tác</th></tr></thead>
-        <tbody>{rows.length === 0 ? <tr><td colSpan={9} className="px-4 py-10 text-center text-[#7f8da5]">Chưa có khoản {kind === "thu" ? "thu" : "chi"} nào trong {ledgerPeriodLabel}.</td></tr> : rows.map((item, index) => {
-          const employee = (employees || []).find((entry) => Number(entry.id) === Number(item.employeeId));
-          const categoryLabel = FINANCE_ENTRY_CATEGORIES[kind].find(([id]) => id === item.category)?.[1] || item.category || "Khác";
-          const sourceLabel = item.source === "marketing_daily" ? "Marketing hằng ngày" : item.source === "bangluong" ? "Chi trả lương" : item.source === "crm" ? "Doanh thu CRM" : item.source === "manual_finance_hub" ? "Ghi sổ thủ công" : "Dữ liệu hệ thống";
-          return <tr key={item.id} className="border-t border-[#253146] hover:bg-white/[0.03]"><td className="px-4 py-3 text-[#77869d]">{index + 1}</td><td className="px-4 py-3 ktns-mono text-[#b9c6d9]">{formatDateVN(item.date)}</td><td className="px-4 py-3 text-[#dbe4f1]">{employee?.name || item.employeeName || "Toàn công ty"}</td><td className="px-4 py-3"><span className="rounded-full border border-[#34435c] bg-[#1d2839] px-2 py-1 text-[10px] text-[#aebbd0]">{categoryLabel}</span></td><td className="max-w-[380px] px-4 py-3 text-[#dbe4f1]">{item.desc}</td><td className="px-4 py-3 text-[#93a1b8]">{sourceLabel}</td><td className="px-4 py-3 text-[#93a1b8]">{item.paymentMethod === "tien_mat" ? "Tiền mặt" : "Chuyển khoản"}</td><td className={`px-4 py-3 text-right font-bold ktns-mono ${kind === "thu" ? "text-emerald-400" : "text-red-300"}`}>{kind === "thu" ? "+" : "−"}{fmtVND(item.amount)}</td><td className="px-4 py-3 text-right">{isFullAccess && item.source === "manual_finance_hub" ? <div className="flex flex-wrap justify-end gap-1.5"><button type="button" onClick={() => startEditManualEntry(item)} className="inline-flex items-center gap-1 rounded-md border border-[#40516b] px-2 py-1.5 text-[11px] font-semibold text-[#c1cee0] hover:bg-white/[0.05]" title="Sửa khoản thu/chi" aria-label={`Sửa ${kind === "thu" ? "khoản thu" : "khoản chi"} ${item.desc || ""}`}><Pencil size={12} /> Sửa</button><button type="button" onClick={() => removeManualEntry(item.id)} className="inline-flex items-center gap-1 rounded-md border border-red-500/30 px-2 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10" title="Xóa khoản thu/chi" aria-label={`Xóa ${kind === "thu" ? "khoản thu" : "khoản chi"} ${item.desc || ""}`}><Trash2 size={12} /> Xóa</button></div> : <span className="inline-flex items-center gap-1 rounded-md border border-[#34435c] px-2 py-1 text-[10px] text-[#7f8da5]" title="Bút toán này được đồng bộ tự động. Hãy sửa hoặc xóa tại nghiệp vụ nguồn để các bảng liên quan cập nhật đồng thời."><Link2 size={11} /> Sửa tại nguồn</span>}</td></tr>;
-        })}</tbody>
-      </table>
-    </FinanceScrollableTable>
-  );
+  const renderTxTable = (rows, kind) => {
+    const amountTotal = rows.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    return (
+      <FinanceScrollableTable minWidth={1160}>
+        <table className="domix-finance-table w-full text-xs">
+          <thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]">
+            <tr><th className="px-4 py-3">STT</th><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Nhân viên</th><th className="px-4 py-3">{kind === "thu" ? "Nhóm thu" : "Nhóm chi"}</th><th className="px-4 py-3">Nội dung</th><th className="px-4 py-3">Nguồn</th><th className="px-4 py-3">Thanh toán</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3 text-right">Thao tác</th></tr>
+          </thead>
+          <tbody>{rows.length === 0 ? <tr><td colSpan={9} className="px-4 py-10 text-center text-[#7f8da5]">Chưa có khoản {kind === "thu" ? "thu" : "chi"} nào trong {ledgerPeriodLabel}.</td></tr> : rows.map((item, index) => {
+            const employee = (employees || []).find((entry) => Number(entry.id) === Number(item.employeeId));
+            const categoryLabel = FINANCE_ENTRY_CATEGORIES[kind].find(([id]) => id === item.category)?.[1] || item.category || "Khác";
+            const sourceLabel = item.source === "marketing_daily" ? "Marketing hằng ngày" : item.source === "bangluong" ? "Chi trả lương" : item.source === "crm" ? "Doanh thu CRM" : item.source === "manual_finance_hub" ? "Ghi sổ thủ công" : "Dữ liệu hệ thống";
+            return <tr key={item.id} className="border-t border-[#3A4152] hover:bg-white/[0.03]"><td className="px-4 py-3 text-[#77869d]">{index + 1}</td><td className="px-4 py-3 ktns-mono text-[#b9c6d9]">{formatDateVN(item.date)}</td><td className="px-4 py-3 text-[#dbe4f1]">{employee?.name || item.employeeName || "Toàn công ty"}</td><td className="px-4 py-3"><span className="rounded-full border border-[#34435c] bg-[#1d2839] px-2 py-1 text-[10px] text-[#aebbd0]">{categoryLabel}</span></td><td className="max-w-[380px] px-4 py-3 text-[#dbe4f1]">{item.desc}</td><td className="px-4 py-3 text-[#93a1b8]">{sourceLabel}</td><td className="px-4 py-3 text-[#93a1b8]">{item.paymentMethod === "tien_mat" ? "Tiền mặt" : "Chuyển khoản"}</td><td className={`px-4 py-3 text-right font-bold ktns-mono ${kind === "thu" ? "text-emerald-400" : "text-red-300"}`}>{kind === "thu" ? "+" : "−"}{fmtVND(item.amount)}</td><td className="px-4 py-3 text-right">{isFullAccess && item.source === "manual_finance_hub" ? <div className="flex flex-wrap justify-end gap-1.5"><button type="button" onClick={() => startEditManualEntry(item)} className="inline-flex items-center gap-1 rounded-md border border-[#40516b] px-2 py-1.5 text-[11px] font-semibold text-[#c1cee0] hover:bg-white/[0.05]" title="Sửa khoản thu/chi" aria-label={`Sửa ${kind === "thu" ? "khoản thu" : "khoản chi"} ${item.desc || ""}`}><Pencil size={12} /> Sửa</button><button type="button" onClick={() => removeManualEntry(item.id)} className="inline-flex items-center gap-1 rounded-md border border-red-500/30 px-2 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10" title="Xóa khoản thu/chi" aria-label={`Xóa ${kind === "thu" ? "khoản thu" : "khoản chi"} ${item.desc || ""}`}><Trash2 size={12} /> Xóa</button></div> : <span className="inline-flex items-center gap-1 rounded-md border border-[#34435c] px-2 py-1 text-[10px] text-[#7f8da5]" title="Bút toán này được đồng bộ tự động. Hãy sửa hoặc xóa tại nghiệp vụ nguồn để các bảng liên quan cập nhật đồng thời."><Link2 size={11} /> Sửa tại nguồn</span>}</td></tr>;
+          })}</tbody>
+          <tfoot className="finance-sticky-footer"><tr><td colSpan={7} className="px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-[#d7e1ef]">Tổng {rows.length} khoản trong {ledgerPeriodLabel}</td><td className={`px-4 py-3 text-right text-sm font-bold ktns-mono ${kind === "thu" ? "text-emerald-300" : "text-red-300"}`}>{fmtVND(amountTotal)}</td><td className="px-4 py-3" /></tr></tfoot>
+        </table>
+      </FinanceScrollableTable>
+    );
+  };
 
   if (!lazyTableData.ready) return <div className="flex h-full min-h-0 flex-col gap-4"><DataLoadingPanel title="Đang tải trung tâm doanh thu và thu chi" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} /></div>;
 
   return (
-    <div className="domix-finance-hub flex h-[calc(100vh-150px)] min-h-[560px] min-w-0 flex-col gap-3 overflow-hidden">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-[#29364f] bg-[#111823] p-3">
-        <div><h2 className="text-lg font-bold text-white">{isFullAccess ? "Trung tâm doanh thu & sổ sách" : "Tài chính cá nhân"}</h2><p className="mt-0.5 text-[11px] text-[#8795aa]">Kỳ tổng hợp {String(reportMonth).padStart(2, "0")}/{reportYear} · {isFullAccess ? "Thu và Chi là hai bảng riêng; có thể xem theo ngày, tháng hoặc quý" : "Chỉ hiển thị dữ liệu thuộc tài khoản của bạn"}</p></div>
-        <div className="flex flex-wrap items-center gap-2">{isFullAccess ? <select value={employeeFilter} onChange={(event) => setEmployeeFilter(event.target.value)} className="min-w-[220px] rounded-lg border border-[#34435c] bg-[#182131] px-3 py-2 text-xs text-white"><option value="all">Toàn công ty</option>{(employees || []).filter((employee) => employee.status !== "inactive").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {ROLE_META[employee.roleType]?.label || employee.position || "Nhân viên"}</option>)}</select> : <div className="rounded-lg border border-[#34435c] bg-[#182131] px-3 py-2 text-xs font-semibold text-[#c9d4e5]">{currentEmployee?.name || authUser?.email}</div>}<button type="button" onClick={exportCurrentFinanceView} className="flex items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20"><FileSpreadsheet size={14} /> Xuất Excel</button></div>
+    <div className="domix-finance-hub relative flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-[#29364f] bg-[#111823] px-3 py-2.5 shadow-sm">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h2 className="truncate text-base font-bold text-white">{FINANCE_HUB_VIEWS.find((view) => view.id === activeView)?.label || "Quản lý doanh thu & Thu chi"}</h2>
+            <span className="rounded-full border border-[#31405a] bg-[#182131] px-2 py-0.5 text-[10px] font-semibold text-[#93a5c1]">{String(reportMonth).padStart(2, "0")}/{reportYear}</span>
+          </div>
+          <p className="mt-0.5 text-[11px] text-[#7f8da5]">Bảng dữ liệu là khu vực làm việc chính · tiêu đề và hàng tổng luôn cố định khi cuộn.</p>
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {isFullAccess ? <select value={employeeFilter} onChange={(event) => setEmployeeFilter(event.target.value)} className="min-h-[38px] min-w-[190px] rounded-lg border border-[#34435c] bg-[#182131] px-3 text-xs text-white outline-none focus:border-[#5f8df8]"><option value="all">Toàn công ty</option>{(employees || []).filter((employee) => employee.status !== "inactive").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {ROLE_META[employee.roleType]?.label || employee.position || "Nhân viên"}</option>)}</select> : <div className="flex min-h-[38px] items-center rounded-lg border border-[#34435c] bg-[#182131] px-3 text-xs font-semibold text-[#c9d4e5]">{currentEmployee?.name || authUser?.email}</div>}
+          <button type="button" onClick={() => setShowFinanceInsights(true)} aria-expanded={showFinanceInsights} className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border border-[#40577a] bg-[#1a2639] px-3 text-xs font-semibold text-[#c8d6eb] transition hover:border-[#5f8df8] hover:bg-[#22324b] hover:text-white"><BarChart3 size={14} /> Tùy biến & tổng quan</button>
+          <button type="button" onClick={exportCurrentFinanceView} className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20"><FileSpreadsheet size={14} /> Xuất Excel</button>
+        </div>
       </div>
 
-      <div className="shrink-0 overflow-x-auto pb-1"><div className="flex min-w-max gap-2">{FINANCE_HUB_VIEWS.map((view) => { const Icon = view.icon; const active = activeView === view.id; return <button key={view.id} type="button" onClick={() => setActiveView(view.id)} className={`flex min-h-[42px] items-center gap-2 rounded-xl border px-3.5 py-2 text-xs font-semibold transition ${active ? "border-[#5f8df8] bg-[#2f5ba6] text-white shadow-lg" : "border-[#29364f] bg-[#141c2a] text-[#b7c2d3] hover:border-[#46689f] hover:text-white"}`}><Icon size={14} />{view.label}</button>; })}</div></div>
+      <div className="shrink-0 overflow-x-auto pb-0.5">
+        <div className="flex min-w-max gap-1.5">{FINANCE_HUB_VIEWS.map((view) => { const Icon = view.icon; const active = activeView === view.id; return <button key={view.id} type="button" onClick={() => setActiveView(view.id)} className={`flex min-h-[38px] items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${active ? "border-[#6c98ff] bg-[#315fae] text-white shadow" : "border-[#29364f] bg-[#141c2a] text-[#aebbd0] hover:border-[#46689f] hover:text-white"}`}><Icon size={13} />{view.label}</button>; })}</div>
+      </div>
 
-      {activeView === "overview" && <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-        <div className="grid shrink-0 grid-cols-2 gap-3 xl:grid-cols-5"><FinanceHubMetric label="Doanh thu bán hàng ghi nhận" value={fmtVND(totalSalesRevenue)} note={`${periodOrders.length} đơn hợp lệ trong kỳ`} icon={ShoppingCart} tone="green" /><FinanceHubMetric label="Tổng doanh thu ghi nhận" value={fmtVND(totalIncome)} note={`Thu thực tế trong kỳ ${fmtVND(totalCollectedIncome)} · Còn phải thu ${fmtVND(totalReceivableForHub)}`} icon={TrendingUp} tone="green" /><FinanceHubMetric label="Chi phí vận hành" value={fmtVND(totalOperatingExpense + totalMarketingExpense)} note={`${operatingExpenseRows.length} khoản khác + ${marketingExpenseRows.length} khoản Marketing`} icon={TrendingDown} tone="red" /><FinanceHubMetric label="Chi phí nhân sự" value={fmtVND(totalStaffCost)} note="Gross + bảo hiểm doanh nghiệp" icon={Users} tone="gold" /><FinanceHubMetric label="Lợi nhuận tạm tính" value={fmtVND(operatingProfit)} note="Doanh thu ghi nhận − vận hành − Marketing − nhân sự" icon={Wallet} tone={operatingProfit >= 0 ? "blue" : "red"} /></div>
-        <div className="shrink-0 rounded-xl border border-[#2c3b53] bg-[#111a28] px-4 py-3 text-xs text-[#aebbd0]">
-          <strong className="text-white">Cách tính:</strong> Giá trị đơn hợp lệ được ghi nhận vào doanh thu ngay khi bán; tiền khách đã trả đi vào bảng Thu; phần chưa trả đi vào Công nợ. Đơn phân phối liên kết CRM chỉ phục vụ quyết toán đối tác và không được cộng doanh thu lần thứ hai.
-        </div>
-        <div className="grid shrink-0 grid-cols-1 gap-3 lg:grid-cols-2">
-          <div className="rounded-xl border border-[#2c3b53] bg-[#111a28] p-4">
-            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#93a1b8]">Nguồn thu — thu từ đâu</h4>
-            <div className="flex flex-col gap-1.5 text-xs">
-              {[["Bán hàng (CRM)", scopedRevenueLedger.salesRevenue], ["Hợp tác phân phối", scopedRevenueLedger.distributionRevenue], ["Marketing", scopedRevenueLedger.marketingRevenue], ["Thu khác", scopedRevenueLedger.otherIncome]].map(([label, value]) => (
-                <div key={label} className="flex items-center justify-between border-b border-[#212c3f] py-1.5 last:border-0">
-                  <span className="text-[#aebbd0]">{label}</span>
-                  <span className="ktns-mono font-semibold text-emerald-400">{fmtVND(value)}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="rounded-xl border border-[#2c3b53] bg-[#111a28] p-4">
-            <h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#93a1b8]">Mục đích chi — chi vào việc gì</h4>
-            {scopedExpenseBreakdown.length === 0 ? (
-              <p className="text-xs text-[#7f8da5]">Chưa có khoản chi nào trong kỳ.</p>
-            ) : (
-              <div className="flex flex-col gap-1.5 text-xs">
-                {scopedExpenseBreakdown.map((item) => (
-                  <div key={item.category} className="flex items-center justify-between border-b border-[#212c3f] py-1.5 last:border-0">
-                    <span className="text-[#aebbd0]">{item.label}</span>
-                    <span className="ktns-mono font-semibold text-red-300">{fmtVND(item.amount)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-        <FinanceScrollableTable minWidth={1240}><table className="w-full text-xs"><thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]"><tr><th className="px-4 py-3">Nhân viên</th><th className="px-4 py-3">Vị trí</th><th className="px-4 py-3 text-right">Doanh thu phụ trách</th><th className="px-4 py-3 text-right">Chi trực tiếp</th><th className="px-4 py-3 text-right">Chi quảng cáo</th><th className="px-4 py-3 text-right">Lương thực lĩnh</th><th className="px-4 py-3 text-right">Phụ cấp ăn trưa</th><th className="px-4 py-3 text-right">BH doanh nghiệp</th><th className="px-4 py-3 text-right">Tổng chi phí</th></tr></thead><tbody>{employeeFinanceRows.length === 0 ? <tr><td colSpan={9} className="px-4 py-10 text-center text-[#7f8da5]">Chưa có nhân sự đang hoạt động trong kỳ này. Kiểm tra: (1) tab Nhân sự đã có người ở trạng thái "đang làm việc" chưa, (2) đơn CRM/Marketing đã gán đúng người phụ trách chưa.</td></tr> : employeeFinanceRows.map(({ employee, payroll, assignedRevenue, directExpense, marketingSpend, totalExpense }) => <tr key={employee.id} className="border-t border-[#253146] hover:bg-white/[0.03]"><td className="px-4 py-3 font-semibold text-white">{employee.name}<div className="mt-0.5 text-[10px] font-normal text-[#77869d]">{employee.email || ""}</div></td><td className="px-4 py-3 text-[#aebbd0]">{ROLE_META[employee.roleType]?.label || employee.position || "Nhân viên"}</td><td className="px-4 py-3 text-right font-bold text-emerald-400 ktns-mono">{fmtVND(assignedRevenue)}</td><td className="px-4 py-3 text-right text-red-300 ktns-mono">{fmtVND(directExpense)}</td><td className="px-4 py-3 text-right text-red-300 ktns-mono">{fmtVND(marketingSpend)}</td><td className="px-4 py-3 text-right text-[#dbe4f1] ktns-mono">{fmtVND(payroll.net)}</td><td className="px-4 py-3 text-right text-amber-300 ktns-mono">{fmtVND(payroll.mealAllowance)}</td><td className="px-4 py-3 text-right text-[#9fb9e7] ktns-mono">{fmtVND(payroll.employerInsurance)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(totalExpense)}</td></tr>)}</tbody></table></FinanceScrollableTable>
+      {activeView === "overview" && <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+        <div className="flex shrink-0 items-center justify-between gap-3 rounded-lg border border-[#29364f] bg-[#111823] px-3 py-2 text-xs"><div><strong className="text-white">Bảng tổng hợp theo nhân sự</strong><span className="ml-2 text-[#7f8da5]">{employeeFinanceRows.length} người đang hiển thị</span></div><span className="hidden text-[#7f8da5] md:block">Cuộn riêng trong bảng · hàng tổng cố định phía dưới</span></div>
+        <FinanceScrollableTable minWidth={1240}>
+          <table className="domix-finance-table w-full text-xs">
+            <thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]"><tr><th className="px-4 py-3">Nhân viên</th><th className="px-4 py-3">Vị trí</th><th className="px-4 py-3 text-right">Doanh thu phụ trách</th><th className="px-4 py-3 text-right">Chi trực tiếp</th><th className="px-4 py-3 text-right">Chi quảng cáo</th><th className="px-4 py-3 text-right">Lương thực lĩnh</th><th className="px-4 py-3 text-right">Phụ cấp ăn trưa</th><th className="px-4 py-3 text-right">BH doanh nghiệp</th><th className="px-4 py-3 text-right">Tổng chi phí</th></tr></thead>
+            <tbody>{employeeFinanceRows.length === 0 ? <tr><td colSpan={9} className="px-4 py-10 text-center text-[#7f8da5]">Chưa có nhân sự đang hoạt động trong kỳ này. Kiểm tra trạng thái nhân sự và người phụ trách trên đơn CRM/Marketing.</td></tr> : employeeFinanceRows.map(({ employee, payroll, assignedRevenue, directExpense, marketingSpend, totalExpense }) => <tr key={employee.id} className="border-t border-[#3A4152] hover:bg-white/[0.03]"><td className="px-4 py-3 font-semibold text-white">{employee.name}<div className="mt-0.5 text-[10px] font-normal text-[#77869d]">{employee.email || ""}</div></td><td className="px-4 py-3 text-[#aebbd0]">{ROLE_META[employee.roleType]?.label || employee.position || "Nhân viên"}</td><td className="px-4 py-3 text-right font-bold text-emerald-400 ktns-mono">{fmtVND(assignedRevenue)}</td><td className="px-4 py-3 text-right text-red-300 ktns-mono">{fmtVND(directExpense)}</td><td className="px-4 py-3 text-right text-red-300 ktns-mono">{fmtVND(marketingSpend)}</td><td className="px-4 py-3 text-right text-[#dbe4f1] ktns-mono">{fmtVND(payroll.net)}</td><td className="px-4 py-3 text-right text-amber-300 ktns-mono">{fmtVND(payroll.mealAllowance)}</td><td className="px-4 py-3 text-right text-[#9fb9e7] ktns-mono">{fmtVND(payroll.employerInsurance)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(totalExpense)}</td></tr>)}</tbody>
+            <tfoot className="finance-sticky-footer"><tr><td colSpan={2} className="px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-[#d7e1ef]">Tổng cộng</td><td className="px-4 py-3 text-right font-bold text-emerald-300 ktns-mono">{fmtVND(overviewTableTotals.assignedRevenue)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(overviewTableTotals.directExpense)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(overviewTableTotals.marketingSpend)}</td><td className="px-4 py-3 text-right font-bold text-white ktns-mono">{fmtVND(overviewTableTotals.net)}</td><td className="px-4 py-3 text-right font-bold text-amber-300 ktns-mono">{fmtVND(overviewTableTotals.mealAllowance)}</td><td className="px-4 py-3 text-right font-bold text-[#a9c6f8] ktns-mono">{fmtVND(overviewTableTotals.employerInsurance)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(overviewTableTotals.totalExpense)}</td></tr></tfoot>
+          </table>
+        </FinanceScrollableTable>
       </div>}
 
-      {activeView === "sales" && <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-[#29364f] bg-[#0f151f] p-3">{isFullAccess ? <DoanhThuCRM orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={employees} revenueByEmployee={revenueByEmployee} setTransactions={setTransactions} transactions={transactions} inventory={inventory} setInventory={setInventory} distPartners={distPartners} distOrders={distOrders} setDistOrders={setDistOrders} reportYear={reportYear} reportMonth={reportMonth} pages={pages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} authUser={authUser} debts={debts} setDebts={setDebts} dataLoader={dataLoader} /> : <FinanceScrollableTable minWidth={1050} className="h-full"><table className="w-full text-xs"><thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]"><tr><th className="px-4 py-3">STT</th><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Khách hàng</th><th className="px-4 py-3">Sản phẩm</th><th className="px-4 py-3">Hóa đơn</th><th className="px-4 py-3 text-right">Doanh thu</th></tr></thead><tbody>{periodOrders.length === 0 ? <tr><td colSpan={6} className="px-4 py-10 text-center text-[#7f8da5]">Bạn chưa có doanh thu được ghi nhận trong kỳ.</td></tr> : periodOrders.map((order, index) => <tr key={order.id} className="border-t border-[#253146]"><td className="px-4 py-3 text-[#77869d]">{index + 1}</td><td className="px-4 py-3 ktns-mono text-[#b9c6d9]">{formatDateVN(order.date)}</td><td className="px-4 py-3 font-semibold text-white">{order.customerName}<div className="text-[10px] font-normal text-[#77869d]">{order.phone || order.email || ""}</div></td><td className="px-4 py-3 text-[#b9c6d9]">{order.productName || "—"}</td><td className="px-4 py-3 text-[#aebbd0]">{order.invoiceStatus === "issued" ? `Đã xuất ${order.invoiceNo || ""}` : "Chưa xuất"}</td><td className="px-4 py-3 text-right font-bold text-emerald-400 ktns-mono">{fmtVND(order.amount)}</td></tr>)}</tbody></table></FinanceScrollableTable>}</div>}
+      {activeView === "sales" && <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[#29364f] bg-[#0f151f] p-2">{isFullAccess ? <DoanhThuCRM orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={employees} revenueByEmployee={revenueByEmployee} setTransactions={setTransactions} transactions={transactions} inventory={inventory} setInventory={setInventory} distPartners={distPartners} distOrders={distOrders} setDistOrders={setDistOrders} reportYear={reportYear} reportMonth={reportMonth} pages={pages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} authUser={authUser} debts={debts} setDebts={setDebts} dataLoader={dataLoader} /> : <div className="flex h-full min-h-0 flex-col gap-2"><div className="shrink-0 rounded-lg border border-[#29364f] bg-[#111823] px-3 py-2 text-xs text-[#aebbd0]">Doanh thu được ghi nhận trong kỳ: <strong className="text-emerald-300">{fmtVND(periodOrders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0))}</strong></div><FinanceScrollableTable minWidth={1050}><table className="domix-finance-table w-full text-xs"><thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]"><tr><th className="px-4 py-3">STT</th><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Khách hàng</th><th className="px-4 py-3">Sản phẩm</th><th className="px-4 py-3">Hóa đơn</th><th className="px-4 py-3 text-right">Doanh thu</th></tr></thead><tbody>{periodOrders.length === 0 ? <tr><td colSpan={6} className="px-4 py-10 text-center text-[#7f8da5]">Bạn chưa có doanh thu được ghi nhận trong kỳ.</td></tr> : periodOrders.map((order, index) => <tr key={order.id} className="border-t border-[#3A4152]"><td className="px-4 py-3 text-[#77869d]">{index + 1}</td><td className="px-4 py-3 ktns-mono text-[#b9c6d9]">{formatDateVN(order.date)}</td><td className="px-4 py-3 font-semibold text-white">{order.customerName}<div className="text-[10px] font-normal text-[#77869d]">{order.phone || order.email || ""}</div></td><td className="px-4 py-3 text-[#b9c6d9]">{order.productName || "—"}</td><td className="px-4 py-3 text-[#aebbd0]">{order.invoiceStatus === "issued" ? `Đã xuất ${order.invoiceNo || ""}` : "Chưa xuất"}</td><td className="px-4 py-3 text-right font-bold text-emerald-400 ktns-mono">{fmtVND(order.amount)}</td></tr>)}</tbody><tfoot className="finance-sticky-footer"><tr><td colSpan={5} className="px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-[#d7e1ef]">Tổng {periodOrders.length} đơn</td><td className="px-4 py-3 text-right text-sm font-bold text-emerald-300 ktns-mono">{fmtVND(periodOrders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0))}</td></tr></tfoot></table></FinanceScrollableTable></div>}</div>}
 
-      {(activeView === "income" || activeView === "expense") && <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-xl border border-[#29364f] bg-[#111823] p-3">
-          <div className="flex flex-wrap items-center gap-2">
-            {[['day', 'Ngày'], ['month', 'Tháng'], ['quarter', 'Quý']].map(([id, label]) => <button key={id} type="button" onClick={() => setLedgerPeriodMode(id)} className={`rounded-lg border px-3 py-2 text-xs font-semibold ${ledgerPeriodMode === id ? "border-[#5f8df8] bg-[#2f5ba6] text-white" : "border-[#34435c] bg-[#182131] text-[#aebbd0] hover:text-white"}`}>{label}</button>)}
-            {ledgerPeriodMode === "day" && <input type="date" value={ledgerDate} onChange={(event) => setLedgerDate(event.target.value)} className="rounded-lg border border-[#34435c] bg-[#182131] px-3 py-2 text-xs text-white" />}
-            {ledgerPeriodMode === "month" && <input type="month" value={ledgerMonth} onChange={(event) => setLedgerMonth(event.target.value)} className="rounded-lg border border-[#34435c] bg-[#182131] px-3 py-2 text-xs text-white" />}
-            {ledgerPeriodMode === "quarter" && <><select value={ledgerQuarter} onChange={(event) => setLedgerQuarter(event.target.value)} className="rounded-lg border border-[#34435c] bg-[#182131] px-3 py-2 text-xs text-white"><option value="1">Quý I</option><option value="2">Quý II</option><option value="3">Quý III</option><option value="4">Quý IV</option></select><input type="number" min="2000" max="2100" value={ledgerYear} onChange={(event) => setLedgerYear(Number(event.target.value) || TODAY.getFullYear())} className="w-24 rounded-lg border border-[#34435c] bg-[#182131] px-3 py-2 text-xs text-white" /></>}
-            <span className="rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2 text-xs font-semibold text-[#c9d4e5]">Đang xem {ledgerPeriodLabel}</span>
-          </div>
-          {isFullAccess && <button type="button" onClick={() => startAddEntry(activeView === "income" ? "thu" : "chi")} className={`flex items-center gap-1.5 rounded-lg px-3.5 py-2 text-xs font-semibold text-white ${activeView === "income" ? "bg-emerald-600 hover:bg-emerald-500" : "bg-red-600 hover:bg-red-500"}`}><Plus size={14} /> {activeView === "income" ? "Ghi khoản thu" : "Ghi khoản chi"}</button>}
+      {(activeView === "income" || activeView === "expense") && <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-[#29364f] bg-[#111823] px-3 py-2">
+          <div className="flex flex-wrap items-center gap-1.5">{[["day", "Ngày"], ["month", "Tháng"], ["quarter", "Quý"]].map(([id, label]) => <button key={id} type="button" onClick={() => setLedgerPeriodMode(id)} className={`min-h-[34px] rounded-lg border px-3 text-xs font-semibold ${ledgerPeriodMode === id ? "border-[#5f8df8] bg-[#2f5ba6] text-white" : "border-[#34435c] bg-[#182131] text-[#aebbd0]"}`}>{label}</button>)}{ledgerPeriodMode === "day" && <input type="date" value={ledgerDate} onChange={(event) => setLedgerDate(event.target.value)} className="min-h-[34px] rounded-lg border border-[#34435c] bg-[#182131] px-3 text-xs text-white" />}{ledgerPeriodMode === "month" && <input type="month" value={ledgerMonth} onChange={(event) => setLedgerMonth(event.target.value)} className="min-h-[34px] rounded-lg border border-[#34435c] bg-[#182131] px-3 text-xs text-white" />}{ledgerPeriodMode === "quarter" && <><select value={ledgerQuarter} onChange={(event) => setLedgerQuarter(event.target.value)} className="min-h-[34px] rounded-lg border border-[#34435c] bg-[#182131] px-3 text-xs text-white"><option value="1">Quý 1</option><option value="2">Quý 2</option><option value="3">Quý 3</option><option value="4">Quý 4</option></select><input type="number" min="2020" max="2100" value={ledgerYear} onChange={(event) => setLedgerYear(Number(event.target.value) || TODAY.getFullYear())} className="min-h-[34px] w-24 rounded-lg border border-[#34435c] bg-[#182131] px-3 text-xs text-white" /></>}<span className="flex min-h-[34px] items-center rounded-lg border border-[#34435c] bg-[#0f151f] px-3 text-xs font-semibold text-[#c9d4e5]">{ledgerPeriodLabel}</span></div>
+          {isFullAccess && <button type="button" onClick={() => startAddEntry(activeView === "income" ? "thu" : "chi")} className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-white ${activeView === "income" ? "bg-emerald-600 hover:bg-emerald-500" : "bg-red-600 hover:bg-red-500"}`}><Plus size={14} /> Ghi {activeView === "income" ? "khoản thu" : "khoản chi"}</button>}
         </div>
-        {activeView === "income" ? <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-3"><FinanceHubMetric label={`Tổng thu ${ledgerPeriodLabel}`} value={fmtVND(totalLedgerIncome)} note={`${ledgerIncomeRows.length} khoản thu`} icon={TrendingUp} tone="green" /><FinanceHubMetric label="Thu từ CRM" value={fmtVND(ledgerIncomeRows.filter((item) => item.source === "crm").reduce((sum, item) => sum + (Number(item.amount) || 0), 0))} note="Các khoản khách hàng đã thanh toán" icon={ShoppingCart} tone="green" /><FinanceHubMetric label="Thu khác" value={fmtVND(ledgerIncomeRows.filter((item) => item.source !== "crm").reduce((sum, item) => sum + (Number(item.amount) || 0), 0))} note="Công nợ, dịch vụ và khoản thu thủ công" icon={Wallet} /></div> : <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4"><FinanceHubMetric label={`Tổng chi ${ledgerPeriodLabel}`} value={fmtVND(totalLedgerExpense)} note={`${ledgerExpenseRows.length} khoản chi`} icon={TrendingDown} tone="red" /><FinanceHubMetric label="Chi Marketing" value={fmtVND(ledgerMarketingTotal)} note="Tự lấy từ báo cáo Marketing hằng ngày" icon={Megaphone} tone="red" /><FinanceHubMetric label="Lương đã thực chi" value={fmtVND(ledgerPayrollTotal)} note="Chỉ tính khoản đã chi trả" icon={Users} tone="gold" /><FinanceHubMetric label="Chi phí khác" value={fmtVND(Math.max(0, totalLedgerExpense - ledgerMarketingTotal - ledgerPayrollTotal))} note="Ăn uống, văn phòng, điện nước và chi khác" icon={Wallet} /></div>}
         {renderTxTable(activeLedgerRows, activeView === "income" ? "thu" : "chi")}
       </div>}
 
-      {activeView === "staff" && <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden"><div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4"><FinanceHubMetric label="Tổng thực lĩnh" value={fmtVND(visiblePayrollRows.reduce((sum, row) => sum + (Number(row.net) || 0), 0))} icon={Banknote} tone="green" /><FinanceHubMetric label="Gross thu nhập" value={fmtVND(visiblePayrollRows.reduce((sum, row) => sum + (Number(row.grossIncome) || 0), 0))} icon={Wallet} /><FinanceHubMetric label="BH doanh nghiệp" value={fmtVND(totalEmployerInsurance)} icon={ShieldCheck} tone="gold" /><FinanceHubMetric label="Tổng chi phí DN" value={fmtVND(totalStaffCost)} icon={Users} tone="red" /></div><FinanceScrollableTable minWidth={1320}><table className="w-full text-xs"><thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]"><tr><th className="px-4 py-3">Nhân viên</th><th className="px-4 py-3 text-right">Ngày công</th><th className="px-4 py-3 text-right">Lương theo công</th><th className="px-4 py-3 text-right">Thưởng/hoa hồng</th><th className="px-4 py-3 text-right">Phụ cấp</th><th className="px-4 py-3 text-right">BH nhân viên</th><th className="px-4 py-3 text-right">Thuế TNCN</th><th className="px-4 py-3 text-right">Thực lĩnh</th><th className="px-4 py-3 text-right">BH doanh nghiệp</th><th className="px-4 py-3 text-right">Tổng chi phí DN</th></tr></thead><tbody>{visiblePayrollRows.map((row) => <tr key={row.id} className="border-t border-[#253146]"><td className="px-4 py-3 font-semibold text-white">{row.name}<div className="text-[10px] font-normal text-[#77869d]">{row.contractLabel}</div></td><td className="px-4 py-3 text-right ktns-mono text-[#b9c6d9]">{row.actualDays}/{row.standardDays}</td><td className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{fmtVND(row.salaryByDays)}</td><td className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{fmtVND((row.kpiBonus || 0) + (row.commission || 0) + (row.compBonus || 0) + (row.techUpsale || 0) + (row.otherBonus || 0) + (row.attendanceBonus || 0) + (row.kpiMilestoneBonus || 0))}</td><td className="px-4 py-3 text-right ktns-mono text-amber-300">{fmtVND((row.mealAllowance || 0) + (row.seniorityAllowance || 0))}</td><td className="px-4 py-3 text-right ktns-mono text-red-300">{fmtVND(row.employeeInsurance)}</td><td className="px-4 py-3 text-right ktns-mono text-red-300">{fmtVND(row.thueTNCN)}</td><td className="px-4 py-3 text-right font-bold ktns-mono text-emerald-400">{fmtVND(row.net)}</td><td className="px-4 py-3 text-right ktns-mono text-[#9fb9e7]">{fmtVND(row.employerInsurance)}</td><td className="px-4 py-3 text-right font-bold ktns-mono text-red-300">{fmtVND(row.employerTotalCost)}</td></tr>)}</tbody></table></FinanceScrollableTable></div>}
+      {activeView === "staff" && <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden"><div className="shrink-0 rounded-lg border border-[#29364f] bg-[#111823] px-3 py-2 text-xs text-[#aebbd0]"><strong className="text-white">Bảng chi phí nhân sự</strong><span className="ml-2">{visiblePayrollRows.length} nhân viên · tổng chi phí doanh nghiệp {fmtVND(payrollTableTotals.employerTotalCost)}</span></div><FinanceScrollableTable minWidth={1320}><table className="domix-finance-table w-full text-xs"><thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]"><tr><th className="px-4 py-3">Nhân viên</th><th className="px-4 py-3 text-right">Ngày công</th><th className="px-4 py-3 text-right">Lương theo công</th><th className="px-4 py-3 text-right">Thưởng/hoa hồng</th><th className="px-4 py-3 text-right">Phụ cấp</th><th className="px-4 py-3 text-right">BH nhân viên</th><th className="px-4 py-3 text-right">Thuế TNCN</th><th className="px-4 py-3 text-right">Thực lĩnh</th><th className="px-4 py-3 text-right">BH doanh nghiệp</th><th className="px-4 py-3 text-right">Tổng chi phí DN</th></tr></thead><tbody>{visiblePayrollRows.map((row) => <tr key={row.id} className="border-t border-[#3A4152]"><td className="px-4 py-3 font-semibold text-white">{row.name}<div className="text-[10px] font-normal text-[#77869d]">{row.contractLabel}</div></td><td className="px-4 py-3 text-right ktns-mono text-[#b9c6d9]">{row.actualDays}/{row.standardDays}</td><td className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{fmtVND(row.salaryByDays)}</td><td className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{fmtVND((row.kpiBonus || 0) + (row.commission || 0) + (row.compBonus || 0) + (row.techUpsale || 0) + (row.otherBonus || 0) + (row.attendanceBonus || 0) + (row.kpiMilestoneBonus || 0))}</td><td className="px-4 py-3 text-right ktns-mono text-amber-300">{fmtVND((row.mealAllowance || 0) + (row.seniorityAllowance || 0))}</td><td className="px-4 py-3 text-right ktns-mono text-red-300">{fmtVND(row.employeeInsurance)}</td><td className="px-4 py-3 text-right ktns-mono text-red-300">{fmtVND(row.thueTNCN)}</td><td className="px-4 py-3 text-right font-bold ktns-mono text-emerald-400">{fmtVND(row.net)}</td><td className="px-4 py-3 text-right ktns-mono text-[#9fb9e7]">{fmtVND(row.employerInsurance)}</td><td className="px-4 py-3 text-right font-bold ktns-mono text-red-300">{fmtVND(row.employerTotalCost)}</td></tr>)}</tbody><tfoot className="finance-sticky-footer"><tr><td colSpan={2} className="px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-[#d7e1ef]">Tổng cộng</td><td className="px-4 py-3 text-right font-bold ktns-mono">{fmtVND(payrollTableTotals.salaryByDays)}</td><td className="px-4 py-3 text-right font-bold ktns-mono">{fmtVND(payrollTableTotals.bonus)}</td><td className="px-4 py-3 text-right font-bold text-amber-300 ktns-mono">{fmtVND(payrollTableTotals.allowance)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(payrollTableTotals.employeeInsurance)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(payrollTableTotals.thueTNCN)}</td><td className="px-4 py-3 text-right font-bold text-emerald-300 ktns-mono">{fmtVND(payrollTableTotals.net)}</td><td className="px-4 py-3 text-right font-bold text-[#a9c6f8] ktns-mono">{fmtVND(payrollTableTotals.employerInsurance)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(payrollTableTotals.employerTotalCost)}</td></tr></tfoot></table></FinanceScrollableTable></div>}
 
-      {activeView === "meal" && <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden"><div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-3"><FinanceHubMetric label="Phụ cấp cấu hình" value={fmtVND(visiblePayrollRows.reduce((sum, row) => sum + (Number(row.configuredMealAllowance) || 0), 0))} icon={Banknote} /><FinanceHubMetric label="Phụ cấp thực nhận" value={fmtVND(totalMeal)} icon={CheckCircle2} tone="green" /><FinanceHubMetric label="Bị trừ do nghỉ" value={fmtVND(visiblePayrollRows.reduce((sum, row) => sum + (Number(row.mealAllowanceDeducted) || 0), 0))} icon={TrendingDown} tone="red" /></div><FinanceScrollableTable minWidth={980}><table className="w-full text-xs"><thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]"><tr><th className="px-4 py-3">Nhân viên</th><th className="px-4 py-3 text-right">Ngày công duyệt</th><th className="px-4 py-3 text-right">Mức tháng</th><th className="px-4 py-3 text-right">Mức/ngày</th><th className="px-4 py-3 text-right">Thực nhận</th><th className="px-4 py-3 text-right">Bị trừ</th></tr></thead><tbody>{visiblePayrollRows.map((row) => <tr key={row.id} className="border-t border-[#253146]"><td className="px-4 py-3 font-semibold text-white">{row.name}</td><td className="px-4 py-3 text-right ktns-mono text-[#b9c6d9]">{row.actualDays}/{row.standardDays}</td><td className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{fmtVND(row.configuredMealAllowance)}</td><td className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{fmtVND(row.mealAllowancePerDay)}</td><td className="px-4 py-3 text-right font-bold ktns-mono text-emerald-400">{fmtVND(row.mealAllowance)}</td><td className="px-4 py-3 text-right font-bold ktns-mono text-red-300">{fmtVND(row.mealAllowanceDeducted)}</td></tr>)}</tbody></table></FinanceScrollableTable></div>}
+      {activeView === "meal" && <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden"><div className="shrink-0 rounded-lg border border-[#29364f] bg-[#111823] px-3 py-2 text-xs text-[#aebbd0]"><strong className="text-white">Bảng phụ cấp ăn trưa</strong><span className="ml-2">Tổng thực nhận {fmtVND(mealTableTotals.mealAllowance)}</span></div><FinanceScrollableTable minWidth={980}><table className="domix-finance-table w-full text-xs"><thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]"><tr><th className="px-4 py-3">Nhân viên</th><th className="px-4 py-3 text-right">Ngày công duyệt</th><th className="px-4 py-3 text-right">Mức tháng</th><th className="px-4 py-3 text-right">Mức/ngày</th><th className="px-4 py-3 text-right">Thực nhận</th><th className="px-4 py-3 text-right">Bị trừ</th></tr></thead><tbody>{visiblePayrollRows.map((row) => <tr key={row.id} className="border-t border-[#3A4152]"><td className="px-4 py-3 font-semibold text-white">{row.name}</td><td className="px-4 py-3 text-right ktns-mono text-[#b9c6d9]">{row.actualDays}/{row.standardDays}</td><td className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{fmtVND(row.configuredMealAllowance)}</td><td className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{fmtVND(row.mealAllowancePerDay)}</td><td className="px-4 py-3 text-right font-bold ktns-mono text-emerald-400">{fmtVND(row.mealAllowance)}</td><td className="px-4 py-3 text-right font-bold ktns-mono text-red-300">{fmtVND(row.mealAllowanceDeducted)}</td></tr>)}</tbody><tfoot className="finance-sticky-footer"><tr><td colSpan={2} className="px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-[#d7e1ef]">Tổng cộng</td><td className="px-4 py-3 text-right font-bold ktns-mono">{fmtVND(mealTableTotals.configuredMealAllowance)}</td><td className="px-4 py-3 text-right font-bold ktns-mono">{fmtVND(mealTableTotals.mealAllowancePerDay)}</td><td className="px-4 py-3 text-right font-bold text-emerald-300 ktns-mono">{fmtVND(mealTableTotals.mealAllowance)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(mealTableTotals.mealAllowanceDeducted)}</td></tr></tfoot></table></FinanceScrollableTable></div>}
 
-      {activeView === "insurance" && <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden"><div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4"><FinanceHubMetric label="BH nhân viên đóng" value={fmtVND(totalEmployeeInsurance)} icon={UserCheck} tone="red" /><FinanceHubMetric label="BH doanh nghiệp đóng" value={fmtVND(totalEmployerInsurance)} icon={Building2} tone="gold" /><FinanceHubMetric label="Tổng BHYT" value={fmtVND(visiblePayrollRows.reduce((sum, row) => sum + (Number(row.bhytNV) || 0) + (Number(row.bhytDN) || 0), 0))} icon={ShieldCheck} /><FinanceHubMetric label="Tổng BHXH" value={fmtVND(visiblePayrollRows.reduce((sum, row) => sum + (Number(row.bhxhNV) || 0) + (Number(row.bhxhDN) || 0), 0))} icon={Landmark} tone="green" /></div><FinanceScrollableTable minWidth={1280}><table className="w-full text-xs"><thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]"><tr><th className="px-4 py-3">Nhân viên</th><th className="px-4 py-3">Hợp đồng</th><th className="px-4 py-3 text-right">BHXH NV</th><th className="px-4 py-3 text-right">BHYT NV</th><th className="px-4 py-3 text-right">BHTN NV</th><th className="px-4 py-3 text-right">BHXH DN</th><th className="px-4 py-3 text-right">BHYT DN</th><th className="px-4 py-3 text-right">BHTN DN</th><th className="px-4 py-3 text-right">TNLĐ-BNN</th><th className="px-4 py-3 text-right">Tổng cộng</th></tr></thead><tbody>{visiblePayrollRows.map((row) => <tr key={row.id} className="border-t border-[#253146]"><td className="px-4 py-3 font-semibold text-white">{row.name}</td><td className="px-4 py-3 text-[#aebbd0]">{row.contractLabel}</td>{[row.bhxhNV,row.bhytNV,row.bhtnNV,row.bhxhDN,row.bhytDN,row.bhtnDN,row.bhtnldBnnDN].map((value, index) => <td key={index} className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{fmtVND(value)}</td>)}<td className="px-4 py-3 text-right font-bold ktns-mono text-amber-300">{fmtVND((row.employeeInsurance || 0) + (row.employerInsurance || 0))}</td></tr>)}</tbody></table></FinanceScrollableTable></div>}
+      {activeView === "insurance" && <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden"><div className="shrink-0 rounded-lg border border-[#29364f] bg-[#111823] px-3 py-2 text-xs text-[#aebbd0]"><strong className="text-white">Bảng BHXH / BHYT</strong><span className="ml-2">Tổng bảo hiểm {fmtVND(insuranceTableTotals.combined)}</span></div><FinanceScrollableTable minWidth={1280}><table className="domix-finance-table w-full text-xs"><thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]"><tr><th className="px-4 py-3">Nhân viên</th><th className="px-4 py-3">Hợp đồng</th><th className="px-4 py-3 text-right">BHXH NV</th><th className="px-4 py-3 text-right">BHYT NV</th><th className="px-4 py-3 text-right">BHTN NV</th><th className="px-4 py-3 text-right">BHXH DN</th><th className="px-4 py-3 text-right">BHYT DN</th><th className="px-4 py-3 text-right">BHTN DN</th><th className="px-4 py-3 text-right">TNLĐ-BNN</th><th className="px-4 py-3 text-right">Tổng cộng</th></tr></thead><tbody>{visiblePayrollRows.map((row) => <tr key={row.id} className="border-t border-[#3A4152]"><td className="px-4 py-3 font-semibold text-white">{row.name}</td><td className="px-4 py-3 text-[#aebbd0]">{row.contractLabel}</td>{[row.bhxhNV, row.bhytNV, row.bhtnNV, row.bhxhDN, row.bhytDN, row.bhtnDN, row.bhtnldBnnDN].map((value, index) => <td key={index} className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{fmtVND(value)}</td>)}<td className="px-4 py-3 text-right font-bold ktns-mono text-amber-300">{fmtVND((row.employeeInsurance || 0) + (row.employerInsurance || 0))}</td></tr>)}</tbody><tfoot className="finance-sticky-footer"><tr><td colSpan={2} className="px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-[#d7e1ef]">Tổng cộng</td>{[insuranceTableTotals.bhxhNV, insuranceTableTotals.bhytNV, insuranceTableTotals.bhtnNV, insuranceTableTotals.bhxhDN, insuranceTableTotals.bhytDN, insuranceTableTotals.bhtnDN, insuranceTableTotals.bhtnldBnnDN].map((value, index) => <td key={index} className="px-4 py-3 text-right font-bold ktns-mono">{fmtVND(value)}</td>)}<td className="px-4 py-3 text-right font-bold text-amber-300 ktns-mono">{fmtVND(insuranceTableTotals.combined)}</td></tr></tfoot></table></FinanceScrollableTable></div>}
+
+      {showFinanceInsights && <div className="absolute inset-0 z-40 flex justify-end bg-[#050912]/70 backdrop-blur-sm" onClick={() => setShowFinanceInsights(false)}><aside className="flex h-full w-full max-w-5xl flex-col border-l border-[#34435c] bg-[#0f1622] shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex shrink-0 items-start justify-between gap-3 border-b border-[#29364f] px-5 py-4"><div><h3 className="text-lg font-bold text-white">Tùy biến & tổng quan · {FINANCE_HUB_VIEWS.find((view) => view.id === activeView)?.label}</h3><p className="mt-1 text-xs text-[#8795aa]">Khu vực phụ trợ được tách khỏi bảng để không chiếm không gian làm việc chính.</p></div><button type="button" onClick={() => setShowFinanceInsights(false)} aria-label="Đóng tổng quan" className="rounded-lg border border-[#34435c] p-2 text-[#aebbd0] hover:bg-white/5 hover:text-white"><X size={16} /></button></div><div className="min-h-0 flex-1 overflow-y-auto p-5">
+        {activeView === "overview" && <div className="space-y-4"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5"><FinanceHubMetric label="Doanh thu bán hàng ghi nhận" value={fmtVND(totalSalesRevenue)} note={`${periodOrders.length} đơn hợp lệ trong kỳ`} icon={ShoppingCart} tone="green" /><FinanceHubMetric label="Tổng doanh thu ghi nhận" value={fmtVND(totalIncome)} note={`Thu thực tế ${fmtVND(totalCollectedIncome)} · Còn phải thu ${fmtVND(totalReceivableForHub)}`} icon={TrendingUp} tone="green" /><FinanceHubMetric label="Chi phí vận hành" value={fmtVND(totalOperatingExpense + totalMarketingExpense)} note={`${operatingExpenseRows.length} khoản khác + ${marketingExpenseRows.length} khoản Marketing`} icon={TrendingDown} tone="red" /><FinanceHubMetric label="Chi phí nhân sự" value={fmtVND(totalStaffCost)} note="Gross + bảo hiểm doanh nghiệp" icon={Users} tone="gold" /><FinanceHubMetric label="Lợi nhuận tạm tính" value={fmtVND(operatingProfit)} note="Doanh thu − vận hành − Marketing − nhân sự" icon={Wallet} tone={operatingProfit >= 0 ? "blue" : "red"} /></div><div className="rounded-xl border border-[#2c3b53] bg-[#111a28] px-4 py-3 text-xs leading-5 text-[#aebbd0]"><strong className="text-white">Cách tính:</strong> Giá trị đơn hợp lệ được ghi nhận vào doanh thu ngay khi bán; tiền khách đã trả đi vào bảng Thu; phần chưa trả đi vào Công nợ. Đơn phân phối liên kết CRM chỉ phục vụ quyết toán đối tác và không được cộng doanh thu lần thứ hai.</div><div className="grid grid-cols-1 gap-3 lg:grid-cols-2"><div className="rounded-xl border border-[#2c3b53] bg-[#111a28] p-4"><h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#93a1b8]">Nguồn thu — thu từ đâu</h4><div className="flex flex-col gap-1.5 text-xs">{[["Bán hàng (CRM)", scopedRevenueLedger.salesRevenue], ["Hợp tác phân phối", scopedRevenueLedger.distributionRevenue], ["Marketing", scopedRevenueLedger.marketingRevenue], ["Thu khác", scopedRevenueLedger.otherIncome]].map(([label, value]) => <div key={label} className="flex items-center justify-between border-b border-[#212c3f] py-1.5 last:border-0"><span className="text-[#aebbd0]">{label}</span><span className="ktns-mono font-semibold text-emerald-400">{fmtVND(value)}</span></div>)}</div></div><div className="rounded-xl border border-[#2c3b53] bg-[#111a28] p-4"><h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#93a1b8]">Mục đích chi — chi vào việc gì</h4>{scopedExpenseBreakdown.length === 0 ? <p className="text-xs text-[#7f8da5]">Chưa có khoản chi nào trong kỳ.</p> : <div className="flex flex-col gap-1.5 text-xs">{scopedExpenseBreakdown.map((item) => <div key={item.category} className="flex items-center justify-between border-b border-[#212c3f] py-1.5 last:border-0"><span className="text-[#aebbd0]">{item.label}</span><span className="ktns-mono font-semibold text-red-300">{fmtVND(item.amount)}</span></div>)}</div>}</div></div></div>}
+        {activeView === "sales" && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"><FinanceHubMetric label="Doanh thu bán hàng" value={fmtVND(totalSalesRevenue)} note={`${periodOrders.length} đơn trong kỳ`} icon={ShoppingCart} tone="green" /><FinanceHubMetric label="Trung bình / đơn" value={fmtVND(periodOrders.length ? totalSalesRevenue / periodOrders.length : 0)} icon={Calculator} /><FinanceHubMetric label="Chưa xuất hóa đơn" value={`${periodOrders.filter((order) => order.invoiceStatus !== "issued").length} đơn`} icon={AlertTriangle} tone="red" /><FinanceHubMetric label="Còn phải thu" value={fmtVND(totalReceivableForHub)} icon={Wallet} tone="gold" /></div>}
+        {activeView === "income" && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"><FinanceHubMetric label={`Tổng thu ${ledgerPeriodLabel}`} value={fmtVND(totalLedgerIncome)} icon={TrendingUp} tone="green" /><FinanceHubMetric label="Thu Marketing" value={fmtVND(ledgerMarketingIncomeRows.reduce((sum, item) => sum + (Number(item.amount) || 0), 0))} icon={Megaphone} /><FinanceHubMetric label="Số bút toán" value={`${ledgerIncomeRows.length}`} icon={FileText} /></div>}
+        {activeView === "expense" && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"><FinanceHubMetric label={`Tổng chi ${ledgerPeriodLabel}`} value={fmtVND(totalLedgerExpense)} icon={TrendingDown} tone="red" /><FinanceHubMetric label="Chi Marketing" value={fmtVND(ledgerMarketingTotal)} icon={Megaphone} tone="gold" /><FinanceHubMetric label="Chi lương" value={fmtVND(ledgerPayrollTotal)} icon={Users} /><FinanceHubMetric label="Số bút toán" value={`${ledgerExpenseRows.length}`} icon={FileText} /></div>}
+        {activeView === "staff" && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"><FinanceHubMetric label="Lương thực lĩnh" value={fmtVND(payrollTableTotals.net)} icon={Banknote} tone="green" /><FinanceHubMetric label="Gross thu nhập" value={fmtVND(visiblePayrollRows.reduce((sum, row) => sum + (Number(row.grossIncome) || 0), 0))} icon={Wallet} /><FinanceHubMetric label="BH doanh nghiệp" value={fmtVND(payrollTableTotals.employerInsurance)} icon={ShieldCheck} tone="gold" /><FinanceHubMetric label="Tổng chi phí DN" value={fmtVND(payrollTableTotals.employerTotalCost)} icon={Users} tone="red" /></div>}
+        {activeView === "meal" && <div className="grid grid-cols-1 gap-3 sm:grid-cols-3"><FinanceHubMetric label="Phụ cấp cấu hình" value={fmtVND(mealTableTotals.configuredMealAllowance)} icon={Banknote} /><FinanceHubMetric label="Phụ cấp thực nhận" value={fmtVND(mealTableTotals.mealAllowance)} icon={CheckCircle2} tone="green" /><FinanceHubMetric label="Bị trừ do nghỉ" value={fmtVND(mealTableTotals.mealAllowanceDeducted)} icon={TrendingDown} tone="red" /></div>}
+        {activeView === "insurance" && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"><FinanceHubMetric label="BH nhân viên đóng" value={fmtVND(totalEmployeeInsurance)} icon={UserCheck} tone="red" /><FinanceHubMetric label="BH doanh nghiệp đóng" value={fmtVND(totalEmployerInsurance)} icon={Building2} tone="gold" /><FinanceHubMetric label="Tổng BHYT" value={fmtVND(insuranceTableTotals.bhytNV + insuranceTableTotals.bhytDN)} icon={ShieldCheck} /><FinanceHubMetric label="Tổng BHXH" value={fmtVND(insuranceTableTotals.bhxhNV + insuranceTableTotals.bhxhDN)} icon={Landmark} tone="green" /></div>}
+      </div></aside></div>}
 
       {showEntryForm && <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm lg:left-60 lg:p-5" onClick={() => setShowEntryForm(false)}><div className="w-full max-w-2xl rounded-2xl border border-[#34435c] bg-[#141c2a] p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-center justify-between"><div><h3 className="text-lg font-bold text-white">{editingEntryId ? "Sửa" : "Ghi"} khoản {entryForm.kind === "thu" ? "thu" : "chi"}</h3><p className="text-[11px] text-[#8795aa]">Khoản này được đưa vào đúng bảng Thu hoặc Chi và dùng cho báo cáo ngày, tháng, quý.</p></div><button type="button" onClick={() => setShowEntryForm(false)} className="rounded-lg border border-[#34435c] p-2 text-[#aebbd0] hover:text-white"><X size={16} /></button></div><div className="mt-5 grid grid-cols-2 gap-4"><label className="text-xs text-[#93a1b8]">Ngày<input type="date" value={entryForm.date} onChange={(event) => setEntryForm({ ...entryForm, date: event.target.value })} className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white" /></label><label className="text-xs text-[#93a1b8]">Nhóm {entryForm.kind === "thu" ? "thu" : "chi"}<select value={entryForm.category} onChange={(event) => setEntryForm({ ...entryForm, category: event.target.value })} className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white">{FINANCE_ENTRY_CATEGORIES[entryForm.kind].map(([id,label]) => <option key={id} value={id}>{label}</option>)}</select></label><label className="col-span-2 text-xs text-[#93a1b8]">Nhân viên liên quan<select value={entryForm.employeeId} onChange={(event) => setEntryForm({ ...entryForm, employeeId: event.target.value })} className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white"><option value="">Khoản chung toàn công ty</option>{(employees || []).filter((employee) => employee.status !== "inactive").map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label><label className="col-span-2 text-xs text-[#93a1b8]">Nội dung<input value={entryForm.desc} onChange={(event) => setEntryForm({ ...entryForm, desc: event.target.value })} placeholder="Ví dụ: Chi phụ cấp ăn trưa tháng 7" className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white" /></label><label className="text-xs text-[#93a1b8]">Số tiền<MoneyInput value={entryForm.amount} onChange={(value) => setEntryForm({ ...entryForm, amount: value })} /></label><label className="text-xs text-[#93a1b8]">Phương thức<select value={entryForm.paymentMethod} onChange={(event) => setEntryForm({ ...entryForm, paymentMethod: event.target.value })} className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white"><option value="chuyen_khoan">Chuyển khoản</option><option value="tien_mat">Tiền mặt</option></select></label></div><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setShowEntryForm(false)} className="rounded-lg border border-[#34435c] px-4 py-2 text-sm text-[#b7c2d3]">Hủy</button><button type="button" onClick={saveEntry} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500">{editingEntryId ? "Cập nhật" : "Lưu khoản này"}</button></div></div></div>}
     </div>
@@ -11786,6 +12093,14 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
     setEditingOrder(null);
   };
   const nameOf = (id) => employees.find((e) => e.id === id)?.name || "—";
+  // Phân biệt rõ "cố ý không gán Sale" (id rỗng) với "nhân viên từng gán đã bị xóa khỏi hệ
+  // thống" (id còn nhưng không tìm thấy) — trước đây cả 2 đều hiện "—" giống hệt nhau, khiến
+  // form Sửa (select không khớp option nào) lại tự hiển thị NHẦM sang nhân viên đầu danh sách.
+  const saleAssigneeDisplay = (id) => {
+    if (!id) return { label: "Khách tự đặt / không qua Sale", warn: false };
+    const emp = employees.find((e) => e.id === id);
+    return emp ? { label: emp.name, warn: false } : { label: "⚠ Nhân viên đã xóa", warn: true };
+  };
   const toggleExpand = (id) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
 
   const addContact = (orderId) => {
@@ -11903,21 +12218,14 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-150px)] flex-col gap-3">
+    <div data-disable-generated-total="true" className="domix-sales-crm flex h-full min-h-0 flex-col gap-3">
 
       {supportFeedback && (
-        <div className="flex items-start justify-between gap-3 rounded-xl border border-[#315fae]/35 bg-[#14233c] px-4 py-3 text-xs text-[#c9d8f1] shadow-sm">
+        <div className="shrink-0 flex items-start justify-between gap-3 rounded-xl border border-[#315fae]/35 bg-[#14233c] px-4 py-3 text-xs text-[#c9d8f1] shadow-sm">
           <span className="flex items-start gap-2"><CheckCircle2 size={15} className="mt-0.5 shrink-0 text-emerald-400" />{supportFeedback}</span>
           <button type="button" onClick={() => setSupportFeedback("")} className="rounded p-1 text-[#8798b4] hover:bg-white/10 hover:text-white" title="Đóng thông báo"><X size={14} /></button>
         </div>
       )}
-
-      <div style={{ display: activeTableView === "orders" ? "grid" : "none" }} className="grid-cols-4 gap-3">
-        <KpiCard icon={ShoppingCart} label="Tổng số đơn/upsale" value={orders.length} />
-        <KpiCard icon={Wallet} label="Tổng doanh thu ghi nhận" value={fmtVND(totalRevenue)} tone="up" />
-        <KpiCard icon={AlertTriangle} label="Chưa xuất hoá đơn" value={pendingCount} tone={pendingCount > 0 ? "down" : "up"} />
-        <KpiCard icon={UserCheck} label="Sale + Kỹ thuật đang ghi nhận" value={dealEmployees.length} />
-      </div>
 
       <div style={{ display: activeTableView === "sales" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><TrendingUp size={13} /> Chi tiết doanh số từng Sale — để tính KPI &amp; xem chất lượng</div>
@@ -12207,7 +12515,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
         <p className="px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Khách ở đây CHƯA tính vào doanh thu/hoá đơn — khi Sale chốt được đơn thật, bấm "Đã mua → Tạo đơn hàng" để chuyển hẳn xuống bảng đơn hàng CRM bên dưới. Mặc định chỉ hiện 10 người gần hẹn nhất, bấm "Xem thêm" để hiện dần, không tự hiện hết một lúc.</p>
       </div>
 
-      <div style={{ display: activeTableView === "orders" ? "flex" : "none" }} className="justify-between items-center gap-3">
+      <div style={{ display: activeTableView === "orders" ? "flex" : "none" }} className="shrink-0 justify-between items-center gap-3">
         <div>
           <p className="text-sm text-muted">{orders.length} đơn hàng đã ghi nhận trong CRM.</p>
           <p className="mt-0.5 text-[11px] text-muted">Đọc file Excel theo mẫu doanh thu. Nếu file có nhiều sheet, hệ thống sẽ hiển thị danh sách để chọn sheet cần nhập.</p>
@@ -12227,13 +12535,13 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
       </div>
 
       {activeTableView === "orders" && importT7Error && (
-        <div className="rounded-lg border border-stamp-red/40 bg-stamp-red/10 px-3 py-2 text-xs text-stamp-red flex items-center justify-between gap-3">
+        <div className="shrink-0 rounded-lg border border-stamp-red/40 bg-stamp-red/10 px-3 py-2 text-xs text-stamp-red flex items-center justify-between gap-3">
           <span className="flex items-center gap-1.5"><AlertTriangle size={13} /> {importT7Error}</span>
           <button onClick={() => setImportT7Error("")} className="text-stamp-red"><X size={13} /></button>
         </div>
       )}
       {activeTableView === "orders" && importT7Message && (
-        <div className="rounded-lg border border-ledger-green/40 bg-ledger-green/10 px-3 py-2 text-xs text-ledger-green flex items-center justify-between gap-3">
+        <div className="shrink-0 rounded-lg border border-ledger-green/40 bg-ledger-green/10 px-3 py-2 text-xs text-ledger-green flex items-center justify-between gap-3">
           <span className="flex items-center gap-1.5"><CheckCircle2 size={13} /> {importT7Message}</span>
           <button onClick={() => setImportT7Message("")} className="text-ledger-green"><X size={13} /></button>
         </div>
@@ -12399,7 +12707,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-paper-line p-3 flex items-center gap-2 flex-wrap">
+      <div className="shrink-0 bg-white rounded-lg border border-paper-line p-3 flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-[220px]">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
           <input
@@ -12415,9 +12723,9 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
         <span className="text-[11px] text-muted">{visibleOrders.length}/{orders.length} đơn hàng{orderSearchQ ? " khớp tìm kiếm (mọi tháng)" : ""}</span>
       </div>
 
-      <div style={{ display: activeTableView === "orders" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-x-auto">
-        <div className="max-h-[420px] overflow-y-auto">
-        <table data-sticky-columns="true" data-mobile-cards="true" className="w-full text-sm" style={{ minWidth: 1180 }}>
+      <div style={{ display: activeTableView === "orders" ? "flex" : "none" }} className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
+        <FinanceScrollableTable minWidth={1180} className="rounded-none border-0 bg-transparent">
+        <table data-sticky-columns="true" data-mobile-cards="true" className="domix-finance-table domix-sales-orders-table w-full text-sm" style={{ minWidth: 1180 }}>
           <thead className="sticky top-0 z-10">
             <tr className="bg-paper text-left text-xs uppercase text-muted">
               <th className="px-3 py-2.5">STT</th>
@@ -12463,7 +12771,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
                       <div className="ktns-mono">{o.phone}</div>
                       <div>{o.email}</div>
                     </td>
-                    <td className="px-3 py-2 text-xs">{nameOf(o.saleEmployeeId)}</td>
+                    <td className={`px-3 py-2 text-xs ${saleAssigneeDisplay(o.saleEmployeeId).warn ? "text-stamp-red font-medium" : ""}`}>{saleAssigneeDisplay(o.saleEmployeeId).label}</td>
                     <td className="px-3 py-2">
                       <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${o.dealType === "upsale" ? "bg-gold" : "bg-ink-light"}`} style={{ color: "white" }}>{o.dealType === "upsale" ? "Upsale KT" : "Sale"}</span>
                     </td>
@@ -12531,8 +12839,16 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
               );
             })}
           </tbody>
+          <tfoot className="finance-sticky-footer">
+            <tr>
+              <td colSpan={9} className="px-3 py-3 text-xs font-bold uppercase tracking-[0.06em] text-ink">TỔNG CỘNG · {visibleOrders.length} đơn đang hiển thị</td>
+              <td className="px-3 py-3 text-right text-sm font-bold ktns-mono text-ledger-green">{fmtVND(visibleOrders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0))}</td>
+              <td className="px-3 py-3 text-xs font-semibold text-stamp-red">{visibleOrders.filter((order) => order.invoiceStatus !== "issued").length > 0 ? `${visibleOrders.filter((order) => order.invoiceStatus !== "issued").length} chưa xuất` : "Đã đủ"}</td>
+              <td colSpan={2} className="px-3 py-3 text-right text-[11px] text-muted">{dealEmployees.length} nhân sự đang ghi nhận</td>
+            </tr>
+          </tfoot>
         </table>
-        </div>
+        </FinanceScrollableTable>
       </div>
 
       {supportRequest && (() => {
@@ -12603,7 +12919,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
                         ) : supportAssignees.map((employee) => {
                           const selected = String(employee.id) === String(supportRequest.employeeId);
                           return (
-                            <tr key={employee.id} onClick={() => setSupportRequest((current) => ({ ...current, employeeId: String(employee.id) }))} className={`cursor-pointer border-t border-[#263347] transition-colors ${selected ? "bg-[#284d88]/45" : "hover:bg-white/[0.035]"}`}>
+                            <tr key={employee.id} onClick={() => setSupportRequest((current) => ({ ...current, employeeId: String(employee.id) }))} className={`cursor-pointer border-t border-[#3A4152] transition-colors ${selected ? "bg-[#284d88]/45" : "hover:bg-white/[0.035]"}`}>
                               <td className="px-3 py-3"><input type="radio" name="supportEmployee" checked={selected} onChange={() => setSupportRequest((current) => ({ ...current, employeeId: String(employee.id) }))} className="h-4 w-4 accent-[#5d8de4]" /></td>
                               <td className="px-3 py-3"><div className="font-semibold text-white">{employee.name}</div><div className="mt-0.5 text-[10px] text-[#72819a]">{employee.phone || "Chưa có SĐT"}</div></td>
                               <td className="px-3 py-3 text-[#b9c6d9]">{ROLE_META[employee.roleType]?.label || employee.position || "Nhân viên"}</td>
@@ -12644,7 +12960,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
               <div className="bg-paper rounded-md p-3 mb-3 text-xs flex flex-col gap-1">
                 <div className="font-semibold text-ink">{o.customerName}</div>
                 <div className="text-muted ktns-mono">{o.phone}{o.email ? ` · ${o.email}` : ""}</div>
-                <div className="text-muted">Nhân sự Sale: {nameOf(o.saleEmployeeId)} · Số tiền: <span className="ktns-mono text-ledger-green font-medium">{fmtVND(o.amount)}</span></div>
+                <div className="text-muted">Nhân sự Sale: <span className={saleAssigneeDisplay(o.saleEmployeeId).warn ? "text-stamp-red font-medium" : ""}>{saleAssigneeDisplay(o.saleEmployeeId).label}</span> · Số tiền: <span className="ktns-mono text-ledger-green font-medium">{fmtVND(o.amount)}</span></div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Loại hoá đơn
@@ -12724,6 +13040,9 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
                 <select value={editingOrder.saleEmployeeId} onChange={(e) => setEditingOrder({ ...editingOrder, saleEmployeeId: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
                   {dealEmployees.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
                   <option value="none">— Khách tự đặt / không qua Sale —</option>
+                  {editingOrder.saleEmployeeId !== "none" && !dealEmployees.some((e) => String(e.id) === String(editingOrder.saleEmployeeId)) && (
+                    <option value={editingOrder.saleEmployeeId}>⚠ Nhân viên đã bị xóa khỏi hệ thống — chọn lại người khác</option>
+                  )}
                 </select>
               </label>
               <label className="text-xs text-muted flex flex-col gap-1">Tổng thanh toán (đ)<MoneyInput value={editingOrder.amount} onChange={(v) => setEditingOrder({ ...editingOrder, amount: v })} /></label>
@@ -14238,8 +14557,8 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
   const updateTextField = (id, field, value) => { if (!isAdmin) return; setEmployees((prev) => prev.map((e) => (e.id === id ? { ...e, [field]: value } : e))); };
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex justify-between items-center flex-wrap gap-2">
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <div className="shrink-0 flex justify-between items-center flex-wrap gap-2">
         <p className="text-sm text-muted">
           {periodActive.length} nhân viên đang làm việc trong tháng {reportMonth}/{reportYear} ·
           <span className="text-ink-light"> lương, thưởng, KPI, ngày công, thâm niên và chỉ số vận hành theo vị trí sẽ tự động đổ vào Bảng lương và Hiệu suất</span>
@@ -14469,6 +14788,7 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
         </div>
       )}
 
+      <div className="min-h-0 flex-1 overflow-auto">
       <div className="grid gap-3 md:hidden">
         {visibleEmployees.length === 0 && accountsWithoutProfile.length === 0 && (
           <div className="rounded-xl border border-paper-line bg-white p-6 text-center text-sm text-muted">Chưa có dữ liệu nhân sự phù hợp với kỳ đang xem.</div>
@@ -14499,7 +14819,7 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
         })}
       </div>
 
-      <div className="domix-db-table-shell hidden max-h-[68vh] ktns-scrollbar md:block">
+      <div className="domix-db-table-shell hidden h-full ktns-scrollbar md:block">
         <table className="domix-db-table text-sm">
           <thead>
             <tr>
@@ -14649,6 +14969,7 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
           </tbody>
         </table>
       </div>
+      </div>
 
       {resigningId && (
         <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50">
@@ -14770,7 +15091,8 @@ function HieuSuat({ employees, masterRanking, supportCases, financialSummary, da
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-2">
+      <div className="shrink-0">
       <SectionViewSwitcher
         value={activeTableView}
         onChange={setActiveTableView}
@@ -14779,24 +15101,25 @@ function HieuSuat({ employees, masterRanking, supportCases, financialSummary, da
           { id: "details", label: "Chi tiết từng nhân viên", icon: Users, count: employees.length },
         ]}
       />
+      </div>
 
       {masterRanking && masterRanking.length > 0 && (
-        <div style={{ display: activeTableView === "overview" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
-          <div className="px-4 pt-3 pb-2 flex items-center justify-between flex-wrap gap-2">
+        <div style={{ display: activeTableView === "overview" ? "flex" : "none" }} className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
+          <div className="shrink-0 px-4 pt-3 pb-2 flex items-center justify-between flex-wrap gap-2">
             <div>
               <div className="text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><Gauge size={13} /> Xếp hạng tổng hợp — ai chăm, ai lười, ai cần cải thiện</div>
               <div className="text-[11px] text-muted mt-0.5">Gộp Chấm công + Doanh số CRM/Marketing + Giao việc + Hiệu suất thành 1 kết quả chuẩn/người, sắp điểm thấp lên đầu.</div>
             </div>
             <button onClick={() => exportMasterRankingExcel(masterRanking)} className="text-xs bg-ledger-green text-white px-2.5 py-1.5 rounded-md hover:opacity-90 flex items-center gap-1 shrink-0"><FileSpreadsheet size={12} /> Xuất Excel</button>
           </div>
-          <div className="px-4 pb-2 flex gap-2 flex-wrap">
+          <div className="shrink-0 px-4 pb-2 flex gap-2 flex-wrap">
             {Object.entries(RANKING_CATEGORY).map(([id, m]) => (
               <span key={id} className={`text-[10px] px-2 py-1 rounded-full font-medium ${m.tone === "gold" ? "bg-gold" : m.tone === "red" ? "bg-stamp-red" : "bg-ink-light"}`} style={{ color: "white" }}>
                 {m.label}: {categoryCounts[id] || 0}
               </span>
             ))}
           </div>
-          <div className="max-h-[420px] overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-auto">
           <table data-sticky-columns="true" className="w-full text-sm">
             <thead className="sticky top-0 z-10">
               <tr className="bg-paper text-left text-xs uppercase text-muted">
@@ -14831,19 +15154,19 @@ function HieuSuat({ employees, masterRanking, supportCases, financialSummary, da
             </tbody>
           </table>
           </div>
-          <p className="px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Chưa đủ {MIN_DAYS_FOR_EVALUATION} ngày công trong tháng (và chưa có nhiệm vụ nào ở Giao việc) → xếp "CHƯA ĐỦ DỮ LIỆU", không vội chấm lười biếng. Điểm tổng hợp = 40% chuyên cần/thái độ (đi làm đều, không bị cảnh báo ngồi chơi ở Giao việc) + 60% kết quả công việc (KPI/doanh số + tỷ lệ hoàn thành nhiệm vụ). "Cảnh báo nghỉ việc" chỉ bật khi không đạt KPI 3 tháng liên tiếp hoặc chuyên cần quá thấp kèm nhiều lần cảnh báo — đây là gợi ý dữ liệu để bạn xem xét, quyết định cuối cùng và thủ tục chấm dứt hợp đồng vẫn cần theo đúng luật lao động (xem tab Trợ lý Pháp lý).</p>
+          <p className="shrink-0 px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Chưa đủ {MIN_DAYS_FOR_EVALUATION} ngày công trong tháng (và chưa có nhiệm vụ nào ở Giao việc) → xếp "CHƯA ĐỦ DỮ LIỆU", không vội chấm lười biếng. Điểm tổng hợp = 40% chuyên cần/thái độ (đi làm đều, không bị cảnh báo ngồi chơi ở Giao việc) + 60% kết quả công việc (KPI/doanh số + tỷ lệ hoàn thành nhiệm vụ). "Cảnh báo nghỉ việc" chỉ bật khi không đạt KPI 3 tháng liên tiếp hoặc chuyên cần quá thấp kèm nhiều lần cảnh báo — đây là gợi ý dữ liệu để bạn xem xét, quyết định cuối cùng và thủ tục chấm dứt hợp đồng vẫn cần theo đúng luật lao động (xem tab Trợ lý Pháp lý).</p>
         </div>
       )}
 
       {(!masterRanking || masterRanking.length === 0) && activeTableView === "overview" && (
-        <div className="bg-white rounded-lg border border-dashed border-paper-line p-8 flex flex-col items-center text-center gap-2">
+        <div className="shrink-0 bg-white rounded-lg border border-dashed border-paper-line p-8 flex flex-col items-center text-center gap-2">
           <Gauge size={22} className="text-muted" />
           <p className="text-sm font-medium text-ink">Chưa có dữ liệu xếp hạng hiệu suất</p>
           <p className="text-xs text-muted max-w-md">Xếp hạng cần ít nhất một nhân viên đang hoạt động, có chấm công hoặc được giao việc trong kỳ này. Hãy thêm nhân viên ở tab <strong className="text-ink">Nhân sự</strong> trước, dữ liệu sẽ tự đổ về đây.</p>
         </div>
       )}
 
-      <div className="flex justify-between items-center">
+      <div className="shrink-0 flex justify-between items-center">
         <p className="text-sm text-muted">
           Thống kê hiệu suất theo từng vị trí — chạy Ads, Sale, Kỹ thuật và các vị trí khác.
           {warnCount > 0 && <span className="text-stamp-red font-medium"> {warnCount} nhân viên đang ở mức cảnh báo, cần nhắc nhở.</span>}
@@ -14854,13 +15177,14 @@ function HieuSuat({ employees, masterRanking, supportCases, financialSummary, da
         </button>
       </div>
 
-      <div className="flex gap-2 flex-wrap">
+      <div className="shrink-0 flex gap-2 flex-wrap">
         {filters.map((f) => (
           <button key={f.id} onClick={() => setFilter(f.id)} className={`ktns-role-pill ${filter === f.id ? "active" : ""}`}>{f.label}</button>
         ))}
       </div>
 
-      <div style={{ display: activeTableView === "details" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-x-auto">
+      <div style={{ display: activeTableView === "details" ? "flex" : "none" }} className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
+        <div className="min-h-0 flex-1 overflow-auto">
         <table data-sticky-columns="true" className="w-full text-sm">
           <thead>
             <tr className="bg-paper text-left text-xs uppercase text-muted">
@@ -14902,9 +15226,10 @@ function HieuSuat({ employees, masterRanking, supportCases, financialSummary, da
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
-      <div style={{ display: activeTableView === "details" ? "grid" : "none" }} className="grid grid-cols-2 gap-4">
+      <div style={{ display: activeTableView === "details" ? "grid" : "none" }} className="shrink-0 grid grid-cols-2 gap-4">
         {filtered.map((e) => {
           const perf = performanceOf(e);
           const RoleIcon = ROLE_META[e.roleType]?.icon || UserCog;
@@ -16191,11 +16516,11 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <SectionViewSwitcher value={salaryWorkspace} onChange={setSalaryWorkspace} options={salaryWorkspaceOptions} />
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <div className="shrink-0"><SectionViewSwitcher value={salaryWorkspace} onChange={setSalaryWorkspace} options={salaryWorkspaceOptions} /></div>
 
       {salaryWorkspace === "proposals" && (
-      <div className="rounded-lg border border-paper-line bg-white px-3 py-2.5 shadow-sm">
+      <div className="shrink-0 rounded-lg border border-paper-line bg-white px-3 py-2.5 shadow-sm">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 text-sm font-bold text-ink">
             <Banknote size={15} className="text-[#6f9cff]" />
@@ -16216,7 +16541,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
       )}
 
       {salaryWorkspace === "center" && (
-      <section className="rounded-xl border border-[#315fae]/35 bg-[#0f1726] p-3 text-white shadow-sm">
+      <section className="shrink-0 rounded-xl border border-[#315fae]/35 bg-[#0f1726] p-3 text-white shadow-sm">
         <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
           <div>
             <div className="flex items-center gap-2 text-sm font-bold"><Gauge size={15} className="text-[#6f9cff]" /> Trung tâm lương · doanh thu · chi phí nhân sự</div>
@@ -16256,9 +16581,9 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
       )}
 
       {salaryWorkspace === "proposals" && (
-      <>
-      <section ref={monthlySectionRef} className={`${payrollListMode === "monthly" ? "flex" : "hidden"} flex-col gap-3 scroll-mt-24`}>
-        <div className="rounded-lg border border-[#315fae]/35 bg-[#101a2b] px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-h-0 flex-1 flex-col gap-3">
+      <section ref={monthlySectionRef} className={`${payrollListMode === "monthly" ? "flex" : "hidden"} min-h-0 flex-1 flex-col gap-3 scroll-mt-24`}>
+        <div className="shrink-0 rounded-lg border border-[#315fae]/35 bg-[#101a2b] px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded bg-[#315fae] px-2 py-1 text-[10px] font-bold text-white">LƯƠNG THÁNG</span>
             <div className="text-sm font-bold text-[#a9c4ff]">Danh sách đề xuất kỳ {reportMonth}/{reportYear}</div>
@@ -16273,7 +16598,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
           )}
         </div>
 
-      {currentIsBoss && <div className="order-1 bg-white rounded-lg border border-paper-line overflow-hidden">
+      {currentIsBoss && <div className="order-1 shrink-0 bg-white rounded-lg border border-paper-line overflow-hidden">
         <button onClick={() => setShowKpiConfig((v) => !v)} className="w-full px-4 py-3 flex items-center justify-between text-xs font-semibold text-ink uppercase hover:bg-paper">
           <span className="flex items-center gap-1.5"><Target size={13} /> Cấu hình thưởng KPI theo mốc doanh số (Sale &amp; Marketing) — tự tính vào lương</span>
           <span className="text-[10px] text-ink-light normal-case">{showKpiConfig ? "Thu gọn ▲" : "Mở rộng ▼"}</span>
@@ -16309,24 +16634,18 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
         )}
       </div>}
 
-      <div className="order-2 flex flex-wrap items-center gap-2">
+      <div className="order-2 shrink-0 flex flex-wrap items-center gap-2">
         <button type="button" onClick={() => setShowSalaryRules((value) => !value)} className="inline-flex items-center gap-1.5 rounded-md border border-paper-line bg-white px-3 py-1.5 text-[11px] font-semibold text-ink hover:bg-paper">
           <Link2 size={13} /> {showSalaryRules ? "Ẩn quy tắc tính lương" : "Xem quy tắc tính lương"}
           {showSalaryRules ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
         </button>
+        <button type="button" onClick={() => setShowPayrollSummary((value) => !value)} className="inline-flex items-center gap-1.5 rounded-md border border-paper-line bg-white px-3 py-1.5 text-[11px] font-semibold text-ink hover:bg-paper">
+          <Gauge size={13} /> {showPayrollSummary ? "Ẩn tổng kết chân bảng" : "Hiện tổng kết chân bảng"}
+        </button>
       </div>
 
-      {showPayrollSummary && (
-        <div className="order-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <KpiCard icon={Banknote} label="Tổng đề xuất" value={fmtVND(visiblePayrollTotal)} tone="down" />
-          <KpiCard icon={TrendingUp} label="Thưởng & hoa hồng" value={fmtVND(totalCommission)} tone="up" />
-          <KpiCard icon={FileText} label="Thuế TNCN" value={fmtVND(totalTax)} tone="down" />
-          <KpiCard icon={Wallet} label="Chi phí doanh nghiệp" value={fmtVND(totalCompanyCost)} tone="down" />
-        </div>
-      )}
-
       {showSalaryRules && (
-        <div className="order-4 rounded-lg border border-[#334765] bg-[#111b2b] px-4 py-4 text-xs leading-5 text-[#c6d4ef]">
+        <div className="order-4 shrink-0 rounded-lg border border-[#334765] bg-[#111b2b] px-4 py-4 text-xs leading-5 text-[#c6d4ef]">
           <div className="grid gap-3 lg:grid-cols-2">
             <div className="rounded-md border border-[#315fae]/35 bg-[#15233a] p-3"><strong className="text-[#9fc0ff]">Sale:</strong> dưới 50.000.000đ hưởng 70% lương cứng; từ 50 đến dưới 100 triệu vẫn áp 70%; từ 100.000.000đ trở lên hưởng đủ lương và hoa hồng lũy tiến. Hoa hồng bắt đầu 1,2% cho phần doanh số từ 100–200 triệu; mỗi mốc 100 triệu tiếp theo tăng thêm 0,6%, không giới hạn.</div>
             <div className="rounded-md border border-[#315fae]/35 bg-[#15233a] p-3"><strong className="text-[#9fc0ff]">Marketing/Ads:</strong> dưới 140 triệu hưởng 70% lương cứng; 140–199 triệu hưởng đủ 100% lương; từ 200 triệu trở lên hưởng thêm hoa hồng 1,6–2,2% và thưởng cố định theo từng mốc doanh thu.</div>
@@ -16337,14 +16656,14 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
         </div>
       )}
 
-      {canViewAllPayroll && <div className="order-5 flex justify-end gap-2">
+      {canViewAllPayroll && <div className="order-5 shrink-0 flex justify-end gap-2">
         <button onClick={() => exportPayrollExcel(visiblePayrollRows)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90">
           <FileSpreadsheet size={15} /> Xuất Excel bảng lương chi tiết
         </button>
       </div>}
 
-      <div className="order-6 bg-white rounded-lg border border-paper-line overflow-hidden">
-        <div className="max-h-[420px] overflow-y-auto">
+      <div className="order-6 min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
+        <div className="min-h-0 flex-1 overflow-auto">
         <table data-sticky-columns="true" data-mobile-cards="true" className="w-full text-sm">
           <thead className="sticky top-0 z-10">
             <tr className="bg-paper text-left text-xs uppercase text-muted">
@@ -16518,12 +16837,22 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
           </tbody>
         </table>
         </div>
+        {showPayrollSummary && (
+          <div className="domix-table-total-bar shrink-0 border-t border-paper-line bg-paper px-4 py-2.5 font-semibold">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
+              <span className="text-muted">Tổng đề xuất: <strong className="text-stamp-red">{fmtVND(visiblePayrollTotal)}</strong></span>
+              <span className="text-muted">Thưởng &amp; hoa hồng: <strong className="text-ledger-green">{fmtVND(totalCommission)}</strong></span>
+              <span className="text-muted">Thuế TNCN: <strong className="text-stamp-red">{fmtVND(totalTax)}</strong></span>
+              <span className="text-muted">Chi phí doanh nghiệp: <strong className="text-stamp-red">{fmtVND(totalCompanyCost)}</strong></span>
+            </div>
+          </div>
+        )}
       </div>
 
       </section>
 
-      <section ref={midMonthSectionRef} className={`${payrollListMode === "midmonth" ? "block" : "hidden"} scroll-mt-24 overflow-hidden rounded-xl border border-gold/40 bg-white`}>
-        <div className="border-b border-gold/30 bg-[#251f12] px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+      <section ref={midMonthSectionRef} className={`${payrollListMode === "midmonth" ? "flex" : "hidden"} min-h-0 flex-1 flex-col overflow-hidden scroll-mt-24 rounded-xl border border-gold/40 bg-white`}>
+        <div className="shrink-0 border-b border-gold/30 bg-[#251f12] px-4 py-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded bg-gold px-2 py-1 text-[10px] font-bold text-ink">GIỮA THÁNG</span>
             <span className="text-sm font-bold text-[#f4c76a]">Yêu cầu bất thường · {reportMonth}/{reportYear}</span>
@@ -16535,7 +16864,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
           )}
         </div>
         {showMidMonthForm && (
-          <div className="domix-inline-form-modal bg-white border border-paper-line p-5 grid grid-cols-4 gap-3">
+          <div className="shrink-0 domix-inline-form-modal bg-white border border-paper-line p-5 grid grid-cols-4 gap-3">
             <select
               value={midMonthForm.employeeId}
               onChange={(e) => setMidMonthForm({ ...midMonthForm, employeeId: e.target.value })}
@@ -16555,6 +16884,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
             </div>
           </div>
         )}
+        <div className="min-h-0 flex-1 overflow-auto">
         <table data-sticky-columns="true" data-mobile-cards="true" className="w-full text-sm">
           <thead><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-4 py-2">Nhân viên</th><th className="px-4 py-2">Lý do</th><th className="px-4 py-2 text-right">Số tiền</th><th className="px-4 py-2">Ngày</th><th className="px-4 py-2">Trạng thái</th><th className="px-4 py-2"></th></tr></thead>
           <tbody>
@@ -16590,8 +16920,15 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
             })}
           </tbody>
         </table>
+        </div>
+        <div className="domix-table-total-bar shrink-0 border-t border-paper-line bg-paper px-4 py-2.5 font-semibold">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
+            <span className="text-muted">Số yêu cầu: <strong className="text-ink">{periodVisibleMidMonthRequests.length}</strong></span>
+            <span className="text-muted">Tổng tiền yêu cầu: <strong className="text-stamp-red">{fmtVND(midMonthRequestTotal)}</strong></span>
+          </div>
+        </div>
       </section>
-      </>
+      </div>
       )}
 
 
@@ -17249,8 +17586,9 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
   }
 
   return (
-    <div className="flex flex-col gap-4">
-      {summaryLoadError && <div className="rounded-lg border border-stamp-red/30 bg-stamp-red/5 px-3 py-2 text-xs text-stamp-red">{summaryLoadError}</div>}
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      {summaryLoadError && <div className="shrink-0 rounded-lg border border-stamp-red/30 bg-stamp-red/5 px-3 py-2 text-xs text-stamp-red">{summaryLoadError}</div>}
+      <div className="shrink-0">
       <SectionViewSwitcher
         value={activeTableView}
         onChange={setActiveTableView}
@@ -17260,11 +17598,13 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
           { id: "tax", label: "Thuế TNDN năm", icon: Calculator },
         ]}
       />
-      <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
+      </div>
+      <div className="shrink-0 bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
         <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
         <span>Mỗi kỳ được lấy từ cùng FinancialSummaryService trên máy chủ. Báo cáo không tự cộng lại từ dữ liệu giao diện.</span>
       </div>
 
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
       {activeTableView === "tax" && !annualReady && (
         <DataLoadingPanel title="Đang tải 12 tháng từ sổ tài chính máy chủ" error={annualSummaryLoadError} onRetry={() => setSummaryReloadToken((value) => value + 1)} />
       )}
@@ -17441,6 +17781,7 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
           </div>
         );
       })()}
+      </div>
     </div>
   );
 }
@@ -17546,8 +17887,9 @@ Hãy soạn một bản "Kế hoạch phân bổ ngân sách & nhân sự tháng
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-4">
       <div ref={printRef} className="ktns-print-area"></div>
+      <div className="shrink-0">
       <SectionViewSwitcher
         value={activeTableView}
         onChange={setActiveTableView}
@@ -17557,18 +17899,20 @@ Hãy soạn một bản "Kế hoạch phân bổ ngân sách & nhân sự tháng
           { id: "ai", label: "Kế hoạch AI", icon: Sparkles, count: messages.length },
         ]}
       />
-      <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
+      </div>
+      <div className="shrink-0 bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
         <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
         <span>Dựa trên số liệu thật tháng {prevPeriod.month}/{prevPeriod.year}, đề xuất phân bổ ngân sách và nhân sự hợp lý cho tháng tới — chỉnh % nếu công ty có tỷ lệ ngân sách riêng.</span>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
+      <div className="shrink-0 grid grid-cols-4 gap-4">
         <KpiCard icon={TrendingUp} label={`Doanh thu T${prevPeriod.month}/${prevPeriod.year}`} value={fmtVND(prevSnapshot.thu)} tone="up" />
         <KpiCard icon={Wallet} label="Lợi nhuận sau lương" value={fmtVND(prevSnapshot.profit)} tone={prevSnapshot.profit >= 0 ? "up" : "down"} />
         <KpiCard icon={Banknote} label="Tổng chi phí nhân sự" value={fmtVND(prevSnapshot.employerCost)} tone="down" />
         <KpiCard icon={PieChart} label="Tỷ trọng chi phí NS/Doanh thu" value={prevSnapshot.thu > 0 ? `${Math.round((prevSnapshot.employerCost / prevSnapshot.thu) * 100)}%` : "—"} tone={prevSnapshot.thu > 0 && prevSnapshot.employerCost / prevSnapshot.thu > 0.35 ? "down" : "up"} />
       </div>
 
+      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
       {activeTableView === "efficiency" && (
       <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><Gauge size={13} /> Hiệu quả chi phí từng nhóm vị trí (tháng {prevPeriod.month}/{prevPeriod.year})</div>
@@ -17679,7 +18023,8 @@ Hãy soạn một bản "Kế hoạch phân bổ ngân sách & nhân sự tháng
         )}
       </div>
       )}
-      <p className="text-[11px] text-muted">* Tỷ lệ ngân sách mặc định (28% nhân sự, 15% marketing...) là mốc tham khảo phổ biến cho SME dịch vụ tại Việt Nam, không phải chuẩn bắt buộc — điều chỉnh theo đặc thù ngành của công ty bạn. Đề xuất của AI dựa trên số liệu nội bộ, không thay thế tư vấn tài chính chuyên nghiệp.</p>
+      <p className="shrink-0 text-[11px] text-muted">* Tỷ lệ ngân sách mặc định (28% nhân sự, 15% marketing...) là mốc tham khảo phổ biến cho SME dịch vụ tại Việt Nam, không phải chuẩn bắt buộc — điều chỉnh theo đặc thù ngành của công ty bạn. Đề xuất của AI dựa trên số liệu nội bộ, không thay thế tư vấn tài chính chuyên nghiệp.</p>
+      </div>
     </div>
   );
 }
@@ -17819,7 +18164,8 @@ Lưu ý: đây là công cụ HỖ TRỢ sàng lọc ban đầu, quyết định
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-4">
+      <div className="shrink-0">
       <SectionViewSwitcher
         value={activeTableView}
         onChange={setActiveTableView}
@@ -17828,12 +18174,13 @@ Lưu ý: đây là công cụ HỖ TRỢ sàng lọc ban đầu, quyết định
           { id: "results", label: "Kết quả sàng lọc", icon: ClipboardList, count: cvReviews.length },
         ]}
       />
-      <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
+      </div>
+      <div className="shrink-0 bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
         <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
         <span>AI đọc CV, đánh giá phù hợp với vị trí ứng tuyển, và đối chiếu với dữ liệu thật của công ty (đang thiếu người ở vị trí đó không, có ai đang yếu cần thay thế không — lấy từ tab Hiệu suất). Đây là công cụ hỗ trợ sàng lọc ban đầu, quyết định cuối cùng vẫn cần phỏng vấn trực tiếp.</span>
       </div>
 
-      {activeTableView === "intake" && (<>
+      {activeTableView === "intake" && (<div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
       <div className="bg-white rounded-lg border border-paper-line p-5">
         <h3 className="ktns-serif font-semibold text-ink mb-4">Duyệt CV ứng viên mới</h3>
         <div className="grid grid-cols-2 gap-3">
@@ -17901,12 +18248,12 @@ Lưu ý: đây là công cụ HỖ TRỢ sàng lọc ban đầu, quyết định
         </div>
       )}
 
-      </>)}
+      </div>)}
 
       {activeTableView === "results" && (
-        <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
-          <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Lịch sử duyệt CV — bấm vào 1 dòng để xem đầy đủ lý do</div>
-          <div className="max-h-[420px] overflow-y-auto">
+        <div className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
+          <div className="shrink-0 px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Lịch sử duyệt CV — bấm vào 1 dòng để xem đầy đủ lý do</div>
+          <div className="min-h-0 flex-1 overflow-auto">
           <table data-sticky-columns="true" className="w-full text-sm">
             <thead className="sticky top-0 z-10">
               <tr className="bg-paper text-left text-xs uppercase text-muted">
@@ -17960,7 +18307,7 @@ Lưu ý: đây là công cụ HỖ TRỢ sàng lọc ban đầu, quyết định
           </div>
         </div>
       )}
-      <p className="text-[11px] text-muted">* AI chỉ đánh giá dựa trên kỹ năng/kinh nghiệm/mức độ phù hợp công việc, không dựa trên các yếu tố cá nhân không liên quan. Đây là công cụ sàng lọc hỗ trợ — không thay thế phỏng vấn và quyết định cuối cùng của người phụ trách tuyển dụng.</p>
+      <p className="shrink-0 text-[11px] text-muted">* AI chỉ đánh giá dựa trên kỹ năng/kinh nghiệm/mức độ phù hợp công việc, không dựa trên các yếu tố cá nhân không liên quan. Đây là công cụ sàng lọc hỗ trợ — không thay thế phỏng vấn và quyết định cuối cùng của người phụ trách tuyển dụng.</p>
     </div>
   );
 }
@@ -19324,6 +19671,166 @@ function LoginScreen({ onLogin, onRegistered }) {
   );
 }
 
+
+function SystemTableEnhancer() {
+  useEffect(() => {
+    let scheduledFrame = 0;
+    let tableKeySeed = 0;
+
+    const moneyHeaderPattern = /(doanh thu|số tiền|thành tiền|tổng tiền|chi phí|lương|thưởng|hoa hồng|phụ cấp|bảo hiểm|bhxh|bhyt|bhtn|thuế|thực lĩnh|giá bán|giá nhập|nguyên giá|giá trị|phải thu|phải trả|đã thanh toán|còn lại|công nợ|số dư|doanh số|vat|gross|net)/i;
+
+    const parseMoney = (rawText) => {
+      const text = String(rawText || "").replace(/\s+/g, " ").trim();
+      if (!text || (!/[đ₫]/i.test(text) && !/^-?[\d.,]+$/.test(text))) return null;
+      const match = text.match(/-?[\d][\d.,]*/);
+      if (!match) return null;
+      let normalized = match[0];
+      if (normalized.includes(".") && normalized.includes(",")) {
+        normalized = normalized.replace(/\./g, "").replace(",", ".");
+      } else if ((normalized.match(/\./g) || []).length > 1 || /\.\d{3}(?:\.|$)/.test(normalized)) {
+        normalized = normalized.replace(/\./g, "");
+      } else {
+        normalized = normalized.replace(",", ".");
+      }
+      const value = Number(normalized);
+      return Number.isFinite(value) ? value : null;
+    };
+
+    const formatMoney = (value) => `${Math.round(Number(value) || 0).toLocaleString("vi-VN")}đ`;
+
+    const findScrollHost = (table) => {
+      let node = table.parentElement;
+      while (node && node !== document.body) {
+        const style = window.getComputedStyle(node);
+        const overflowValue = `${style.overflow} ${style.overflowY} ${style.overflowX}`;
+        if (/(auto|scroll)/.test(overflowValue) || node.classList.contains("finance-table-viewport") || node.classList.contains("domix-db-table-shell")) return node;
+        node = node.parentElement;
+      }
+      return table.parentElement;
+    };
+
+    const ensureGeneratedSummary = (table) => {
+      if (!(table.matches('[data-sticky-columns="true"], .domix-db-table, .domix-finance-table'))) return;
+      if (table.closest(".ktns-print-area, [role='dialog'], .fixed, [data-disable-generated-total='true']")) return;
+      if (table.offsetParent === null) {
+        // Bảng đang bị ẩn (đổi qua bảng con khác trong cùng trang) — khung chứa thanh tổng tự
+        // sinh đôi khi không nằm trong đúng phần tử bị ẩn (ví dụ khung cuộn cha dùng chung cho
+        // nhiều bảng), nên CSS ẩn theo tầng không chắc ăn. Ẩn tay đúng thanh tổng của riêng bảng
+        // này để không bị lơ lửng đè lên bảng đang hiển thị.
+        const key = table.dataset.domixTableKey;
+        if (key) {
+          const bar = document.querySelector(`.domix-generated-total-bar[data-table-key="${key}"]`);
+          if (bar) bar.style.display = "none";
+        }
+        return;
+      }
+
+      table.classList.add("domix-system-table");
+      const headers = Array.from(table.querySelectorAll("thead tr:first-child > th"));
+      const bodyRows = Array.from(table.querySelectorAll("tbody > tr")).filter((row) => {
+        const cells = Array.from(row.children).filter((cell) => cell.tagName === "TD");
+        return cells.length === headers.length && !cells.some((cell) => Number(cell.colSpan) > 1);
+      });
+      if (headers.length < 2) return;
+
+      const scrollHost = findScrollHost(table);
+      const frame = scrollHost?.parentElement;
+      if (!scrollHost || !frame) return;
+
+      const hasNativeFooter = Boolean(table.querySelector("tfoot"));
+      const hasPinnedFooter = Boolean(frame.querySelector(":scope > .finance-table-footer-dock"));
+      const existingBusinessSummary = Array.from(frame.children).some((child) => child !== scrollHost && child.classList?.contains("domix-table-total-bar") && !child.classList.contains("domix-generated-total-bar"));
+
+      const key = table.dataset.domixTableKey || `system-table-${Date.now()}-${tableKeySeed += 1}`;
+      table.dataset.domixTableKey = key;
+      let generatedBar = Array.from(frame.children).find((child) => child.dataset?.tableKey === key);
+
+      // Bảng nào đã tự có chân tổng (tfoot/thanh tổng riêng) thì KHÔNG gắn class ép display:flex
+      // lên khung cha — nhiều trang dùng chính khung cha đó để ẩn/hiện qua lại giữa các bảng con
+      // (đổi tab) bằng style.display nội tuyến; ép !important ở đây sẽ đè mất trạng thái ẩn đó,
+      // khiến bảng cũ vẫn hiển thị chồng lên bảng mới khi đổi tab.
+      if (hasNativeFooter || hasPinnedFooter || existingBusinessSummary) {
+        generatedBar?.remove();
+        return;
+      }
+
+      frame.classList.add("domix-generated-total-frame");
+      scrollHost.classList.add("domix-generated-total-scroll");
+      if (generatedBar) generatedBar.style.display = "";
+
+      const totals = headers.map((header, columnIndex) => {
+        const headerText = header.textContent?.trim() || `Cột ${columnIndex + 1}`;
+        const values = bodyRows.map((row) => parseMoney(row.children[columnIndex]?.textContent)).filter((value) => value !== null);
+        const containsCurrency = bodyRows.some((row) => /[đ₫]/i.test(row.children[columnIndex]?.textContent || ""));
+        if (!moneyHeaderPattern.test(headerText) && !containsCurrency) return null;
+        if (values.length === 0) return null;
+        return { label: headerText, value: values.reduce((sum, value) => sum + value, 0) };
+      }).filter(Boolean);
+
+      const summarySignature = JSON.stringify({ rows: bodyRows.length, totals });
+      if (!generatedBar) {
+        generatedBar = document.createElement("div");
+        generatedBar.className = "domix-table-total-bar domix-generated-total-bar shrink-0";
+        generatedBar.dataset.tableKey = key;
+        generatedBar.innerHTML = '<div class="flex flex-wrap items-center text-xs"></div>';
+        scrollHost.insertAdjacentElement("afterend", generatedBar);
+      }
+      if (generatedBar.dataset.signature === summarySignature) return;
+      generatedBar.dataset.signature = summarySignature;
+
+      const row = generatedBar.firstElementChild;
+      row.replaceChildren();
+      const countCell = document.createElement("span");
+      countCell.innerHTML = `<strong>TỔNG CỘNG</strong>&nbsp; · &nbsp;${bodyRows.length.toLocaleString("vi-VN")} dòng`;
+      row.appendChild(countCell);
+      totals.forEach((item) => {
+        const cell = document.createElement("span");
+        const label = document.createElement("span");
+        label.textContent = `${item.label}: `;
+        const value = document.createElement("strong");
+        value.textContent = formatMoney(item.value);
+        cell.append(label, value);
+        row.appendChild(cell);
+      });
+    };
+
+    const refreshTables = () => {
+      cancelAnimationFrame(scheduledFrame);
+      scheduledFrame = requestAnimationFrame(() => {
+        const liveKeys = new Set();
+        document.querySelectorAll(".ktns-app table").forEach((table) => {
+          ensureGeneratedSummary(table);
+          if (table.dataset.domixTableKey) liveKeys.add(table.dataset.domixTableKey);
+        });
+        // Vài trang dùng chung 1 khung cuộn cho nhiều bảng con đổi qua lại bằng cách gắn/gỡ hẳn
+        // khỏi DOM (không phải ẩn/hiện bằng display) — bảng cũ biến mất nhưng thanh tổng tự sinh
+        // (chèn bằng DOM thuần, ngoài tầm quản lý của React) bị bỏ quên, lơ lửng đè lên bảng mới.
+        // Dọn các thanh tổng không còn bảng gốc tương ứng.
+        document.querySelectorAll(".domix-generated-total-bar").forEach((bar) => {
+          if (!liveKeys.has(bar.dataset.tableKey)) bar.remove();
+        });
+      });
+    };
+
+    refreshTables();
+    const observer = new MutationObserver((mutations) => {
+      const onlyGeneratedChanges = mutations.every((mutation) => mutation.target.closest?.(".domix-generated-total-bar"));
+      if (!onlyGeneratedChanges) refreshTables();
+    });
+    observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+    window.addEventListener("resize", refreshTables);
+
+    return () => {
+      cancelAnimationFrame(scheduledFrame);
+      observer.disconnect();
+      window.removeEventListener("resize", refreshTables);
+      document.querySelectorAll(".domix-generated-total-bar").forEach((bar) => bar.remove());
+    };
+  }, []);
+
+  return null;
+}
+
 export default function App() {
   const [authUser, setAuthUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -19391,6 +19898,7 @@ export default function App() {
   return (
     <>
       {screen}
+      <SystemTableEnhancer />
       <DomixDialogHost />
     </>
   );
