@@ -280,6 +280,35 @@ def normalise_payment_ledger(data):
         if debt_id is not None:
             entry["debtId"] = debt_id
 
+    # Đơn bán bị xóa (VD: hủy đơn CRM đã thu tiền) mà vẫn còn bút toán đang hiệu lực
+    # tham chiếu tới đơn đó là dữ liệu mồ côi — nếu không tự đảo, nó tồn tại vĩnh viễn
+    # và làm lệch sổ đối soát (thu trong cash_transactions ≠ dữ liệu nghiệp vụ), vì
+    # không có luồng nào khác dọn payment ledger khi đơn nguồn biến mất.
+    order_ids = {_key(order.get("id")) for order in orders if isinstance(order, dict)}
+    already_reversed = {
+        _key(entry.get("reversalOf"))
+        for entry in ledger
+        if entry.get("entryType") == "reversal" and entry.get("reversalOf") is not None
+    }
+    for entry in active_payment_entries(ledger):
+        order_id = _key(entry.get("orderId"))
+        entry_id = _key(entry.get("id"))
+        if not order_id or order_id in order_ids or entry_id in already_reversed:
+            continue
+        add_entry({
+            "id": f"reversal:auto-orphan:{entry_id}",
+            "entryType": "reversal",
+            "reversalOf": entry.get("id"),
+            "debtId": entry.get("debtId"),
+            "orderId": entry.get("orderId"),
+            "amount": entry.get("amount"),
+            "date": date.today().isoformat(),
+            "paymentMethod": entry.get("paymentMethod") or "chuyen_khoan",
+            "note": "Đơn bán nguồn đã bị xóa — tự động đảo khi đối soát sổ giao dịch",
+            "createdBy": "server-reconcile",
+            "origin": "order_deleted_auto_reversal",
+        })
+
     active = active_payment_entries(ledger)
     for debt in debts:
         debt_key = _key(debt.get("id"))

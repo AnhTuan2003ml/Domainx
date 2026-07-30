@@ -283,6 +283,57 @@ class CompanyFlowTests(unittest.TestCase):
         self.assertEqual(summary["cash_received"], 1_500_000)
         self.assertEqual(summary["accounts_receivable"], 660_000)
 
+    def test_deleted_order_auto_reverses_orphaned_payment_ledger_entry(self):
+        # Regression: xóa 1 đơn CRM đã thu tiền ngay (không qua công nợ) từng để lại
+        # một bút toán "opening-payment" mồ côi trong paymentLedger vĩnh viễn — không
+        # có luồng nào dọn nó khi đơn nguồn biến mất, khiến cash_transactions lệch với
+        # dữ liệu nghiệp vụ và "Tổng quan tài chính" báo lỗi không tải được.
+        write_state(
+            self.db_path,
+            reconcile_company_data({
+                "company": {"openingCashBalance": 0},
+                "orders": [{
+                    "id": "order-orphan-1", "date": "2026-07-30", "amount": 100_000,
+                    "quantity": 1, "customerName": "Khach tu dat", "orderStatus": "active",
+                    "customerPaymentStatus": "paid", "customerPaidAmount": 100_000,
+                }],
+                "debts": [], "transactions": [], "paymentLedger": [], "inventory": [],
+                "stockMovements": [], "distributionOrders": [], "marketingLogs": [],
+                "payrollApprovals": [], "payrollPayments": [], "securityAuditLog": [],
+            }),
+        )
+        state = read_state(self.db_path)["data"]
+        active_payments = [item for item in state["paymentLedger"] if item.get("entryType") == "payment"]
+        self.assertEqual(len(active_payments), 1)
+        orphan_id = active_payments[0]["id"]
+        with connect(self.db_path) as conn:
+            receipt = conn.execute(
+                "SELECT status FROM cash_transactions WHERE source_id = ?", (orphan_id,),
+            ).fetchone()
+        self.assertEqual(receipt["status"], "posted")
+
+        # Xóa đơn — đúng thao tác người dùng làm ở tab Doanh thu CRM.
+        def delete_order(data):
+            trimmed = dict(data)
+            trimmed["orders"] = [o for o in trimmed.get("orders", []) if o.get("id") != "order-orphan-1"]
+            return reconcile_company_data(trimmed)
+
+        update_state(self.db_path, delete_order)
+        state = read_state(self.db_path)["data"]
+        reversal_targets = {
+            item.get("reversalOf") for item in state["paymentLedger"] if item.get("entryType") == "reversal"
+        }
+        self.assertIn(orphan_id, reversal_targets)
+        with connect(self.db_path) as conn:
+            receipt = conn.execute(
+                "SELECT status FROM cash_transactions WHERE source_id = ?", (orphan_id,),
+            ).fetchone()
+        self.assertEqual(receipt["status"], "reversed")
+        # Không còn đơn nào trong kỳ nên không phát sinh doanh thu/công nợ giả từ đơn đã xóa.
+        summary = get_financial_summary(self.db_path, 2026, 7)
+        self.assertEqual(summary["recognized_revenue"], 0)
+        self.assertEqual(summary["cash_received"], 0)
+
     def test_financial_summary_fails_loudly_when_cash_ledger_is_out_of_balance(self):
         state = self._seed_sales_flow()
         debt_id = state["debts"][0]["id"]
