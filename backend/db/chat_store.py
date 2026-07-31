@@ -3,12 +3,7 @@ from db import user_store
 
 
 def _utc_iso(value):
-    """Chuẩn hóa mốc thời gian SQLite UTC sang ISO-8601 có hậu tố Z.
-
-    SQLite CURRENT_TIMESTAMP trả về ``YYYY-MM-DD HH:MM:SS`` nhưng đây là UTC.
-    Nếu gửi nguyên chuỗi, trình duyệt sẽ hiểu nhầm là giờ địa phương và hiển thị
-    lệch 7 giờ tại Việt Nam.
-    """
+    """Chuẩn hóa mốc thời gian PostgreSQL sang ISO-8601 để trình duyệt hiển thị đúng."""
     if value is None:
         return None
     text = str(value).strip()

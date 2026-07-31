@@ -14,8 +14,7 @@ RUN addgroup --system domix \
 
 COPY backend ./backend
 
-RUN mkdir -p /app/data \
-    && chown -R domix:domix /app
+RUN chown -R domix:domix /app
 
 USER domix
 EXPOSE 8000

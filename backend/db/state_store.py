@@ -49,8 +49,7 @@ def _write_state_with_connection(conn, data):
 
 
 def write_state(db_path, data):
-    # Khoá trong tiến trình giúp SQLite và server đơn tiến trình tránh ghi đè xen kẽ.
-    # PostgreSQL vẫn dùng transaction ở lớp connect.
+    # Khóa tiến trình kết hợp transaction PostgreSQL để tuần tự hóa thao tác ghi trong một backend.
     with _STATE_LOCK:
         with connect(db_path) as conn:
             _write_state_with_connection(conn, data)
@@ -59,14 +58,12 @@ def write_state(db_path, data):
 def update_state(db_path, updater: Callable[[dict], dict]):
     """Đọc-sửa-ghi app_state trong một transaction duy nhất.
 
-    PostgreSQL khoá đúng hàng bằng FOR UPDATE. SQLite dùng khoá tiến trình để các
-    request trong ThreadingHTTPServer không đọc cùng một phiên bản rồi ghi đè nhau.
+    PostgreSQL khóa đúng hàng bằng FOR UPDATE để các request đồng thời không ghi đè nhau.
     """
     with _STATE_LOCK:
         with connect(db_path) as conn:
-            lock_suffix = " FOR UPDATE" if getattr(conn, "backend_name", "sqlite") == "postgresql" else ""
             row = conn.execute(
-                f"SELECT payload, updated_at FROM app_state WHERE key = ?{lock_suffix}",
+                "SELECT payload, updated_at FROM app_state WHERE key = ? FOR UPDATE",
                 (STATE_KEY,),
             ).fetchone()
             current_state = _decode_payload(row) or {"data": {}, "updatedAt": None}

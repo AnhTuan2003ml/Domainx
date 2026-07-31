@@ -1538,6 +1538,10 @@ const LEAD_SOURCES = {
   khac: "Nguồn khác",
 };
 
+function normalizedLeadPhoneDigits(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
 // Phạm vi Hỗ trợ khách hàng KHÔNG chỉ setup/kích hoạt mới — còn đồng hành chăm sóc định kỳ và tư
 // vấn nâng cấp (upsale) trong suốt thời gian khách dùng dịch vụ.
 // Lọc nội dung thông báo — chặn từ ngữ tục tĩu/thiếu chuẩn mực trước khi cho gửi lên ticker chạy
@@ -1617,15 +1621,42 @@ function monthLabelVN(year, month) { return `Tháng ${month}/${year}`; }
 const MONTH_OPTIONS = [];
 for (let y = ATT_YEAR - 1; y <= ATT_YEAR + 1; y++) for (let m = 1; m <= 12; m++) MONTH_OPTIONS.push({ year: y, month: m });
 
+// Ngày từ <input type="date"> có dạng YYYY-MM-DD. Trình duyệt parse chuỗi này theo UTC,
+// trong khi new Date(year, month, day) dùng múi giờ máy người dùng. Nếu nhân sự được thêm đúng
+// ngày cuối tháng, hai cách parse lệch giờ sẽ làm hồ sơ bị hiểu nhầm là “chưa vào làm”.
+// Chuẩn hóa thành khóa ngày thuần số để toàn bộ Nhân sự/Chấm công/Lương dùng cùng một quy tắc.
+function calendarDateParts(value) {
+  const raw = String(value || "").trim();
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(raw);
+  if (match) {
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const check = new Date(year, month - 1, day, 12, 0, 0, 0);
+    if (check.getFullYear() === year && check.getMonth() === month - 1 && check.getDate() === day) {
+      return { year, month, day, key: year * 10000 + month * 100 + day };
+    }
+  }
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  const year = parsed.getFullYear();
+  const month = parsed.getMonth() + 1;
+  const day = parsed.getDate();
+  return { year, month, day, key: year * 10000 + month * 100 + day };
+}
+
 // Nhân viên nghỉ việc tháng nào thì tháng đó trở về trước vẫn còn dữ liệu đúng (đã làm việc thật),
-// từ tháng sau ngày nghỉ trở đi mới tự động ẩn khỏi Chấm công/Bảng lương/CRM/Hiệu suất...
+// từ tháng sau ngày nghỉ trở đi mới tự động ẩn khỏi Chấm công/Bảng lương/CRM/Hiệu suất.
 function isEmployeeActiveInMonth(emp, year, month) {
-  const monthStart = new Date(year, month - 1, 1);
-  const monthEnd = new Date(year, month, 0);
-  if (emp.joined && new Date(emp.joined) > monthEnd) return false; // chưa vào làm trong tháng này
-  if (emp.status === "inactive" && emp.resignedDate) {
-    if (new Date(emp.resignedDate) < monthStart) return false; // đã nghỉ trước khi tháng này bắt đầu
-  } else if (emp.status === "inactive" && !emp.resignedDate) {
+  const monthStartKey = year * 10000 + month * 100 + 1;
+  const monthEndKey = year * 10000 + month * 100 + daysInMonthVN(year, month);
+  const joined = calendarDateParts(emp?.joined);
+  if (joined && joined.key > monthEndKey) return false;
+
+  if (emp?.status === "inactive" && emp?.resignedDate) {
+    const resigned = calendarDateParts(emp.resignedDate);
+    if (resigned && resigned.key < monthStartKey) return false;
+  } else if (emp?.status === "inactive" && !emp?.resignedDate) {
     // Nghỉ việc nhưng chưa ghi ngày cụ thể — coi như đã nghỉ hẳn, chỉ hiện ở các tháng trước tháng hiện tại.
     if (year > ATT_YEAR || (year === ATT_YEAR && month >= ATT_MONTH)) return false;
   }
@@ -1696,17 +1727,19 @@ function standardWorkDays() { return standardWorkDaysFor(ATT_YEAR, ATT_MONTH); }
 // Thiếu bước này khiến người vào làm/nghỉ việc giữa tháng bị lấy "cả tháng" làm mẫu số chia phụ
 // cấp ăn trưa/thâm niên, kéo lương thực lĩnh xuống âm ngay tháng đầu dù họ đi làm đủ số ngày có mặt.
 function standardWorkDaysForEmployee(emp, year, month) {
-  const monthStart = new Date(year, month - 1, 1);
-  const monthEnd = new Date(year, month, 0);
-  const joined = emp?.joined ? new Date(emp.joined) : null;
-  if (joined && joined > monthEnd) return 0; // chưa vào làm trong tháng này
-  const resigned = emp?.status === "inactive" && emp?.resignedDate ? new Date(emp.resignedDate) : null;
-  if (resigned && resigned < monthStart) return 0; // đã nghỉ trước khi tháng này bắt đầu
-  const rangeStart = joined && joined > monthStart ? joined : monthStart;
-  const rangeEnd = resigned && resigned < monthEnd ? resigned : monthEnd;
-  if (rangeStart > rangeEnd) return 0;
+  const days = daysInMonthVN(year, month);
+  const monthStartKey = year * 10000 + month * 100 + 1;
+  const monthEndKey = year * 10000 + month * 100 + days;
+  const joined = calendarDateParts(emp?.joined);
+  if (joined && joined.key > monthEndKey) return 0;
+  const resigned = emp?.status === "inactive" ? calendarDateParts(emp?.resignedDate) : null;
+  if (resigned && resigned.key < monthStartKey) return 0;
+
+  const rangeStartDay = joined && joined.key >= monthStartKey && joined.key <= monthEndKey ? joined.day : 1;
+  const rangeEndDay = resigned && resigned.key >= monthStartKey && resigned.key <= monthEndKey ? resigned.day : days;
+  if (rangeStartDay > rangeEndDay) return 0;
   let c = 0;
-  for (let d = rangeStart.getDate(); d <= rangeEnd.getDate(); d++) {
+  for (let d = rangeStartDay; d <= rangeEndDay; d++) {
     if (!isSundayVN(year, month, d)) c++;
   }
   return Math.max(1, c);
@@ -1722,7 +1755,7 @@ const ROLE_BAND_CLASS = { sale: "band-blue", ky_thuat: "band-green", ads: "band-
 // bonus target, generic KPI, join date, role type + role-specific operating
 // metrics, plus per-day attendance. Chấm công, Bảng lương và Hiệu suất đều đọc
 // thẳng từ đây.
-// Không còn nhân sự fix cứng — dữ liệu nhân sự nạp động từ bảng `employees` trong SQLite
+// Không còn nhân sự fix cứng — dữ liệu nhân sự nạp động từ bảng `employees` trong PostgreSQL
 // qua /api/employees. Mỗi nhân sự gắn với một tài khoản đăng nhập (email) trong bảng `users`.
 const initialEmployees = [];
 
@@ -1736,8 +1769,9 @@ function formatDateVN(value) {
 }
 
 function tenureMonths(joinedStr) {
-  const j = new Date(joinedStr);
-  return Math.max(0, (TODAY.getFullYear() - j.getFullYear()) * 12 + (TODAY.getMonth() - j.getMonth()));
+  const joined = calendarDateParts(joinedStr);
+  if (!joined) return 0;
+  return Math.max(0, (TODAY.getFullYear() - joined.year) * 12 + (TODAY.getMonth() + 1 - joined.month));
 }
 function tenureLabel(months) {
   const y = Math.floor(months / 12);
@@ -2973,7 +3007,7 @@ function DomixApp({ authUser, onLogout }) {
   const [financialSeriesError, setFinancialSeriesError] = useState("");
   const financialSummaryRequestRef = useRef(0);
 
-  // ---------- Đồng bộ backend SQLite ----------
+  // ---------- Đồng bộ backend PostgreSQL duy nhất ----------
   // Toàn bộ dữ liệu vận hành lưu trong khối app_state (/api/data); NHÂN SỰ có bảng
   // riêng trong DB và đồng bộ qua /api/employees (mỗi email = một tài khoản đăng nhập).
   const hasLoadedDbData = useRef(false);
@@ -2983,6 +3017,9 @@ function DomixApp({ authUser, onLogout }) {
   // ngày hết hạn/hợp đồng/vốn góp vừa được người dùng sửa ở request mới hơn.
   const appSaveQueueRef = useRef(Promise.resolve());
   const employeeSaveQueueRef = useRef(Promise.resolve());
+  const employeeRefreshInFlightRef = useRef(null);
+  const [employeesSyncing, setEmployeesSyncing] = useState(false);
+  const [employeeSyncError, setEmployeeSyncError] = useState("");
   const applyingRemotePayrollRef = useRef(false);
   const payrollLocalMutationUntilRef = useRef(0);
   const payrollWorkflowUpdatedAtRef = useRef("");
@@ -3242,7 +3279,7 @@ function DomixApp({ authUser, onLogout }) {
   }, [appDataSnapshot, canWriteData, applyAppData]);
 
   // Khi một tài khoản thao tác xét duyệt lương, tạm ngừng nhận bản polling cũ trong lúc
-  // dữ liệu mới đang được debounce lưu lên SQLite. Khi dữ liệu đến từ polling thì không
+  // dữ liệu mới đang được debounce lưu lên PostgreSQL. Khi dữ liệu đến từ polling thì không
   // ghi ngược lại toàn bộ app_state, tránh vòng lặp và tránh đè dữ liệu của người khác.
   useEffect(() => {
     if (!hasLoadedDbData.current) return;
@@ -3301,7 +3338,7 @@ function DomixApp({ authUser, onLogout }) {
       const result = await fetchTasks();
       const updatedAt = result.updatedAt || "";
       const nextTasks = Array.isArray(result.tasks) ? result.tasks : [];
-      // SQLite CURRENT_TIMESTAMP chỉ chính xác đến giây. Không được bỏ qua chỉ vì updatedAt
+      // Mốc updatedAt có thể trùng khi nhiều thao tác xảy ra rất nhanh. Không được bỏ qua chỉ vì updatedAt
       // giống nhau: hai thao tác giao việc trong cùng một giây vẫn phải cập nhật realtime.
       const unchanged = JSON.stringify(nextTasks) === JSON.stringify(tasks);
       tasksUpdatedAtRef.current = updatedAt;
@@ -3328,26 +3365,86 @@ function DomixApp({ authUser, onLogout }) {
     };
   }, [refreshTasksRealtime]);
 
-  // Nhân sự: nạp từ bảng employees khi vào app, ghi đè (debounce) khi có thay đổi.
-  const refreshEmployees = useCallback(async () => {
-    const result = await listEmployees();
-    const loadedEmployees = Array.isArray(result.employees) ? result.employees : [];
-    lastPersistedEmployeesJsonRef.current = JSON.stringify(loadedEmployees);
-    setEmployees(loadedEmployees);
+  // Nhân sự luôn lấy từ bảng employees trong PostgreSQL. Polling nhẹ giúp mọi tab/máy
+  // thấy nhân sự mới mà không cần F5; dữ liệu local chưa lưu không bị response nền ghi đè.
+  const applyPersistedEmployees = useCallback((items) => {
+    const normalized = Array.isArray(items) ? items : [];
+    const serialized = JSON.stringify(normalized);
+    lastPersistedEmployeesJsonRef.current = serialized;
     hasLoadedEmployees.current = true;
-    return loadedEmployees;
+    setEmployees((current) => (JSON.stringify(current) === serialized ? current : normalized));
+    setEmployeeSyncError("");
+    return normalized;
   }, []);
+
+  const refreshEmployees = useCallback(async ({ force = false } = {}) => {
+    if (employeeRefreshInFlightRef.current) {
+      if (!force) return employeeRefreshInFlightRef.current;
+      try {
+        await employeeRefreshInFlightRef.current;
+      } catch {
+        // Yêu cầu làm mới thủ công vẫn tiếp tục bằng một request mới sau lỗi cũ.
+      }
+    }
+    const persistedAtRequestStart = lastPersistedEmployeesJsonRef.current;
+    setEmployeesSyncing(true);
+    const request = listEmployees()
+      .then((result) => {
+        const remoteEmployees = Array.isArray(result.employees) ? result.employees : [];
+        const remoteJson = JSON.stringify(remoteEmployees);
+        const localEmployees = employeesSnapshotRef.current;
+        const localJson = JSON.stringify(localEmployees);
+        const persistedJson = lastPersistedEmployeesJsonRef.current;
+        const persistedChangedWhileLoading = persistedAtRequestStart !== persistedJson;
+        const hasUnsavedLocalChange = hasLoadedEmployees.current
+          && localJson !== persistedJson
+          && localJson !== remoteJson;
+
+        // Không cho response được tạo trước thao tác thêm/sửa nhân sự quay về muộn và
+        // làm biến mất hồ sơ vừa được PostgreSQL xác nhận lưu thành công.
+        if ((persistedChangedWhileLoading || hasUnsavedLocalChange) && remoteJson !== localJson) {
+          return localEmployees;
+        }
+        return applyPersistedEmployees(remoteEmployees);
+      })
+      .catch((error) => {
+        setEmployeeSyncError(error.message || "Không thể cập nhật danh sách nhân sự từ máy chủ.");
+        throw error;
+      })
+      .finally(() => {
+        employeeRefreshInFlightRef.current = null;
+        setEmployeesSyncing(false);
+      });
+    employeeRefreshInFlightRef.current = request;
+    return request;
+  }, [applyPersistedEmployees]);
 
   useEffect(() => {
     let cancelled = false;
-    refreshEmployees().catch((err) => {
+    const safeRefresh = (options) => refreshEmployees(options).catch((err) => {
       if (cancelled) return;
-      // Không đánh dấu đã tải khi API lỗi. Như vậy dữ liệu đang có trên màn hình không thể
-      // bị ghi ngược thành danh sách rỗng và xóa hồ sơ nhân sự trên máy chủ.
-      hasLoadedEmployees.current = false;
-      console.warn("Không tải được danh sách nhân sự từ DB; đã khóa tự động lưu để bảo vệ dữ liệu:", err);
+      if (!hasLoadedEmployees.current) {
+        console.warn("Không tải được danh sách nhân sự từ PostgreSQL; đã khóa tự động lưu để bảo vệ dữ liệu:", err);
+      }
     });
-    return () => { cancelled = true; };
+
+    safeRefresh({ force: true });
+    const timer = window.setInterval(() => safeRefresh(), 2500);
+    const refreshOnFocus = () => safeRefresh();
+    const refreshOnVisible = () => {
+      if (document.visibilityState === "visible") safeRefresh();
+    };
+    const refreshOnEmployeeEvent = () => safeRefresh({ force: true });
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    window.addEventListener("domix:employees-changed", refreshOnEmployeeEvent);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
+      window.removeEventListener("domix:employees-changed", refreshOnEmployeeEvent);
+    };
   }, [refreshEmployees]);
 
   useEffect(() => {
@@ -3361,15 +3458,17 @@ function DomixApp({ authUser, onLogout }) {
         .then(() => saveEmployees(payload))
         .then((result) => {
           const savedEmployees = Array.isArray(result.employees) ? result.employees : payload;
-          // Response cũ chỉ được áp dụng nếu danh sách local chưa đổi trong lúc chờ.
           if (JSON.stringify(employeesSnapshotRef.current) !== serialized) return;
-          lastPersistedEmployeesJsonRef.current = JSON.stringify(savedEmployees);
-          if (JSON.stringify(savedEmployees) !== serialized) setEmployees(savedEmployees);
+          applyPersistedEmployees(savedEmployees);
+          window.dispatchEvent(new CustomEvent("domix:employees-changed"));
         })
-        .catch((err) => console.warn("Không lưu được nhân sự vào DB; dữ liệu cục bộ được giữ nguyên để thử lại:", err));
+        .catch((err) => {
+          setEmployeeSyncError(err.message || "Không lưu được nhân sự vào PostgreSQL.");
+          console.warn("Không lưu được nhân sự vào PostgreSQL; dữ liệu cục bộ được giữ nguyên để thử lại:", err);
+        });
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [employees, canWriteData]);
+  }, [employees, canWriteData, applyPersistedEmployees]);
 
   const refreshChatUnread = useCallback(async () => {
     try {
@@ -4197,10 +4296,10 @@ function DomixApp({ authUser, onLogout }) {
           {tab === "hotro" && <HoTroKhachHang cases={supportCases} setCases={setSupportCases} employees={activeEmployees} orders={orders} setOrders={setOrders} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
           {tab === "chat" && <ChatPage authUser={effectiveAuthUser} onUnreadChange={setChatUnread} employees={employees} tasks={tasks} setTasks={setTasks} setTab={setTab} />}
           {tab === "crm" && <RevenueFinanceHub financialSummary={financialSummary} financialSummaryError={financialSummaryError} refreshFinancialSummary={refreshFinancialSummary} transactions={transactions} setTransactions={setTransactions} orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} payrollRows={payrollRows} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} revenueByEmployee={revenueByEmployee} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} debts={debts} setDebts={setDebts} company={company} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
-          {tab === "marketing" && <MarketingDaily logs={marketingLogs} setLogs={setMarketingLogs} employees={activeEmployees} marketingByEmployee={marketingByEmployee} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setPages={setMarketingPages} orders={orders} inventory={inventory} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} positionAccess={positionAccess} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
-          {tab === "nhansu" && <NhanSu authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} showForm={showEmpForm} setShowForm={setShowEmpForm} reportYear={reportYear} reportMonth={reportMonth} prefillEmployee={prefillEmployee} setPrefillEmployee={setPrefillEmployee} onOpenProfile={setProfileEmployeeId} />}
+          {tab === "marketing" && <MarketingDaily logs={marketingLogs} setLogs={setMarketingLogs} employees={activeEmployees} marketingByEmployee={marketingByEmployee} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setPages={setMarketingPages} orders={orders} inventory={inventory} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} positionAccess={positionAccess} leads={leads} setLeads={setLeads} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "nhansu" && <NhanSu authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} onEmployeesPersisted={applyPersistedEmployees} refreshEmployees={refreshEmployees} showForm={showEmpForm} setShowForm={setShowEmpForm} reportYear={reportYear} reportMonth={reportMonth} prefillEmployee={prefillEmployee} setPrefillEmployee={setPrefillEmployee} onOpenProfile={setProfileEmployeeId} />}
           {tab === "tuyendung" && <><BetaFeatureNotice /><TuyenDungAI cvReviews={cvReviews} setCvReviews={setCvReviews} employees={activeEmployees} masterRanking={masterRanking} company={company} queue={cvQueue} setQueue={setCvQueue} processing={cvProcessing} setProcessing={setCvProcessing} progress={cvProgress} setProgress={setCvProgress} setPrefillEmployee={setPrefillEmployee} setTab={setTab} setShowEmpForm={setShowEmpForm} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} /></>}
-          {tab === "chamcong" && <ChamCong authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} attendanceRequests={attendanceRequests} setAttendanceRequests={setAttendanceRequests} unlockedMonths={unlockedMonths} setUnlockedMonths={setUnlockedMonths} company={company} />}
+          {tab === "chamcong" && <ChamCong authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} refreshEmployees={refreshEmployees} employeesSyncing={employeesSyncing} employeeSyncError={employeeSyncError} attendanceRequests={attendanceRequests} setAttendanceRequests={setAttendanceRequests} unlockedMonths={unlockedMonths} setUnlockedMonths={setUnlockedMonths} company={company} />}
           {tab === "hieusuat" && <HieuSuat employees={effectiveActiveEmployees} masterRanking={masterRanking} supportCases={supportCases} financialSummary={financialSummary} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} onOpenProfile={setProfileEmployeeId} />}
           {tab === "luong" && <BangLuong payrollRows={payrollRows} totalPayroll={totalPayroll} setEmployees={setEmployees} reportYear={reportYear} reportMonth={reportMonth} setTransactions={setTransactions} payrollPayments={payrollPayments} setPayrollPayments={setPayrollPayments} company={company} kpiTiers={kpiTiers} setKpiTiers={setKpiTiers} payrollApprovals={payrollApprovals} setPayrollApprovals={setPayrollApprovals} midMonthRequests={midMonthRequests} setMidMonthRequests={setMidMonthRequests} employees={employees} authUser={effectiveAuthUser} applyAppData={applyAppData} refreshFinancialSummary={refreshFinancialSummary} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
           {tab === "quy" && <QuarterReport transactions={transactions} orders={orders} marketingLogs={marketingLogs} employees={employees} reportYear={reportYear} reportMonth={reportMonth} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
@@ -5644,7 +5743,7 @@ function VonGop({ contributions, setContributions, company, setCompany, totalCon
       <div className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
         <div className="min-h-0 flex-1 overflow-auto">
         <table data-sticky-columns="true" className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="bg-paper text-left text-xs uppercase text-muted">
               <th className="px-4 py-2.5">Người góp vốn</th>
               <th className="px-4 py-2.5">Loại tài sản</th>
@@ -8539,7 +8638,7 @@ function exportTasksExcel(tasks, employees, orders, marketingLogs) {
 }
 
 // ---------- Hỗ trợ khách hàng — tránh nhiều người cùng hỗ trợ 1 khách, biết ai đang bận ----------
-// ---------- Tin nhắn công ty — đồng bộ SQLite backend, có chat cá nhân và nhóm ----------
+// ---------- Tin nhắn công ty — đồng bộ PostgreSQL backend, có chat cá nhân và nhóm ----------
 
 function normalizeAccountEmail(value = "") {
   return String(value || "").trim().toLowerCase();
@@ -9314,7 +9413,7 @@ Nội dung: ${task.description}`;
   const parseChatTimestamp = (value) => {
     if (!value) return null;
     let normalized = String(value).trim();
-    // SQLite CURRENT_TIMESTAMP lưu theo UTC nhưng trả về dạng không có múi giờ.
+    // Mốc thời gian máy chủ được chuẩn hóa theo UTC trước khi hiển thị.
     // Bổ sung Z để trình duyệt không hiểu nhầm đây là giờ địa phương của thiết bị.
     if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(normalized)) {
       normalized = `${normalized.replace(" ", "T")}Z`;
@@ -9421,7 +9520,10 @@ Nội dung: ${task.description}`;
     <div className="domix-task-chat grid h-full min-h-0 grid-cols-1 overflow-hidden border-0 bg-[radial-gradient(circle_at_top_left,rgba(47,105,255,0.17),transparent_28%),linear-gradient(180deg,#07111f_0%,#0b1730_100%)] shadow-none xl:grid-cols-[328px_minmax(0,1fr)]">
       <section className="flex min-h-0 flex-col border-b border-[#1c3154] bg-[linear-gradient(180deg,rgba(8,17,32,0.98),rgba(10,24,47,0.98))] xl:border-b-0 xl:border-r">
         <div className="border-b border-[#183052] px-4 pb-4 pt-4">
-          <div className="text-[20px] font-bold tracking-wide text-[#f4c76a]">DOMIX</div>
+          <div className="flex items-center gap-2">
+            <img src="/logo.jfif" alt="DOMIX" className="h-7 w-7 shrink-0 rounded-md object-cover" />
+            <div className="text-[20px] font-bold tracking-wide text-[#f4c76a]">DOMIX</div>
+          </div>
           <div className="mt-0.5 text-xs text-[#dce8ff]">Trao đổi công việc</div>
 
           <div className="domix-chat-search mt-4 rounded-[18px] border border-[#2a426d]/80 bg-white/[0.035] px-3 py-2.5 transition-colors focus-within:border-[#5f86d8]/70">
@@ -12227,6 +12329,19 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, revenueByE
         </div>
       )}
 
+      <div className="shrink-0">
+        <SectionViewSwitcher
+          value={activeTableView}
+          onChange={setActiveTableView}
+          options={[
+            { id: "orders", label: "Đơn hàng CRM", icon: ShoppingCart, count: orders.length },
+            { id: "leads", label: "Khách tiềm năng", icon: Phone, count: (leads || []).filter((l) => l.status === "dang_cham_soc").length },
+            { id: "sales", label: "Doanh số theo Sale", icon: TrendingUp, count: saleStats.length },
+            { id: "daily", label: "Báo cáo liên hệ hàng ngày", icon: CalendarCheck, count: dailyContacts.length },
+          ]}
+        />
+      </div>
+
       <div style={{ display: activeTableView === "sales" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><TrendingUp size={13} /> Chi tiết doanh số từng Sale — để tính KPI &amp; xem chất lượng</div>
         <table data-sticky-columns="true" data-mobile-cards="true" className="w-full text-sm">
@@ -13160,12 +13275,12 @@ function exportMarketingExcel(logs, employees) {
   XLSX.writeFile(wb, `DOMIX_Marketing_hang_ngay_${TODAY_STR}.xlsx`);
 }
 
-function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportYear, reportMonth, pages, setPages, orders, inventory, authUser, currentEmployee, positionAccess, dataLoader }) {
+function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportYear, reportMonth, pages, setPages, orders, inventory, authUser, currentEmployee, positionAccess, leads, setLeads, dataLoader }) {
   const [activeTableView, setActiveTableView] = useState("daily");
   const canManageMarketing = normalizeAccountRole(authUser?.role) !== "user";
   const canWriteMarketingDaily = canManageMarketing || Boolean(positionAccess?.marketingWrite && currentEmployee?.id);
   const canEditMarketingLog = (log) => canManageMarketing || (canWriteMarketingDaily && Number(log?.employeeId) === Number(currentEmployee?.id));
-  const lazyTableData = useLazyTableData(activeTableView, { daily: ["marketingLogs", "marketingPages"], pages: ["marketingPages", "inventory", "orders"], pageRevenue: ["marketingPages", "orders"], ranking: ["marketingLogs"] }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
+  const lazyTableData = useLazyTableData(activeTableView, { daily: ["marketingLogs", "marketingPages", "leads"], pages: ["marketingPages", "inventory", "orders"], pageRevenue: ["marketingPages", "orders"], ranking: ["marketingLogs"] }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   const pageNameOf = (id) => (pages || []).find((p) => p.id === id)?.name || "";
   const [showPageForm, setShowPageForm] = useState(false);
   const [editingPageId, setEditingPageId] = useState(null);
@@ -13203,6 +13318,103 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
   const togglePageProduct = (id) => setPageForm((f) => ({ ...f, productIds: f.productIds.includes(id) ? f.productIds.filter((x) => x !== id) : [...f.productIds, id] }));
 
   const mktEmployees = employees.filter((e) => ["ads", "sale"].includes(e.roleType));
+  // Khách tiềm năng Marketing chạy ads đẩy số điện thoại về — cho ghi nhận ngay tại đây, không bắt
+  // Sale phải chuyển sang tab Doanh thu bán hàng mới nhập được. Cùng ghi vào 1 nguồn "leads" duy
+  // nhất với CRM nên khách hiện đúng ở cả 2 nơi, Sale gọi ở tab nào cũng thấy cùng 1 danh sách.
+  const canWriteLead = canManageMarketing || Boolean(positionAccess?.marketingWrite && currentEmployee?.id) || Boolean(currentEmployee?.roleType === "sale");
+  const isSelfAssignedSale = !canManageMarketing && currentEmployee?.roleType === "sale" && Boolean(currentEmployee?.id);
+  const marketingLeads = (leads || []).filter((lead) => (
+    isSelfAssignedSale
+      ? Number(lead.saleEmployeeId) === Number(currentEmployee.id)
+      : lead.source === "marketing_ads" || lead.source === "pancake"
+  ));
+  const visibleMarketingLeads = marketingLeads;
+  const pendingMarketingLeads = visibleMarketingLeads.filter((l) => l.status === "dang_cham_soc").length;
+  const [showLeadForm, setShowLeadForm] = useState(false);
+  const defaultLeadSaleEmployeeId = isSelfAssignedSale ? String(currentEmployee.id) : "";
+  const blankLeadForm = { date: TODAY_STR, customerName: "", phone: "", source: "marketing_ads", saleEmployeeId: defaultLeadSaleEmployeeId, note: "" };
+  const [leadForm, setLeadForm] = useState(blankLeadForm);
+  const [leadFormError, setLeadFormError] = useState("");
+  const [leadConsultDraft, setLeadConsultDraft] = useState({});
+  const [openLeadConsultId, setOpenLeadConsultId] = useState(null);
+  const [leadConsultError, setLeadConsultError] = useState("");
+  useEffect(() => {
+    if (!isSelfAssignedSale) return;
+    setLeadForm((current) => ({ ...current, saleEmployeeId: String(currentEmployee.id) }));
+  }, [isSelfAssignedSale, currentEmployee?.id]);
+  const addMarketingLead = () => {
+    const phoneDigits = normalizedLeadPhoneDigits(leadForm.phone);
+    const assignedSaleId = isSelfAssignedSale ? Number(currentEmployee.id) : Number(leadForm.saleEmployeeId);
+    if (phoneDigits.length < 8 || phoneDigits.length > 15) {
+      setLeadFormError("Số điện thoại không hợp lệ. Vui lòng nhập từ 8 đến 15 chữ số.");
+      return;
+    }
+    if (!assignedSaleId) {
+      setLeadFormError("Vui lòng chọn Sale phụ trách.");
+      return;
+    }
+    const duplicated = (leads || []).some((lead) => (
+      lead.status === "dang_cham_soc"
+      && normalizedLeadPhoneDigits(lead.phone) === phoneDigits
+      && Number(lead.saleEmployeeId) === Number(assignedSaleId)
+    ));
+    if (duplicated) {
+      setLeadFormError("Số điện thoại này đang được Sale phụ trách chăm sóc. Không cần nhập lại.");
+      return;
+    }
+    setLeadFormError("");
+    const createdAt = new Date().toISOString();
+    const contactId = `lead-contact:${Date.now()}`;
+    setLeads((prev) => [...(prev || []), {
+      id: `lead:${Date.now()}`, date: leadForm.date, customerName: leadForm.customerName || "(Chưa rõ tên)", phone: leadForm.phone.trim(), email: "",
+      note: leadForm.note || "", saleEmployeeId: assignedSaleId,
+      source: leadForm.source, status: "dang_cham_soc",
+      contactLog: leadForm.note ? [{ id: contactId, date: nowStamp(), type: "call", note: leadForm.note, employeeId: currentEmployee?.id || null, employeeName: currentEmployee?.name || authUser?.email || "", employeeEmail: authUser?.email || "" }] : [],
+      createdAt,
+      createdByEmployeeId: currentEmployee?.id || null,
+      createdByName: currentEmployee?.name || authUser?.email || "",
+      createdByEmail: authUser?.email || "",
+      assignedAt: createdAt,
+    }]);
+    setLeadForm({ ...blankLeadForm, saleEmployeeId: isSelfAssignedSale ? String(currentEmployee.id) : "" });
+    setShowLeadForm(false);
+  };
+  const saveLeadConsultation = (leadId) => {
+    const draft = leadConsultDraft[leadId] || {};
+    if (!String(draft.note || "").trim() && !draft.nextFollowUpDate) {
+      setLeadConsultError("Hãy nhập nội dung tư vấn hoặc ngày hẹn gọi lại.");
+      return;
+    }
+    setLeadConsultError("");
+    const updatedAt = new Date().toISOString();
+    setLeads((previous) => previous.map((lead) => (
+      lead.id === leadId && Number(lead.saleEmployeeId) === Number(currentEmployee?.id)
+        ? {
+          ...lead,
+          contactLog: [...(lead.contactLog || []), {
+            id: `lead-contact:${Date.now()}`,
+            date: nowStamp(),
+            type: draft.type || "call",
+            note: String(draft.note || "").trim() || "(Đã cập nhật lịch hẹn)",
+            employeeId: currentEmployee?.id || null,
+            employeeName: currentEmployee?.name || authUser?.email || "",
+            employeeEmail: authUser?.email || "",
+          }],
+          nextFollowUpDate: draft.nextFollowUpDate || lead.nextFollowUpDate || "",
+          updatedAt,
+        }
+        : lead
+    )));
+    setLeadConsultDraft((previous) => ({ ...previous, [leadId]: { type: "call", note: "", nextFollowUpDate: "" } }));
+    setOpenLeadConsultId(null);
+  };
+  const rejectOwnMarketingLead = (leadId) => {
+    setLeads((previous) => previous.map((lead) => (
+      lead.id === leadId && Number(lead.saleEmployeeId) === Number(currentEmployee?.id)
+        ? { ...lead, status: "tu_choi", updatedAt: new Date().toISOString() }
+        : lead
+    )));
+  };
   const [showForm, setShowForm] = useState(false);
   const [editingLogId, setEditingLogId] = useState(null);
   const [rangeMode, setRangeMode] = useState("month");
@@ -13546,12 +13758,122 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
             <button onClick={() => exportMarketingExcel(visibleLogs, employees)} className="flex h-9 items-center gap-1.5 rounded-lg bg-ledger-green px-3.5 text-xs font-semibold text-white transition hover:opacity-90">
               <FileSpreadsheet size={14} /> Xuất Excel
             </button>
+            {activeTableView === "daily" && canWriteLead && (
+              <button onClick={() => { setLeadFormError(""); setLeadForm(blankLeadForm); setShowLeadForm(true); }} className="flex h-9 items-center gap-1.5 rounded-lg border border-gold bg-gold/10 px-3.5 text-xs font-semibold text-ink transition hover:bg-gold/20">
+                <Phone size={14} /> {isSelfAssignedSale ? "Thêm SĐT khách tôi tư vấn" : "Thêm khách cần gọi (SĐT)"}{pendingMarketingLeads > 0 ? ` · ${pendingMarketingLeads}` : ""}
+              </button>
+            )}
             {canWriteMarketingDaily && <button onClick={() => { setEditingLogId(null); setForm((current) => ({ ...current, date: TODAY_STR, employeeId: defaultMarketingEmployeeId })); setShowForm(true); }} className="flex h-9 items-center gap-1.5 rounded-lg bg-ink px-3.5 text-xs font-semibold text-white transition hover:bg-ink-light">
               <Plus size={14} /> Ghi nhận ngày mới
             </button>}
           </div>
         </div>
       </div>
+
+      {showLeadForm && (
+        <div className="domix-inline-form-modal shrink-0 rounded-xl border border-gold/40 bg-white p-4 shadow-sm sm:p-5 relative">
+          <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={async () => { if (leadForm.phone && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setShowLeadForm(false); setLeadFormError(""); }}><X size={16} /></button>
+          <h3 className="ktns-serif mb-1 flex items-center gap-2 pr-8 font-semibold text-ink"><Phone size={16} /> {isSelfAssignedSale ? "Thêm khách tôi trực tiếp tư vấn" : "Ghi nhận khách cần gọi từ Marketing"}</h3>
+          <p className="mb-4 max-w-3xl text-xs leading-5 text-muted">{isSelfAssignedSale ? `Khách được tự động gắn cho ${currentEmployee?.name || "tài khoản Sale hiện tại"}. Bạn có thể cập nhật nội dung tư vấn ngay trong danh sách bên dưới.` : "Nhập số điện thoại và chọn đúng Sale phụ trách. Khách sẽ xuất hiện trong CRM và khu vực chăm sóc của Sale được giao."}</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-xs text-muted">Ngày<input type="date" value={leadForm.date} onChange={(e) => setLeadForm({ ...leadForm, date: e.target.value })} className="h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-gold" /></label>
+            <label className="flex flex-col gap-1 text-xs text-muted">Số điện thoại *<input value={leadForm.phone} onChange={(e) => setLeadForm({ ...leadForm, phone: e.target.value })} placeholder="09xxxxxxxx" inputMode="tel" className="ktns-mono h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-gold" /></label>
+            <label className="flex flex-col gap-1 text-xs text-muted">Tên khách (nếu có)<input value={leadForm.customerName} onChange={(e) => setLeadForm({ ...leadForm, customerName: e.target.value })} className="h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-gold" /></label>
+            <label className="text-xs text-muted flex flex-col gap-1">Nguồn
+              <select value={leadForm.source} onChange={(e) => setLeadForm({ ...leadForm, source: e.target.value })} className="h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-gold">
+                {Object.entries(LEAD_SOURCES).map(([id, label]) => (<option key={id} value={id}>{label}</option>))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-muted">Sale phụ trách tư vấn *
+              {isSelfAssignedSale ? (
+                <div className="flex h-10 items-center gap-2 rounded-lg border border-ledger-green/30 bg-ledger-green/5 px-3 text-sm font-semibold text-ink"><UserCheck size={15} className="text-ledger-green" /><span className="truncate">{currentEmployee?.name || "Sale hiện tại"}</span><span className="ml-auto shrink-0 text-[10px] font-medium text-ledger-green">Tự động nhận</span></div>
+              ) : (
+                <select value={leadForm.saleEmployeeId} onChange={(e) => setLeadForm({ ...leadForm, saleEmployeeId: e.target.value })} className="h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-gold">
+                  <option value="">— Chọn Sale —</option>
+                  {saleEmpAll.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
+                </select>
+              )}
+            </label>
+            <label className="flex flex-col gap-1 text-xs text-muted sm:col-span-2">Nội dung tư vấn ban đầu<input value={leadForm.note} onChange={(e) => setLeadForm({ ...leadForm, note: e.target.value })} placeholder="VD: khách quan tâm gói 2 tháng, hẹn gọi lại chiều nay..." className="h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-gold" /></label>
+          </div>
+          {leadFormError && <p className="mt-2 text-xs text-stamp-red flex items-center gap-1"><AlertTriangle size={12} /> {leadFormError}</p>}
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button onClick={addMarketingLead} className="inline-flex h-10 items-center gap-2 rounded-lg bg-ledger-green px-4 text-sm font-semibold text-white transition hover:opacity-90"><UserCheck size={15} /> {isSelfAssignedSale ? "Lưu và nhận tư vấn" : "Lưu khách cần gọi"}</button>
+            <button onClick={() => { setShowLeadForm(false); setLeadFormError(""); }} className="h-10 rounded-lg border border-paper-line px-4 text-sm text-muted transition hover:bg-paper">Huỷ</button>
+          </div>
+        </div>
+      )}
+
+      {activeTableView === "daily" && isSelfAssignedSale && (
+        <div className="shrink-0 overflow-hidden rounded-xl border border-paper-line bg-white shadow-sm">
+          <div className="flex flex-col gap-2 border-b border-paper-line bg-paper/60 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 text-sm font-semibold text-ink"><UserCheck size={16} className="text-ledger-green" /> Khách tôi đang trực tiếp tư vấn</div>
+              <p className="mt-0.5 text-[11px] text-muted">Mỗi SĐT bạn nhập được tự động gắn cho chính bạn; lịch sử tư vấn được lưu chung với CRM.</p>
+            </div>
+            <div className="flex items-center gap-2 text-[11px]">
+              <span className="rounded-full border border-paper-line bg-white px-2.5 py-1 text-muted">Tổng {visibleMarketingLeads.length}</span>
+              <span className="rounded-full border border-ledger-green/30 bg-ledger-green/5 px-2.5 py-1 font-semibold text-ledger-green">Đang chăm sóc {pendingMarketingLeads}</span>
+            </div>
+          </div>
+          <div className="ktns-scrollbar max-h-[300px] overflow-y-auto overscroll-contain">
+            {visibleMarketingLeads.length === 0 ? (
+              <div className="flex min-h-28 flex-col items-center justify-center gap-2 px-4 py-6 text-center text-muted">
+                <Phone size={22} />
+                <p className="text-sm font-medium text-ink">Chưa có khách nào được giao cho bạn</p>
+                <p className="text-xs">Bấm “Thêm SĐT khách tôi tư vấn” để tạo khách đầu tiên.</p>
+              </div>
+            ) : visibleMarketingLeads.slice().reverse().map((lead) => {
+              const draft = leadConsultDraft[lead.id] || { type: "call", note: "", nextFollowUpDate: "" };
+              const latestContact = (lead.contactLog || []).slice(-1)[0];
+              const isOpen = openLeadConsultId === lead.id;
+              const isOverdue = lead.nextFollowUpDate && lead.nextFollowUpDate <= TODAY_STR && lead.status === "dang_cham_soc";
+              return (
+                <div key={lead.id} className="border-t border-paper-line first:border-t-0">
+                  <div className="grid gap-3 px-4 py-3 sm:grid-cols-[minmax(0,1.3fr)_150px_130px_auto] sm:items-center">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="truncate text-sm font-semibold text-ink">{lead.customerName || "(Chưa rõ tên)"}</span>
+                        {lead.status === "dang_cham_soc" ? <StampBadge text="ĐANG CHĂM SÓC" gold /> : <StampBadge text="TỪ CHỐI" muted />}
+                      </div>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted">
+                        <span className="ktns-mono font-semibold text-ink">{lead.phone}</span>
+                        <span>{LEAD_SOURCES[lead.source] || "Nguồn khác"}</span>
+                        {latestContact?.note && <span className="max-w-[420px] truncate" title={latestContact.note}>Gần nhất: {latestContact.note}</span>}
+                      </div>
+                    </div>
+                    <div className="text-xs">
+                      <div className="text-[10px] uppercase tracking-wide text-muted">Hẹn gọi lại</div>
+                      <div className={`mt-0.5 font-semibold ${isOverdue ? "text-stamp-red" : "text-ink"}`}>{lead.nextFollowUpDate || "Chưa đặt lịch"}{isOverdue ? " · Đến hẹn" : ""}</div>
+                    </div>
+                    <div className="text-xs">
+                      <div className="text-[10px] uppercase tracking-wide text-muted">Ngày nhận khách</div>
+                      <div className="ktns-mono mt-0.5 text-ink">{lead.date || "—"}</div>
+                    </div>
+                    <div className="flex flex-wrap justify-start gap-2 sm:justify-end">
+                      {lead.status === "dang_cham_soc" && <button type="button" onClick={() => { setLeadConsultError(""); setOpenLeadConsultId(isOpen ? null : lead.id); }} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-ink px-3 text-xs font-semibold text-white transition hover:bg-ink-light"><Phone size={13} /> {isOpen ? "Đóng" : "Ghi tư vấn"}</button>}
+                      {lead.status === "dang_cham_soc" && <button type="button" onClick={() => rejectOwnMarketingLead(lead.id)} className="h-9 rounded-lg border border-paper-line px-3 text-xs text-muted transition hover:border-stamp-red/40 hover:text-stamp-red">Không mua</button>}
+                    </div>
+                  </div>
+                  {isOpen && (
+                    <div className="border-t border-paper-line bg-paper/45 px-4 py-3">
+                      <div className="grid gap-2 lg:grid-cols-[150px_minmax(240px,1fr)_180px_auto]">
+                        <select value={draft.type} onChange={(event) => setLeadConsultDraft((previous) => ({ ...previous, [lead.id]: { ...draft, type: event.target.value } }))} className="h-10 rounded-lg border border-paper-line bg-white px-3 text-xs outline-none transition focus:border-gold">
+                          {Object.entries(CONTACT_TYPES).map(([id, meta]) => <option key={id} value={id}>{meta.label}</option>)}
+                        </select>
+                        <input value={draft.note} onChange={(event) => setLeadConsultDraft((previous) => ({ ...previous, [lead.id]: { ...draft, note: event.target.value } }))} placeholder="Nội dung đã tư vấn, nhu cầu và phản hồi của khách..." className="h-10 rounded-lg border border-paper-line bg-white px-3 text-xs outline-none transition focus:border-gold" />
+                        <input type="date" value={draft.nextFollowUpDate} onChange={(event) => setLeadConsultDraft((previous) => ({ ...previous, [lead.id]: { ...draft, nextFollowUpDate: event.target.value } }))} className="ktns-mono h-10 rounded-lg border border-paper-line bg-white px-3 text-xs outline-none transition focus:border-gold" title="Ngày hẹn gọi lại" />
+                        <button type="button" onClick={() => saveLeadConsultation(lead.id)} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-ledger-green px-4 text-xs font-semibold text-white transition hover:opacity-90"><Check size={14} /> Lưu tư vấn</button>
+                      </div>
+                      {leadConsultError && <p className="mt-2 flex items-center gap-1 text-xs text-stamp-red"><AlertTriangle size={12} /> {leadConsultError}</p>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
@@ -13672,7 +13994,7 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
 }
 
 // ---------- Chấm công ----------
-function ChamCong({ authUser, employees, setEmployees, attendanceRequests = [], setAttendanceRequests, unlockedMonths, setUnlockedMonths, company }) {
+function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employeesSyncing = false, employeeSyncError = "", attendanceRequests = [], setAttendanceRequests, unlockedMonths, setUnlockedMonths, company }) {
   const currentEmployee = employeeForAuthUser(employees, authUser);
   const currentIsBoss = isAdminRole(authUser?.role);
   const currentIsAccountant = !currentIsBoss && (isAccountantRole(authUser?.role) || employeeIsAccountant(currentEmployee));
@@ -13956,6 +14278,9 @@ function ChamCong({ authUser, employees, setEmployees, attendanceRequests = [], 
           <div className="mt-0.5 text-[11px] text-muted">
             Bấm trực tiếp vào ngày cần chấm công, sau đó chọn loại công. Chỉ dữ liệu đã được Sếp/Kế toán duyệt mới tính vào lương.
           </div>
+          <div className={`mt-1 text-[10px] ${employeeSyncError ? "text-stamp-red" : "text-ledger-green"}`}>
+            {employeeSyncError || `Tự đồng bộ PostgreSQL · ${visibleEmployees.length} nhân sự trong kỳ đang xem`}
+          </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canReviewAttendance && (
@@ -13964,8 +14289,21 @@ function ChamCong({ authUser, employees, setEmployees, attendanceRequests = [], 
               onChange={(event) => setSelectedEmployeeId(event.target.value)}
               className="min-w-[210px] rounded-lg border border-paper-line bg-white px-3 py-2 text-sm font-semibold text-ink"
             >
+              {visibleEmployees.length === 0 && <option value="">Chưa có nhân sự trong kỳ này</option>}
               {visibleEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {employee.position || ROLE_META[employee.roleType]?.label || "Nhân viên"}</option>)}
             </select>
+          )}
+          {canReviewAttendance && (
+            <button
+              type="button"
+              onClick={() => refreshEmployees?.({ force: true })}
+              disabled={employeesSyncing}
+              className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-paper-line bg-white px-3 text-xs font-semibold text-ink transition hover:bg-paper disabled:cursor-wait disabled:opacity-60"
+              title="Tải lại danh sách nhân sự từ PostgreSQL"
+            >
+              <RotateCcw size={14} className={employeesSyncing ? "animate-spin" : ""} />
+              {employeesSyncing ? "Đang cập nhật" : "Cập nhật nhân sự"}
+            </button>
           )}
           <select
             value={key}
@@ -14277,7 +14615,7 @@ function EmployeeProfileModal({ employee, tasks = [], orders = [], marketingLogs
 }
 
 // ---------- Nhân sự ----------
-function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, reportYear, reportMonth, prefillEmployee, setPrefillEmployee, onOpenProfile }) {
+function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refreshEmployees, showForm, setShowForm, reportYear, reportMonth, prefillEmployee, setPrefillEmployee, onOpenProfile }) {
   const [showInactive, setShowInactive] = useState(false);
   const [expandedResume, setExpandedResume] = useState({});
   const [viewingDoc, setViewingDoc] = useState(null);
@@ -14286,6 +14624,7 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
   const [accountMessage, setAccountMessage] = useState("");
   const [accountError, setAccountError] = useState("");
   const [accountLoading, setAccountLoading] = useState(false);
+  const [employeeListRefreshing, setEmployeeListRefreshing] = useState(false);
   const isAdmin = isAdminRole(authUser?.role);
   const periodActive = employees.filter((e) => isEmployeeActiveInMonth(e, reportYear, reportMonth));
   const periodInactive = employees.filter((e) => !isEmployeeActiveInMonth(e, reportYear, reportMonth));
@@ -14312,6 +14651,20 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
     const result = await listUsers();
     setUsers(result.users || []);
   }, [isAdmin]);
+
+  const refreshEmployeeList = async () => {
+    if (!refreshEmployees || employeeListRefreshing) return;
+    setEmployeeListRefreshing(true);
+    setAccountError("");
+    try {
+      const latest = await refreshEmployees({ force: true });
+      setAccountMessage(`Đã cập nhật ${Array.isArray(latest) ? latest.length : 0} hồ sơ nhân sự từ PostgreSQL.`);
+    } catch (error) {
+      setAccountError(error.message || "Không cập nhật được danh sách nhân sự.");
+    } finally {
+      setEmployeeListRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     refreshUsers().catch((err) => setAccountError(err.message || "Không tải được danh sách tài khoản"));
@@ -14446,7 +14799,9 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
       // Hồ sơ và tài khoản được tạo/cập nhật trong cùng một transaction PostgreSQL.
       const result = await upsertEmployeeWithAccount(nextEmployee);
       const savedEmployees = Array.isArray(result.employees) ? result.employees : nextEmployees;
-      setEmployees(savedEmployees);
+      if (onEmployeesPersisted) onEmployeesPersisted(savedEmployees);
+      else setEmployees(savedEmployees);
+      window.dispatchEvent(new CustomEvent("domix:employees-changed"));
       setUsers(result.users || users);
       if (result?.temporaryPassword) {
         setAccountMessage(`Đã tạo hồ sơ và liên kết tài khoản ${email}. Mật khẩu tạm chỉ hiển thị một lần: ${result.temporaryPassword} — yêu cầu nhân viên đổi ngay sau lần đăng nhập đầu tiên.`);
@@ -14510,7 +14865,10 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
     try {
       const result = await deleteEmployee(employeeDeleteTarget.id);
       const deletedEmail = String(employeeDeleteTarget.email || "").trim().toLowerCase();
-      setEmployees(Array.isArray(result.employees) ? result.employees : employees.filter((employee) => employee.id !== employeeDeleteTarget.id));
+      const savedEmployees = Array.isArray(result.employees) ? result.employees : employees.filter((employee) => employee.id !== employeeDeleteTarget.id);
+      if (onEmployeesPersisted) onEmployeesPersisted(savedEmployees);
+      else setEmployees(savedEmployees);
+      window.dispatchEvent(new CustomEvent("domix:employees-changed"));
       if (deletedEmail) setUsers((current) => current.filter((user) => String(user.email || "").trim().toLowerCase() !== deletedEmail));
       setAccountMessage(`Đã xóa nhân sự ${employeeDeleteTarget.name}${deletedEmail ? ` và tài khoản đăng nhập ${deletedEmail}` : ""}.`);
       setEmployeeDeleteTarget(null);
@@ -14564,6 +14922,16 @@ function NhanSu({ authUser, employees, setEmployees, showForm, setShowForm, repo
           <span className="text-ink-light"> lương, thưởng, KPI, ngày công, thâm niên và chỉ số vận hành theo vị trí sẽ tự động đổ vào Bảng lương và Hiệu suất</span>
         </p>
         <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={refreshEmployeeList}
+            disabled={employeeListRefreshing}
+            className="inline-flex h-9 items-center gap-1.5 rounded-md border border-paper-line bg-white px-3 text-xs font-semibold text-ink transition hover:bg-paper disabled:cursor-wait disabled:opacity-60"
+            title="Tải lại danh sách nhân sự từ PostgreSQL"
+          >
+            <RotateCcw size={14} className={employeeListRefreshing ? "animate-spin" : ""} />
+            {employeeListRefreshing ? "Đang cập nhật" : "Cập nhật"}
+          </button>
           {periodInactive.length > 0 && (
             <button onClick={() => setShowInactive((v) => !v)} className="text-xs border border-paper-line px-2.5 py-2 rounded-md text-ink-light hover:border-gold">
               {showInactive ? "Ẩn người đã nghỉ" : `Hiện cả ${periodInactive.length} người đã nghỉ/chưa vào`}
@@ -18799,7 +19167,7 @@ Nếu người dùng yêu cầu đưa các điều khoản trên vào hợp đ�
   );
 }
 
-// ---------- Đăng nhập & phiên làm việc (backend SQLite) ----------
+// ---------- Đăng nhập & phiên làm việc (backend PostgreSQL) ----------
 // ---------- Menu người dùng (avatar góc trên phải) ----------
 function UserMenu({ authUser, employees = [], onLogout, onOpenSettings }) {
   const [open, setOpen] = useState(false);
@@ -19318,7 +19686,7 @@ function LoginScreen({ onLogin, onRegistered }) {
       <header className="domix-login-topbar relative z-10 px-5 sm:px-8">
         <div className="max-w-[1280px] mx-auto h-[72px] flex items-center justify-between gap-6">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="domix-login-logo-mark w-10 h-10 rounded-lg flex items-center justify-center font-bold ktns-serif text-lg shrink-0">D</div>
+            <img src="/logo.jfif" alt="DOMIX" className="domix-login-logo-mark w-10 h-10 rounded-lg object-cover shrink-0" />
             <div className="min-w-0">
               <div className="ktns-serif font-bold text-white text-lg leading-tight tracking-wide">DOMIX</div>
               <div className="text-[10px] uppercase tracking-[0.18em] text-white/[0.45] truncate">Business operation system</div>

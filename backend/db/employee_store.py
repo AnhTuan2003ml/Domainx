@@ -139,8 +139,7 @@ def create_employees_table(conn):
     # Frontend tạo mã hồ sơ bằng Date.now() (13 chữ số). PostgreSQL INTEGER chỉ có
     # 32-bit nên lần lưu hồ sơ trước đây có thể thất bại sau khi tài khoản đã được tạo,
     # để lại tài khoản mồ côi. BIGINT giữ nguyên mã cũ và an toàn cho nhiều năm vận hành.
-    if getattr(conn, "backend_name", "sqlite") == "postgresql":
-        conn.execute("ALTER TABLE employees ALTER COLUMN id TYPE BIGINT")
+    conn.execute("ALTER TABLE employees ALTER COLUMN id TYPE BIGINT")
     for _, db_col, kind in FIELD_SPEC:
         if db_col not in existing_columns:
             conn.execute(f"ALTER TABLE employees ADD COLUMN {db_col} {_SQL_TYPE[kind]}")
@@ -253,8 +252,7 @@ def repair_account_links(conn):
 def list_employees(db_path):
     with connect(db_path) as conn:
         repair_account_links(conn)
-        # LOWER hoạt động đồng nhất trên PostgreSQL và SQLite; tránh phụ thuộc collation
-        # NOCASE đặc thù SQLite khi tải hồ sơ nhân sự trên máy chủ Docker.
+        # Sắp xếp ổn định trực tiếp trên PostgreSQL để mọi màn hình dùng cùng một thứ tự.
         rows = conn.execute("SELECT * FROM employees ORDER BY LOWER(COALESCE(name, '')), id").fetchall()
     return [row_to_dict(row) for row in rows]
 

@@ -194,7 +194,7 @@ export async function saveAppData(data) {
 }
 
 export async function listEmployees() {
-  return requestJson("/api/employees");
+  return requestJson("/api/employees", { cache: "no-store" });
 }
 
 export async function saveEmployees(employees) {

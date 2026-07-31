@@ -5,5 +5,7 @@ def handle_get(handler, route, _parsed):
         "ok": True,
         "service": "domix-backend",
         "database": handler.database_backend(),
+        "databaseIdentity": handler.database_identity(),
+        "storageMode": "primary-postgresql-only",
     })
     return True

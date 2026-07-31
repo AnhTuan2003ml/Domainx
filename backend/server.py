@@ -10,8 +10,8 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from config import CORS_ORIGIN, DEFAULT_DB_PATH, DEFAULT_DB_TARGET, DIST_DIR, MAX_REQUEST_BODY_BYTES
-from db.connection import database_backend, is_postgres_target
+from config import CORS_ORIGIN, DEFAULT_DB_TARGET, DIST_DIR, MAX_REQUEST_BODY_BYTES
+from db.connection import database_backend, database_identity, require_postgres_target
 from db.schema import init_db
 from db.state_store import read_state, update_state
 from routes import dispatch
@@ -36,7 +36,7 @@ def _task_visible_to_user(task, employee_emails, user):
 
 
 PAYROLL_WORKFLOW_FIELDS = ("payrollApprovals", "midMonthRequests", "payrollPayments")
-# Ma trận dữ liệu theo 3 quyền chuẩn lưu tại users.role trong SQLite:
+# Ma trận dữ liệu theo 3 quyền chuẩn lưu tại users.role trong PostgreSQL:
 # admin và accountant = toàn quyền vận hành; user = khu vực cá nhân.
 # accountant vẫn tách riêng để lưu đúng cấp thẩm định trong luồng lương.
 ACCOUNTANT_WRITABLE_STATE_FIELDS = {
@@ -139,6 +139,10 @@ POSITION_PERMISSIONS = {
     "quan_ly": {"inventory_scope": "all_read", "inventory_write": False},
     "khac": {"inventory_scope": "none", "inventory_write": False},
 }
+
+LEAD_SOURCES = {"marketing_ads", "pancake", "tu_tim", "gioi_thieu", "khac"}
+LEAD_STATUSES = {"dang_cham_soc", "tu_choi"}
+LEAD_CONTACT_TYPES = {"call", "message", "facebook", "zalo", "shopee", "instagram", "support"}
 
 
 def _employee_position_role(employee):
@@ -345,7 +349,7 @@ def _user_visible_data(db_path, data, user):
 
     readable_fields = set(USER_READABLE_STATE_FIELDS)
     if position_role in {"ads", "sale", "quan_ly"}:
-        readable_fields.update({"marketingLogs", "marketingPages"})
+        readable_fields.update({"marketingLogs", "marketingPages", "leads"})
     if position_role in {"nhan_su", "quan_ly"}:
         readable_fields.update({"cvReviews", "supportCases"})
     if position_role in {"van_hanh", "quan_ly"}:
@@ -353,7 +357,7 @@ def _user_visible_data(db_path, data, user):
     if position_role in {"cskh", "ky_thuat", "van_hanh", "sale", "quan_ly"}:
         readable_fields.update({"supportCases"})
     if position_role == "quan_ly":
-        readable_fields.update({"customers", "leads", "debts"})
+        readable_fields.update({"customers", "debts"})
 
     filtered = {field: data.get(field) for field in readable_fields if field in data}
     filtered = _filter_payroll_data_for_user(db_path, filtered, user)
@@ -395,6 +399,21 @@ def _user_visible_data(db_path, data, user):
             filtered["marketingLogs"] = marketing_logs
         else:
             filtered["marketingLogs"] = [item for item in marketing_logs if _record_belongs_to_employee(item, employee_id, "employeeId")]
+
+    leads = data.get("leads")
+    if isinstance(leads, list):
+        if position_role == "quan_ly":
+            filtered["leads"] = leads
+        elif position_role == "ads":
+            filtered["leads"] = [
+                item for item in leads
+                if isinstance(item, dict) and str(item.get("source") or "") in {"marketing_ads", "pancake"}
+            ]
+        elif position_role == "sale":
+            filtered["leads"] = [
+                item for item in leads
+                if _record_belongs_to_employee(item, employee_id, "saleEmployeeId")
+            ]
 
     support_cases = data.get("supportCases")
     if isinstance(support_cases, list):
@@ -946,6 +965,195 @@ def _merge_employee_owned_records(existing_records, incoming_records, employee_i
     return untouched + own_incoming
 
 
+def _lead_key(value):
+    return str(value) if value is not None else ""
+
+
+def _lead_phone(value):
+    raw = str(value or "").strip()[:40]
+    digits = "".join(char for char in raw if char.isdigit())
+    return raw if 8 <= len(digits) <= 15 else ""
+
+
+def _lead_sale_id(value):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _lead_date(value, fallback=""):
+    raw = str(value or fallback or "").strip()[:10]
+    try:
+        return date.fromisoformat(raw).isoformat()
+    except (TypeError, ValueError):
+        return str(fallback or date.today().isoformat())[:10]
+
+
+def _lead_assignee_is_active_sale(employees, employee_id):
+    employee_id = _lead_sale_id(employee_id)
+    if employee_id is None:
+        return False
+    for item in employees:
+        if not isinstance(item, dict) or item.get("status") == "inactive":
+            continue
+        if _lead_sale_id(item.get("id")) == employee_id and _employee_position_role(item) == "sale":
+            return True
+    return False
+
+
+def _lead_created_by(record, user, employee_id):
+    if _record_belongs_to_employee(record, employee_id, "createdByEmployeeId"):
+        return True
+    return _normalized_email(record.get("createdByEmail")) == _normalized_email((user or {}).get("email"))
+
+
+def _sanitize_new_lead_contact(entry, user, employee):
+    if not isinstance(entry, dict):
+        return None
+    note = str(entry.get("note") or "").strip()[:3000]
+    if not note and not entry.get("nextFollowUpDate"):
+        return None
+    contact_type = str(entry.get("type") or "call").strip()
+    if contact_type not in LEAD_CONTACT_TYPES:
+        contact_type = "call"
+    employee_id = int(employee["id"]) if employee and employee.get("id") is not None else None
+    return {
+        "id": entry.get("id") or f"lead-contact:{uuid.uuid4().hex}",
+        "date": str(entry.get("date") or datetime.now(timezone.utc).isoformat())[:64],
+        "type": contact_type,
+        "note": note or "(không ghi chú)",
+        "employeeId": employee_id,
+        "employeeName": str((employee or {}).get("name") or (user or {}).get("email") or "")[:200],
+        "employeeEmail": _normalized_email((user or {}).get("email")),
+    }
+
+
+def _merge_lead_contact_log(old_entries, incoming_entries, user, employee):
+    old_entries = [dict(item) for item in (old_entries if isinstance(old_entries, list) else []) if isinstance(item, dict)]
+    incoming_entries = incoming_entries if isinstance(incoming_entries, list) else []
+    old_ids = {_lead_key(item.get("id")) for item in old_entries if item.get("id") is not None}
+    old_signatures = {
+        (str(item.get("date") or ""), str(item.get("type") or ""), str(item.get("note") or ""))
+        for item in old_entries
+    }
+    result = list(old_entries)
+    for item in incoming_entries:
+        if not isinstance(item, dict):
+            continue
+        item_id = _lead_key(item.get("id"))
+        signature = (str(item.get("date") or ""), str(item.get("type") or ""), str(item.get("note") or ""))
+        if (item_id and item_id in old_ids) or signature in old_signatures:
+            continue
+        clean = _sanitize_new_lead_contact(item, user, employee)
+        if clean:
+            result.append(clean)
+            old_ids.add(_lead_key(clean.get("id")))
+            old_signatures.add((str(clean.get("date") or ""), str(clean.get("type") or ""), str(clean.get("note") or "")))
+    return result[-500:]
+
+
+def _sanitize_employee_lead(record, user, employee, position_role, employees, old=None):
+    if not isinstance(record, dict) or not employee:
+        return None
+    employee_id = int(employee["id"])
+    now = datetime.now(timezone.utc).isoformat()
+    previous = dict(old or {})
+    phone = _lead_phone(record.get("phone", previous.get("phone")))
+    if not phone:
+        return None
+
+    if old is None:
+        requested_assignee = employee_id if position_role == "sale" else record.get("saleEmployeeId")
+        if not _lead_assignee_is_active_sale(employees, requested_assignee):
+            return None
+        sale_employee_id = int(requested_assignee)
+        created_at = now
+        created_by_employee_id = employee_id
+        created_by_email = _normalized_email((user or {}).get("email"))
+        created_by_name = str(employee.get("name") or created_by_email)[:200]
+        old_contacts = []
+    else:
+        if position_role == "sale":
+            sale_employee_id = _lead_sale_id(previous.get("saleEmployeeId"))
+        else:
+            requested_assignee = record.get("saleEmployeeId", previous.get("saleEmployeeId"))
+            sale_employee_id = _lead_sale_id(requested_assignee) if _lead_assignee_is_active_sale(employees, requested_assignee) else _lead_sale_id(previous.get("saleEmployeeId"))
+        if sale_employee_id is None:
+            return None
+        created_at = previous.get("createdAt") or now
+        created_by_employee_id = previous.get("createdByEmployeeId")
+        created_by_email = previous.get("createdByEmail") or ""
+        created_by_name = previous.get("createdByName") or ""
+        old_contacts = previous.get("contactLog", [])
+
+    source = str(record.get("source", previous.get("source", "marketing_ads")) or "marketing_ads")
+    if source not in LEAD_SOURCES:
+        source = "marketing_ads"
+    status = str(record.get("status", previous.get("status", "dang_cham_soc")) or "dang_cham_soc")
+    if status not in LEAD_STATUSES:
+        status = "dang_cham_soc"
+
+    clean = {
+        **previous,
+        "id": record.get("id") or previous.get("id") or f"lead:{uuid.uuid4().hex}",
+        "date": _lead_date(record.get("date"), previous.get("date")),
+        "customerName": str(record.get("customerName", previous.get("customerName", "")) or "(Chưa rõ tên)").strip()[:300],
+        "phone": phone,
+        "email": str(record.get("email", previous.get("email", "")) or "").strip()[:320],
+        "note": str(record.get("note", previous.get("note", "")) or "").strip()[:5000],
+        "source": source,
+        "status": status,
+        "saleEmployeeId": sale_employee_id,
+        "nextFollowUpDate": _lead_date(record.get("nextFollowUpDate"), previous.get("nextFollowUpDate")) if record.get("nextFollowUpDate", previous.get("nextFollowUpDate")) else "",
+        "contactLog": _merge_lead_contact_log(old_contacts, record.get("contactLog", []), user, employee),
+        "createdAt": created_at,
+        "createdByEmployeeId": created_by_employee_id,
+        "createdByEmail": created_by_email,
+        "createdByName": created_by_name,
+        "assignedAt": previous.get("assignedAt") or now,
+        "updatedAt": now,
+        "updatedByEmployeeId": employee_id,
+        "updatedByEmail": _normalized_email((user or {}).get("email")),
+    }
+    return clean
+
+
+def _merge_employee_leads(existing_records, incoming_records, user, employee, position_role, employees):
+    if not employee or position_role not in {"sale", "ads"}:
+        return existing_records if isinstance(existing_records, list) else []
+    existing_records = [item for item in (existing_records if isinstance(existing_records, list) else []) if isinstance(item, dict)]
+    incoming_records = [item for item in (incoming_records if isinstance(incoming_records, list) else []) if isinstance(item, dict)]
+    employee_id = int(employee["id"])
+    employees = employees if isinstance(employees, list) else []
+    incoming_by_id = {_lead_key(item.get("id")): item for item in incoming_records if item.get("id") is not None}
+    existing_ids = {_lead_key(item.get("id")) for item in existing_records if item.get("id") is not None}
+    result = []
+
+    for old in existing_records:
+        editable = (
+            _record_belongs_to_employee(old, employee_id, "saleEmployeeId")
+            if position_role == "sale"
+            else _lead_created_by(old, user, employee_id)
+        )
+        candidate = incoming_by_id.get(_lead_key(old.get("id")))
+        if editable and candidate:
+            clean = _sanitize_employee_lead(candidate, user, employee, position_role, employees, old=old)
+            result.append(clean or old)
+        else:
+            # Nhân viên không được xóa lead qua autosave; chuyển trạng thái "Từ chối"
+            # hoặc Admin xử lý mới là thao tác hợp lệ và có thể truy vết.
+            result.append(old)
+
+    for candidate in incoming_records:
+        if _lead_key(candidate.get("id")) in existing_ids:
+            continue
+        clean = _sanitize_employee_lead(candidate, user, employee, position_role, employees, old=None)
+        if clean:
+            result.append(clean)
+    return result
+
+
 def _merge_assigned_inventory(existing_inventory, incoming_inventory, employee_id):
     existing_inventory = existing_inventory if isinstance(existing_inventory, list) else []
     incoming_by_id = {
@@ -1179,7 +1387,7 @@ def preserve_restricted_state_fields(db_path, incoming_data, user, existing_data
     if "tasks" in existing_data:
         merged["tasks"] = existing_data["tasks"]
 
-    _, employee, is_accountant = _employee_context(db_path, user)
+    employees, employee, is_accountant = _employee_context(db_path, user)
     employee_id = int(employee["id"]) if employee else None
     if is_accountant:
         merged["attendanceRequests"] = incoming_data.get("attendanceRequests", old_attendance_requests)
@@ -1207,6 +1415,10 @@ def preserve_restricted_state_fields(db_path, incoming_data, user, existing_data
         if position_permissions.get("marketing_write") and "marketingLogs" in incoming_data:
             merged["marketingLogs"] = _merge_employee_owned_records(
                 existing_data.get("marketingLogs", []), incoming_data.get("marketingLogs", []), employee_id, "employeeId"
+            )
+        if position_role in {"sale", "ads"} and "leads" in incoming_data:
+            merged["leads"] = _merge_employee_leads(
+                existing_data.get("leads", []), incoming_data.get("leads", []), user, employee, position_role, employees
             )
         if position_permissions.get("inventory_write") and "inventory" in incoming_data and employee_id is not None:
             merged["inventory"] = _merge_assigned_inventory(
@@ -1335,7 +1547,7 @@ def _support_assignment_message(data, sender_name, recipient_name):
 
 
 class DomixHandler(BaseHTTPRequestHandler):
-    db_path = DEFAULT_DB_PATH
+    db_path = DEFAULT_DB_TARGET
     static_dir = DIST_DIR
 
     def end_headers(self):
@@ -1406,6 +1618,9 @@ class DomixHandler(BaseHTTPRequestHandler):
 
     def database_backend(self):
         return database_backend(self.db_path)
+
+    def database_identity(self):
+        return database_identity(self.db_path)
 
     def effective_user(self, user, persist=True):
         return _effective_user(self.db_path, user, persist=persist)
@@ -1484,6 +1699,8 @@ class DomixHandler(BaseHTTPRequestHandler):
         body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
+        self.send_header("Pragma", "no-cache")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -1544,7 +1761,10 @@ def main():
     parser.add_argument("--create-user", nargs=3, metavar=("EMAIL", "PASSWORD", "ROLE"))
     args = parser.parse_args()
 
-    DomixHandler.db_path = args.db if is_postgres_target(args.db) else Path(args.db)
+    try:
+        DomixHandler.db_path = require_postgres_target(args.db)
+    except RuntimeError as exc:
+        parser.error(str(exc))
     init_db(DomixHandler.db_path)
 
     if args.create_user:
@@ -1568,7 +1788,7 @@ def main():
         server.socket = context.wrap_socket(server.socket, server_side=True)
         protocol = "https"
     print(f"DOMIX server running at {protocol}://{args.host}:{args.port}")
-    print(f"Database ({database_backend(DomixHandler.db_path)}): {DomixHandler.db_path}")
+    print(f"Database ({database_backend(DomixHandler.db_path)}): {database_identity(DomixHandler.db_path)}")
     print("Build frontend with: npm.cmd run build")
     server.serve_forever()
 

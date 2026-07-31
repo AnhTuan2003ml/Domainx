@@ -1,12 +1,8 @@
-from pathlib import Path
-
-from db.connection import configure_database, connect, is_postgres_target, table_columns, table_exists
+from db.connection import configure_database, connect, table_columns, table_exists
 from db.employee_store import create_employees_table
 
 
 def init_db(db_path):
-    if not is_postgres_target(db_path):
-        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     configure_database(db_path)
     with connect(db_path) as conn:
         conn.execute(
@@ -276,121 +272,8 @@ def init_db(db_path):
     remove_non_email_users(db_path)
 
 
-def _migrate_users_schema_sqlite(db_path):
-    """Chuẩn hóa bảng users chỉ còn 3 quyền: admin, accountant, user.
-
-    - boss/admin cũ -> admin
-    - accountant giữ nguyên
-    - staff/user/giá trị khác -> user
-
-    Giữ nguyên users.id để sessions, chat và employees.account_id không mất liên kết.
-    Sau khi đổi cấu trúc, hồ sơ nhân sự thuộc Kế toán/Tài chính được đồng bộ sang
-    role accountant; tài khoản admin luôn được giữ nguyên.
-    """
-    import sqlite3
-    import unicodedata
-
-    def normalize_text(value):
-        text = unicodedata.normalize("NFD", str(value or ""))
-        text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
-        text = text.replace("đ", "d").replace("Đ", "D").lower()
-        return " ".join("".join(ch if ch.isalnum() else " " for ch in text).split())
-
-    def is_accounting_employee(row):
-        role_token = normalize_text(row["role_type"]).replace(" ", "_")
-        if role_token in {"ke_toan", "ketoan", "accountant", "accounting", "finance"}:
-            return True
-        description = normalize_text(f"{row['position'] or ''} {row['dept'] or ''}")
-        return any(token in description for token in ("ke toan", "tai chinh", "accountant", "accounting", "finance"))
-
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    try:
-        row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").fetchone()
-        if not row:
-            return
-        sql = row["sql"] or ""
-        canonical_schema = (
-            "'admin'" in sql and "'accountant'" in sql and "'user'" in sql
-            and "'boss'" not in sql and "'staff'" not in sql
-        )
-        if not canonical_schema:
-            conn.execute("PRAGMA foreign_keys = OFF")
-            conn.execute("BEGIN")
-            conn.execute(
-                """
-                CREATE TABLE users_new (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    username TEXT NOT NULL UNIQUE,
-                    password_hash TEXT NOT NULL,
-                    role TEXT NOT NULL CHECK(role IN ('admin', 'accountant', 'user')),
-                    active INTEGER NOT NULL DEFAULT 1,
-                    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-                )
-                """
-            )
-            conn.execute(
-                """
-                INSERT INTO users_new (id, username, password_hash, role, active, created_at)
-                SELECT id, username, password_hash,
-                       CASE
-                         WHEN lower(trim(role)) IN ('admin', 'boss') THEN 'admin'
-                         WHEN lower(trim(role)) = 'accountant' THEN 'accountant'
-                         ELSE 'user'
-                       END,
-                       active, created_at
-                FROM users
-                """
-            )
-            conn.execute("DROP TABLE users")
-            conn.execute("ALTER TABLE users_new RENAME TO users")
-            conn.commit()
-            conn.execute("PRAGMA foreign_keys = ON")
-        else:
-            conn.execute("UPDATE users SET role = CASE WHEN role = 'accountant' THEN 'accountant' WHEN role = 'admin' THEN 'admin' ELSE 'user' END")
-            conn.commit()
-
-        # Đồng bộ tài khoản đã liên kết hồ sơ Kế toán/Tài chính. Admin không bị hạ quyền.
-        employee_table = conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='employees'").fetchone()
-        if employee_table:
-            employees = conn.execute(
-                "SELECT id, account_id, email, role_type, position, dept, account_role FROM employees"
-            ).fetchall()
-            for employee in employees:
-                account = None
-                if employee["account_id"] is not None:
-                    account = conn.execute("SELECT id, role FROM users WHERE id = ?", (employee["account_id"],)).fetchone()
-                if account is None and employee["email"]:
-                    account = conn.execute("SELECT id, role FROM users WHERE lower(username) = lower(?)", (employee["email"],)).fetchone()
-                if account is None:
-                    continue
-                if account["role"] == "admin":
-                    desired_role = "admin"
-                elif is_accounting_employee(employee) or str(employee["account_role"] or "").strip().lower() == "accountant":
-                    desired_role = "accountant"
-                else:
-                    desired_role = "user"
-                conn.execute("UPDATE users SET role = ? WHERE id = ?", (desired_role, account["id"]))
-                conn.execute(
-                    "UPDATE employees SET account_id = ?, account_role = ? WHERE id = ?",
-                    (account["id"], desired_role, employee["id"]),
-                )
-            conn.commit()
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        try:
-            conn.execute("PRAGMA foreign_keys = ON")
-        except Exception:
-            pass
-        conn.close()
-
-
 def migrate_users_schema(db_path):
-    """Chuẩn hóa vai trò và đồng bộ tài khoản với hồ sơ nhân sự trên cả hai DB."""
-    if not is_postgres_target(db_path):
-        return _migrate_users_schema_sqlite(db_path)
+    """Chuẩn hóa vai trò và đồng bộ tài khoản với hồ sơ nhân sự trên PostgreSQL."""
 
     import unicodedata
 

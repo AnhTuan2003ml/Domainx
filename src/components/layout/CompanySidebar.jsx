@@ -1,5 +1,6 @@
 import {
   Building2,
+  Globe,
   MapPin,
   Moon,
   Phone,
@@ -53,27 +54,16 @@ export default function CompanySidebar({
         className={`fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(86vw,280px)] shrink-0 flex-col overflow-hidden bg-ink text-white shadow-2xl transition-transform duration-200 md:relative md:z-[1] md:h-screen md:w-60 md:translate-x-0 md:shadow-none ${open ? "translate-x-0" : "-translate-x-full"}`}
       >
         <div className="flex items-start justify-between border-b border-white/10 px-5 py-5 md:py-6">
-          <div>
-            <div className="ktns-serif text-2xl font-bold leading-tight tracking-tight domix-brand-text">DOMIX</div>
-            <div className="mt-0.5 text-[11px] text-white/60">{tagline}</div>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <img src="/logo.jfif" alt="DOMIX" className="h-9 w-9 shrink-0 rounded-lg object-cover shadow-md" />
+            <div className="min-w-0">
+              <div className="ktns-serif text-2xl font-bold leading-tight tracking-tight domix-brand-text">DOMIX</div>
+              <div className="mt-0.5 text-[11px] text-white/60 truncate">{tagline}</div>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <select
-              value={lang}
-              onChange={(event) => onLanguageChange(event.target.value)}
-              title="Switch language / Đổi ngôn ngữ"
-              className="mt-1 cursor-pointer rounded-full border-none bg-white/10 px-2 py-1 text-[10px] text-white hover:bg-white/20"
-            >
-              <option value="vi" className="text-ink">🇻🇳 VI</option>
-              <option value="en" className="text-ink">🇺🇸 EN</option>
-              <option value="zh" className="text-ink">🇨🇳 中文</option>
-              <option value="ja" className="text-ink">🇯🇵 日本語</option>
-              <option value="th" className="text-ink">🇹🇭 ไทย</option>
-            </select>
-            <button type="button" onClick={onClose} className="mt-1 flex h-8 w-8 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white md:hidden" aria-label="Đóng menu">
-              <X size={18} />
-            </button>
-          </div>
+          <button type="button" onClick={onClose} className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white md:hidden" aria-label="Đóng menu">
+            <X size={18} />
+          </button>
         </div>
 
         <div className="space-y-2 px-5 pb-2 pt-3">
@@ -81,6 +71,21 @@ export default function CompanySidebar({
             <span className="flex items-center gap-2">{darkMode ? <Sun size={13} /> : <Moon size={13} />} {darkMode ? "Chế độ sáng" : "Chế độ tối"}</span>
             <span className={`relative h-4 w-8 rounded-full transition-colors ${darkMode ? "bg-gold" : "bg-white/20"}`}><span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${darkMode ? "left-4" : "left-0.5"}`} /></span>
           </button>
+          <label className="flex w-full items-center justify-between gap-2 rounded-md bg-white/5 px-3 py-2 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white">
+            <span className="flex items-center gap-2"><Globe size={13} /> Ngôn ngữ</span>
+            <select
+              value={lang}
+              onChange={(event) => onLanguageChange(event.target.value)}
+              title="Switch language / Đổi ngôn ngữ"
+              className="cursor-pointer rounded-full border-none bg-white/10 px-2 py-1 text-[10px] text-white hover:bg-white/20"
+            >
+              <option value="vi" className="text-ink">🇻🇳 VI</option>
+              <option value="en" className="text-ink">🇺🇸 EN</option>
+              <option value="zh" className="text-ink">🇨🇳 中文</option>
+              <option value="ja" className="text-ink">🇯🇵 日本語</option>
+              <option value="th" className="text-ink">🇹🇭 ไทย</option>
+            </select>
+          </label>
           {taskReminderEligible && (
             <button type="button" onClick={onToggleTaskSound} className="flex w-full items-center justify-between gap-2 rounded-md bg-white/5 px-3 py-2 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white">
               <span className="flex items-center gap-2">{taskSoundEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />} Âm thanh nhắc việc</span>

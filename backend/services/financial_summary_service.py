@@ -172,15 +172,8 @@ def _cash_from_state(data, start=None, end=None):
 
 
 def _date_expression(conn, column_name):
-    """Trả về biểu thức ngày tương thích cả dữ liệu TEXT cũ và TIMESTAMP PostgreSQL.
-
-    Một số database đã được tạo từ các bản thử nghiệm trước có ``transaction_date``
-    là ``timestamp with time zone``; bản khác lại là ``text``. Không dùng COALESCE
-    giữa hai kiểu này vì PostgreSQL sẽ báo ``COALESCE types text and timestamp ...``.
-    """
-    if getattr(conn, "backend_name", "sqlite") == "postgresql":
-        return f"CAST({column_name} AS DATE)"
-    return f"substr(CAST({column_name} AS TEXT), 1, 10)"
+    """Ép kiểu ngày trực tiếp trên PostgreSQL cho cả cột TEXT và TIMESTAMP lịch sử."""
+    return f"CAST({column_name} AS DATE)"
 
 
 def _ledger_totals(conn, start, end):

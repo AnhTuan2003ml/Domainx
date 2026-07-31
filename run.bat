@@ -1,84 +1,71 @@
 @echo off
-setlocal
+setlocal EnableExtensions
 
-set "HOST=0.0.0.0"
-set "PORT=8000"
 set "APP_DIR=%~dp0"
-
-echo.
-echo ================================
-echo   DOMIX - start frontend/backend
-echo ================================
-echo.
-
-echo [1/5] Chuyen den thu muc chua run.bat...
 cd /d "%APP_DIR%"
 if errorlevel 1 (
-  echo [ERROR] Khong cd duoc vao thu muc: "%APP_DIR%"
+  echo [LOI] Khong mo duoc thu muc du an: %APP_DIR%
   pause
   exit /b 1
 )
-echo Thu muc hien tai: %CD%
+
+echo.
+echo ==========================================
+echo   DOMIX - PostgreSQL duy nhat qua Docker
+echo ==========================================
 echo.
 
-where python >nul 2>nul
+where docker >nul 2>nul
 if errorlevel 1 (
-  echo [ERROR] Khong tim thay python trong PATH.
-  echo Hay cai Python va tick "Add Python to PATH", sau do chay lai run.bat.
+  echo [LOI] Khong tim thay Docker Desktop.
+  echo Hay cai/mo Docker Desktop roi chay lai run.bat.
   pause
   exit /b 1
 )
 
-where npm.cmd >nul 2>nul
+docker compose version >nul 2>nul
 if errorlevel 1 (
-  echo [ERROR] Khong tim thay npm.cmd trong PATH.
-  echo Hay cai Node.js truoc khi chay file nay.
+  echo [LOI] Docker Compose khong san sang.
+  echo Hay cap nhat Docker Desktop roi chay lai.
   pause
   exit /b 1
 )
 
-echo [2/5] Cai Python dependencies...
-python -m pip install -r requirements.txt
+docker info >nul 2>nul
 if errorlevel 1 (
-  echo [ERROR] pip install -r requirements.txt that bai.
+  echo [LOI] Docker Desktop chua khoi dong xong.
+  echo Mo Docker Desktop, cho den khi Engine Running roi chay lai.
   pause
   exit /b 1
 )
 
-echo.
-echo [3/5] Kiem tra/cai frontend dependencies...
-if not exist "node_modules" (
-  call npm.cmd install
-  if errorlevel 1 (
-    echo [ERROR] npm install that bai.
-    pause
-    exit /b 1
-  )
-) else (
-  echo node_modules da ton tai, bo qua npm install.
-)
+echo [1/3] Dung backend cu neu dang chay...
+docker compose down --remove-orphans
+if errorlevel 1 goto :failed
 
 echo.
-echo [4/5] Build frontend React/Vite vao thu muc dist...
-call npm.cmd run build
-if errorlevel 1 (
-  echo [ERROR] Build frontend that bai.
-  pause
-  exit /b 1
-)
+echo [2/3] Build va khoi dong DOMIX voi PostgreSQL duy nhat...
+docker compose up -d --build
+if errorlevel 1 goto :failed
 
 echo.
-echo [5/5] Chay Python backend va serve luon frontend da build...
-echo.
-echo Mo tren may nay:      http://127.0.0.1:%PORT%
-echo Mo tu may khac LAN:   http://IP_MAY_CHU:%PORT%
-echo Tai khoan mac dinh neu DB moi: admin@gmail.com / admin123@
-echo.
-echo Nhan Ctrl+C de dung server.
-echo.
-
-python backend\server.py --host %HOST% --port %PORT%
+echo [3/3] Kiem tra trang thai container...
+docker compose ps
 
 echo.
-echo Server da dung.
+echo DOMIX dang chay tai: http://127.0.0.1:8848
+echo Database duy nhat: volume Docker domix_postgres_data
+echo File data\domix.sqlite3 cu (neu con) se KHONG duoc doc hoac ghi.
+echo.
+echo Xem log backend: docker compose logs -f backend
+echo Dung he thong:     docker compose down
+echo.
 pause
+exit /b 0
+
+:failed
+echo.
+echo [LOI] Khong khoi dong duoc DOMIX. Dang in log gan nhat...
+docker compose logs --tail 120
+pause
+exit /b 1
