@@ -27,6 +27,7 @@ export default function CompanySidebar({
   onSelectTab,
   lang,
   onLanguageChange,
+  t,
   tagline,
   darkMode,
   onToggleDarkMode,
@@ -42,11 +43,12 @@ export default function CompanySidebar({
   isReviewer,
 }) {
   const payrollActionCount = Number(payrollActionSummary?.total || 0);
+  const label = (key, fallback) => t?.(key) || fallback;
   return (
     <>
       <button
         type="button"
-        aria-label="Đóng menu"
+        aria-label={label("sidebar_close_menu", "Đóng menu")}
         onClick={onClose}
         className={`fixed inset-0 z-40 bg-black/45 transition-opacity md:hidden ${open ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0"}`}
       />
@@ -61,18 +63,18 @@ export default function CompanySidebar({
               <div className="mt-0.5 text-[11px] text-white/60 truncate">{tagline}</div>
             </div>
           </div>
-          <button type="button" onClick={onClose} className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white md:hidden" aria-label="Đóng menu">
+          <button type="button" onClick={onClose} className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white md:hidden" aria-label={label("sidebar_close_menu", "Đóng menu")}>
             <X size={18} />
           </button>
         </div>
 
         <div className="space-y-2 px-5 pb-2 pt-3">
           <button type="button" onClick={onToggleDarkMode} className="flex w-full items-center justify-between gap-2 rounded-md bg-white/5 px-3 py-2 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white">
-            <span className="flex items-center gap-2">{darkMode ? <Sun size={13} /> : <Moon size={13} />} {darkMode ? "Chế độ sáng" : "Chế độ tối"}</span>
+            <span className="flex items-center gap-2">{darkMode ? <Sun size={13} /> : <Moon size={13} />} {darkMode ? label("sidebar_light_mode", "Chế độ sáng") : label("sidebar_dark_mode", "Chế độ tối")}</span>
             <span className={`relative h-4 w-8 rounded-full transition-colors ${darkMode ? "bg-gold" : "bg-white/20"}`}><span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${darkMode ? "left-4" : "left-0.5"}`} /></span>
           </button>
           <label className="flex w-full items-center justify-between gap-2 rounded-md bg-white/5 px-3 py-2 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white">
-            <span className="flex items-center gap-2"><Globe size={13} /> Ngôn ngữ</span>
+            <span className="flex items-center gap-2"><Globe size={13} /> {label("sidebar_language", "Ngôn ngữ")}</span>
             <select
               value={lang}
               onChange={(event) => onLanguageChange(event.target.value)}
@@ -88,14 +90,14 @@ export default function CompanySidebar({
           </label>
           {taskReminderEligible && (
             <button type="button" onClick={onToggleTaskSound} className="flex w-full items-center justify-between gap-2 rounded-md bg-white/5 px-3 py-2 text-xs text-white/70 transition-colors hover:bg-white/10 hover:text-white">
-              <span className="flex items-center gap-2">{taskSoundEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />} Âm thanh nhắc việc</span>
+              <span className="flex items-center gap-2">{taskSoundEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />} {label("sidebar_sound", "Âm thanh nhắc việc")}</span>
               <span className={`relative h-4 w-8 rounded-full transition-colors ${taskSoundEnabled ? "bg-ledger-green" : "bg-white/20"}`}><span className={`absolute top-0.5 h-3 w-3 rounded-full bg-white transition-all ${taskSoundEnabled ? "left-4" : "left-0.5"}`} /></span>
             </button>
           )}
         </div>
 
         <button type="button" onClick={onOpenCommandPalette} className="mx-4 mb-1 mt-2 flex items-center justify-between gap-2 rounded-md bg-white/5 px-3 py-2 text-xs text-white/60 transition-colors hover:bg-white/10 hover:text-white">
-          <span className="flex items-center gap-2"><Search size={13} /> Tìm nhanh...</span>
+          <span className="flex items-center gap-2"><Search size={13} /> {label("sidebar_search", "Tìm nhanh...")}</span>
           <span className="ktns-mono rounded border border-white/20 px-1.5 py-0.5 text-[10px]">⌘K</span>
         </button>
 

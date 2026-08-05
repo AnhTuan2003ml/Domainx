@@ -282,11 +282,14 @@ def get_financial_summary(db_path, year=None, month=None):
     state = read_state(db_path) or {"data": {}}
     data = reconcile_company_data(state.get("data") if isinstance(state.get("data"), dict) else {})
     start, end = _period_bounds(year, month)
-    state_period, state_cumulative = _cash_from_state(data, start, end)
+    today = date.today().isoformat()
+    effective_end = min(end, today) if end else None
+    future_period = bool(start and start > today)
+    state_period, state_cumulative = _cash_from_state(data, start, effective_end)
 
     try:
         with connect(db_path) as conn:
-            cash, cumulative_cash, operating_cash_spent, payroll_cash_spent = _ledger_totals(conn, start, end)
+            cash, cumulative_cash, operating_cash_spent, payroll_cash_spent = _ledger_totals(conn, start, effective_end)
             _assert_debt_payment_ledger(conn, data)
     except FinancialSummaryError:
         raise
@@ -297,7 +300,7 @@ def get_financial_summary(db_path, year=None, month=None):
     _assert_ledger_matches_state(cash, state_period, "kỳ báo cáo")
     _assert_ledger_matches_state(cumulative_cash, state_cumulative, "lũy kế")
 
-    revenue, breakdown = _recognized_revenue(data, start, end)
+    revenue, breakdown = _recognized_revenue(data, start, effective_end)
     cash_received = round(cash.get("thu", 0.0))
     cash_spent = round(cash.get("chi", 0.0))
     company = data.get("company") if isinstance(data.get("company"), dict) else {}
@@ -307,12 +310,19 @@ def get_financial_summary(db_path, year=None, month=None):
     inventory = [item for item in _as_list(data.get("inventory")) if isinstance(item, dict)]
     employees = list_employees(db_path)
     performance = summarize_performance(employees)
-    invoices = summarize_invoices(_as_list(data.get("orders")))
-    payroll_accrued, employer_insurance_accrued = _payroll_accrual(data, year, month)
+    invoices = summarize_invoices(_as_list(data.get("orders")), start, effective_end)
+    payroll_accrued, employer_insurance_accrued = (0, 0) if future_period else _payroll_accrual(data, year, month)
     accounting_profit = revenue - round(operating_cash_spent) - payroll_accrued - employer_insurance_accrued
 
     return {
-        "period": {"year": int(year) if year else None, "month": int(month) if month else None, "start": start, "end": end},
+        "period": {
+            "year": int(year) if year else None,
+            "month": int(month) if month else None,
+            "start": start,
+            "end": end,
+            "data_through": effective_end,
+            "is_future": future_period,
+        },
         "recognized_revenue": revenue,
         "cash_received": cash_received,
         "accounts_receivable": receivable,

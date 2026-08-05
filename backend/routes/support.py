@@ -1,14 +1,91 @@
+from db.state_store import update_state
 from services import chat_service, email_service
+from services.support_service import (
+    append_support_assignment,
+    build_support_case,
+    confirm_support_assignment,
+)
+
+
+def _visible_support_data(handler, saved_state, user):
+    visible_state = handler.filter_state(saved_state, user) or {}
+    visible_data = visible_state.get("data") if isinstance(visible_state.get("data"), dict) else {}
+    return {
+        key: visible_data.get(key)
+        for key in ("supportCases", "orders")
+        if key in visible_data
+    }
 
 
 def handle_post(handler, route, _parsed):
-    if route != "/api/support/assign":
+    if route not in {"/api/support/assign", "/api/support/confirm"}:
         return False
     user = handler.require_user()
     if not user:
         return True
     data = handler.read_json()
     if data is None:
+        return True
+
+    if route == "/api/support/confirm":
+        employees, actor_employee, _ = handler.employee_context(user)
+        if not actor_employee or handler.employee_position_role(actor_employee) not in handler.support_assignable_roles():
+            handler.send_json({"error": "Chỉ tài khoản kỹ thuật được giao mới có thể xác nhận ca hỗ trợ."}, 403)
+            return True
+        case_id = data.get("caseId")
+        if case_id in {None, ""}:
+            handler.send_json({"error": "Thiếu mã ca hỗ trợ cần xác nhận."}, 400)
+            return True
+
+        confirmation = {}
+
+        def confirm_case(existing_data):
+            saved, support_case, sale_email, already_confirmed = confirm_support_assignment(
+                existing_data,
+                case_id,
+                actor_employee,
+                user.get("email"),
+                actor_employee.get("name") or user.get("email"),
+            )
+            confirmation.update({
+                "case": support_case,
+                "saleEmail": sale_email,
+                "alreadyConfirmed": already_confirmed,
+            })
+            return saved
+
+        saved_state = update_state(handler.db_path, confirm_case)
+        notification_sent = False
+        notification_error = ""
+        sale_email = confirmation.get("saleEmail")
+        if sale_email and not confirmation.get("alreadyConfirmed"):
+            support_case = confirmation["case"]
+            message = "\n".join([
+                "[ĐÃ XÁC NHẬN HỖ TRỢ KHÁCH HÀNG]",
+                f"{actor_employee.get('name') or user.get('email')} đã xác nhận tiếp nhận ca hỗ trợ.",
+                f"Đơn hàng: #{support_case.get('sourceCrmOrderId') or '—'}",
+                f"Khách hàng: {support_case.get('customerName') or '—'} · {support_case.get('phone') or '—'}",
+                f"Vấn đề: {support_case.get('issue') or '—'}",
+                "Trạng thái hiện tại: Đang hỗ trợ.",
+            ])
+            try:
+                chat_service.send_message(handler.db_path, user, sale_email, message)
+                notification_sent = True
+            except ValueError as exc:
+                notification_error = str(exc)
+        elif confirmation.get("alreadyConfirmed"):
+            notification_sent = True
+
+        handler.send_json({
+            "ok": True,
+            "case": confirmation.get("case"),
+            "alreadyConfirmed": bool(confirmation.get("alreadyConfirmed")),
+            "notificationSent": notification_sent,
+            "notificationError": notification_error,
+            "data": _visible_support_data(handler, saved_state, user),
+            "updatedAt": saved_state.get("updatedAt"),
+            "version": saved_state.get("version", 0),
+        })
         return True
 
     employees, sender_employee, is_accountant = handler.employee_context(user)
@@ -78,11 +155,28 @@ def handle_post(handler, route, _parsed):
         email_error = str(exc)
         print(f"[SUPPORT ASSIGNMENT EMAIL ERROR] {exc}")
 
+    support_case = build_support_case(data, user, sender_employee, recipient, recipient_email)
+    support_case["chatSent"] = True
+    support_case["emailSent"] = email_sent
+
+    def save_assignment(existing_data):
+        return append_support_assignment(
+            existing_data,
+            support_case,
+            support_type_label,
+            support_channel_label,
+        )
+
+    saved_state = update_state(handler.db_path, save_assignment)
     handler.send_json({
         "ok": True,
         "chatSent": True,
         "emailSent": email_sent,
         "emailError": email_error,
+        "case": support_case,
+        "data": _visible_support_data(handler, saved_state, user),
+        "updatedAt": saved_state.get("updatedAt"),
+        "version": saved_state.get("version", 0),
         "recipient": {
             "employeeId": recipient_employee_id,
             "name": recipient_name,

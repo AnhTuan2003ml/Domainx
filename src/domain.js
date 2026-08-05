@@ -469,6 +469,59 @@ export function buildStockMovement({ productId, movementType, quantity, date, so
   };
 }
 
+export function crmInventoryAvailability(product, quantity) {
+  const requested = Math.max(0, Number(quantity) || 0);
+  if (!product) {
+    return { requested, available: null, shortage: 0, status: "not_applicable", canFulfill: true };
+  }
+  const available = Math.max(0, Number(product.stock) || 0);
+  const shortage = Math.max(0, requested - available);
+  return {
+    requested,
+    available,
+    shortage,
+    status: shortage > 1e-9 ? "pending_stock" : "fulfilled",
+    canFulfill: shortage <= 1e-9,
+  };
+}
+
+export function sharedPerformanceStatus(financialSummary, employeeId) {
+  const id = String(employeeId ?? "");
+  const groups = financialSummary?.performance_employee_ids || {};
+  const mapping = [
+    ["good", "tot"],
+    ["warning", "trung_binh"],
+    ["improve", "canh_bao"],
+    ["insufficient", "chua_co_du_lieu"],
+  ];
+  for (const [group, status] of mapping) {
+    if ((groups[group] || []).some((value) => String(value) === id)) return status;
+  }
+  return null;
+}
+
+export function isFutureReportMonth(year, month, today = new Date()) {
+  const current = today instanceof Date ? today : new Date(today);
+  if (Number.isNaN(current.getTime())) return false;
+  return Number(year) > current.getFullYear()
+    || (Number(year) === current.getFullYear() && Number(month) > current.getMonth() + 1);
+}
+
+export function summarizeQuarterSnapshots(snapshots, today = new Date()) {
+  const moneyKeys = [
+    "revenue", "cashReceived", "cashSpent", "operatingExpense", "payrollTotal",
+    "accountingProfit", "netCashFlow", "taxTotal", "employeeInsurance", "employerInsurance",
+  ];
+  const total = Object.fromEntries(moneyKeys.map((key) => [key, 0]));
+  total.missingInvoices = 0;
+  for (const snapshot of snapshots || []) {
+    if (!snapshot || isFutureReportMonth(snapshot.year, snapshot.month, today)) continue;
+    for (const key of moneyKeys) total[key] += Number(snapshot[key]) || 0;
+    total.missingInvoices += Number(snapshot.missingInvoices) || 0;
+  }
+  return total;
+}
+
 export const MOVEMENT_LABELS = {
   opening: "Tồn đầu", purchase_in: "Nhập mua", sale_out: "Bán ra (CRM)",
   distribution_out: "Xuất phân phối", return_in: "Khách trả lại", adjustment_in: "Điều chỉnh tăng",

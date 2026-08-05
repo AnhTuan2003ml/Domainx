@@ -4,12 +4,18 @@ import uuid
 from urllib.parse import parse_qs
 
 from db import user_store
+from db.security_store import (
+    clear_director_password_failures,
+    director_password_is_rate_limited,
+    record_director_password_failure,
+)
 from security import password_hash, verify_password
 
-from db.state_store import read_state, update_state
+from db.state_store import StateConflictError, read_state, update_state
 from db.employee_store import list_employees
 from services.business_sync_service import (
     SYNC_FIELDS,
+    create_crm_order,
     preserve_missing_record_fields,
     reconcile_company_data,
     record_debt_payment,
@@ -21,7 +27,6 @@ from services.financial_summary_service import FinancialSummaryError, get_financ
 from services.operational_ledger_service import list_debt_payments, list_inventory_movements
 
 
-_DIRECTOR_PASSWORD_ATTEMPTS = {}
 _DIRECTOR_PASSWORD_WINDOW_SECONDS = 600
 _DIRECTOR_PASSWORD_MAX_FAILURES = 5
 
@@ -53,20 +58,24 @@ def _attempt_key(handler, user):
 
 
 def _is_rate_limited(handler, user):
-    key = _attempt_key(handler, user)
-    cutoff = time.time() - _DIRECTOR_PASSWORD_WINDOW_SECONDS
-    attempts = [stamp for stamp in _DIRECTOR_PASSWORD_ATTEMPTS.get(key, []) if stamp >= cutoff]
-    _DIRECTOR_PASSWORD_ATTEMPTS[key] = attempts
-    return len(attempts) >= _DIRECTOR_PASSWORD_MAX_FAILURES
+    return director_password_is_rate_limited(
+        handler.db_path,
+        _attempt_key(handler, user),
+        _DIRECTOR_PASSWORD_WINDOW_SECONDS,
+        _DIRECTOR_PASSWORD_MAX_FAILURES,
+    )
 
 
 def _record_failed_attempt(handler, user):
-    key = _attempt_key(handler, user)
-    _DIRECTOR_PASSWORD_ATTEMPTS.setdefault(key, []).append(time.time())
+    record_director_password_failure(
+        handler.db_path,
+        _attempt_key(handler, user),
+        _DIRECTOR_PASSWORD_WINDOW_SECONDS,
+    )
 
 
 def _clear_attempts(handler, user):
-    _DIRECTOR_PASSWORD_ATTEMPTS.pop(_attempt_key(handler, user), None)
+    clear_director_password_failures(handler.db_path, _attempt_key(handler, user))
 
 
 def handle_get(handler, route, parsed):
@@ -166,6 +175,7 @@ def handle_get(handler, route, parsed):
             "midMonthRequests": visible.get("midMonthRequests", []),
             "payrollPayments": visible.get("payrollPayments", []),
             "updatedAt": state.get("updatedAt"),
+            "version": state.get("version", 0),
         })
         return True
 
@@ -173,12 +183,16 @@ def handle_get(handler, route, parsed):
         state = state or {}
         visible_state = handler.filter_state(state, user)
         data = visible_state.get("data") if isinstance(visible_state.get("data"), dict) else {}
-        handler.send_json({"tasks": data.get("tasks", []), "updatedAt": state.get("updatedAt")})
+        handler.send_json({
+            "tasks": data.get("tasks", []),
+            "updatedAt": state.get("updatedAt"),
+            "version": state.get("version", 0),
+        })
         return True
 
     if route == "/api/data/fields":
         if not state or not isinstance(state.get("data"), dict):
-            handler.send_json({"exists": False, "data": {}, "updatedAt": None})
+            handler.send_json({"exists": False, "data": {}, "updatedAt": None, "version": 0})
             return True
         visible_state = handler.filter_state(state, user)
         visible_data = visible_state.get("data") if isinstance(visible_state.get("data"), dict) else {}
@@ -187,10 +201,15 @@ def handle_get(handler, route, parsed):
         for raw_name in query.get("names", []):
             names.extend(part.strip() for part in str(raw_name).split(",") if part.strip())
         selected = {name: visible_data.get(name) for name in dict.fromkeys(names)}
-        handler.send_json({"exists": True, "data": selected, "updatedAt": state.get("updatedAt")})
+        handler.send_json({
+            "exists": True,
+            "data": selected,
+            "updatedAt": state.get("updatedAt"),
+            "version": state.get("version", 0),
+        })
         return True
 
-    handler.send_json(handler.filter_state(state, user) or {"data": None, "updatedAt": None})
+    handler.send_json(handler.filter_state(state, user) or {"data": None, "updatedAt": None, "version": 0})
     return True
 
 
@@ -203,6 +222,28 @@ def handle_put(handler, route, _parsed):
     body = handler.read_json()
     if body is None:
         return True
+    if not isinstance(body, dict) or "expectedVersion" not in body:
+        handler.send_json({
+            "error": "Thiếu phiên bản dữ liệu. Hãy tải lại trước khi lưu.",
+            "code": "STATE_VERSION_REQUIRED",
+        }, 428)
+        return True
+    try:
+        expected_version = int(body.get("expectedVersion"))
+        if expected_version < 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        handler.send_json({"error": "Phiên bản dữ liệu không hợp lệ."}, 400)
+        return True
+
+    def send_conflict(error):
+        current = error.current_state or {}
+        handler.send_json({
+            "error": "Dữ liệu vừa được tài khoản khác cập nhật. Thay đổi này chưa được ghi; hãy tải lại và thực hiện lại.",
+            "code": "STATE_VERSION_CONFLICT",
+            "updatedAt": current.get("updatedAt"),
+            "version": current.get("version", 0),
+        }, 409)
 
     if route == "/api/data/fields":
         patch = body.get("data") if isinstance(body, dict) else None
@@ -216,7 +257,11 @@ def handle_put(handler, route, _parsed):
             preserved = handler.preserve_restricted_state(merged_data, user, existing_data)
             return reconcile_company_data(preserved)
 
-        saved_state = update_state(handler.db_path, apply_patch)
+        try:
+            saved_state = update_state(handler.db_path, apply_patch, expected_version=expected_version)
+        except StateConflictError as error:
+            send_conflict(error)
+            return True
         visible_state = handler.filter_state(saved_state, user) or {}
         visible_data = visible_state.get("data") if isinstance(visible_state.get("data"), dict) else {}
         response_keys = set(patch.keys())
@@ -229,16 +274,30 @@ def handle_put(handler, route, _parsed):
             "ok": True,
             "data": {key: visible_data.get(key) for key in response_keys if key in visible_data},
             "updatedAt": visible_state.get("updatedAt"),
+            "version": visible_state.get("version", 0),
         })
         return True
 
+    replacement = body.get("data")
+    if not isinstance(replacement, dict):
+        handler.send_json({"error": "Dữ liệu cập nhật không hợp lệ"}, 400)
+        return True
+
     def replace_state(existing_data):
-        merged_body = preserve_missing_record_fields(existing_data, body)
+        merged_body = preserve_missing_record_fields(existing_data, replacement)
         preserved = handler.preserve_restricted_state(merged_body, user, existing_data)
         return reconcile_company_data(preserved)
 
-    saved_state = update_state(handler.db_path, replace_state)
-    handler.send_json({"ok": True, "updatedAt": saved_state.get("updatedAt")})
+    try:
+        saved_state = update_state(handler.db_path, replace_state, expected_version=expected_version)
+    except StateConflictError as error:
+        send_conflict(error)
+        return True
+    handler.send_json({
+        "ok": True,
+        "updatedAt": saved_state.get("updatedAt"),
+        "version": saved_state.get("version", 0),
+    })
     return True
 
 def _send_synced_fields(handler, saved_state, user, fields, extra=None):
@@ -248,6 +307,7 @@ def _send_synced_fields(handler, saved_state, user, fields, extra=None):
         "ok": True,
         "data": {field: visible_data.get(field) for field in fields if field in visible_data},
         "updatedAt": visible_state.get("updatedAt"),
+        "version": visible_state.get("version", 0),
     }
     if extra:
         payload.update(extra)
@@ -258,6 +318,7 @@ def handle_post(handler, route, _parsed):
     if route not in {
         "/api/company-data/debt-payments",
         "/api/company-data/inventory-product",
+        "/api/company-data/crm-orders",
         "/api/company-data/payroll-payments",
         "/api/company-data/payroll-reconciliation",
         "/api/company-data/director-password",
@@ -324,16 +385,66 @@ def handle_post(handler, route, _parsed):
                 handler,
             )
 
-        update_state(handler.db_path, verify_director_password)
+        verification_state = update_state(handler.db_path, verify_director_password)
         if not success_box["configured"]:
-            handler.send_json({"error": "Chưa cấu hình mật khẩu Giám đốc trong Cài đặt."}, 409)
+            handler.send_json({
+                "error": "Chưa cấu hình mật khẩu Giám đốc trong Cài đặt.",
+                "version": verification_state.get("version", 0),
+            }, 409)
             return True
         if not success_box["ok"]:
             _record_failed_attempt(handler, user)
-            handler.send_json({"error": "Mật khẩu Giám đốc không đúng."}, 403)
+            handler.send_json({
+                "error": "Mật khẩu Giám đốc không đúng.",
+                "version": verification_state.get("version", 0),
+            }, 403)
             return True
         _clear_attempts(handler, user)
-        handler.send_json({"ok": True})
+        handler.send_json({"ok": True, "version": verification_state.get("version", 0)})
+        return True
+
+    if route == "/api/company-data/crm-orders":
+        _, employee, _ = handler.employee_context(user)
+        position_role = handler.employee_position_role(employee)
+        full_access = handler.is_full_admin(user)
+        if not (full_access or position_role in {"sale", "ky_thuat"}):
+            handler.send_json({"error": "Chỉ Sale, Kỹ thuật upsale, Kế toán hoặc Sếp/Admin được thêm đơn CRM."}, 403)
+            return True
+
+        result_box = {}
+
+        def add_order(existing_data):
+            saved, order_id = create_crm_order(
+                existing_data,
+                body,
+                actor_email=user.get("email") or "",
+                actor_employee_id=(employee or {}).get("id"),
+                allow_assign_any=full_access,
+            )
+            result_box["orderId"] = order_id
+            return saved
+
+        saved_state = update_state(handler.db_path, add_order)
+        visible_state = handler.filter_state(saved_state, user) or {}
+        visible_data = visible_state.get("data") if isinstance(visible_state.get("data"), dict) else {}
+        response_data = {
+            field: visible_data.get(field)
+            for field in SYNC_FIELDS
+            if field in visible_data
+        }
+        created_order = next((
+            item for item in (visible_data.get("orders") or [])
+            if str(item.get("id")) == str(result_box.get("orderId"))
+        ), None)
+        handler.send_json({
+            "ok": True,
+            "orderId": result_box.get("orderId"),
+            "order": created_order,
+            "inventoryStatus": (created_order or {}).get("inventoryStatus"),
+            "data": response_data,
+            "updatedAt": visible_state.get("updatedAt"),
+            "version": visible_state.get("version", 0),
+        })
         return True
 
     if not handler.is_full_admin(user):
@@ -481,4 +592,3 @@ def handle_delete(handler, route, _parsed):
         ("debts", "transactions", "orders", "distributionOrders", "distributionSettlements", "paymentLedger"),
     )
     return True
-

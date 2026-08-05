@@ -76,3 +76,109 @@ export function positionAccessFor(employee, accountRole = "user") {
   const roleType = employee?.roleType || "khac";
   return { full: false, roleType, ...(POSITION_ACCESS_META[roleType] || POSITION_ACCESS_META.khac) };
 }
+
+export const ACCOUNT_ROLE_META = {
+  admin: { label: "Quản trị/Admin", description: "Toàn quyền quản trị hệ thống và duyệt cuối." },
+  accountant: { label: "Kế toán", description: "Toàn quyền vận hành tương đương Admin; vẫn tách riêng trong luồng duyệt lương." },
+  user: { label: "Nhân viên", description: "Nhận việc, chat, xem Kho hàng, chấm công và tạo đề xuất lương cá nhân." },
+};
+
+export const ROLE_TAB_ACCESS = {
+  admin: [
+    "dashboard", "thuchi", "congno", "vongop", "taisan", "quy", "hoachdinh",
+    "crm", "marketing", "hoptac", "kho", "hopdong", "hotro",
+    "giaoviec", "chat", "nhansu", "tuyendung", "chamcong", "hieusuat", "luong",
+    "ai", "phaply", "task-reminder-settings", "settings", "taikhoan",
+  ],
+  accountant: [
+    "dashboard", "thuchi", "congno", "vongop", "taisan", "quy", "hoachdinh",
+    "crm", "marketing", "hoptac", "kho", "hopdong", "hotro",
+    "giaoviec", "chat", "nhansu", "tuyendung", "chamcong", "hieusuat", "luong",
+    "ai", "phaply", "settings", "taikhoan",
+  ],
+  user: ["crm", "giaoviec", "chat", "chamcong", "luong", "taikhoan"],
+};
+
+export function normalizeAccountEmail(value = "") {
+  return String(value || "").trim().toLowerCase();
+}
+
+export function normalizeAccountRole(role = "user") {
+  return normalizeAccountRoleValue(role);
+}
+
+export function isAdminRole(role) {
+  return normalizeAccountRole(role) === "admin";
+}
+
+export function isAccountantRole(role) {
+  return normalizeAccountRole(role) === "accountant";
+}
+
+export function accountRoleLabel(role) {
+  return ACCOUNT_ROLE_META[normalizeAccountRole(role)]?.label || "Nhân viên";
+}
+
+export function allowedTabsForRole(role, employee = null) {
+  const normalizedRole = normalizeAccountRole(role);
+  if (normalizedRole !== "user") return ROLE_TAB_ACCESS[normalizedRole] || ROLE_TAB_ACCESS.user;
+  const positionTabs = positionAccessFor(employee, normalizedRole).tabs || [];
+  return Array.from(new Set([...ROLE_TAB_ACCESS.user, ...positionTabs]));
+}
+
+export function defaultTabForRole(role, employee = null) {
+  const normalizedRole = normalizeAccountRole(role);
+  if (normalizedRole !== "user") return "dashboard";
+  const allowed = allowedTabsForRole(normalizedRole, employee);
+  return allowed.includes("giaoviec") ? "giaoviec" : (allowed[0] || "taikhoan");
+}
+
+export function normalizePayrollRoleText(value = "") {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/đ/g, "d")
+    .replace(/Đ/g, "D")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+export function employeeIsAccountant(employee) {
+  if (!employee || employee.status === "inactive") return false;
+  const roleToken = normalizePayrollRoleText(employee.roleType).replace(/\s+/g, "_");
+  if (["ke_toan", "ketoan", "accountant", "accounting", "finance"].includes(roleToken)) return true;
+  const description = normalizePayrollRoleText(`${employee.position || ""} ${employee.dept || ""}`);
+  return ["ke toan", "tai chinh", "accountant", "accounting", "finance"]
+    .some((token) => description.includes(token));
+}
+
+export function employeeProfileForEmail(employees = [], email = "") {
+  const normalized = normalizeAccountEmail(email);
+  return (employees || []).find((employee) => normalizeAccountEmail(employee.email) === normalized) || null;
+}
+
+export function employeeForAuthUser(employees = [], authUser = null) {
+  const accountId = Number(authUser?.id);
+  const linkedByAccountId = Number.isFinite(accountId)
+    ? (employees || []).find((employee) => Number(employee.account_id) === accountId)
+    : null;
+  return linkedByAccountId || employeeProfileForEmail(employees, authUser?.email);
+}
+
+export function accountDisplayName(employee, email = "") {
+  return employee?.name?.trim() || String(email || "").trim() || "Nhân viên";
+}
+
+export function accountPositionLabel(employee, accountRole = "user") {
+  return employee?.position?.trim()
+    || ROLE_META[employee?.roleType]?.label
+    || accountRoleLabel(accountRole);
+}
+
+export function accountInitials(value = "") {
+  const source = String(value || "").split("@")[0].replace(/[^a-zA-Z0-9À-ỹ]+/g, " ").trim();
+  if (!source) return "NV";
+  const parts = source.split(/\s+/).filter(Boolean);
+  return (parts.length > 1 ? `${parts[0][0]}${parts[parts.length - 1][0]}` : source.slice(0, 2)).toUpperCase();
+}

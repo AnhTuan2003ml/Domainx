@@ -5,6 +5,15 @@ from __future__ import annotations
 CANCELLED = {"cancelled", "canceled", "deleted", "huy", "đã hủy", "da_huy", "rejected"}
 
 
+def _in_period(value, start=None, end=None):
+    if not start and not end:
+        return True
+    text = str(value or "").strip()[:10]
+    if not text:
+        return False
+    return (not start or text >= start) and (not end or text <= end)
+
+
 def normalize_invoice_status(order):
     if not isinstance(order, dict):
         return "missing"
@@ -22,7 +31,7 @@ def normalize_invoice_status(order):
     return "missing"
 
 
-def summarize_invoices(orders):
+def summarize_invoices(orders, start=None, end=None):
     counts = {"missing": 0, "pending": 0, "provided": 0, "verified": 0, "not_required": 0}
     order_ids = {key: [] for key in counts}
     for order in orders or []:
@@ -30,6 +39,8 @@ def summarize_invoices(orders):
             continue
         status = str(order.get("orderStatus") or order.get("status") or "").strip().lower()
         if status in CANCELLED:
+            continue
+        if not _in_period(order.get("date"), start, end):
             continue
         category = normalize_invoice_status(order)
         counts[category] += 1

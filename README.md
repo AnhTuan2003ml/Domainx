@@ -1,90 +1,81 @@
-# React + Vite
+# DOMIX
 
-## DOMIX server
+DOMIX gồm frontend React/Vite, backend Python và **một nguồn dữ liệu PostgreSQL duy nhất**. Hệ thống không đọc hoặc ghi SQLite trong bất kỳ chế độ chạy nào.
 
-The React app reads and saves application data through a small Python backend
-using SQLite. The backend can also serve the built frontend so other computers on
-the same LAN can connect by opening the server machine's IP address.
+## Khởi động chuẩn bằng Docker
 
-Build and run the LAN server:
+Yêu cầu: Docker Desktop có Docker Compose v2.
+
+1. Sao chép `.env.example` thành `.env` và thay toàn bộ giá trị mẫu bằng bí mật mạnh.
+2. Trên Windows, chạy `run.bat`; hoặc chạy lệnh tương đương:
 
 ```bash
-npm.cmd run build
+docker compose up -d --build
+```
+
+3. Mở `http://127.0.0.1:8848`.
+
+Dữ liệu được lưu trong volume Docker `domix_postgres_data`. Dừng dịch vụ bằng `docker compose down`; lệnh này không xóa volume. Chỉ người vận hành có chủ đích mới được dùng tùy chọn `--volumes`.
+
+Các lệnh vận hành:
+
+```bash
+docker compose ps
+docker compose logs -f --tail=200 backend
+docker compose down
+```
+
+Tài khoản quản trị đầu tiên lấy từ `DOMIX_ADMIN_EMAIL` và `DOMIX_ADMIN_PASSWORD` trong `.env`; không dùng tài khoản/mật khẩu mặc định trong bản phát hành.
+
+## Kiểm thử
+
+Toàn bộ test backend, kể cả test nghiệp vụ và sổ tài chính, chạy trên PostgreSQL tạm thời:
+
+```bash
+docker compose -f docker-compose.test.yml up --build --abort-on-container-exit --exit-code-from backend-tests
+docker compose -f docker-compose.test.yml down --volumes --remove-orphans
+```
+
+Frontend:
+
+```bash
+npm ci
+npm test
+npm run lint
+npm run build
+```
+
+Không dùng `node_modules` được sao chép từ máy hoặc hệ điều hành khác. `npm ci` phải cài đúng dependency từ `package-lock.json` trước khi đánh giá build.
+
+## Chạy phát triển không qua Docker
+
+Chỉ dùng khi đã có PostgreSQL đang chạy. Khai báo `DOMIX_DATABASE_URL=postgresql://...` hoặc đầy đủ các biến `DOMIX_DB_HOST`, `DOMIX_DB_PORT`, `DOMIX_DB_NAME`, `DOMIX_DB_USER`, `DOMIX_DB_PASSWORD`, sau đó:
+
+```bash
+npm ci
+npm run dev
 python backend/server.py --host 0.0.0.0 --port 8000
 ```
 
-On Windows you can just run:
+Backend sẽ dừng ngay nếu thiếu cấu hình PostgreSQL; không có fallback sang database file.
 
-```bat
-run.bat
+## Quyền truy cập
+
+Quyền tài khoản gồm `admin`, `accountant`, `user`. Vị trí nghiệp vụ như Sale, Ads, Kỹ thuật, HR và CSKH là lớp quyền thứ hai. Backend kiểm tra cả hai lớp tại API; việc ẩn nút trên frontend không được xem là biện pháp phân quyền.
+
+## Đóng gói phát hành
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts\build-release.ps1
 ```
 
-Then open this from another machine on the same network:
+Script tạo `Domix.zip` và tự kiểm tra để loại `data/`, database file, `node_modules/`, `dist/`, `__pycache__/`, `.env`, log, backup và công cụ nội bộ. Có thể kiểm tra độc lập bằng `scripts\verify-release.ps1 -ArchivePath Domix.zip`.
 
-`http://SERVER_IP:8000`
+## Cấu trúc chính
 
-On first run, if the SQLite database has no user yet, the backend creates:
-
-- Email: `admin@gmail.com`
-- Password: `admin123@`
-- Role: `admin`
-
-You can override the first admin with `DOMIX_ADMIN_EMAIL` and
-`DOMIX_ADMIN_PASSWORD`, or create/update an account manually:
-
-```bash
-python backend/server.py --create-user your@gmail.com "STRONG_PASSWORD" admin
-```
-
-The account is stored in `data/domix.sqlite3`.
-
-Backend structure:
-
-- `backend/server.py`: thin HTTP routing and static file serving
-- `backend/db/`: SQLite connection, schema, migrations, app data, users, sessions
-- `backend/services/`: auth and account business logic
-- `backend/security.py`: password and token hashing
-
-Chat messages are stored in the `chat_messages` SQLite table. The frontend polls
-the chat APIs every 2 seconds for near-realtime updates and unread badges.
-Admins can create, rename, delete chat groups, and manage group members.
-
-Create more users:
-
-```bash
-python backend/server.py --create-user ketoan@gmail.com "PASSWORD" user
-python backend/server.py --create-user sep_xem@gmail.com "PASSWORD" user
-```
-
-Roles:
-
-- `admin`: manage accounts and read/write data
-- `user`: read/write data
-
-Every logged-in user can change only their own password in the "Tài khoản của tôi"
-screen. Admin users can open "Tài khoản" to list, add, edit, lock, and delete
-member accounts.
-
-Passwords are stored as PBKDF2-SHA256 hashes in `data/domix.sqlite3`. For network
-encryption, run with HTTPS certificates:
-
-```bash
-python backend/server.py --host 0.0.0.0 --port 8443 --certfile cert.pem --keyfile key.pem
-```
-
-The SQLite file is intentionally ignored by Git.
-
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+- `backend/routes/`: API và kiểm tra quyền.
+- `backend/services/`: nghiệp vụ và đối soát.
+- `backend/db/`: kết nối, schema và kho dữ liệu PostgreSQL.
+- `backend/tests/`: test nghiệp vụ/API trên PostgreSQL.
+- `src/`: frontend React.
+- `docker/`: image backend, frontend và Nginx.

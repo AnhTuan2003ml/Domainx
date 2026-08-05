@@ -10,10 +10,14 @@ def init_db(db_path):
             CREATE TABLE IF NOT EXISTS app_state (
                 key TEXT PRIMARY KEY,
                 payload TEXT NOT NULL,
+                version INTEGER NOT NULL DEFAULT 1,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )
             """
         )
+        app_state_columns = set(table_columns(conn, "app_state"))
+        if "version" not in app_state_columns:
+            conn.execute("ALTER TABLE app_state ADD COLUMN version INTEGER NOT NULL DEFAULT 1")
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
@@ -67,6 +71,19 @@ def init_db(db_path):
             """
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_password_reset_otps_expires ON password_reset_otps(expires_at)")
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS director_password_failures (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                attempt_key TEXT NOT NULL,
+                attempted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_director_password_failures_key_time "
+            "ON director_password_failures(attempt_key, attempted_at)"
+        )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS email_alert_log (

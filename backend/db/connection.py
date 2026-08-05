@@ -10,7 +10,7 @@ from urllib.parse import unquote, urlparse
 POSTGRES_SCHEMES = ("postgresql://", "postgres://")
 _TIMESTAMP_COLUMNS = {
     "created_at", "updated_at", "expires_at", "last_sent_at", "window_started_at",
-    "sent_at", "read_at", "deleted_at", "last_read_at",
+    "sent_at", "read_at", "deleted_at", "last_read_at", "attempted_at",
 }
 
 

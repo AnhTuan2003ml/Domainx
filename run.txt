@@ -1,0 +1,8 @@
+1. Sao chép .env.example thành .env và thay các giá trị CHANGE_ME.
+2. Chạy run.bat (Windows), hoặc chạy: docker compose up -d --build
+3. Mở http://127.0.0.1:8848
+
+Xem log: docker compose logs -f --tail=200 backend
+Dừng:    docker compose down
+
+DOMIX chỉ dùng PostgreSQL trong volume domix_postgres_data; không dùng SQLite.

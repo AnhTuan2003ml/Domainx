@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
@@ -10,10 +9,15 @@ if str(BACKEND_DIR) not in sys.path:
     sys.path.insert(0, str(BACKEND_DIR))
 
 from db.schema import init_db
-from db.state_store import read_state, update_state, write_state
+from db.state_store import StateConflictError, read_state, update_state, write_state
 from db.employee_store import upsert_with_account, delete_employee, replace_all, list_employees
 from db.user_store import create_or_update_user
 from db.connection import connect
+from db.security_store import (
+    clear_director_password_failures,
+    director_password_is_rate_limited,
+    record_director_password_failure,
+)
 from services.business_sync_service import (
     reconcile_company_data,
     record_debt_payment,
@@ -24,16 +28,99 @@ from services.payroll_payment_service import record_payroll_payment, resolve_pay
 from services.operational_ledger_service import list_debt_payments, list_inventory_movements
 from services.performance_classification_service import summarize_performance
 from services.invoice_status_service import summarize_invoices
+from routes import company_data as company_data_route
+from tests.postgres_test_case import PostgresTestCase
 
 
-class CompanyFlowTests(unittest.TestCase):
+class DataApiHandler:
+    def __init__(self, db_path, body):
+        self.db_path = db_path
+        self.body = body
+        self.response = None
+        self.status = None
+
+    @staticmethod
+    def require_user():
+        return {"email": "admin@example.com", "role": "admin"}
+
+    def read_json(self):
+        return self.body
+
+    @staticmethod
+    def preserve_restricted_state(data, _user, _existing_data=None):
+        return data
+
+    @staticmethod
+    def filter_state(state, _user):
+        return state
+
+    def send_json(self, payload, status=200):
+        self.response = payload
+        self.status = status
+
+
+class CompanyFlowTests(PostgresTestCase):
     def setUp(self):
-        self.temp_dir = tempfile.TemporaryDirectory()
-        self.db_path = Path(self.temp_dir.name) / "domix_test.sqlite3"
+        super().setUp()
         init_db(self.db_path)
 
     def tearDown(self):
-        self.temp_dir.cleanup()
+        super().tearDown()
+
+    def test_state_update_rejects_stale_version(self):
+        write_state(self.db_path, {"company": {"name": "Bản đầu"}})
+        first = read_state(self.db_path)
+
+        saved = update_state(
+            self.db_path,
+            lambda data: {**data, "company": {"name": "Tài khoản A"}},
+            expected_version=first["version"],
+        )
+        self.assertEqual(saved["version"], first["version"] + 1)
+
+        with self.assertRaises(StateConflictError):
+            update_state(
+                self.db_path,
+                lambda data: {**data, "company": {"name": "Tài khoản B ghi đè"}},
+                expected_version=first["version"],
+            )
+
+        current = read_state(self.db_path)
+        self.assertEqual(current["data"]["company"]["name"], "Tài khoản A")
+        self.assertEqual(current["version"], saved["version"])
+
+    def test_data_api_returns_409_instead_of_overwriting_stale_state(self):
+        write_state(self.db_path, {"company": {"name": "Bản đầu"}})
+        version = read_state(self.db_path)["version"]
+
+        first = DataApiHandler(self.db_path, {
+            "data": {"company": {"name": "Tài khoản A"}},
+            "expectedVersion": version,
+        })
+        self.assertTrue(company_data_route.handle_put(first, "/api/data/fields", None))
+        self.assertEqual(first.status, 200)
+
+        stale = DataApiHandler(self.db_path, {
+            "data": {"company": {"name": "Tài khoản B"}},
+            "expectedVersion": version,
+        })
+        self.assertTrue(company_data_route.handle_put(stale, "/api/data/fields", None))
+        self.assertEqual(stale.status, 409)
+        self.assertEqual(stale.response["code"], "STATE_VERSION_CONFLICT")
+        self.assertEqual(read_state(self.db_path)["data"]["company"]["name"], "Tài khoản A")
+
+    def test_director_password_rate_limit_is_persisted_in_postgresql(self):
+        attempt_key = "director@example.com|127.0.0.1"
+        for _ in range(5):
+            record_director_password_failure(self.db_path, attempt_key, 600)
+
+        self.assertTrue(
+            director_password_is_rate_limited(self.db_path, attempt_key, 600, 5)
+        )
+        clear_director_password_failures(self.db_path, attempt_key)
+        self.assertFalse(
+            director_password_is_rate_limited(self.db_path, attempt_key, 600, 5)
+        )
 
     def _seed_sales_flow(self):
         write_state(

@@ -9,6 +9,7 @@ Các báo cáo mới chỉ đọc từ những bảng này và dữ liệu ngu�
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import hashlib
 from typing import Any
 
 
@@ -43,18 +44,32 @@ def _status_is_cancelled(value):
 
 
 def _unique_value(conn, table, column, preferred, record_id):
-    """Giữ mã legacy khi chưa trùng; nếu trùng thì thêm hậu tố theo ID."""
+    """Giữ mã legacy khi chưa trùng; nếu trùng thì thêm hash của toàn bộ ID.
+
+    Không dùng phần đuôi ID: các bút toán migration thường cùng kết thúc bằng
+    ``:opening-payment`` nên hậu tố kiểu cũ vẫn đụng unique key lần thứ hai.
+    """
     base = str(preferred or "").strip()
     if not base:
         base = str(record_id)
-    row = conn.execute(
-        f"SELECT id FROM {table} WHERE {column} = ? AND id <> ?",
-        (base, str(record_id)),
-    ).fetchone()
-    if not row:
+
+    def is_available(candidate):
+        row = conn.execute(
+            f"SELECT id FROM {table} WHERE {column} = ? AND id <> ?",
+            (candidate, str(record_id)),
+        ).fetchone()
+        return not row
+
+    if is_available(base):
         return base
-    suffix = str(record_id).replace(" ", "-")[-16:]
-    return f"{base}-{suffix}"
+    digest = hashlib.sha256(str(record_id).encode("utf-8")).hexdigest()[:12].upper()
+    candidate = f"{base}-{digest}"
+    if is_available(candidate):
+        return candidate
+    counter = 2
+    while not is_available(f"{candidate}-{counter}"):
+        counter += 1
+    return f"{candidate}-{counter}"
 
 
 def _safe_idempotency_key(conn, key, payment_id):

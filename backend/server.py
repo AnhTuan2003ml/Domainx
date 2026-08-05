@@ -420,7 +420,7 @@ def _user_visible_data(db_path, data, user):
         if position_role in {"cskh", "quan_ly"}:
             filtered["supportCases"] = support_cases
         else:
-            filtered["supportCases"] = [item for item in support_cases if _record_belongs_to_employee(item, employee_id, "employeeId", "assignedEmployeeId", "supportEmployeeId")]
+            filtered["supportCases"] = [item for item in support_cases if _record_belongs_to_employee(item, employee_id, "employeeId", "assignedEmployeeId", "supportEmployeeId", "assignedByEmployeeId")]
 
     attendance_requests = data.get("attendanceRequests")
     if isinstance(attendance_requests, list):
@@ -1482,7 +1482,7 @@ def update_employees_for_user(db_path, incoming_employees, user):
     return employee_service.replace_all(db_path, merged)
 
 
-SUPPORT_ASSIGNABLE_POSITION_ROLES = {"ky_thuat", "it", "nhan_su", "van_hanh", "cskh", "sale"}
+SUPPORT_ASSIGNABLE_POSITION_ROLES = {"ky_thuat", "it", "cskh"}
 SUPPORT_TYPE_LABELS = {
     "kich_hoat": "Kích hoạt / Setup mới",
     "su_co": "Xử lý sự cố",

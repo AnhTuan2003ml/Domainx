@@ -39,7 +39,7 @@ PRESERVED_RECORD_FIELDS = {
     "orders": (
         "customerId", "productId", "productName", "quantity", "serviceStartDate",
         "expiryDate", "distributionOrderId", "cashCollector", "customerInvoiceIssuer",
-        "createdAt", "createdBy",
+        "inventoryStatus", "inventoryShortage", "createdAt", "createdBy",
     ),
     "distributionOrders": (
         "sourceCrmOrderId", "partnerId", "productId", "productName", "quantity",
@@ -634,6 +634,15 @@ def _normalise_inventory_and_movements(inventory, orders, movements):
             order["inventorySyncStatus"] = "product_missing"
             issues.append({"type": "order_product_missing", "orderId": order_id, "productId": product_id})
             continue
+        if str(order.get("inventoryStatus") or "").strip().lower() == "pending_stock":
+            order["inventorySyncStatus"] = "pending_stock"
+            issues.append({
+                "type": "pending_stock",
+                "orderId": order_id,
+                "productId": product_id,
+                "shortage": max(0.0, _number(order.get("quantity"), 1) - _number(product_by_id[product_id].get("stock"))),
+            })
+            continue
         sale_key = ("crm", order_id, "sale_out")
         reverse_key = ("crm", order_id, "cancel_reverse")
         if not _is_cancelled(order):
@@ -926,6 +935,86 @@ def upsert_inventory_product(data, product_fields, opening_stock=0):
     result["inventory"] = inventory
     result["stockMovements"] = movements
     return reconcile_company_data(result)
+
+
+def create_crm_order(data, payload, actor_email, actor_employee_id=None, allow_assign_any=False):
+    """Ghi một đơn CRM nguyên tử và để tầng đối soát sinh kho/công nợ/Thu Chi.
+
+    Đơn vượt tồn vẫn được ghi nhận nhưng mang ``pending_stock`` và chưa sinh movement
+    xuất kho. Nhờ vậy Sale không mất đơn trong lúc chờ bổ sung mã/hàng, còn sổ kho
+    không bao giờ bị âm.
+    """
+    if not isinstance(payload, dict) or not isinstance(payload.get("order"), dict):
+        raise ValueError("Dữ liệu đơn hàng không hợp lệ.")
+    result = dict(data or {})
+    order = dict(payload["order"])
+    customer_name = str(order.get("customerName") or "").strip()
+    if not customer_name:
+        raise ValueError("Vui lòng nhập tên khách hàng.")
+    amount = max(0.0, _number(order.get("amount")))
+    if amount <= 0:
+        raise ValueError("Số tiền đơn hàng phải lớn hơn 0.")
+    quantity = _quantity(order.get("quantity"))
+    if quantity <= 0:
+        raise ValueError("Số lượng bán phải lớn hơn 0.")
+
+    order_id = order.get("id") or f"crm:{uuid.uuid4().hex}"
+    existing_orders = [dict(item) for item in _as_list(result.get("orders")) if isinstance(item, dict)]
+    if any(_key(item.get("id")) == _key(order_id) for item in existing_orders):
+        raise ValueError("Đơn hàng đã tồn tại. Hãy tải lại dữ liệu trước khi lưu tiếp.")
+
+    if not allow_assign_any:
+        if actor_employee_id is None:
+            raise ValueError("Tài khoản chưa liên kết với hồ sơ Sale/Kỹ thuật.")
+        order["saleEmployeeId"] = actor_employee_id
+    elif str(order.get("saleEmployeeId") or "") == "none":
+        order["saleEmployeeId"] = None
+
+    product = None
+    if order.get("productId") not in {None, ""}:
+        product = next((
+            item for item in _as_list(result.get("inventory"))
+            if isinstance(item, dict) and _key(item.get("id")) == _key(order.get("productId"))
+        ), None)
+        if not product:
+            raise ValueError("Sản phẩm đã chọn không còn tồn tại trong kho. Hãy chọn lại sản phẩm.")
+        available = max(0.0, _number(product.get("stock")))
+        shortage = max(0.0, quantity - available)
+        order["inventoryStatus"] = "pending_stock" if shortage > 1e-9 else "fulfilled"
+        order["inventoryShortage"] = shortage
+        order["productName"] = order.get("productName") or product.get("name") or ""
+    else:
+        order["productId"] = None
+        order["inventoryStatus"] = "not_applicable"
+        order["inventoryShortage"] = 0
+
+    order.update({
+        "id": order_id,
+        "customerName": customer_name,
+        "amount": amount,
+        "quantity": quantity,
+        "createdBy": str(actor_email or "").strip().lower(),
+        "createdAt": order.get("createdAt") or _now_iso(),
+    })
+    existing_orders.append(order)
+    result["orders"] = existing_orders
+
+    customer = payload.get("customer")
+    if isinstance(customer, dict) and customer.get("id") is not None:
+        customers = [dict(item) for item in _as_list(result.get("customers")) if isinstance(item, dict)]
+        if not any(_key(item.get("id")) == _key(customer.get("id")) for item in customers):
+            customers.append(dict(customer))
+        result["customers"] = customers
+
+    distribution_order = payload.get("distributionOrder")
+    if isinstance(distribution_order, dict):
+        distribution_orders = [dict(item) for item in _as_list(result.get("distributionOrders")) if isinstance(item, dict)]
+        linked = dict(distribution_order)
+        linked["sourceCrmOrderId"] = order_id
+        distribution_orders.append(linked)
+        result["distributionOrders"] = distribution_orders
+
+    return reconcile_company_data(result), order_id
 
 
 def reconcile_company_data(data):

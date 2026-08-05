@@ -17,6 +17,9 @@ async function requestJson(path, options = {}) {
     },
   });
   const data = await response.json().catch(() => ({}));
+  if (Number.isInteger(Number(data.version)) && typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("domix:state-version", { detail: Number(data.version) }));
+  }
   if (response.status === 401) {
     localStorage.removeItem(TOKEN_KEY);
     if (!path.startsWith("/api/auth/login") && !path.startsWith("/api/auth/register") && !path.startsWith("/api/auth/forgot-password")) {
@@ -103,10 +106,10 @@ export async function loadAppFields(fields = [], options = {}) {
   return requestJson(path, { cache: "no-store" });
 }
 
-export async function saveAppFields(data) {
+export async function saveAppFields(data, expectedVersion) {
   return requestJson("/api/data/fields", {
     method: "PUT",
-    body: JSON.stringify({ data }),
+    body: JSON.stringify({ data, expectedVersion }),
   });
 }
 
@@ -186,10 +189,10 @@ export async function fetchTasks() {
   return requestJson("/api/tasks", { cache: "no-store" });
 }
 
-export async function saveAppData(data) {
+export async function saveAppData(data, expectedVersion) {
   return requestJson("/api/data", {
     method: "PUT",
-    body: JSON.stringify(data),
+    body: JSON.stringify({ data, expectedVersion }),
   });
 }
 
@@ -278,6 +281,20 @@ export async function sendChatMessage(recipientEmail, body) {
 
 export async function assignSupportRequest(payload) {
   return requestJson("/api/support/assign", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function confirmSupportRequest(caseId) {
+  return requestJson("/api/support/confirm", {
+    method: "POST",
+    body: JSON.stringify({ caseId }),
+  });
+}
+
+export async function createCrmOrder(payload) {
+  return requestJson("/api/company-data/crm-orders", {
     method: "POST",
     body: JSON.stringify(payload),
   });
