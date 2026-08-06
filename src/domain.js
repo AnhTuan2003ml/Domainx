@@ -509,7 +509,7 @@ export function isFutureReportMonth(year, month, today = new Date()) {
 
 export function summarizeQuarterSnapshots(snapshots, today = new Date()) {
   const moneyKeys = [
-    "revenue", "cashReceived", "cashSpent", "operatingExpense", "payrollTotal",
+    "revenue", "revenueExVat", "vatOutput", "cogs", "cashReceived", "cashSpent", "operatingExpense", "payrollTotal",
     "accountingProfit", "netCashFlow", "taxTotal", "employeeInsurance", "employerInsurance",
   ];
   const total = Object.fromEntries(moneyKeys.map((key) => [key, 0]));
@@ -613,6 +613,34 @@ export function collectedOrderAmount(order) {
   return 0;
 }
 
+// ---------- HOA HỒNG THEO TIỀN THỰC THU ----------
+// Cơ sở tính thưởng doanh số (Sale) và upsale (Kỹ thuật) là TIỀN KHÁCH ĐÃ THANH TOÁN THẬT
+// (collectedOrderAmount) — đơn chốt nhưng chưa thu không phát sinh thưởng; khách hoàn tiền/
+// hủy thanh toán làm customerPaidAmount giảm thì cơ sở thưởng tự giảm theo. Hàm thuần túy,
+// tính lại bao nhiêu lần cũng ra đúng một kết quả — không cộng dồn trùng.
+export function commissionBaseByEmployee(orders = [], year, month) {
+  const inMonth = (dateStr) => {
+    const d = new Date(dateStr);
+    return !Number.isNaN(d.getTime()) && d.getFullYear() === Number(year) && d.getMonth() + 1 === Number(month);
+  };
+  const sale = {};
+  const upsale = {};
+  (orders || []).forEach((order) => {
+    if (!order || !inMonth(order.date) || !order.saleEmployeeId) return;
+    if (recognizedOrderAmount(order) <= 0) return;
+    const collected = collectedOrderAmount(order);
+    if (collected <= 0) return;
+    const bucket = (order.dealType || "sale") === "upsale" ? upsale : sale;
+    bucket[order.saleEmployeeId] = (bucket[order.saleEmployeeId] || 0) + collected;
+  });
+  return { sale, upsale };
+}
+
+// Hoa hồng upsale: pct% trên số tiền THỰC THU đủ điều kiện — làm tròn về đồng.
+export function upsaleCommission(collectedBase, pct = 7) {
+  return Math.round(Math.max(0, toNum(collectedBase)) * (Number(pct) || 0) / 100);
+}
+
 function recognizedDistributionAmount(order) {
   if (!order || order.orderKind === "purchase" || order.countsAsRevenue === false || order.sourceCrmOrderId) return 0;
   if (CANCELLED_ORDER_STATUSES.has(String(order.orderStatus || order.status || "").trim().toLowerCase())) return 0;
@@ -647,7 +675,7 @@ export function computeRevenueLedger({ transactions = [], orders = [], marketing
   const distributionRevenue = standaloneDistributionOrders.reduce((sum, order) => sum + recognizedDistributionAmount(order), 0);
   const distributionCollected = standaloneDistributionOrders.reduce((sum, order) => sum + collectedDistributionAmount(order), 0);
 
-  const periodMarketing = (marketingLogs || []).filter((log) => inPeriod(log.date));
+  const periodMarketing = (marketingLogs || []).filter((log) => !log.archived && inPeriod(log.date));
   const marketingRevenue = periodMarketing.reduce((sum, log) => sum + toNum(log.revenue), 0);
   const marketingSpend = periodMarketing.reduce((sum, log) => sum + toNum(log.adSpend), 0);
 

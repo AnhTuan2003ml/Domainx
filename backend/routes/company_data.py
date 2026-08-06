@@ -22,6 +22,8 @@ from services.business_sync_service import (
     remove_debt_payment,
     upsert_inventory_product,
 )
+from services.delete_policy_service import DeletePolicyError, audit_blocked_delete, guard_state_removals
+from services.ledger_sync_service import sync_after_save
 from services.payroll_payment_service import record_payroll_payment, resolve_payroll_reconciliation
 from services.financial_summary_service import FinancialSummaryError, get_financial_series, get_financial_summary
 from services.operational_ledger_service import list_debt_payments, list_inventory_movements
@@ -34,6 +36,59 @@ _DIRECTOR_PASSWORD_MAX_FAILURES = 5
 def _role(user):
     value = str((user or {}).get("role") or "").strip().lower()
     return "admin" if value in {"admin", "boss"} else "accountant" if value == "accountant" else "user"
+
+
+class StateValidationError(ValueError):
+    """Dữ liệu tham chiếu không hợp lệ — route trả 400, transaction rollback."""
+
+
+def _validate_order_page_links(existing_data, new_data):
+    """Đơn hàng chỉ được gắn Page Marketing CÒN TỒN TẠI. Chỉ kiểm tra pageId MỚI/ĐỔI —
+    dữ liệu cũ giữ nguyên (không chặn lưu vì bản ghi lịch sử)."""
+    if not isinstance(new_data, dict) or "orders" not in new_data:
+        return
+    pages_source = new_data.get("marketingPages")
+    if not isinstance(pages_source, list):
+        pages_source = (existing_data or {}).get("marketingPages") or []
+    valid_pages = {str(p.get("id")) for p in pages_source if isinstance(p, dict) and p.get("id") is not None}
+    old_orders = {str(o.get("id")): o for o in (existing_data or {}).get("orders") or [] if isinstance(o, dict)}
+    for order in new_data.get("orders") or []:
+        if not isinstance(order, dict):
+            continue
+        page_id = order.get("pageId")
+        if page_id in (None, ""):
+            continue
+        old = old_orders.get(str(order.get("id")))
+        if old is not None and str(old.get("pageId")) == str(page_id):
+            continue
+        if str(page_id) not in valid_pages:
+            raise StateValidationError(
+                f"Page Marketing #{page_id} không tồn tại hoặc đã bị xóa — không thể gắn vào đơn #{order.get('id')}."
+            )
+
+
+_DATE_ONLY = __import__("re").compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _validate_marketing_log_dates(existing_data, new_data):
+    """Bản ghi Marketing MỚI bắt buộc có ngày dạng YYYY-MM-DD — bản ghi cũ thiếu ngày vẫn
+    lưu được (để người dùng sửa/lưu trữ), nhưng không cho phát sinh thêm bản ghi lỗi mới."""
+    if not isinstance(new_data, dict) or "marketingLogs" not in new_data:
+        return
+    existing_ids = {
+        str(log.get("id"))
+        for log in (existing_data or {}).get("marketingLogs") or []
+        if isinstance(log, dict) and log.get("id") is not None
+    }
+    for log in new_data.get("marketingLogs") or []:
+        if not isinstance(log, dict) or log.get("archived"):
+            continue
+        if str(log.get("id")) in existing_ids:
+            continue
+        if not _DATE_ONLY.match(str(log.get("date") or "")):
+            raise StateValidationError(
+                "Bản ghi Marketing mới bắt buộc có NGÀY dạng YYYY-MM-DD — bản ghi không có ngày sẽ không thuộc tháng nào."
+            )
 
 
 def _audit_event(data, action, user, success, detail="", handler=None):
@@ -254,6 +309,11 @@ def handle_put(handler, route, _parsed):
             merged_data = dict(existing_data)
             merged_data.update(patch)
             merged_data = preserve_missing_record_fields(existing_data, merged_data)
+            # Delete Policy backend: chặn xóa-qua-ghi-đè (bản ghi đã duyệt/ghi sổ/tham chiếu)
+            # NGAY TRONG transaction — vi phạm sẽ rollback toàn bộ, không ghi nửa chừng.
+            guard_state_removals(handler.db_path, existing_data, merged_data, user_role=_role(user))
+            _validate_order_page_links(existing_data, merged_data)
+            _validate_marketing_log_dates(existing_data, merged_data)
             preserved = handler.preserve_restricted_state(merged_data, user, existing_data)
             return reconcile_company_data(preserved)
 
@@ -262,6 +322,16 @@ def handle_put(handler, route, _parsed):
         except StateConflictError as error:
             send_conflict(error)
             return True
+        except StateValidationError as error:
+            handler.send_json({"error": str(error)}, 400)
+            return True
+        except DeletePolicyError as error:
+            audit_blocked_delete(handler.db_path, (user or {}).get("email") or "", error)
+            handler.send_json(error.payload(), 409)
+            return True
+        # Sổ cái hạch toán kép chạy song song: mọi bản ghi nghiệp vụ mới được đưa vào
+        # journal qua Posting Service (idempotent) ngay sau khi lưu thành công.
+        sync_after_save(handler.db_path, actor=(user or {}).get("email") or "system")
         visible_state = handler.filter_state(saved_state, user) or {}
         visible_data = visible_state.get("data") if isinstance(visible_state.get("data"), dict) else {}
         response_keys = set(patch.keys())
@@ -285,6 +355,9 @@ def handle_put(handler, route, _parsed):
 
     def replace_state(existing_data):
         merged_body = preserve_missing_record_fields(existing_data, replacement)
+        guard_state_removals(handler.db_path, existing_data, merged_body, user_role=_role(user))
+        _validate_order_page_links(existing_data, merged_body)
+        _validate_marketing_log_dates(existing_data, merged_body)
         preserved = handler.preserve_restricted_state(merged_body, user, existing_data)
         return reconcile_company_data(preserved)
 
@@ -293,6 +366,14 @@ def handle_put(handler, route, _parsed):
     except StateConflictError as error:
         send_conflict(error)
         return True
+    except StateValidationError as error:
+        handler.send_json({"error": str(error)}, 400)
+        return True
+    except DeletePolicyError as error:
+        audit_blocked_delete(handler.db_path, (user or {}).get("email") or "", error)
+        handler.send_json(error.payload(), 409)
+        return True
+    sync_after_save(handler.db_path, actor=(user or {}).get("email") or "system")
     handler.send_json({
         "ok": True,
         "updatedAt": saved_state.get("updatedAt"),
@@ -425,6 +506,8 @@ def handle_post(handler, route, _parsed):
             return saved
 
         saved_state = update_state(handler.db_path, add_order)
+        # Bán hàng → Nợ 131 / Có 511 + 3331; xuất kho → Nợ 632 / Có 156 (bình quân gia quyền).
+        sync_after_save(handler.db_path, actor=user.get("email") or "system")
         visible_state = handler.filter_state(saved_state, user) or {}
         visible_data = visible_state.get("data") if isinstance(visible_state.get("data"), dict) else {}
         response_data = {
@@ -505,6 +588,8 @@ def handle_post(handler, route, _parsed):
             return reconcile_company_data(saved)
 
         saved_state = update_state(handler.db_path, pay_salary)
+        # Chi lương → Nợ 642 / Có 334 (ghi nhận) + Nợ 334 / Có 111|112 (chi trả).
+        sync_after_save(handler.db_path, actor=user.get("email") or "system")
         _send_synced_fields(
             handler, saved_state, user,
             ("payrollApprovals", "payrollPayments", "transactions"),
@@ -535,6 +620,8 @@ def handle_post(handler, route, _parsed):
             return saved
 
         saved_state = update_state(handler.db_path, apply_payment)
+        # Thu công nợ → Nợ 111/112, Có 131 (mỗi LẦN thanh toán một chứng từ, không tăng 511).
+        sync_after_save(handler.db_path, actor=user.get("email") or "system")
         _send_synced_fields(
             handler,
             saved_state,
@@ -551,6 +638,7 @@ def handle_post(handler, route, _parsed):
         return upsert_inventory_product(existing_data, product, opening_stock)
 
     saved_state = update_state(handler.db_path, save_product)
+    sync_after_save(handler.db_path, actor=user.get("email") or "system")
     _send_synced_fields(handler, saved_state, user, ("inventory", "stockMovements", "orders"))
     return True
 
@@ -585,6 +673,8 @@ def handle_delete(handler, route, _parsed):
         )
 
     saved_state = update_state(handler.db_path, delete_payment)
+    # Hủy thanh toán → sổ cái tạo BÚT TOÁN ĐẢO liên kết chứng từ gốc (không xóa).
+    sync_after_save(handler.db_path, actor=user.get("email") or "system")
     _send_synced_fields(
         handler,
         saved_state,

@@ -13,8 +13,11 @@ if str(BACKEND_DIR) not in sys.path:
 from services.business_sync_service import create_crm_order
 from services.support_service import (
     append_support_assignment,
+    approve_support_case,
     build_support_case,
     confirm_support_assignment,
+    reject_support_case,
+    report_support_case,
 )
 from routes import company_data as company_data_route
 from routes import support as support_route
@@ -57,8 +60,8 @@ class FakeHandler:
         return employee.get("email") or ""
 
     @staticmethod
-    def support_assignment_message(_data, _sender_name, _recipient_name):
-        return "Yêu cầu hỗ trợ kiểm thử"
+    def support_assignment_message(_data, _sender_name, _recipient_name, _case_id=""):
+        return f"Yêu cầu hỗ trợ kiểm thử · Mã yêu cầu: {_case_id or '—'}"
 
     @staticmethod
     def support_type_label(_value):
@@ -171,12 +174,30 @@ class SupportAndSalesWorkflowTests(unittest.TestCase):
         self.assertEqual(confirmed["orders"][0]["supportStatus"], "dang_ho_tro")
         self.assertIn("đã xác nhận", confirmed["orders"][0]["contactLog"][-1]["note"])
 
+    def test_after_sale_support_requires_order_and_item_links(self):
+        from services.support_service import validate_support_links
+        state_data = {"orders": [{"id": "order-1", "customerId": 501, "items": [{"id": "li-1", "productId": 3, "description": "SP"}]}]}
+        with self.assertRaisesRegex(ValueError, "KHÁCH HÀNG"):
+            validate_support_links(state_data, {"supportType": "su_co"})
+        with self.assertRaisesRegex(ValueError, "ĐƠN HÀNG"):
+            validate_support_links(state_data, {"supportType": "su_co", "customerId": 501})
+        with self.assertRaisesRegex(ValueError, "DÒNG SẢN PHẨM"):
+            validate_support_links(state_data, {"supportType": "su_co", "customerId": 501, "orderId": "order-1"})
+        with self.assertRaisesRegex(ValueError, "không thuộc khách hàng"):
+            validate_support_links(state_data, {"supportType": "su_co", "customerId": 999, "orderId": "order-1", "orderItemId": "li-1"})
+        with self.assertRaisesRegex(ValueError, "không thuộc đơn hàng"):
+            validate_support_links(state_data, {"supportType": "su_co", "customerId": 501, "orderId": "order-1", "orderItemId": "li-khac"})
+        # Đủ liên kết → hợp lệ; tư vấn trước bán → không cần đơn.
+        validate_support_links(state_data, {"supportType": "su_co", "customerId": 501, "orderId": "order-1", "orderItemId": "li-1"})
+        validate_support_links(state_data, {"supportType": "tu_van_truoc_ban"})
+
     def test_support_routes_assign_then_confirm_and_notify_sale(self):
         sale = {"id": 10, "name": "Sale A", "email": "sale@example.com", "roleType": "sale"}
         technician = {"id": 20, "name": "Kỹ thuật A", "email": "tech@example.com", "roleType": "ky_thuat"}
-        state = {"data": {"supportCases": [], "orders": [{"id": "order-1", "saleEmployeeId": 10, "contactLog": []}]}}
+        state = {"data": {"supportCases": [], "orders": [{"id": "order-1", "saleEmployeeId": 10, "customerId": 501, "contactLog": []}]}}
         assignment_body = {
             "caseId": "route-case-1", "orderId": "order-1", "recipientEmployeeId": 20,
+            "customerId": 501,
             "customerName": "Khách route", "customerPhone": "0900000000",
             "issue": "Lỗi đăng nhập", "details": "Kiểm tra tài khoản",
             "supportType": "su_co", "supportChannel": "remote",
@@ -186,12 +207,17 @@ class SupportAndSalesWorkflowTests(unittest.TestCase):
             [sale, technician], sale, state,
         )
         with patch.object(support_route, "update_state", side_effect=self._atomic_update(sale_handler)), \
+             patch.object(support_route, "read_state", return_value=state), \
              patch.object(support_route.chat_service, "send_message") as send_chat, \
              patch.object(support_route.email_service, "send_support_assignment_email"):
             self.assertTrue(support_route.handle_post(sale_handler, "/api/support/assign", None))
         self.assertEqual(sale_handler.status, 200)
         self.assertEqual(sale_handler.response["case"]["status"], "cho_xac_nhan")
-        send_chat.assert_called_once_with("test-db", sale_handler.user, "tech@example.com", "Yêu cầu hỗ trợ kiểm thử")
+        # Tin nhắn giao yêu cầu phải mang theo mã yêu cầu để nút xác nhận trong tab Tin nhắn dùng được.
+        send_chat.assert_called_once_with(
+            "test-db", sale_handler.user, "tech@example.com",
+            "Yêu cầu hỗ trợ kiểm thử · Mã yêu cầu: route-case-1",
+        )
 
         tech_handler = FakeHandler(
             {"email": "tech@example.com", "role": "user"}, {"caseId": "route-case-1"},
@@ -265,7 +291,7 @@ class SupportAndSalesWorkflowTests(unittest.TestCase):
         }}
         handler = FakeHandler(
             {"email": "admin@example.com", "role": "admin"},
-            {"order": {"id": "admin-order", "date": "2026-08-05", "customerName": "Khách", "amount": 1000}},
+            {"order": {"id": "admin-order", "date": "2026-08-05", "customerName": "Khách", "amount": 1000, "quantity": 1}},
             [hr], hr, state, full_admin=True,
         )
         with patch.object(company_data_route, "update_state", side_effect=self._atomic_update(handler)):
@@ -276,3 +302,117 @@ class SupportAndSalesWorkflowTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class SupportCompletionWorkflowTests(unittest.TestCase):
+    """Kỹ thuật báo hoàn tất → người GIAO yêu cầu duyệt thì yêu cầu mới đóng."""
+
+    def setUp(self):
+        self.technician = {"id": 20, "name": "Kỹ thuật A", "email": "tech@example.com", "roleType": "ky_thuat"}
+        self.case = {
+            "id": "case-1",
+            "customerName": "Khách A",
+            "phone": "0900000000",
+            "issue": "Lỗi đăng nhập",
+            "employeeId": 20,
+            "assignedToEmail": "tech@example.com",
+            "assignedBy": "sale@example.com",
+            "assignedByName": "Sale A",
+            "status": "dang_ho_tro",
+            "sourceCrmOrderId": "order-1",
+        }
+        self.data = {"supportCases": [dict(self.case)], "orders": [{"id": "order-1", "contactLog": []}]}
+
+    def test_only_assigned_technician_can_report_completion(self):
+        with self.assertRaisesRegex(ValueError, "được giao yêu cầu"):
+            report_support_case(self.data, "case-1", "Đã xử lý", {"id": 99}, "other@example.com", "Người khác")
+
+    def test_report_moves_case_to_waiting_approval_without_closing(self):
+        saved, case, sale_email = report_support_case(
+            self.data, "case-1", "Đã gửi lại key", self.technician, "tech@example.com", "Kỹ thuật A",
+        )
+        self.assertEqual(case["status"], "cho_duyet_hoan_tat")
+        self.assertEqual(case["resultNote"], "Đã gửi lại key")
+        self.assertEqual(sale_email, "sale@example.com")
+        # Chưa duyệt thì chưa đóng ca và chưa ghi nhật ký đơn CRM.
+        self.assertIsNone(case.get("completedAt"))
+        self.assertEqual(saved["orders"][0]["contactLog"], [])
+
+    def test_only_assigner_can_approve_and_approval_closes_case(self):
+        reported, _, _ = report_support_case(
+            self.data, "case-1", "Đã gửi lại key", self.technician, "tech@example.com", "Kỹ thuật A",
+        )
+        with self.assertRaisesRegex(ValueError, "người giao yêu cầu"):
+            approve_support_case(reported, "case-1", "tech@example.com", "Kỹ thuật A")
+
+        saved, case, technician_email = approve_support_case(
+            reported, "case-1", "sale@example.com", "Sale A",
+        )
+        self.assertEqual(case["status"], "hoan_tat")
+        self.assertTrue(case["completedAt"])
+        self.assertEqual(technician_email, "tech@example.com")
+        self.assertEqual(len(saved["orders"][0]["contactLog"]), 1)
+        self.assertIn("đã duyệt", saved["orders"][0]["contactLog"][0]["note"])
+
+    def test_reject_sends_case_back_to_technician(self):
+        reported, _, _ = report_support_case(
+            self.data, "case-1", "Đã gửi lại key", self.technician, "tech@example.com", "Kỹ thuật A",
+        )
+        saved, case, technician_email = reject_support_case(
+            reported, "case-1", "Khách vẫn chưa dùng được", "sale@example.com", "Sale A",
+        )
+        self.assertEqual(case["status"], "dang_ho_tro")
+        self.assertEqual(case["reviewNote"], "Khách vẫn chưa dùng được")
+        self.assertEqual(technician_email, "tech@example.com")
+        self.assertEqual(saved["orders"][0]["contactLog"], [])
+
+    def test_cannot_approve_case_that_was_not_reported(self):
+        with self.assertRaisesRegex(ValueError, "chưa được kỹ thuật báo hoàn tất"):
+            approve_support_case(self.data, "case-1", "sale@example.com", "Sale A")
+
+
+class RecordDeletionGuardTests(unittest.TestCase):
+    """Việc và ca hỗ trợ đã hoàn tất không tự biến mất; chỉ Quản trị mới xóa được."""
+
+    def setUp(self):
+        from server import _keep_deleted_records
+        self.keep = _keep_deleted_records
+
+    def test_completed_records_survive_a_payload_that_dropped_them(self):
+        existing = [
+            {"id": 1, "description": "Việc đã duyệt", "completionStatus": "approved"},
+            {"id": 2, "description": "Việc đang làm"},
+        ]
+        incoming = [{"id": 2, "description": "Việc đang làm (đã sửa)"}]
+        merged = self.keep(existing, incoming)
+        ids = sorted(str(item["id"]) for item in merged)
+        self.assertEqual(ids, ["1", "2"])
+        # Bản ghi còn trong payload vẫn nhận nội dung mới.
+        self.assertEqual(
+            next(item for item in merged if item["id"] == 2)["description"],
+            "Việc đang làm (đã sửa)",
+        )
+
+    def test_new_records_are_still_accepted(self):
+        merged = self.keep([{"id": 1}], [{"id": 1}, {"id": 9, "description": "Việc mới"}])
+        self.assertEqual(sorted(str(item["id"]) for item in merged), ["1", "9"])
+
+    def test_empty_payload_keeps_everything(self):
+        existing = [{"id": 1}, {"id": 2}]
+        self.assertEqual(len(self.keep(existing, [])), 2)
+
+
+class AccountantEmployeeEditTests(unittest.TestCase):
+    """Kế toán chỉ sửa được các khoản cấu thành lương trên hồ sơ nhân sự."""
+
+    def setUp(self):
+        from server import ACCOUNTANT_EDITABLE_EMPLOYEE_FIELDS
+        self.editable = ACCOUNTANT_EDITABLE_EMPLOYEE_FIELDS
+
+    def test_payroll_fields_are_editable(self):
+        for field in ["allowances", "mealAllowance", "bonusTarget", "kpi", "otherBonus", "advance"]:
+            self.assertIn(field, self.editable)
+
+    def test_personal_and_contract_fields_stay_locked(self):
+        for field in ["name", "email", "baseSalary", "contractType", "attendance", "idNumber", "bankAccount", "joined"]:
+            self.assertNotIn(field, self.editable)

@@ -29,13 +29,13 @@ export const POSITION_ACCESS_META = {
     summary: "Ghi nhận/cập nhật Marketing hằng ngày; xem và sửa sản phẩm được phân công.",
   },
   sale: {
-    tabs: ["crm", "marketing", "kho", "hotro"], marketingWrite: true,
+    tabs: ["khachhang", "crm", "donhang", "marketing", "kho", "hotro"], marketingWrite: true,
     inventoryScope: "assigned", inventoryWrite: true,
     summary: "Quản lý đơn CRM của mình; cập nhật Marketing hằng ngày; sửa sản phẩm được phân công.",
   },
   ky_thuat: {
-    tabs: ["crm", "kho", "hotro"], inventoryScope: "assigned", inventoryWrite: true,
-    summary: "Xử lý hỗ trợ/upsale và sửa sản phẩm được phân công.",
+    tabs: ["crm", "kho", "hotro", "hotro-donhang", "hotro-lichsu"], inventoryScope: "assigned", inventoryWrite: true,
+    summary: "Xử lý hỗ trợ/upsale, tra cứu đơn đã bán của yêu cầu hỗ trợ và sửa sản phẩm được phân công.",
   },
   it: {
     tabs: ["kho"], inventoryScope: "assigned", inventoryWrite: true,
@@ -54,8 +54,11 @@ export const POSITION_ACCESS_META = {
     summary: "Theo dõi vận hành và sửa sản phẩm được phân công.",
   },
   cskh: {
-    tabs: ["kho", "hotro"], inventoryScope: "all-read", inventoryWrite: false,
-    summary: "Xem toàn bộ kho để tư vấn khách hàng; không được thay đổi kho.",
+    // CSKH đi trọn luồng trong mục Hỗ trợ khách hàng: yêu cầu → khách → đơn đã mua →
+    // công nợ cần nhắc → lịch sử — chỉ đọc dữ liệu bán hàng, không sửa kế toán.
+    tabs: ["kho", "hotro", "hotro-donhang", "hotro-khach", "hotro-congno", "hotro-lichsu"],
+    inventoryScope: "all-read", inventoryWrite: false,
+    summary: "Xem toàn bộ kho để tư vấn khách hàng; theo luồng hỗ trợ tra được khách, đơn đã mua và công nợ cần nhắc; không được thay đổi kho/kế toán.",
   },
   quan_ly: {
     tabs: ["dashboard", "crm", "marketing", "kho", "hopdong", "hotro", "nhansu", "hieusuat"],
@@ -85,14 +88,16 @@ export const ACCOUNT_ROLE_META = {
 
 export const ROLE_TAB_ACCESS = {
   admin: [
-    "dashboard", "thuchi", "congno", "vongop", "taisan", "quy", "hoachdinh",
-    "crm", "marketing", "hoptac", "kho", "hopdong", "hotro",
+    "dashboard", "dieuhanh", "thuchi", "congno", "vongop", "taisan", "quy", "hoachdinh", "socai",
+    "khachhang", "crm", "donhang", "marketing", "hoptac", "kho", "hopdong",
+    "hotro", "hotro-donhang", "hotro-khach", "hotro-congno", "hotro-lichsu",
     "giaoviec", "chat", "nhansu", "tuyendung", "chamcong", "hieusuat", "luong",
     "ai", "phaply", "task-reminder-settings", "settings", "taikhoan",
   ],
   accountant: [
-    "dashboard", "thuchi", "congno", "vongop", "taisan", "quy", "hoachdinh",
-    "crm", "marketing", "hoptac", "kho", "hopdong", "hotro",
+    "dashboard", "dieuhanh", "thuchi", "congno", "vongop", "taisan", "quy", "hoachdinh", "socai",
+    "khachhang", "crm", "donhang", "marketing", "hoptac", "kho", "hopdong",
+    "hotro", "hotro-donhang", "hotro-khach", "hotro-congno", "hotro-lichsu",
     "giaoviec", "chat", "nhansu", "tuyendung", "chamcong", "hieusuat", "luong",
     "ai", "phaply", "settings", "taikhoan",
   ],

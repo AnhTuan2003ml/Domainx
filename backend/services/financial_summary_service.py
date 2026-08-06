@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from calendar import monthrange
 from datetime import date, datetime
+from decimal import Decimal, ROUND_HALF_UP
 
 from db.connection import connect, table_exists
 from db.employee_store import list_employees
@@ -35,6 +36,11 @@ def _number(value, default=0.0):
         return float(value if value is not None else default)
     except (TypeError, ValueError):
         return float(default)
+
+
+def _round_half_up(value):
+    """Tròn về đồng theo quy tắc HALF_UP — cùng quy tắc với _split_vat của ledger_sync."""
+    return int(Decimal(str(value)).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
 def _date_only(value):
@@ -86,6 +92,43 @@ def _recognized_revenue(data, start, end):
         "marketing": 0,
         "other": 0,
     }
+
+
+def _sales_vat_and_cogs(data, start, end):
+    """VAT đầu ra + giá vốn của các đơn bán trong kỳ (cùng bộ lọc với doanh thu).
+
+    Lợi nhuận kế toán phải dùng doanh thu CHƯA VAT trừ giá vốn — 12.000.000đ gồm
+    VAT 8% không phải là doanh thu, càng không phải lợi nhuận.
+    """
+    products = {str(p.get("id")): p for p in _as_list(data.get("inventory")) if isinstance(p, dict)}
+    vat_total = 0.0
+    cogs_total = 0.0
+    for order in _as_list(data.get("orders")):
+        if not isinstance(order, dict) or not _valid_status(order) or not _in_period(order.get("date"), start, end):
+            continue
+        items = order.get("items") if isinstance(order.get("items"), list) else None
+        if items:
+            for line in items:
+                if not isinstance(line, dict):
+                    continue
+                rate = max(0.0, _number(line.get("vatRate")))
+                line_total = max(0.0, _number(line.get("lineTotal")))
+                if rate > 0:
+                    # Tròn VỀ ĐỒNG theo TỪNG DÒNG — khớp cách ghi sổ của ledger_sync_service
+                    # (_split_vat), để thẻ tổng VAT không lệch vài đồng so với cộng tay từng dòng.
+                    vat_total += _round_half_up(line_total - line_total / (1 + rate / 100))
+                product = products.get(str(line.get("productId"))) if line.get("productId") is not None else None
+                if product is not None:
+                    cogs_total += max(0.0, _number(line.get("quantity"))) * max(0.0, _number(product.get("costPrice")))
+        else:
+            amount = max(0.0, _number(order.get("amount")))
+            product = products.get(str(order.get("productId"))) if order.get("productId") not in {None, ""} else None
+            rate = max(0.0, _number(order.get("vatRate"), _number((product or {}).get("vatRate"))))
+            if rate > 0:
+                vat_total += _round_half_up(amount - amount / (1 + rate / 100))
+            if product is not None:
+                cogs_total += max(0.0, _number(order.get("quantity"), 1)) * max(0.0, _number(product.get("costPrice")))
+    return round(vat_total), round(cogs_total)
 
 
 def _receivables(data):
@@ -161,6 +204,11 @@ def _cash_from_state(data, start=None, end=None):
             continue
         status = str(item.get("status") or "").strip().lower()
         if status in _CANCELLED:
+            continue
+        # Cặp bút toán đỏ (gốc đã hủy + dòng âm triệt tiêu) bị loại NHƯ NHAU ở cả hai sổ —
+        # trước đây max(0, amount) chỉ bỏ dòng âm mà vẫn cộng bản gốc, gây lệch 1.000đ
+        # giữa Dashboard và sổ chuẩn hóa rồi chặn luôn báo cáo tài chính.
+        if item.get("reversalOf") or item.get("reversedByEntryId"):
             continue
         amount = max(0.0, _number(item.get("amount")))
         tx_date = _date_only(item.get("date"))
@@ -312,7 +360,33 @@ def get_financial_summary(db_path, year=None, month=None):
     performance = summarize_performance(employees)
     invoices = summarize_invoices(_as_list(data.get("orders")), start, effective_end)
     payroll_accrued, employer_insurance_accrued = (0, 0) if future_period else _payroll_accrual(data, year, month)
-    accounting_profit = revenue - round(operating_cash_spent) - payroll_accrued - employer_insurance_accrued
+    # LỢI NHUẬN KẾ TOÁN = doanh thu CHƯA VAT − giá vốn − chi phí vận hành − lương/BH − marketing.
+    # VAT đầu ra là tiền nộp hộ nhà nước; giá vốn (632) là chi phí trực tiếp của hàng bán.
+    vat_output, cogs = _sales_vat_and_cogs(data, start, effective_end)
+    revenue_ex_vat = revenue - vat_output
+    # Chi phí Marketing hằng ngày (adSpend) nhập ở module Marketing — không tự sinh giao dịch
+    # Thu Chi. Nhưng nếu kế toán ĐÃ ghi khoản chi quảng cáo vào sổ Thu Chi (danh mục
+    # marketing_ads / nguồn marketing_daily) thì khoản đó đã nằm trong operating_cash_spent —
+    # chỉ trừ thêm PHẦN CHƯA GHI SỔ để không trừ chi phí marketing hai lần.
+    marketing_spend = round(sum(
+        max(0.0, _number(log.get("adSpend")))
+        for log in _as_list(data.get("marketingLogs"))
+        if isinstance(log, dict) and not log.get("archived") and _in_period(log.get("date"), start, effective_end)
+    ))
+    marketing_tx_spent = round(sum(
+        max(0.0, _number(tx.get("amount")))
+        for tx in _as_list(data.get("transactions"))
+        if isinstance(tx, dict)
+        and tx.get("kind") == "chi"
+        and _in_period(tx.get("date"), start, effective_end)
+        and str(tx.get("status") or "").lower() not in _CANCELLED
+        and (
+            str(tx.get("category") or "").strip() == "marketing_ads"
+            or str(tx.get("sourceModule") or tx.get("source") or "").lower() == "marketing_daily"
+        )
+    ))
+    marketing_spend_unrecorded = max(0, marketing_spend - marketing_tx_spent)
+    accounting_profit = revenue_ex_vat - cogs - round(operating_cash_spent) - payroll_accrued - employer_insurance_accrued - marketing_spend_unrecorded
 
     return {
         "period": {
@@ -324,6 +398,10 @@ def get_financial_summary(db_path, year=None, month=None):
             "is_future": future_period,
         },
         "recognized_revenue": revenue,
+        # Bộ số kế toán chuẩn: doanh thu chưa VAT / VAT đầu ra / giá vốn.
+        "revenue_ex_vat": revenue_ex_vat,
+        "vat_output": vat_output,
+        "cogs": cogs,
         "cash_received": cash_received,
         "accounts_receivable": receivable,
         "accounts_payable": _payables(data),
@@ -332,6 +410,9 @@ def get_financial_summary(db_path, year=None, month=None):
         "payroll_cash_spent": round(payroll_cash_spent),
         "payroll_expense_accrued": payroll_accrued,
         "employer_insurance_accrued": employer_insurance_accrued,
+        "marketing_spend": marketing_spend,
+        "marketing_spend_recorded_in_tx": marketing_tx_spent,
+        "marketing_spend_unrecorded": marketing_spend_unrecorded,
         "opening_cash_balance": opening,
         "cash_balance": cash_balance,
         "net_cash_flow": cash_received - cash_spent,

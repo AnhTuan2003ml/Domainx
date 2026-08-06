@@ -1,3 +1,4 @@
+from db.accounting_store import create_accounting_tables
 from db.connection import configure_database, connect, table_columns, table_exists
 from db.employee_store import create_employees_table
 
@@ -281,6 +282,8 @@ def init_db(db_path):
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id, created_at)")
         create_employees_table(conn)
+        # Lõi hạch toán kép — migration idempotent, có downgrade_accounting_tables để rollback.
+        create_accounting_tables(conn)
         conn.execute("DELETE FROM sessions WHERE expires_at <= datetime('now')")
         conn.execute("DELETE FROM registration_otps WHERE expires_at <= datetime('now')")
         conn.execute("DELETE FROM password_reset_otps WHERE expires_at <= datetime('now')")

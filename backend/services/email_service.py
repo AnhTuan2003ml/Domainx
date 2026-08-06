@@ -203,7 +203,15 @@ def send_support_assignment_email(
     if not recipient_email:
         raise ValueError("Nhân sự tiếp nhận chưa có email.")
 
-    subject = f"[DOMIX] Yêu cầu hỗ trợ đơn #{order_id} - {customer_name or 'Khách hàng'}"
+    # Ca hỗ trợ có thể tạo trực tiếp trong module Hỗ trợ khách hàng (không gắn đơn CRM) — khi đó
+    # không được hiển thị "#None" trong tiêu đề và nội dung email.
+    order_label = str(order_id or "").strip()
+    order_display = f"#{order_label}" if order_label else "Ca tạo trực tiếp (không gắn đơn CRM)"
+    subject = (
+        f"[DOMIX] Yêu cầu hỗ trợ đơn #{order_label} - {customer_name or 'Khách hàng'}"
+        if order_label
+        else f"[DOMIX] Yêu cầu hỗ trợ khách hàng - {customer_name or 'Khách hàng'}"
+    )
     message = EmailMessage()
     message["Subject"] = subject
     message["From"] = f"DOMIX <{sender_email}>"
@@ -214,14 +222,15 @@ def send_support_assignment_email(
         f"Người giao: {sender_name or 'DOMIX'}\n"
         f"Loại yêu cầu: {support_type_label}\n"
         f"Cách thức hỗ trợ: {support_channel_label}\n"
-        f"Đơn hàng: #{order_id} - ngày {order_date or '—'}\n"
+        f"Đơn hàng: {order_display} - ngày {order_date or '—'}\n"
         f"Khách hàng: {customer_name or '—'}\n"
         f"Liên hệ: {customer_phone or '—'} / {customer_email or '—'}\n"
         f"Sản phẩm: {product_name or '—'}\n"
         f"Thời hạn: {duration_label or '—'}\n"
         f"Vấn đề cần hỗ trợ: {issue}\n"
         f"Nội dung cần hỗ trợ: {details}\n\n"
-        "Vui lòng mở DOMIX để kiểm tra và cập nhật kết quả xử lý."
+        "Vui lòng mở DOMIX, vào mục Hỗ trợ khách hàng > Nhiệm vụ của tôi để xác nhận tiếp nhận "
+        "nhiệm vụ này. Sau khi bạn xác nhận, hệ thống sẽ báo lại cho người giao yêu cầu."
     )
 
     safe = lambda value: html.escape(str(value or "—"))
@@ -229,7 +238,7 @@ def send_support_assignment_email(
         f"""
         <div style="font-family:Arial,sans-serif;max-width:680px;margin:auto;padding:24px;border:1px solid #e1e6ef;border-radius:16px;background:#ffffff">
           <div style="font-size:12px;letter-spacing:2px;color:#617089">DOMIX · YÊU CẦU HỖ TRỢ KHÁCH HÀNG</div>
-          <h2 style="margin:14px 0 6px;color:#17294a">Đơn hàng #{safe(order_id)} · {safe(customer_name)}</h2>
+          <h2 style="margin:14px 0 6px;color:#17294a">{safe(order_display)} · {safe(customer_name)}</h2>
           <p style="margin:0;color:#6a7688;font-size:13px">Người giao: <strong style="color:#283a58">{safe(sender_name)}</strong></p>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin:18px 0">
             <span style="padding:7px 11px;border-radius:999px;background:#eaf1ff;color:#2857a6;font-size:12px;font-weight:700">{safe(support_type_label)}</span>
@@ -251,7 +260,7 @@ def send_support_assignment_email(
             <div style="font-size:12px;font-weight:700;color:#4f6078;text-transform:uppercase;letter-spacing:.6px">Nội dung cần hỗ trợ</div>
             <div style="margin-top:7px;color:#35445a;line-height:1.65;white-space:pre-wrap">{safe(details)}</div>
           </div>
-          <p style="margin:20px 0 0;color:#778397;font-size:13px;line-height:1.6">Vui lòng mở DOMIX để kiểm tra, phối hợp với khách hàng và cập nhật kết quả xử lý.</p>
+          <p style="margin:20px 0 0;color:#778397;font-size:13px;line-height:1.6">Mở DOMIX &gt; <strong style="color:#17294a">Hỗ trợ khách hàng</strong> &gt; <strong style="color:#17294a">Nhiệm vụ của tôi</strong> để xác nhận tiếp nhận nhiệm vụ. Sau khi xác nhận, hệ thống báo lại ngay cho người giao yêu cầu.</p>
         </div>
         """,
         subtype="html",

@@ -40,6 +40,10 @@ services:
       DOMIX_ADMIN_EMAIL: ${DOMIX_ADMIN_EMAIL:?Hãy đặt DOMIX_ADMIN_EMAIL trong file .env}
       DOMIX_ADMIN_PASSWORD: ${DOMIX_ADMIN_PASSWORD:?Hãy đặt DOMIX_ADMIN_PASSWORD trong file .env}
       DOMIX_CORS_ORIGIN: ${DOMIX_CORS_ORIGIN:-*}
+      # Thông tin công ty hiển thị toàn hệ thống — đặt trong .env, để trống thì dùng giá trị lưu trong Cài đặt.
+      DOMIX_COMPANY_NAME: ${DOMIX_COMPANY_NAME:-}
+      DOMIX_COMPANY_ADDRESS: ${DOMIX_COMPANY_ADDRESS:-}
+      DOMIX_COMPANY_PHONE: ${DOMIX_COMPANY_PHONE:-}
       DOMIX_SMTP_HOST: ${DOMIX_SMTP_HOST:-smtp.gmail.com}
       DOMIX_SMTP_PORT: ${DOMIX_SMTP_PORT:-465}
       DOMIX_SMTP_EMAIL: ${DOMIX_SMTP_EMAIL:-}

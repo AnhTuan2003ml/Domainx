@@ -10,7 +10,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from config import CORS_ORIGIN, DEFAULT_DB_TARGET, DIST_DIR, MAX_REQUEST_BODY_BYTES
+from config import COMPANY_ENV_OVERRIDES, CORS_ORIGIN, DEFAULT_DB_TARGET, DIST_DIR, MAX_REQUEST_BODY_BYTES
 from db.connection import database_backend, database_identity, require_postgres_target
 from db.schema import init_db
 from db.state_store import read_state, update_state
@@ -56,6 +56,7 @@ USER_READABLE_STATE_FIELDS = {
 }
 SAFE_COMPANY_FIELDS = {
     "name", "address", "phone", "email", "taxCode", "representative",
+    "bankName", "bankAccount",
     "establishedDate", "registeredCharterCapital", "openingCashBalance", "taskReminderIntervalHours",
     "directorPasswordConfigured", "directorPasswordConfiguredAt",
 }
@@ -68,9 +69,14 @@ PAYROLL_PROPOSAL_NUMBER_FIELDS = {
 }
 PAYROLL_PROPOSAL_TEXT_FIELDS = {"proposalReason", "proposalDetails", "proposalNote", "varianceReason"}
 SELF_PROFILE_FIELDS = {"avatarData", "avatarName", "avatarType"}
+# Kế toán phụ trách lương: chỉ được sửa các khoản cấu thành lương, không đụng nhân thân/hợp đồng.
+ACCOUNTANT_EDITABLE_EMPLOYEE_FIELDS = {
+    "allowances", "mealAllowance", "attendanceBonus", "bonusTarget", "kpi",
+    "otherBonus", "advance", "kpiNote", "kpiReviewedAt", "kpiReviewedByName",
+}
 EMPLOYEE_PRIVATE_FIELDS = {
     "baseSalary", "dailySalary", "bonusTarget", "kpi", "contractType", "probationRate", "dependents",
-    "mealAllowance", "attendanceBonus", "otherBonus", "advance", "attendance",
+    "mealAllowance", "attendanceBonus", "otherBonus", "advance", "attendance", "allowances",
     "salesTarget", "salesActual", "dealsClosed", "leadsHandled", "adSpend", "adRevenue",
     "conversions", "ctr", "tasksAssigned", "tasksCompleted", "tasksOnTime", "bugsFixed",
     "upsaleValue", "dob", "hometown", "bankName", "bankAccount", "phone", "idNumber",
@@ -329,6 +335,19 @@ def _public_company_for_admin(company):
     return result
 
 
+def _inventory_is_unassigned(item):
+    """Mặt hàng chưa giao cho ai phụ trách — thuộc danh mục chung của công ty."""
+    if not isinstance(item, dict):
+        return False
+    value = item.get("assignedEmployeeId")
+    if value in (None, "", 0, "0"):
+        return True
+    try:
+        return int(value) <= 0
+    except (TypeError, ValueError):
+        return False
+
+
 def _record_belongs_to_employee(record, employee_id, *field_names):
     if employee_id is None or not isinstance(record, dict):
         return False
@@ -378,13 +397,14 @@ def _user_visible_data(db_path, data, user):
         scope = permissions.get("inventory_scope", "none")
         if scope in {"all", "all_read"}:
             filtered["inventory"] = inventory
-        elif scope == "assigned" and employee_id is not None:
+        else:
+            # Hàng chung (chưa giao cho ai phụ trách) là danh mục của cả công ty — mọi nhân viên
+            # đều xem được. Chỉ mặt hàng đã giao đích danh mới bị giới hạn cho đúng người đó.
             filtered["inventory"] = [
                 item for item in inventory
-                if _record_belongs_to_employee(item, employee_id, "assignedEmployeeId")
+                if _inventory_is_unassigned(item)
+                or _record_belongs_to_employee(item, employee_id, "assignedEmployeeId")
             ]
-        else:
-            filtered["inventory"] = []
 
     orders = data.get("orders")
     if isinstance(orders, list):
@@ -454,6 +474,16 @@ def filter_state_for_user(db_path, state, user):
     else:
         filtered_data = _user_visible_data(db_path, data, user)
 
+    # Thông tin công ty đặt trong .env (DOMIX_COMPANY_NAME/ADDRESS/PHONE) ghi đè giá trị
+    # hiển thị cho MỌI vai trò — một nguồn cấu hình duy nhất cho tên/địa chỉ/SĐT công ty.
+    # Kèm danh sách field bị quản lý để giao diện Cài đặt khóa ô tương ứng.
+    if COMPANY_ENV_OVERRIDES and isinstance(filtered_data.get("company"), dict):
+        filtered_data["company"] = {
+            **filtered_data["company"],
+            **COMPANY_ENV_OVERRIDES,
+            "envManagedFields": sorted(COMPANY_ENV_OVERRIDES.keys()),
+        }
+
     filtered_state = dict(state)
     filtered_state["data"] = filtered_data
     return filtered_state
@@ -474,6 +504,40 @@ TASK_COMPLETION_META_FIELDS = {
 }
 
 
+TASK_ACCEPTANCE_FIELDS = ("acceptedAt", "acceptedByEmail", "acceptedByName")
+
+
+def _merged_task_history(old, candidate):
+    """Nhật ký công việc chỉ được nối thêm — không cho ghi đè hoặc xóa mốc đã có."""
+    old_history = old.get("history") if isinstance(old.get("history"), list) else []
+    new_history = candidate.get("history") if isinstance(candidate.get("history"), list) else None
+    if new_history is None or len(new_history) < len(old_history):
+        return old_history
+    if new_history[:len(old_history)] != old_history:
+        return old_history
+    return new_history
+
+
+def _keep_deleted_records(old_records, incoming_records):
+    """Giữ lại bản ghi bị thiếu trong dữ liệu gửi lên — dùng cho hồ sơ chỉ Quản trị mới được xóa.
+
+    Công việc và ca hỗ trợ đã hoàn tất là hồ sơ đối soát: không tự biến mất, cũng không bị xóa
+    bởi tài khoản Kế toán hay bởi một tab đang giữ bản chụp cũ.
+    """
+    old_records = old_records if isinstance(old_records, list) else []
+    incoming_records = incoming_records if isinstance(incoming_records, list) else []
+    incoming_ids = {
+        str(item.get("id")) for item in incoming_records
+        if isinstance(item, dict) and item.get("id") is not None
+    }
+    preserved = [
+        item for item in old_records
+        if isinstance(item, dict) and item.get("id") is not None
+        and str(item.get("id")) not in incoming_ids
+    ]
+    return incoming_records + preserved
+
+
 def _merge_task_review_updates(old_tasks, incoming_tasks, user, employee, is_accountant):
     if not isinstance(old_tasks, list):
         return old_tasks
@@ -482,7 +546,8 @@ def _merge_task_review_updates(old_tasks, incoming_tasks, user, employee, is_acc
         employee_id = int(employee.get("id")) if employee else None
     except (TypeError, ValueError):
         employee_id = None
-    reviewer = is_accountant or _is_admin(user)
+    privileged = is_accountant or _is_admin(user)
+    actor_email = _normalized_email((user or {}).get("email"))
     merged = []
     for old in old_tasks:
         if not isinstance(old, dict) or old.get("id") is None:
@@ -494,15 +559,31 @@ def _merge_task_review_updates(old_tasks, incoming_tasks, user, employee, is_acc
             continue
         updated = dict(old)
         next_status = str(candidate.get("completionStatus") or "").strip()
+        # Người NGHIỆM THU là người đã giao việc; admin/kế toán được duyệt thay.
+        assigner_email = _normalized_email(old.get("createdByEmail"))
+        reviewer = privileged or (bool(assigner_email) and assigner_email == actor_email)
+        owner = employee_id is not None and _record_employee_id(old) == employee_id
+
+        if owner:
+            # Người được giao xác nhận đã nhận việc — chỉ ghi được một lần, không xóa được.
+            if not old.get("acceptedAt") and candidate.get("acceptedAt"):
+                for field in TASK_ACCEPTANCE_FIELDS:
+                    if field in candidate:
+                        updated[field] = candidate[field]
+            updated["history"] = _merged_task_history(old, candidate)
+
         if reviewer and next_status in {"approved", "returned"}:
             updated["completionStatus"] = next_status
             updated["doneManual"] = next_status == "approved"
             for field in TASK_COMPLETION_META_FIELDS:
                 if field in candidate:
                     updated[field] = candidate[field]
-        elif employee_id is not None and _record_employee_id(old) == employee_id and next_status == "submitted":
+            updated["history"] = _merged_task_history(old, candidate)
+        elif owner and next_status == "submitted":
             updated["completionStatus"] = "submitted"
             updated["doneManual"] = False
+            if "completionReport" in candidate:
+                updated["completionReport"] = candidate["completionReport"]
             for field in ("completionSubmittedAt", "completionSubmittedByEmail", "completionSubmittedByName"):
                 if field in candidate:
                     updated[field] = candidate[field]
@@ -1401,7 +1482,15 @@ def preserve_restricted_state_fields(db_path, incoming_data, user, existing_data
         existing_payroll_tx = [item for item in existing_data.get("transactions", []) if isinstance(item, dict) and str(item.get("sourceModule") or item.get("source") or "").lower() == "payroll_payment"]
         incoming_non_payroll_tx = [item for item in incoming_data.get("transactions", []) if not isinstance(item, dict) or str(item.get("sourceModule") or item.get("source") or "").lower() != "payroll_payment"]
         merged["transactions"] = incoming_non_payroll_tx + existing_payroll_tx
-        merged["tasks"] = incoming_data.get("tasks", existing_data.get("tasks", []))
+        # Kế toán sửa được nội dung công việc và ca hỗ trợ, nhưng KHÔNG xóa được hồ sơ —
+        # quyền xóa chỉ thuộc về Quản trị.
+        merged["tasks"] = _keep_deleted_records(
+            existing_data.get("tasks", []), incoming_data.get("tasks", existing_data.get("tasks", [])),
+        )
+        if "supportCases" in incoming_data:
+            merged["supportCases"] = _keep_deleted_records(
+                existing_data.get("supportCases", []), incoming_data.get("supportCases", []),
+            )
     else:
         # Nhân viên mặc định chỉ sửa dữ liệu cá nhân. Một số nhóm vị trí được cấp thêm quyền
         # nghiệp vụ có giới hạn: Sale/Marketing sửa nhật ký của chính mình; người được phân kho
@@ -1452,7 +1541,29 @@ def update_employees_for_user(db_path, incoming_employees, user):
         # Chỉ Sếp/Admin được sửa hồ sơ nhân sự. Kế toán chỉ đọc để xử lý lương.
         return employee_service.replace_all(db_path, incoming_employees)
     if account_role == "accountant":
-        raise ValueError("Kế toán không được thêm, sửa hoặc xóa hồ sơ nhân sự.")
+        # Kế toán phụ trách lương nên được sửa ĐÚNG các khoản tính lương (phụ cấp, KPI, thưởng,
+        # tạm ứng) trên hồ sơ đã có. Mọi thông tin nhân thân, hợp đồng, chấm công vẫn thuộc Admin;
+        # kế toán cũng không được thêm hoặc xóa hồ sơ.
+        incoming_by_id = {
+            int(item.get("id")): item
+            for item in (incoming_employees if isinstance(incoming_employees, list) else [])
+            if isinstance(item, dict) and item.get("id") is not None
+        }
+        merged = []
+        for employee in existing:
+            updated = dict(employee)
+            try:
+                employee_id = int(employee.get("id"))
+            except (TypeError, ValueError):
+                merged.append(updated)
+                continue
+            candidate = incoming_by_id.get(employee_id)
+            if isinstance(candidate, dict):
+                for field in ACCOUNTANT_EDITABLE_EMPLOYEE_FIELDS:
+                    if field in candidate:
+                        updated[field] = candidate[field]
+            merged.append(updated)
+        return employee_service.replace_all(db_path, merged)
 
     _, current_employee, is_accountant = _employee_context(db_path, user)
     current_employee_id = int(current_employee["id"]) if current_employee else None
@@ -1516,10 +1627,16 @@ def _employee_contact_email(db_path, employee):
     return _normalized_email((employee or {}).get("email"))
 
 
-def _support_assignment_message(data, sender_name, recipient_name):
+def _support_assignment_message(data, sender_name, recipient_name, case_id=""):
     support_type = SUPPORT_TYPE_LABELS.get(str(data.get("supportType") or ""), "Yêu cầu hỗ trợ")
     support_channel = SUPPORT_CHANNEL_LABELS.get(str(data.get("supportChannel") or ""), "Theo trao đổi")
-    order_id = str(data.get("orderId") or "—")
+    # Ca giao trực tiếp trong module Hỗ trợ khách hàng không gắn đơn CRM — báo rõ thay vì "#—".
+    order_id = str(data.get("orderId") or "").strip()
+    order_line = (
+        f"Đơn hàng: #{order_id} · ngày {str(data.get('orderDate') or '—')}"
+        if order_id
+        else "Đơn hàng: ca tạo trực tiếp (không gắn đơn CRM)"
+    )
     customer_name = str(data.get("customerName") or "—").strip()
     customer_phone = str(data.get("customerPhone") or "—").strip()
     customer_email = str(data.get("customerEmail") or "—").strip()
@@ -1529,18 +1646,21 @@ def _support_assignment_message(data, sender_name, recipient_name):
     details = str(data.get("details") or "").strip()
     lines = [
         "[YÊU CẦU HỖ TRỢ KHÁCH HÀNG]",
+        # Mã yêu cầu đi kèm để nút "Xác nhận tiếp nhận" ngay trong tab Tin nhắn biết phải xác nhận yêu cầu nào.
+        f"Mã yêu cầu: {str(case_id or '').strip() or '—'}",
         f"Người tiếp nhận: {recipient_name}",
         f"Người giao: {sender_name}",
         f"Loại yêu cầu: {support_type}",
         f"Cách thức hỗ trợ: {support_channel}",
-        f"Đơn hàng: #{order_id} · ngày {str(data.get('orderDate') or '—')}",
+        order_line,
         f"Khách hàng: {customer_name}",
         f"Liên hệ khách: {customer_phone} · {customer_email}",
         f"Sản phẩm: {product_name}",
         f"Thời hạn: {duration_label}",
         f"Vấn đề cần hỗ trợ: {issue}",
         f"Nội dung cần hỗ trợ: {details}",
-        "Vui lòng mở DOMIX để kiểm tra và cập nhật kết quả xử lý.",
+        "Mở DOMIX > Hỗ trợ khách hàng > Nhiệm vụ của tôi để xác nhận tiếp nhận nhiệm vụ này. "
+        "Sau khi bạn xác nhận, hệ thống sẽ báo lại cho người giao yêu cầu.",
     ]
     return "\n".join(lines)
 
@@ -1655,8 +1775,8 @@ class DomixHandler(BaseHTTPRequestHandler):
     def employee_contact_email(self, employee):
         return _employee_contact_email(self.db_path, employee)
 
-    def support_assignment_message(self, data, sender_name, recipient_name):
-        return _support_assignment_message(data, sender_name, recipient_name)
+    def support_assignment_message(self, data, sender_name, recipient_name, case_id=""):
+        return _support_assignment_message(data, sender_name, recipient_name, case_id)
 
     def support_type_label(self, value):
         return SUPPORT_TYPE_LABELS.get(str(value or ""), "Yêu cầu hỗ trợ")

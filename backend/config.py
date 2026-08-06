@@ -90,6 +90,19 @@ DEFAULT_DB_TARGET = DATABASE_URL
 APP_ENV = os.environ.get("DOMIX_APP_ENV", "development").strip().lower()
 CORS_ORIGIN = os.environ.get("DOMIX_CORS_ORIGIN", "*").strip() or "*"
 
+# Thông tin công ty cấu hình từ .env (DOMIX_COMPANY_NAME/ADDRESS/PHONE).
+# Biến nào ĐƯỢC ĐẶT sẽ ghi đè giá trị hiển thị ở mọi API trả về (sidebar, in ấn, hóa đơn...)
+# — dữ liệu trong database giữ nguyên, gỡ biến là quay lại giá trị lưu trong Cài đặt.
+COMPANY_ENV_OVERRIDES = {
+    field: value
+    for field, value in {
+        "name": os.environ.get("DOMIX_COMPANY_NAME", "").strip(),
+        "address": os.environ.get("DOMIX_COMPANY_ADDRESS", "").strip(),
+        "phone": os.environ.get("DOMIX_COMPANY_PHONE", "").strip(),
+    }.items()
+    if value
+}
+
 
 SMTP_HOST = os.environ.get("DOMIX_SMTP_HOST", "smtp.gmail.com").strip()
 SMTP_PORT = int(os.environ.get("DOMIX_SMTP_PORT", "465"))

@@ -154,11 +154,17 @@ def _is_cancelled(order):
 
 
 def _movement_key(item):
+    # lineProductId chỉ có ở movement sinh từ đơn NHIỀU DÒNG — movement cũ để rỗng
+    # nên business key của dữ liệu hiện hữu không đổi (không sinh trùng khi nâng cấp).
     return (
         _key(item.get("sourceModule")),
         _key(item.get("sourceId")),
         _key(item.get("movementType")),
+        _key(item.get("lineProductId") or ""),
     )
+
+
+_EMPTY_MOVEMENT_KEY_PREFIX = ("", "", "")
 
 
 def _payment_status(paid, amount):
@@ -455,6 +461,13 @@ def _synchronise_sales_finance(orders, debts, transactions):
             "recognizedRevenue": 0.0 if _is_cancelled(order) else amount,
             "remainingReceivable": max(0.0, amount - paid),
         })
+        # amountBreakdown.collected/remaining là số DẪN XUẤT — cập nhật mỗi lần đối soát
+        # để mọi màn hình (khách hàng, vận hành, drawer đơn) đọc cùng một nguồn, kể cả
+        # đơn tạo mới chưa qua migration và đơn cũ vừa thu thêm tiền.
+        breakdown = dict(order.get("amountBreakdown") or {})
+        breakdown["collected"] = paid
+        breakdown["remaining"] = max(0.0, amount - paid)
+        order["amountBreakdown"] = breakdown
 
         if _is_cancelled(order):
             if existing_debt and (paid > 0 or history):
@@ -584,10 +597,10 @@ def _normalise_inventory_and_movements(inventory, orders, movements):
             continue
 
         business_key = _movement_key(item)
-        if business_key != ("", "", "") and business_key in seen_business_keys:
+        if business_key[:3] != _EMPTY_MOVEMENT_KEY_PREFIX and business_key in seen_business_keys:
             issues.append({"type": "duplicate_movement_removed", "movementId": movement_id, "productId": product_key})
             continue
-        if business_key != ("", "", ""):
+        if business_key[:3] != _EMPTY_MOVEMENT_KEY_PREFIX:
             seen_business_keys.add(business_key)
         if item["status"] != "reversed":
             existing_nonopening_delta[product_key] = existing_nonopening_delta.get(product_key, 0.0) + item["delta"]
@@ -621,7 +634,7 @@ def _normalise_inventory_and_movements(inventory, orders, movements):
     by_business_key = {}
     for index, item in enumerate(existing):
         key = _movement_key(item)
-        if key != ("", "", ""):
+        if key[:3] != _EMPTY_MOVEMENT_KEY_PREFIX:
             by_business_key[key] = index
 
     active_order_ids = set()
@@ -643,33 +656,53 @@ def _normalise_inventory_and_movements(inventory, orders, movements):
                 "shortage": max(0.0, _number(order.get("quantity"), 1) - _number(product_by_id[product_id].get("stock"))),
             })
             continue
-        sale_key = ("crm", order_id, "sale_out")
-        reverse_key = ("crm", order_id, "cancel_reverse")
         if not _is_cancelled(order):
             active_order_ids.add(order_id)
-            quantity = _quantity(order.get("quantity")) or 1.0
-            movement = {
-                "id": f"sync:crm:{order_id}:sale_out",
-                "productId": order.get("productId"),
-                "productName": product_by_id[product_id].get("name") or "",
-                "movementType": "sale_out",
-                "quantity": quantity,
-                "delta": -quantity,
-                "date": _date_only(order.get("date")),
-                "sourceModule": "crm",
-                "sourceId": order.get("id"),
-                "note": f"Bán cho {order.get('customerName') or 'khách hàng'}",
-                "createdBy": order.get("createdBy") or order.get("importedBy") or "server-sync",
-                "createdAt": order.get("createdAt") or order.get("importedAt") or _now_iso(),
-                "status": "posted",
-            }
-            if sale_key in by_business_key:
-                existing[by_business_key[sale_key]].update(movement)
+            # Đơn NHIỀU DÒNG: mỗi sản phẩm kho một movement riêng (gộp các dòng cùng
+            # sản phẩm); đơn cũ 1 sản phẩm giữ nguyên key/id legacy (line_key rỗng).
+            items = order.get("items") if isinstance(order.get("items"), list) else None
+            if items:
+                grouped = {}
+                for line in items:
+                    if not isinstance(line, dict) or line.get("productId") in {None, ""}:
+                        continue
+                    line_pid = _key(line.get("productId"))
+                    grouped[line_pid] = grouped.get(line_pid, 0.0) + (_quantity(line.get("quantity")) or 1.0)
+                stock_lines = [(pid, qty, pid) for pid, qty in grouped.items()]
             else:
-                by_business_key[sale_key] = len(existing)
-                existing.append(movement)
-            if reverse_key in by_business_key:
-                existing[by_business_key[reverse_key]]["status"] = "reversed"
+                stock_lines = [(product_id, _quantity(order.get("quantity")) or 1.0, "")]
+            for line_pid, quantity, line_key in stock_lines:
+                if line_pid not in product_ids:
+                    order["inventorySyncStatus"] = "product_missing"
+                    issues.append({"type": "order_product_missing", "orderId": order_id, "productId": line_pid})
+                    continue
+                suffix = f":{line_key}" if line_key else ""
+                sale_key = ("crm", order_id, "sale_out", line_key)
+                reverse_key = ("crm", order_id, "cancel_reverse", line_key)
+                movement = {
+                    "id": f"sync:crm:{order_id}:sale_out{suffix}",
+                    "productId": product_by_id[line_pid].get("id"),
+                    "productName": product_by_id[line_pid].get("name") or "",
+                    "movementType": "sale_out",
+                    "quantity": quantity,
+                    "delta": -quantity,
+                    "date": _date_only(order.get("date")),
+                    "sourceModule": "crm",
+                    "sourceId": order.get("id"),
+                    "note": f"Bán cho {order.get('customerName') or 'khách hàng'}",
+                    "createdBy": order.get("createdBy") or order.get("importedBy") or "server-sync",
+                    "createdAt": order.get("createdAt") or order.get("importedAt") or _now_iso(),
+                    "status": "posted",
+                }
+                if line_key:
+                    movement["lineProductId"] = line_key
+                if sale_key in by_business_key:
+                    existing[by_business_key[sale_key]].update(movement)
+                else:
+                    by_business_key[sale_key] = len(existing)
+                    existing.append(movement)
+                if reverse_key in by_business_key:
+                    existing[by_business_key[reverse_key]]["status"] = "reversed"
 
     # Đơn bị hủy/xóa phải có một movement hoàn tồn; không xóa movement bán cũ.
     for item in list(existing):
@@ -678,14 +711,15 @@ def _normalise_inventory_and_movements(inventory, orders, movements):
         source_id = _key(item.get("sourceId"))
         if source_id in active_order_ids:
             continue
-        reverse_key = ("crm", source_id, "cancel_reverse")
+        line_key = _key(item.get("lineProductId") or "")
+        reverse_key = ("crm", source_id, "cancel_reverse", line_key)
         if reverse_key in by_business_key:
             existing[by_business_key[reverse_key]]["status"] = "posted"
             continue
         quantity = _quantity(item.get("quantity")) or abs(_number(item.get("delta"))) or 1.0
         product_key = _key(item.get("productId"))
         reverse = {
-            "id": f"sync:crm:{source_id}:cancel_reverse",
+            "id": f"sync:crm:{source_id}:cancel_reverse" + (f":{line_key}" if line_key else ""),
             "productId": item.get("productId"),
             "productName": product_by_id.get(product_key, {}).get("name") or "",
             "movementType": "cancel_reverse",
@@ -699,6 +733,8 @@ def _normalise_inventory_and_movements(inventory, orders, movements):
             "createdAt": _now_iso(),
             "status": "posted",
         }
+        if line_key:
+            reverse["lineProductId"] = line_key
         by_business_key[reverse_key] = len(existing)
         existing.append(reverse)
 
@@ -951,12 +987,102 @@ def create_crm_order(data, payload, actor_email, actor_employee_id=None, allow_a
     customer_name = str(order.get("customerName") or "").strip()
     if not customer_name:
         raise ValueError("Vui lòng nhập tên khách hàng.")
-    amount = max(0.0, _number(order.get("amount")))
-    if amount <= 0:
-        raise ValueError("Số tiền đơn hàng phải lớn hơn 0.")
-    quantity = _quantity(order.get("quantity"))
-    if quantity <= 0:
-        raise ValueError("Số lượng bán phải lớn hơn 0.")
+
+    inventory_by_id = {
+        _key(item.get("id")): item
+        for item in _as_list(result.get("inventory"))
+        if isinstance(item, dict) and item.get("id") not in {None, ""}
+    }
+
+    raw_items = order.get("items")
+    has_items = isinstance(raw_items, list) and any(isinstance(it, dict) for it in raw_items)
+    if has_items:
+        # ĐƠN NHIỀU DÒNG: backend là nguồn sự thật về tiền — tính lại từng dòng
+        # (số lượng × đơn giá − giảm giá), không tin tổng frontend gửi lên.
+        norm_items = []
+        total = 0.0
+        for idx, raw in enumerate((it for it in raw_items if isinstance(it, dict)), 1):
+            pid = raw.get("productId")
+            pid = None if pid in {None, ""} else pid
+            product_ref = inventory_by_id.get(_key(pid)) if pid is not None else None
+            if pid is not None and product_ref is None:
+                raise ValueError(f"Dòng {idx}: sản phẩm đã chọn không còn trong kho. Hãy chọn lại.")
+            description = str(
+                raw.get("description") or raw.get("productName") or (product_ref or {}).get("name") or ""
+            ).strip()
+            if not description:
+                raise ValueError(f"Dòng {idx}: chọn sản phẩm hoặc nhập tên dịch vụ.")
+            if raw.get("quantity") in (None, ""):
+                raise ValueError(f"Dòng {idx}: vui lòng nhập số lượng (bắt buộc, lớn hơn 0).")
+            line_qty = _quantity(raw.get("quantity"))
+            if line_qty <= 0:
+                raise ValueError(f"Dòng {idx}: số lượng phải lớn hơn 0.")
+            line_price = max(0.0, _number(raw.get("unitPrice")))
+            if line_price <= 0:
+                raise ValueError(f"Dòng {idx}: đơn giá phải lớn hơn 0.")
+            line_discount = max(0.0, _number(raw.get("discount")))
+            line_total = max(0.0, line_qty * line_price - line_discount)
+            norm_items.append({
+                "productId": pid,
+                "description": description,
+                "uom": str(raw.get("uom") or (product_ref or {}).get("unit") or "").strip(),
+                "quantity": line_qty,
+                "unitPrice": line_price,
+                "discount": line_discount,
+                "vatRate": max(0.0, _number(raw.get("vatRate"))),
+                "lineTotal": line_total,
+            })
+            total += line_total
+        amount = max(0.0, total)
+        if amount <= 0:
+            raise ValueError("Số tiền đơn hàng phải lớn hơn 0.")
+        order["items"] = norm_items
+        order["amount"] = amount
+
+        # Tương thích luồng cũ (thời hạn dịch vụ, hiển thị): dòng KHO đầu tiên đại
+        # diện ở productId; tên hiển thị ghép từ các dòng.
+        stock_lines = [it for it in norm_items if it["productId"] is not None]
+        first_stock = stock_lines[0] if stock_lines else None
+        order["productId"] = first_stock["productId"] if first_stock else None
+        quantity = first_stock["quantity"] if first_stock else sum(it["quantity"] for it in norm_items)
+        order["productName"] = norm_items[0]["description"] + (
+            f" +{len(norm_items) - 1} dòng khác" if len(norm_items) > 1 else ""
+        )
+
+        # Kiểm tồn: cộng dồn nhu cầu theo từng sản phẩm kho (dịch vụ không quản kho).
+        need_by_pid = {}
+        for it in stock_lines:
+            key = _key(it["productId"])
+            need_by_pid[key] = need_by_pid.get(key, 0.0) + it["quantity"]
+        shortage = 0.0
+        for key, need in need_by_pid.items():
+            available = max(0.0, _number((inventory_by_id.get(key) or {}).get("stock")))
+            shortage += max(0.0, need - available)
+        if stock_lines:
+            order["inventoryStatus"] = "pending_stock" if shortage > 1e-9 else "fulfilled"
+            order["inventoryShortage"] = shortage
+        else:
+            order["inventoryStatus"] = "not_applicable"
+            order["inventoryShortage"] = 0
+    else:
+        order.pop("items", None)
+        # Số lượng BẮT BUỘC nhập tường minh — không mặc định 1, không suy từ số tiền.
+        if order.get("quantity") in (None, ""):
+            raise ValueError("Vui lòng nhập số lượng bán (bắt buộc, lớn hơn 0).")
+        quantity = _quantity(order.get("quantity"))
+        if quantity <= 0:
+            raise ValueError("Số lượng bán phải lớn hơn 0.")
+        # Khi client gửi đơn giá, BACKEND tự tính tổng = số lượng × đơn giá − chiết khấu —
+        # không tin tổng tiền frontend gửi lên. Thiếu đơn giá thì mới dùng amount (legacy).
+        unit_price = max(0.0, _number(order.get("unitPrice")))
+        discount = max(0.0, _number(order.get("discount")))
+        if unit_price > 0:
+            amount = max(0.0, unit_price * quantity - discount)
+            order["amount"] = amount
+        else:
+            amount = max(0.0, _number(order.get("amount")))
+        if amount <= 0:
+            raise ValueError("Số tiền đơn hàng phải lớn hơn 0.")
 
     order_id = order.get("id") or f"crm:{uuid.uuid4().hex}"
     existing_orders = [dict(item) for item in _as_list(result.get("orders")) if isinstance(item, dict)]
@@ -970,29 +1096,32 @@ def create_crm_order(data, payload, actor_email, actor_employee_id=None, allow_a
     elif str(order.get("saleEmployeeId") or "") == "none":
         order["saleEmployeeId"] = None
 
-    product = None
-    if order.get("productId") not in {None, ""}:
-        product = next((
-            item for item in _as_list(result.get("inventory"))
-            if isinstance(item, dict) and _key(item.get("id")) == _key(order.get("productId"))
-        ), None)
-        if not product:
-            raise ValueError("Sản phẩm đã chọn không còn tồn tại trong kho. Hãy chọn lại sản phẩm.")
-        available = max(0.0, _number(product.get("stock")))
-        shortage = max(0.0, quantity - available)
-        order["inventoryStatus"] = "pending_stock" if shortage > 1e-9 else "fulfilled"
-        order["inventoryShortage"] = shortage
-        order["productName"] = order.get("productName") or product.get("name") or ""
+    if not has_items:
+        if order.get("productId") not in {None, ""}:
+            product = inventory_by_id.get(_key(order.get("productId")))
+            if not product:
+                raise ValueError("Sản phẩm đã chọn không còn tồn tại trong kho. Hãy chọn lại sản phẩm.")
+            available = max(0.0, _number(product.get("stock")))
+            shortage = max(0.0, quantity - available)
+            order["inventoryStatus"] = "pending_stock" if shortage > 1e-9 else "fulfilled"
+            order["inventoryShortage"] = shortage
+            order["productName"] = order.get("productName") or product.get("name") or ""
+        else:
+            order["productId"] = None
+            order["inventoryStatus"] = "not_applicable"
+            order["inventoryShortage"] = 0
     else:
-        order["productId"] = None
-        order["inventoryStatus"] = "not_applicable"
-        order["inventoryShortage"] = 0
+        for idx, it in enumerate(order["items"], 1):
+            it.setdefault("id", f"{order_id}:L{idx}")
 
     order.update({
         "id": order_id,
         "customerName": customer_name,
         "amount": amount,
         "quantity": quantity,
+        # Trạng thái thanh toán luôn khởi tạo CHƯA THU — client không tự khai "đã thu";
+        # tiền chỉ được ghi khi có payment record thật (per-payment, idempotent) qua API công nợ.
+        "paymentStatus": "unpaid",
         "createdBy": str(actor_email or "").strip().lower(),
         "createdAt": order.get("createdAt") or _now_iso(),
     })
@@ -1002,7 +1131,20 @@ def create_crm_order(data, payload, actor_email, actor_employee_id=None, allow_a
     customer = payload.get("customer")
     if isinstance(customer, dict) and customer.get("id") is not None:
         customers = [dict(item) for item in _as_list(result.get("customers")) if isinstance(item, dict)]
-        if not any(_key(item.get("id")) == _key(customer.get("id")) for item in customers):
+
+        def _norm_phone(value):
+            return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+        new_phone = _norm_phone(customer.get("phone"))
+        # CHỐNG TRÙNG KHÁCH: một số điện thoại chuẩn hóa = một hồ sơ khách duy nhất.
+        # Nếu SĐT đã tồn tại, dùng lại customer_id cũ cho đơn thay vì sinh hồ sơ mới.
+        existing_by_phone = next(
+            (item for item in customers if new_phone and _norm_phone(item.get("phone")) == new_phone),
+            None,
+        )
+        if existing_by_phone is not None:
+            order["customerId"] = existing_by_phone.get("id")
+        elif not any(_key(item.get("id")) == _key(customer.get("id")) for item in customers):
             customers.append(dict(customer))
         result["customers"] = customers
 

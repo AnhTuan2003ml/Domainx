@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback, useLayoutEffect } from "react";
-import { assignSupportRequest, changePassword, clearChatConversation, clearChatGroupConversation, confirmSupportRequest, createChatGroup, createCrmOrder, createDebtPayment, createPayrollPayment, resolvePayrollReconciliation, deleteChatGroup, deleteChatGroupMessage, deleteChatMessage, deleteDebtPayment, deleteEmployee, deleteUser, fetchChatConversations, fetchChatGroupMessages, fetchChatGroups, fetchChatMessages, fetchChatReadReceipts, fetchChatUnread, fetchPayrollWorkflow, fetchTasks, fetchFinancialSummary, fetchFinancialSummarySeries, fetchDebtPaymentHistory, fetchInventoryMovements, getCurrentUser, listEmployees, listUsers, loadAppFields, login, logout, markChatGroupRead, markChatRead, requestPasswordResetOtp, requestRegistrationOtp, resetPasswordWithOtp, saveAppData, saveAppFields, saveEmployees, saveUser, sendChatGroupMessage, sendChatMessage, setDirectorPassword, updateChatGroupMembers, upsertEmployeeWithAccount, upsertInventoryProduct, verifyDirectorPassword, verifyRegistrationOtp, sendAiMessage } from "./api";
+import { approveSupportCase as approveSupportCaseApi, assignSupportRequest, changePassword, clearChatConversation, clearChatGroupConversation, confirmSupportRequest, createChatGroup, createCrmOrder, createDebtPayment, createPayrollPayment, resolvePayrollReconciliation, deleteChatGroup, deleteChatGroupMessage, deleteChatMessage, deleteDebtPayment, deleteEmployee, deleteUser, fetchChatConversations, fetchChatGroupMessages, fetchChatGroups, fetchChatMessages, fetchChatReadReceipts, fetchChatUnread, fetchPayrollWorkflow, fetchTasks, fetchFinancialSummary, fetchFinancialSummarySeries, fetchDebtPaymentHistory, fetchInventoryMovements, getCurrentUser, listEmployees, listUsers, loadAppFields, login, logout, markChatGroupRead, markChatRead, requestPasswordResetOtp, requestRegistrationOtp, resetPasswordWithOtp, saveAppData, saveAppFields, saveEmployees, saveUser, sendChatGroupMessage, sendChatMessage, setDirectorPassword, updateChatGroupMembers, upsertEmployeeWithAccount, upsertInventoryProduct, verifyDirectorPassword, verifyRegistrationOtp, sendAiMessage, reportSupportCase as reportSupportCaseApi, rejectSupportCase as rejectSupportCaseApi, fetchAccountingJournal, fetchTrialBalance, fetchVatBooks, fetchLedgerReconciliation, fetchAccountingPeriods, syncAccountingLedger, reverseJournalEntry, lockAccountingPeriod, unlockAccountingPeriod, fetchInventoryReconciliation, fetchOpeningInventoryBatches, suggestOpeningInventory, createOpeningInventoryBatch, reviewOpeningInventoryBatch, postOpeningInventoryBatch, reverseOpeningInventoryBatch, deleteDraftOpeningInventoryBatch } from "./api";
 import {
   roundVND, normalizePartner, normalizeDistributionOrder, normalizeDebt,
   calculateDistributionFinancials, eligibleOrdersForSettlement, buildSettlementDraft,
@@ -7,7 +7,7 @@ import {
   debtDisplayStatus, daysOverdue, makeTransaction, findDuplicateTransaction, isAutoTransaction,
   SOURCE_MODULE_LABELS, buildStockMovement, crmInventoryAvailability, hasStockMovement, MOVEMENT_LABELS,
   buildCustomersFromOrders, customerKeyOf, makeAuditEntry, diffAudit, migrateAppData,
-  can, ACTIONS, computeRevenueLedger, collectedOrderAmount, recognizedOrderAmount,
+  can, ACTIONS, computeRevenueLedger, collectedOrderAmount, recognizedOrderAmount, commissionBaseByEmployee,
   FINANCE_ENTRY_CATEGORIES, financeCategoryLabel, computeExpenseBreakdown,
   isFutureReportMonth, sharedPerformanceStatus, summarizeQuarterSnapshots,
 } from "./domain";
@@ -166,7 +166,7 @@ const CAPITAL_ASSET_TYPES = {
 // ---------- Đa ngôn ngữ (VI/EN) — khung điều hướng & Dashboard dịch đầy đủ; các tab chi tiết dịch dần. ----------
 const TRANSLATIONS = {
   vi: {
-    nav_dashboard: "Tổng quan", nav_thuchi: "Hóa đơn & chứng từ", nav_congno: "Công nợ", nav_crm: "Quản lý doanh thu & Thu chi",
+    nav_dashboard: "Tổng quan", nav_thuchi: "Thu – Chi", nav_congno: "Công nợ", nav_crm: "Quản lý doanh thu & Thu chi",
     nav_marketing: "Marketing hàng ngày", nav_kho: "Kho hàng", nav_giaoviec: "Giao việc", nav_nhansu: "Nhân sự",
     nav_chamcong: "Chấm công", nav_hieusuat: "Hiệu suất nhân viên", nav_luong: "Bảng lương", nav_quy: "Báo cáo theo Quý",
     nav_ai: "Trợ lý AI kế toán", nav_phaply: "Trợ lý Pháp lý", nav_settings: "Cài đặt công ty",
@@ -175,10 +175,10 @@ const TRANSLATIONS = {
     sidebar_light_mode: "Chế độ sáng", sidebar_dark_mode: "Chế độ tối", sidebar_language: "Ngôn ngữ",
     sidebar_search: "Tìm nhanh...", sidebar_sound: "Âm thanh nhắc việc", sidebar_close_menu: "Đóng menu", sidebar_open_menu: "Mở menu",
     header_period: "Kỳ báo cáo", header_prev_period: "Đang xem kỳ trước", label_current: " (hiện tại)",
-    missing_invoice_tx: "giao dịch thiếu hóa đơn",
+    missing_invoice_tx: "đơn chưa phát hành hóa đơn",
     kpi_cash: "Số dư quỹ hiện tại", kpi_cash_sub: "Cộng dồn toàn bộ thu chi từ trước",
     kpi_cash_sub_capital: "Số dư đầu kỳ + toàn bộ Thu − Chi đã ghi sổ",
-    kpi_profit: "Lợi nhuận (kỳ đang xem)", kpi_profit_sub: "Đã trừ lương + BHXH-BHYT-BHTN DN đóng",
+    kpi_profit: "Lợi nhuận (kỳ đang xem)", kpi_profit_sub: "Đã trừ giá vốn, lương + BH DN đóng và chi phí marketing",
     kpi_receivable: "Phải thu khách hàng", kpi_receivable_sub: "Chưa thu về",
     kpi_payable: "Phải trả nhà cung cấp", kpi_payable_sub: "Chưa thanh toán",
     kpi_overdue: "Công nợ quá hạn", kpi_overdue_sub: "Xem chi tiết ở tab Công nợ",
@@ -199,7 +199,7 @@ const TRANSLATIONS = {
     preview_label: "Xem trước — sẽ hiện ở sidebar và trong hợp đồng",
   },
   en: {
-    nav_dashboard: "Overview", nav_thuchi: "Invoices & Vouchers", nav_congno: "Receivables/Payables", nav_crm: "Revenue & Cashflow Management",
+    nav_dashboard: "Overview", nav_thuchi: "Income & Expenses", nav_congno: "Receivables/Payables", nav_crm: "Revenue & Cashflow Management",
     nav_marketing: "Daily Marketing", nav_kho: "Inventory", nav_giaoviec: "Task Assignment", nav_nhansu: "HR / Employees",
     nav_chamcong: "Attendance", nav_hieusuat: "Employee Performance", nav_luong: "Payroll", nav_quy: "Quarterly Report",
     nav_ai: "AI Accounting Assistant", nav_phaply: "AI Legal Assistant", nav_settings: "Company Settings",
@@ -208,10 +208,10 @@ const TRANSLATIONS = {
     sidebar_light_mode: "Light mode", sidebar_dark_mode: "Dark mode", sidebar_language: "Language",
     sidebar_search: "Quick search...", sidebar_sound: "Task reminder sound", sidebar_close_menu: "Close menu", sidebar_open_menu: "Open menu",
     header_period: "Reporting period", header_prev_period: "Viewing a past period", label_current: " (current)",
-    missing_invoice_tx: "transactions missing invoice",
+    missing_invoice_tx: "orders without issued invoice",
     kpi_cash: "Current Cash Balance", kpi_cash_sub: "Cumulative from all transactions",
     kpi_cash_sub_capital: "Opening balance plus all recorded income minus expenses",
-    kpi_profit: "Profit (this period)", kpi_profit_sub: "After payroll",
+    kpi_profit: "Profit (this period)", kpi_profit_sub: "After COGS, payroll & marketing",
     kpi_receivable: "Accounts Receivable", kpi_receivable_sub: "Not yet collected",
     kpi_payable: "Accounts Payable", kpi_payable_sub: "Not yet paid",
     kpi_overdue: "Overdue Debts", kpi_overdue_sub: "See Receivables/Payables tab",
@@ -239,7 +239,7 @@ const TRANSLATIONS = {
     nav_vongop: "出资/注册资本", nav_hoptac: "分销合作伙伴", nav_hoachdinh: "预算规划",
     sidebar_tagline: "会计 · 人力资源 · 工资 · 绩效", header_subtitle: "原型演示版",
     header_period: "报告期间", header_prev_period: "正在查看以前的期间", label_current: "（当前）",
-    missing_invoice_tx: "笔交易缺少发票",
+    missing_invoice_tx: "笔订单尚未开票",
     kpi_cash: "当前现金余额", kpi_cash_sub: "所有交易累计",
     kpi_cash_sub_capital: "期初余额加全部已入账收入减支出",
     kpi_profit: "利润（本期间）", kpi_profit_sub: "已扣除工资",
@@ -270,7 +270,7 @@ const TRANSLATIONS = {
     nav_vongop: "出資金/資本金", nav_hoptac: "販売代理店", nav_hoachdinh: "予算計画",
     sidebar_tagline: "会計 · 人事 · 給与 · パフォーマンス", header_subtitle: "プロトタイプデモ",
     header_period: "報告期間", header_prev_period: "過去の期間を表示中", label_current: "（現在）",
-    missing_invoice_tx: "件の請求書未登録取引",
+    missing_invoice_tx: "件の注文が請求書未発行",
     kpi_cash: "現在の現金残高", kpi_cash_sub: "すべての取引の累計",
     kpi_cash_sub_capital: "期首残高＋記帳済み収入－支出",
     kpi_profit: "利益（当期間）", kpi_profit_sub: "給与控除後",
@@ -301,7 +301,7 @@ const TRANSLATIONS = {
     nav_vongop: "เงินลงทุน/ทุนจดทะเบียน", nav_hoptac: "พันธมิตรจัดจำหน่าย", nav_hoachdinh: "การวางแผนงบประมาณ",
     sidebar_tagline: "บัญชี · บุคคล · เงินเดือน · ผลงาน", header_subtitle: "เดโมต้นแบบ",
     header_period: "รอบรายงาน", header_prev_period: "กำลังดูรอบก่อนหน้า", label_current: " (ปัจจุบัน)",
-    missing_invoice_tx: "รายการที่ยังไม่มีใบแจ้งหนี้",
+    missing_invoice_tx: "คำสั่งซื้อที่ยังไม่ออกใบกำกับ",
     kpi_cash: "ยอดเงินสดปัจจุบัน", kpi_cash_sub: "สะสมจากรายการทั้งหมด",
     kpi_cash_sub_capital: "ยอดยกมา + รายรับทั้งหมด − รายจ่ายทั้งหมดที่บันทึก",
     kpi_profit: "กำไร (รอบนี้)", kpi_profit_sub: "หลังหักเงินเดือน",
@@ -453,24 +453,25 @@ const GlobalStyle = () => (
     @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Noto+Serif:wght@600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 
     .ktns-app {
-      --ink: #1B2A4A;
-      --ink-light: #2E4270;
-      --paper: #F7F5F0;
-      --paper-line: #E4DFD3;
-      --stamp-red: #B5342E;
-      --ledger-green: #2F6F4F;
-      --gold: #B8912B;
-      --charcoal: #201F1C;
-      --muted: #55503F;
+      /* Bảng màu theo TailAdmin: nền xám nhạt lạnh, thẻ trắng viền mảnh, navy đậm + xanh primary. */
+      --ink: #1C2434;
+      --ink-light: #3C50E0;
+      --paper: #F1F5F9;
+      --paper-line: #E2E8F0;
+      --stamp-red: #D34053;
+      --ledger-green: #219653;
+      --gold: #C58A0A;
+      --charcoal: #1C2434;
+      --muted: #64748B;
       --surface: #FFFFFF;
-      --surface-muted: #F7F5F0;
+      --surface-muted: #F1F5F9;
       --surface-elevated: #FFFFFF;
-      --text-primary: #201F1C;
-      --text-secondary: #55503F;
-      --notice-surface: #FFF9E8;
-      --notice-text: #1B2A4A;
+      --text-primary: #1C2434;
+      --text-secondary: #64748B;
+      --notice-surface: #FFF7E0;
+      --notice-text: #1C2434;
       --domix-table-sticky-bg: #FFFFFF;
-      --domix-table-head-bg: #EEF2F7;
+      --domix-table-head-bg: #F7F9FC;
       font-family: 'Be Vietnam Pro', sans-serif;
       background: var(--paper);
       color: var(--charcoal);
@@ -483,6 +484,17 @@ const GlobalStyle = () => (
       transition: background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1), color 0.2s ease, opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
     }
     .ktns-app button:active { transform: scale(0.97); transition-duration: 0.1s; }
+    /* Ô nhập bị khóa (disabled) vẫn phải ĐỌC ĐƯỢC RÕ: Chrome mặc định làm mờ chữ
+       (opacity + webkit-text-fill) khiến giá trị trùng màu nền — ghi đè về mực đậm. */
+    .ktns-app input:disabled, .ktns-app select:disabled, .ktns-app textarea:disabled {
+      color: var(--ink);
+      -webkit-text-fill-color: var(--ink);
+      opacity: 1;
+    }
+    .ktns-app.dark input:disabled, .ktns-app.dark select:disabled, .ktns-app.dark textarea:disabled {
+      color: var(--charcoal);
+      -webkit-text-fill-color: var(--charcoal);
+    }
     /* Input/select focus — viền vàng phát sáng nhẹ, cảm giác cao cấp thay vì viền xanh mặc định trình duyệt. */
     .ktns-app input:focus, .ktns-app select:focus, .ktns-app textarea:focus {
       outline: none; border-color: var(--gold) !important;
@@ -494,6 +506,8 @@ const GlobalStyle = () => (
       position: fixed;
       inset: 0;
       z-index: 84;
+      /* KHÔNG dùng nền mờ: lớp ::after nằm trên stacking context của vùng nội dung nên sẽ đè
+         lên cả popup. Tách popup khỏi nền bằng viền đậm + quầng bóng của chính popup. */
       background: transparent;
       backdrop-filter: none;
       -webkit-backdrop-filter: none;
@@ -511,8 +525,8 @@ const GlobalStyle = () => (
       margin: 0 !important;
       border-radius: 18px !important;
       background: #fff !important;
-      border: 1px solid rgba(184, 145, 43, 0.28) !important;
-      box-shadow: 0 28px 80px rgba(7, 16, 31, 0.30), 0 0 0 1px rgba(255,255,255,0.75) inset !important;
+      border: 2px solid rgba(60, 80, 224, 0.55) !important;
+      box-shadow: 0 0 0 5px rgba(60, 80, 224, 0.14), 0 0 0 9999px rgba(9, 14, 26, 0.38), 0 28px 80px rgba(7, 16, 31, 0.30) !important;
       animation: ktnsModalPop 0.24s cubic-bezier(0.16, 1, 0.3, 1);
       pointer-events: auto !important;
       isolation: isolate;
@@ -526,7 +540,8 @@ const GlobalStyle = () => (
     }
     .ktns-app.dark .domix-inline-form-modal {
       background: #172033 !important;
-      border-color: rgba(255,255,255,0.12) !important;
+      border-color: rgba(148, 175, 255, 0.45) !important;
+      box-shadow: 0 0 0 5px rgba(148, 175, 255, 0.10), 0 0 0 9999px rgba(0, 0, 0, 0.5), 0 28px 80px rgba(0, 0, 0, 0.55) !important;
       color: #eef3fb;
     }
     /* Danh sách dữ liệu: thống nhất dạng bảng để quét, đối chiếu và kiểm soát nhanh. */
@@ -610,10 +625,148 @@ const GlobalStyle = () => (
     .ktns-app:not(.dark) .domix-finance-hub .domix-table-total-bar [class*="text-[#8"],
     .ktns-app:not(.dark) .domix-finance-hub .domix-table-total-bar [class*="text-[#9"],
     .ktns-app:not(.dark) .domix-finance-hub .domix-table-total-bar [class*="text-[#a"] { color: var(--domix-total-text) !important; }
+    /* Chế độ sáng: panel tối trong khu vực đã remap — viền/nền trắng mờ thành viền thật, chữ vàng
+       nhạt/hồng nhạt thành màu đậm đọc được trên nền trắng. */
+    .ktns-app:not(.dark) .domix-finance-hub [class*="bg-white/"] { background: #FFFFFF !important; }
+    .ktns-app:not(.dark) .domix-finance-hub [class*="border-white/"] { border-color: var(--paper-line) !important; }
+    .ktns-app:not(.dark) .domix-finance-hub [class*="text-[#f4"] { color: #92610A !important; }
+    .ktns-app:not(.dark) .domix-finance-hub [class*="text-[#f6"] { color: #B91C1C !important; }
+    .ktns-app:not(.dark) .domix-finance-hub [class*="text-[#86efac]"] { color: #047857 !important; }
+    /* Chế độ sáng: pill chuyển tab KHÔNG dùng navy tối — pill thường nền trắng, pill được chọn
+       dùng xanh primary tươi #3C50E0 chữ trắng (chuẩn TailAdmin), nhìn phát biết ngay đang ở đâu. */
+    .ktns-app:not(.dark) [class*="bg-[#141c2a]"] {
+      background: #FFFFFF !important;
+      border-color: #E2E8F0 !important;
+      color: #64748B !important;
+    }
+    .ktns-app:not(.dark) [class*="bg-[#141c2a]"]:hover {
+      border-color: #3C50E0 !important;
+      color: #1C2434 !important;
+      background: #F8FAFF !important;
+    }
+    .ktns-app:not(.dark) [class*="315ba5"] {
+      background: #3C50E0 !important;
+      border-color: #3C50E0 !important;
+      color: #FFFFFF !important;
+      box-shadow: 0 4px 12px rgba(60, 80, 224, 0.28) !important;
+    }
+    .ktns-app:not(.dark) [class*="bg-[#315fae]"] {
+      background: #3C50E0 !important;
+      border-color: #3C50E0 !important;
+    }
+    /* Thanh công cụ tối hard-code của màn Hợp tác phân phối → trắng ở chế độ sáng. */
+    .ktns-app:not(.dark) [class*="rgba(18,25,39"] { background: #FFFFFF !important; border-color: var(--paper-line) !important; }
+    .ktns-app:not(.dark) [class*="rgba(18,25,39"] p { color: var(--charcoal) !important; }
+    .ktns-app:not(.dark) [class*="bg-[#162338]"] { background: #FFFFFF !important; border-color: var(--paper-line) !important; color: var(--ink) !important; }
+    .ktns-app:not(.dark) [class*="bg-[#131d2c]"] { background: #FFFFFF !important; border-color: var(--paper-line) !important; color: var(--ink) !important; }
+    .ktns-app:not(.dark) [class*="180deg,#3561ad"] { background: #3C50E0 !important; border-color: #3C50E0 !important; }
+    /* ===== POPUP OVERLAY: hộp nội dung phải có viền nổi bật tách hẳn khỏi nền mờ phía sau ===== */
+    .ktns-app [class*="fixed inset-0"] > [class*="bg-white"],
+    .ktns-app [class*="fixed inset-0"] > [class*="bg-[#fbfaf7]"],
+    .ktns-app [class*="fixed inset-0"] > [class*="bg-paper"],
+    .ktns-app [class*="fixed inset-0"] > [class*="bg-surface"] {
+      border: 1.5px solid rgba(60, 80, 224, 0.45) !important;
+      box-shadow: 0 0 0 4px rgba(60, 80, 224, 0.12), 0 24px 64px rgba(9, 14, 26, 0.45) !important;
+    }
+    .ktns-app.dark [class*="fixed inset-0"] > [class*="bg-white"],
+    .ktns-app.dark [class*="fixed inset-0"] > [class*="bg-[#fbfaf7]"],
+    .ktns-app.dark [class*="fixed inset-0"] > [class*="bg-paper"],
+    .ktns-app.dark [class*="fixed inset-0"] > [class*="bg-surface"] {
+      border: 1.5px solid rgba(148, 175, 255, 0.45) !important;
+      box-shadow: 0 0 0 4px rgba(148, 175, 255, 0.10), 0 24px 64px rgba(0, 0, 0, 0.6) !important;
+    }
+    /* ===== Chế độ sáng: màn TIN NHẮN (domix-task-chat) vốn thiết kế nền tối cố định —
+       remap toàn bộ về nền sáng cho đồng nhất với phần còn lại của app. ===== */
+    .ktns-app:not(.dark) .domix-task-chat { background: var(--paper) !important; }
+    .ktns-app:not(.dark) .domix-task-chat section[class*="rgba(8,17,32"] { background: #FFFFFF !important; }
+    .ktns-app:not(.dark) .domix-task-chat section[class*="rgba(65,119,255"] { background: var(--paper) !important; }
+    /* Viền tối các sắc navy/nâu → viền sáng chung */
+    .ktns-app:not(.dark) .domix-task-chat [class*="border-[#1"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="border-[#2"] { border-color: var(--paper-line) !important; }
+    .ktns-app:not(.dark) .domix-task-chat [class*="border-[#0"] { border-color: #FFFFFF !important; }
+    /* Nền trắng mờ (bg-white/[0.0x]) → trắng đặc; giữ hover nhạt */
+    .ktns-app:not(.dark) .domix-task-chat [class*="bg-white/"] { background: #FFFFFF !important; }
+    .ktns-app:not(.dark) .domix-task-chat [class*="hover:bg-white/"]:hover { background: #F1F5F9 !important; }
+    /* Cuộc trò chuyện đang chọn: dải xanh tối → tint xanh nhạt */
+    .ktns-app:not(.dark) .domix-task-chat [class*="rgba(45,91,179"] { background: #EEF2FF !important; }
+    /* Bong bóng tin nhắn của người khác: kính mờ trắng → thẻ trắng có viền */
+    .ktns-app:not(.dark) .domix-task-chat [class*="rgba(255,255,255,0.085"] { background: #FFFFFF !important; }
+    /* Chữ: nhóm xám lạnh → muted; nhóm trắng/sáng → ink (đặt SAU để thắng khi trùng) */
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#7"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#8"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#9"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#a"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#b"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#c"] { color: var(--muted) !important; }
+    .ktns-app:not(.dark) .domix-task-chat .text-white,
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#d"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#e"] { color: var(--ink) !important; }
+    /* Giữ chữ trắng trên các nút/badge nền đặc còn giữ màu (xanh, xanh lá, đỏ) */
+    .ktns-app:not(.dark) .domix-task-chat [class*="bg-[#2f69ff]"], .ktns-app:not(.dark) .domix-task-chat [class*="bg-[#2f69ff]"] *,
+    .ktns-app:not(.dark) .domix-task-chat [class*="bg-[#3d6ef4]"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="bg-[#3f7cff]"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="bg-[#1f7a50]"], .ktns-app:not(.dark) .domix-task-chat [class*="bg-[#1f7a50]"] *,
+    .ktns-app:not(.dark) .domix-task-chat [class*="135deg,#2859d8"], .ktns-app:not(.dark) .domix-task-chat [class*="135deg,#2859d8"] * { color: #FFFFFF !important; }
+    /* Màu nhấn riêng */
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#f4c76a]"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#ffd489]"] { color: #92610A !important; }
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#f0e5cf]"] { color: var(--charcoal) !important; }
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#82adff]"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#8eb4ff]"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#5e9cff]"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#6fb5ff]"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#8db6ff]"] { color: #315fae !important; }
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#75e19a]"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#a7f0c8]"] { color: #047857 !important; }
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#ff7f8f]"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#ffb8b8]"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#ffb6ae]"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="text-[#f19b95]"] { color: #B91C1C !important; }
+    /* Pill trạng thái nền tối → tint sáng cùng sắc */
+    .ktns-app:not(.dark) .domix-task-chat [class*="bg-[#11284b]"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="bg-[#103154]"] { background: #E8EEFF !important; color: #315fae !important; }
+    .ktns-app:not(.dark) .domix-task-chat [class*="bg-[#2f1823]"] { background: #FEE2E2 !important; color: #B91C1C !important; }
+    .ktns-app:not(.dark) .domix-task-chat [class*="bg-[#162335]"] { background: #F1F5F9 !important; color: #475569 !important; }
+    .ktns-app:not(.dark) .domix-task-chat [class*="bg-[#76551f]"] { background: #FEF3C7 !important; color: #92400E !important; }
+    .ktns-app:not(.dark) .domix-task-chat [class*="bg-[#1f5b3c]"] { background: #D1FAE5 !important; color: #047857 !important; }
+    .ktns-app:not(.dark) .domix-task-chat [class*="bg-[#234a8e]"] { background: #3C50E0 !important; border-color: #3C50E0 !important; color: #FFFFFF !important; }
+    /* Thẻ giao việc / hỗ trợ KH trong luồng chat: nền tối → thẻ trắng viền màu nhạt */
+    .ktns-app:not(.dark) .domix-task-chat [class*="rgba(13,29,57"] { background: #FFFFFF !important; border-color: #C7D6F5 !important; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08) !important; }
+    .ktns-app:not(.dark) .domix-task-chat [class*="rgba(43,33,12"] { background: #FFFFFF !important; border-color: #EAD9AC !important; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08) !important; }
+    .ktns-app:not(.dark) .domix-task-chat [class*="border-[#57431a]"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="border-[#8a6b23]"] { border-color: #EAD9AC !important; }
+    .ktns-app:not(.dark) .domix-task-chat [class*="border-[#476cae]"] { border-color: #C7D6F5 !important; }
+    /* Nút xóa lịch sử + hộp lỗi: đỏ tối → tint đỏ sáng */
+    .ktns-app:not(.dark) .domix-task-chat [class*="bg-[#331923]"],
+    .ktns-app:not(.dark) .domix-task-chat [class*="bg-[#32171d]"] { background: #FEF2F2 !important; border-color: #FECACA !important; color: #B91C1C !important; }
+    /* Khung soạn tin + nút gửi disabled */
+    .ktns-app:not(.dark) .domix-task-chat .domix-chat-composer { background: transparent !important; }
+    .ktns-app:not(.dark) .domix-task-chat .domix-chat-composer-box { background: #FFFFFF !important; border-color: var(--paper-line) !important; box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06) !important; }
+    .ktns-app:not(.dark) .domix-task-chat button[class*="bg-[#41516d]"]:disabled { background: #E2E8F0 !important; color: #94A3B8 !important; }
+    /* Nút hành động chính nền tối (bg-ink) → xanh primary TailAdmin ở chế độ sáng. */
+    .ktns-app:not(.dark) button.bg-ink { background: #3C50E0 !important; }
+    .ktns-app:not(.dark) button.bg-ink:hover { background: #3444C4 !important; }
+    /* SIDEBAR — nền navy #1B2A4A ở CẢ HAI chế độ sáng/tối (theo yêu cầu),
+       chữ/icon trắng nguyên bản của sidebar giữ nguyên. */
+    aside.bg-ink { background: #1B2A4A !important; }
+    /* Các biến thể TINT (bg-[#315fae]/10...) là nền nhạt có chữ xanh — không được ép thành xanh đặc. */
+    .ktns-app:not(.dark) [class*="bg-[#315fae]/"] {
+      background: rgba(60, 80, 224, 0.10) !important;
+      border-color: rgba(60, 80, 224, 0.25) !important;
+      color: #3C50E0 !important;
+    }
+    /* Chế độ sáng: khu Quản lý doanh thu được remap nền trắng, nên các chữ emerald·red pha cho
+       nền tối phải đậm lên mới đủ tương phản. KHÔNG remap ngoài phạm vi này — các panel tối cố ý
+       (Trung tâm lương, KPI...) vẫn giữ nền tối ở cả hai chế độ. */
+    .ktns-app:not(.dark) .domix-finance-hub .text-emerald-200,
+    .ktns-app:not(.dark) .domix-finance-hub .text-emerald-300 { color: #047857 !important; }
+    .ktns-app:not(.dark) .domix-finance-hub .text-red-200,
+    .ktns-app:not(.dark) .domix-finance-hub .text-red-300 { color: #b91c1c !important; }
+    .ktns-app:not(.dark) .domix-finance-hub .text-amber-300 { color: #92610a !important; }
     /* Modal nền kính mờ (glassmorphism) — sang trọng hơn hẳn nền tối phẳng, dùng chung cho cả 13
        khung popup trong app (Xác nhận, Hoá đơn, Xoá...) — sửa 1 chỗ, áp dụng khắp nơi ngay. */
-    .ktns-app [class*="bg-ink/40"] { backdrop-filter: blur(6px) saturate(1.1); -webkit-backdrop-filter: blur(6px) saturate(1.1); animation: ktnsFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
-    .ktns-app [class*="bg-ink/40"] > div { animation: ktnsModalPop 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
+    .ktns-app [class*="bg-ink/40"], .ktns-app [class*="bg-ink/45"], .ktns-app [class*="bg-ink/50"], .ktns-app [class*="bg-ink/55"] { backdrop-filter: blur(6px) saturate(1.1); -webkit-backdrop-filter: blur(6px) saturate(1.1); animation: ktnsFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1); }
+    .ktns-app [class*="bg-ink/40"] > div, .ktns-app [class*="bg-ink/45"] > div, .ktns-app [class*="bg-ink/50"] > div, .ktns-app [class*="bg-ink/55"] > div { animation: ktnsModalPop 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
     @keyframes ktnsModalPop { from { opacity: 0; transform: scale(0.94) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
     @keyframes ktnsFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
     .domix-login-shell {
@@ -1200,34 +1353,32 @@ const GlobalStyle = () => (
       .domix-voyage-card:first-child { transform: translate3d(0,0,0) scale(1); opacity: 1; }
       .domix-voyage-card-copy { opacity: 1; transform: none; }
     }
-    .ktns-serif { font-family: 'Noto Serif', serif; }
+    /* TailAdmin dùng sans đậm cho tiêu đề — giữ class cũ, đổi font để toàn app đồng nhất. */
+    .ktns-serif { font-family: inherit; letter-spacing: -0.01em; }
     .ktns-mono { font-family: 'JetBrains Mono', monospace; }
 
     .ktns-ledger-lines {
       background-image: repeating-linear-gradient(to bottom, transparent, transparent 34px, var(--paper-line) 35px);
     }
 
+    /* Nhãn trạng thái phẳng — không xoay nghiêng, không đổ bóng: bảng dữ liệu lặp lại hàng chục
+       nhãn nên mỗi nhãn phải thật im lặng, chỉ phân biệt bằng màu tint nhẹ. */
     .stamp-ring {
-      border: 1.6px solid var(--stamp-red);
+      border: 1px solid color-mix(in srgb, var(--stamp-red) 38%, transparent);
       border-radius: 9999px;
-      padding: 3px 10px;
+      padding: 2px 9px;
       color: var(--stamp-red);
-      background: color-mix(in srgb, var(--stamp-red) 6%, transparent);
-      transform: rotate(-6deg);
-      font-family: 'Noto Serif', serif;
-      font-weight: 700;
+      background: color-mix(in srgb, var(--stamp-red) 9%, transparent);
+      font-weight: 600;
       font-size: 10px;
-      letter-spacing: 0.04em;
-      mix-blend-mode: multiply;
+      letter-spacing: 0.03em;
       display: inline-flex;
       align-items: center;
       gap: 4px;
       white-space: nowrap;
-      opacity: 0.94;
-      box-shadow: 0 1px 2px color-mix(in srgb, var(--stamp-red) 15%, transparent);
     }
-    .stamp-ring.gold { border-color: var(--gold); color: var(--gold); background: color-mix(in srgb, var(--gold) 8%, transparent); box-shadow: 0 1px 2px color-mix(in srgb, var(--gold) 18%, transparent); }
-    .stamp-ring.muted { border-color: var(--muted); color: var(--muted); background: color-mix(in srgb, var(--muted) 6%, transparent); transform: rotate(-3deg); box-shadow: none; }
+    .stamp-ring.gold { border-color: color-mix(in srgb, var(--gold) 45%, transparent); color: var(--gold); background: color-mix(in srgb, var(--gold) 10%, transparent); }
+    .stamp-ring.muted { border-color: color-mix(in srgb, var(--muted) 40%, transparent); color: var(--muted); background: color-mix(in srgb, var(--muted) 8%, transparent); }
 
     /* ---------- Nâng cấp toàn diện: hệ thống card/panel, nút bấm, bảng, tiêu đề — áp dụng TOÀN
        CỤC, lan tỏa tự động ra mọi màn hình dùng chung 1 bộ class, không cần sửa từng nơi riêng. */
@@ -1266,6 +1417,9 @@ const GlobalStyle = () => (
     .ktns-scrollbar { scrollbar-width: auto; scrollbar-color: var(--ink-light) var(--paper); }
     .ktns-sidebar-scroll { scrollbar-width: none !important; -ms-overflow-style: none; }
     .ktns-sidebar-scroll::-webkit-scrollbar { display: none !important; width: 0 !important; height: 0 !important; }
+    /* Thanh menu con dạng trượt ngang — ẩn thanh cuộn để giữ giao diện gọn. */
+    .ktns-menu-rail { scrollbar-width: none !important; -ms-overflow-style: none; }
+    .ktns-menu-rail::-webkit-scrollbar { display: none !important; height: 0 !important; }
     /* Mọi khung cuộn nội bộ trong bảng (max-h-[420px] overflow-y-auto) cũng dùng chung kiểu thanh
        cuộn rõ ràng này — trước đây mặc định của trình duyệt quá mảnh, gần như không thấy được. */
     div[class*="overflow-y-auto"]::-webkit-scrollbar { width: 10px; }
@@ -1274,7 +1428,7 @@ const GlobalStyle = () => (
     div[class*="overflow-y-auto"]::-webkit-scrollbar-thumb:hover { background: var(--ink); }
     div[class*="overflow-y-auto"] { scrollbar-width: auto; scrollbar-color: var(--ink-light) var(--paper); }
 
-    .ktns-tab-active { background: linear-gradient(90deg, color-mix(in srgb, var(--gold) 12%, var(--ink-light)), var(--ink-light)); box-shadow: inset 3px 0 0 var(--gold), inset 0 0 12px rgba(184, 145, 43, 0.08); }
+    .ktns-tab-active { background: #333A48; box-shadow: none; }
 
     /* ---------- Dark Mode — ghi đè trực tiếp lên các class Tailwind cố định (bg-white,
        text-charcoal...) bằng bộ chọn con dưới .dark, không cần sửa hàng nghìn className riêng lẻ. */
@@ -1296,6 +1450,10 @@ const GlobalStyle = () => (
       color-scheme: dark;
     }
     .ktns-app.dark .bg-white { background-color: #171A22 !important; }
+    /* Bảng lương chuẩn kế toán: các nền sáng tùy biến (header nhóm, zebra, hover) đổi sang tối */
+    .ktns-app.dark [class*="bg-[#F7F9FC]"] { background-color: #17243A !important; }
+    .ktns-app.dark [class*="bg-[#F8FAFC]"] { background-color: #151E2C !important; }
+    .ktns-app.dark [class*="hover:bg-[#F0F5FF]"]:hover { background-color: rgba(255, 255, 255, 0.05) !important; }
     .ktns-app.dark .bg-paper { background-color: #1E222C !important; }
     .ktns-app.dark .bg-paper\\/40, .ktns-app.dark .bg-paper\\/50, .ktns-app.dark .bg-paper\\/60 { background-color: #1E222C !important; }
     .ktns-app.dark [class~="bg-paper/30"], .ktns-app.dark [class~="bg-paper/45"],
@@ -1525,6 +1683,14 @@ const GlobalStyle = () => (
       background: repeating-linear-gradient(135deg, rgba(181,52,46,0.05), rgba(181,52,46,0.05) 6px, transparent 6px, transparent 12px);
     }
 
+    /* Nút chat nổi TỰ ẨN HẲN khi có bất kỳ drawer/modal nào đang mở (kể cả dark mode
+       và hộp thoại xác nhận dùng inset-y-0) — không che nội dung, không bấm nhầm. */
+    body:has([class*="fixed inset-0"]:not(.opacity-0):not(.hidden)) .domix-draggable-chat-button,
+    body:has([class*="fixed inset-y-0"]:not(.opacity-0):not(.hidden)) .domix-draggable-chat-button {
+      opacity: 0 !important; visibility: hidden !important; pointer-events: none !important;
+      transition: opacity 0.15s ease, visibility 0.15s ease;
+    }
+
     .ktns-link-chip {
       display: inline-flex; align-items: center; gap: 4px;
       font-size: 10px; color: var(--ink-light);
@@ -1554,6 +1720,11 @@ const GlobalStyle = () => (
     .bg-gold { background-color: var(--gold); }
     .bg-gold\/10 { background-color: color-mix(in srgb, var(--gold) 10%, transparent); }
     .bg-ink\/40 { background-color: color-mix(in srgb, var(--ink) 40%, transparent); }
+    /* Backdrop modal các biến thể — thiếu định nghĩa sẽ thành TRONG SUỐT + blur trắng,
+       người dùng tưởng "mất hẳn nội dung phía sau". Phải đủ bộ /45 /50 /55. */
+    .bg-ink\/45 { background-color: color-mix(in srgb, var(--ink) 45%, transparent); }
+    .bg-ink\/50 { background-color: color-mix(in srgb, var(--ink) 50%, transparent); }
+    .bg-ink\/55 { background-color: color-mix(in srgb, var(--ink) 55%, transparent); }
     .bg-stamp-red { background-color: var(--stamp-red); }
 
     .ktns-att-table th, .ktns-att-table td { white-space: nowrap; }
@@ -1652,7 +1823,11 @@ const SUPPORT_TYPES = {
   su_co: "Xử lý sự cố",
   cham_soc: "Chăm sóc định kỳ",
   upsale: "Tư vấn nâng cấp / Upsale",
+  tu_van_truoc_ban: "Tư vấn trước bán (khách chưa mua)",
 };
+// Loại KHÔNG cần đơn hàng — mọi loại còn lại là hỗ trợ SAU BÁN, bắt buộc gắn
+// customer_id + order_id (+ order_item_id khi đơn có dòng hàng). Backend kiểm tra lại.
+const SUPPORT_PRESALE_TYPES = new Set(["tu_van_truoc_ban"]);
 
 const SUPPORT_CHANNELS = {
   phone: "Gọi điện",
@@ -1663,6 +1838,13 @@ const SUPPORT_CHANNELS = {
 };
 
 const SUPPORT_ASSIGNABLE_ROLE_TYPES = new Set(["ky_thuat", "it", "cskh"]);
+
+// Ưu tiên chuẩn của yêu cầu hỗ trợ — dùng chung cho form và bảng.
+const SUPPORT_PRIORITY_META = {
+  cao: { label: "CAO", cls: "border-stamp-red/40 bg-stamp-red/10 text-stamp-red" },
+  trung_binh: { label: "TB", cls: "border-gold/40 bg-gold/10 text-gold" },
+  thap: { label: "THẤP", cls: "border-paper-line bg-paper text-muted" },
+};
 
 // Công nợ — Phải thu (khách hàng nợ mình) và Phải trả (mình nợ nhà cung cấp/đối tác).
 const initialDebts = []; // trống — chưa có dữ liệu thật, bắt đầu ghi nhận từ khi công ty vận hành
@@ -1806,6 +1988,18 @@ function monthlyCongFor(attendance, year, month) {
   }
   return total;
 }
+// Số ngày làm ĐỦ CÔNG trong tháng (mã X/L/O = trọn 1 công) — dùng riêng cho phụ cấp ăn trưa:
+// chỉ ngày làm đủ công mới được suất ăn; làm nửa ngày (P) hoặc nghỉ (N/K) thì không tính.
+function monthlyFullDaysFor(attendance, year, month) {
+  const rec = attendance?.[monthKey(year, month)];
+  const days = daysInMonthVN(year, month);
+  let total = 0;
+  for (let d = 1; d <= days; d++) {
+    const code = rec?.[d];
+    if (code && (ATTENDANCE_CODES[code]?.value ?? 0) === 1) total += 1;
+  }
+  return total;
+}
 // Phụ cấp chuyên cần — chỉ được hưởng ĐỦ nếu tháng đó không có ngày nghỉ có phép (N)
 // hay nghỉ không phép (K) nào. Có bất kỳ ngày N/K nào trong tháng là mất luôn phụ cấp này,
 // đúng thực tế phổ biến ở doanh nghiệp Việt Nam (thưởng chuyên cần toàn tháng, không chia nhỏ).
@@ -1860,6 +2054,31 @@ function formatDateVN(value) {
   if (parts.length === 3) return `${parts[2]}/${parts[1]}/${parts[0]}`;
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "—" : date.toLocaleDateString("vi-VN");
+}
+// Mốc thời gian đầy đủ dạng dễ đọc "05/08/2026 15:03" — dùng cho các cột lịch sử thay vì in
+// nguyên chuỗi ISO thô ("2026-08-05T08:56:47.366590+00:00") rất khó đọc.
+function fmtDateTimeVN(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// Giờ liên hệ hiển thị kiểu người đọc: "Hôm nay, 09:00" hoặc "09:00 · 20/07/2026" —
+// tuyệt đối không đưa chuỗi ISO (2026-07-20T09:00:00+07:00) lên giao diện.
+function fmtContactTime(value) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 10) || "—";
+  const pad = (n) => String(n).padStart(2, "0");
+  const time = `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  const now = new Date();
+  if (sameDay(date, now)) return `Hôm nay, ${time}`;
+  const hasTime = String(value).length > 10;
+  const dmy = `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
+  return hasTime ? `${time} · ${dmy}` : dmy;
 }
 
 function tenureMonths(joinedStr) {
@@ -2003,16 +2222,79 @@ const DEFAULT_PROBATION_RATE = 0.85;
 // ---------- Thưởng KPI theo mốc doanh số — CÓ THỂ CHỈNH SỬA, không còn cố định trong code ----------
 // Tính trên doanh số ĐÃ TRỪ VAT (đúng nguyên tắc "trừ VAT trước rồi mới tính %" đã áp dụng cho
 // Hợp tác phân phối) — đây là khoản thưởng THÊM, cộng vào lương chính/hoa hồng đã có sẵn.
-const DEFAULT_KPI_TIERS = {
-  sale: [{ minRevenue: 0, pct: 0 }, { minRevenue: 100000000, pct: 1.6 }, { minRevenue: 300000000, pct: 2.0 }],
-  ads: [{ minRevenue: 0, pct: 0 }, { minRevenue: 100000000, pct: 1.6 }, { minRevenue: 300000000, pct: 2.0 }],
+// Danh mục phụ cấp dùng chung. "prorate" = chia theo ngày công thực tế (nghỉ ngày nào trừ ngày
+// đó); "taxFreeCap" = mức miễn thuế TNCN theo quy định hiện hành, 0 nghĩa là tính thuế toàn bộ.
+const ALLOWANCE_TYPES = {
+  an_trua: { label: "Phụ cấp ăn trưa", prorate: true, taxFreeCap: 730000 },
+  xang_xe: { label: "Phụ cấp xăng xe / đi lại", prorate: true, taxFreeCap: 0 },
+  dien_thoai: { label: "Phụ cấp điện thoại", prorate: false, taxFreeCap: 0 },
+  ot: { label: "Phụ cấp làm thêm giờ (OT)", prorate: false, taxFreeCap: 0 },
+  sinh_con: { label: "Trợ cấp sinh con / thai sản", prorate: false, taxFreeCap: 0 },
+  nha_o: { label: "Phụ cấp nhà ở", prorate: false, taxFreeCap: 0 },
+  doc_hai: { label: "Phụ cấp độc hại / trách nhiệm", prorate: false, taxFreeCap: 0 },
+  khac: { label: "Phụ cấp khác", prorate: false, taxFreeCap: 0 },
 };
-const KPI_BONUS_VAT_RATE = 8; // % VAT giả định trừ trước khi tính thưởng KPI — đổi ở đây nếu công ty áp mức khác
+
+function allowanceTypeLabel(type) {
+  return ALLOWANCE_TYPES[type]?.label || ALLOWANCE_TYPES.khac.label;
+}
+
+// Tính từng khoản phụ cấp tự khai báo của một nhân sự trong tháng.
+function computeEmployeeAllowances(employee, standardDays, actualDays, hasAnyAttendance) {
+  const list = Array.isArray(employee?.allowances) ? employee.allowances : [];
+  const items = list.map((item) => {
+    const meta = ALLOWANCE_TYPES[item?.type] || ALLOWANCE_TYPES.khac;
+    const configured = Number(item?.amount) || 0;
+    const prorate = item?.prorate === undefined ? meta.prorate : Boolean(item.prorate);
+    // Khoản khai báo thêm là khoản PHÁT SINH THỰC TẾ kế toán tự nhập → hưởng ĐÚNG số đã khai.
+    // Chỉ khoản được đánh dấu "chia theo ngày công" mới prorate theo công (và cần có chấm công).
+    let amount = configured;
+    if (prorate) {
+      amount = (!hasAnyAttendance || standardDays <= 0) ? 0 : (configured / standardDays) * Math.min(actualDays, standardDays);
+    }
+    return {
+      id: item?.id ?? `${item?.type || "khac"}-${configured}`,
+      type: item?.type || "khac",
+      label: item?.label?.trim() || meta.label,
+      configured,
+      amount,
+      deducted: Math.max(0, configured - amount),
+      prorate,
+      note: item?.note || "",
+    };
+  });
+  return {
+    items,
+    total: items.reduce((sum, item) => sum + item.amount, 0),
+    configuredTotal: items.reduce((sum, item) => sum + item.configured, 0),
+    deductedTotal: items.reduce((sum, item) => sum + item.deducted, 0),
+  };
+}
+
+// Thưởng KPI theo VẠCH DOANH THU: đặt vạch cơ bản X đ — doanh thu tháng VƯỢT vạch nào
+// thì hưởng đúng Y% hoa hồng của vạch đó, tính TRÊN TOÀN BỘ doanh thu tháng.
+// Ví dụ mặc định: vượt 30.000.000đ → hưởng 10% hoa hồng doanh thu.
+const DEFAULT_KPI_TIERS = {
+  sale: [{ minRevenue: 0, pct: 0 }, { minRevenue: 30000000, pct: 10 }],
+  ads: [{ minRevenue: 0, pct: 0 }, { minRevenue: 30000000, pct: 10 }],
+};
 function computeKpiMilestoneBonus(revenue, tiers) {
   if (!revenue || !tiers || tiers.length === 0) return { netOfVat: 0, pct: 0, bonusAmount: 0 };
-  const { beforeTax: netOfVat } = splitVAT(revenue, KPI_BONUS_VAT_RATE);
-  const pct = lookupCommissionTier(netOfVat, tiers);
-  return { netOfVat, pct, bonusAmount: netOfVat * (pct / 100) };
+  // Đạt/vượt vạch cao nhất nào thì lấy % của vạch đó — hoa hồng trên chính doanh thu.
+  const pct = lookupCommissionTier(revenue, tiers);
+  return { netOfVat: revenue, pct, bonusAmount: revenue * (pct / 100) };
+}
+// Vạch RIÊNG chấm cho từng nhân viên (popup Chấm KPI) ưu tiên hơn vạch chung:
+// doanh thu tháng VƯỢT vạch riêng → hưởng đúng % đã chấm trên TOÀN BỘ doanh thu tháng.
+function resolveKpiMilestone(e, revenue, roleTiers) {
+  const threshold = Number(e?.kpiRevenueThreshold) || 0;
+  const pct = Number(e?.kpiRevenuePct) || 0;
+  if (threshold > 0 && pct > 0) {
+    return (Number(revenue) || 0) >= threshold
+      ? { netOfVat: revenue, pct, bonusAmount: revenue * (pct / 100) }
+      : { netOfVat: revenue, pct: 0, bonusAmount: 0 };
+  }
+  return computeKpiMilestoneBonus(revenue, roleTiers);
 }
 
 function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAULT_KPI_TIERS) {
@@ -2025,7 +2307,8 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
     const standardDays = standardWorkDaysFor(year, month);
     return {
       contractType: e.contractType || "chinh_thuc", contractLabel: contract.label, probationRate: 1, periodYear: year, periodMonth: month,
-      months, standardDays, actualDays: 0, daySalary: (Number(e.dailySalary) > 0 ? Number(e.dailySalary) : e.baseSalary / standardDays), salaryByDays: 0, kpiBonus: 0, seniorityAllowance: 0, mealAllowance: 0, mealAllowancePerDay: standardDays > 0 ? (Number(e.mealAllowance) || 0) / standardDays : 0, mealAllowanceDeducted: Number(e.mealAllowance) || 0, configuredMealAllowance: Number(e.mealAllowance) || 0, otherBonus: 0, advance: 0, attendanceBonus: 0, hasAbsence: false, kpiMilestoneBonus: 0, kpiMilestonePct: 0, kpiMilestoneNetRevenue: 0, grossIncome: 0,
+      customAllowances: [], customAllowanceTotal: 0, customAllowanceConfigured: 0, customAllowanceDeducted: 0,
+      months, standardDays, actualDays: 0, fullWorkDays: 0, daySalary: (Number(e.dailySalary) > 0 ? Number(e.dailySalary) : e.baseSalary / standardDays), salaryByDays: 0, kpiBonus: 0, seniorityAllowance: 0, mealAllowance: 0, mealAllowancePerDay: standardDays > 0 ? (Number(e.mealAllowance) || 0) / standardDays : 0, mealAllowanceDeducted: Number(e.mealAllowance) || 0, configuredMealAllowance: Number(e.mealAllowance) || 0, otherBonus: 0, advance: 0, attendanceBonus: 0, hasAbsence: false, kpiMilestoneBonus: 0, kpiMilestonePct: 0, kpiMilestoneNetRevenue: 0, grossIncome: 0,
       usesRevenueModel: e.roleType === "sale" || e.roleType === "ads", mainSalary: 0, commission: 0, compBonus: 0, techUpsale: 0, compStatusLabel: "Tháng chưa bắt đầu — chưa có dữ liệu", compRate: null, revenueUsed: 0,
       bhxhNV: 0, bhytNV: 0, bhtnNV: 0, employeeInsurance: 0,
       bhxhDN: 0, bhytDN: 0, bhtnDN: 0, bhtnldBnnDN: 0, employerInsurance: 0,
@@ -2052,11 +2335,17 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
   // ngày nào trong tháng thì KHÔNG phát sinh các khoản này, tránh hiện "có lương" dù chưa ai làm
   // việc gì cả (lỗi trước đây: các khoản này cộng vô điều kiện, không kiểm tra hasAnyAttendance).
   const seniorityAllowance = hasAnyAttendance ? e.baseSalary * seniorityRate : 0;
+  // Ăn trưa: tổng phụ cấp ÷ công chuẩn = suất 1 ngày; CHỈ ngày làm ĐỦ công (X/L/O) mới được
+  // suất ăn — làm nửa ngày (P) hoặc nghỉ (N/K) thì ngày đó không tính, không có khái niệm
+  // "trừ do nghỉ" nữa: có đủ công ngày nào cộng đúng ngày đó.
   const configuredMealAllowance = Number(e.mealAllowance) || 0;
+  const fullWorkDays = monthlyFullDaysFor(e.attendance, year, month);
   const mealAllowancePerDay = standardDays > 0 ? configuredMealAllowance / standardDays : 0;
-  const mealAllowance = hasAnyAttendance ? mealAllowancePerDay * Math.min(actualDays, standardDays) : 0;
+  const mealAllowance = hasAnyAttendance ? mealAllowancePerDay * Math.min(fullWorkDays, standardDays) : 0;
   const mealAllowanceDeducted = Math.max(0, configuredMealAllowance - mealAllowance);
   const attendanceBonus = hasAnyAttendance && !hasAbsence ? (e.attendanceBonus || 0) : 0;
+  // Các khoản phụ cấp tự khai báo (xăng xe, OT, sinh con...) — cộng thêm ngoài ăn trưa/thâm niên.
+  const customAllowances = computeEmployeeAllowances(e, standardDays, actualDays, hasAnyAttendance);
   let mainSalary, kpiBonus = 0, commission = 0, compBonus = 0, techUpsale = 0, compStatusLabel = null, compRate = null, revenueUsed = 0;
   let kpiMilestoneBonus = 0, kpiMilestonePct = 0, kpiMilestoneNetRevenue = 0;
 
@@ -2070,7 +2359,7 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
       commission = comp.commission; // hoa hồng lũy tiến vẫn cộng thêm riêng khi đạt mốc 100tr+, không đổi.
       compStatusLabel = comp.statusLabel;
       compRate = comp.rate;
-      const kpiCalc = computeKpiMilestoneBonus(revenueUsed, kpiTiers.sale);
+      const kpiCalc = resolveKpiMilestone(e, revenueUsed, kpiTiers.sale);
       kpiMilestoneBonus = kpiCalc.bonusAmount; kpiMilestonePct = kpiCalc.pct; kpiMilestoneNetRevenue = kpiCalc.netOfVat;
     }
   } else if (e.roleType === "ads") {
@@ -2084,7 +2373,7 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
       compBonus = comp.bonus;
       compStatusLabel = comp.statusLabel;
       compRate = comp.rate;
-      const kpiCalc = computeKpiMilestoneBonus(revenueUsed, kpiTiers.ads);
+      const kpiCalc = resolveKpiMilestone(e, revenueUsed, kpiTiers.ads);
       kpiMilestoneBonus = kpiCalc.bonusAmount; kpiMilestonePct = kpiCalc.pct; kpiMilestoneNetRevenue = kpiCalc.netOfVat;
     }
   } else if (e.roleType === "ky_thuat") {
@@ -2096,7 +2385,7 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
   }
   mainSalary *= probationRate; // thử việc: nhân hệ số % lương chính thức
 
-  const grossIncome = mainSalary + kpiBonus + commission + compBonus + techUpsale + seniorityAllowance + mealAllowance + otherBonus + attendanceBonus + kpiMilestoneBonus;
+  const grossIncome = mainSalary + kpiBonus + commission + compBonus + techUpsale + seniorityAllowance + mealAllowance + otherBonus + attendanceBonus + kpiMilestoneBonus + customAllowances.total;
 
   // Bảo hiểm chỉ áp dụng cho hợp đồng chính thức VÀ đủ NGƯỠNG ≥14 ngày công trong tháng (Điều 42
   // Quyết định 595/QĐ-BHXH: NLĐ nghỉ không lương từ 14 ngày làm việc trở lên trong tháng thì
@@ -2105,15 +2394,26 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
   // mới vào làm/nghỉ việc giữa tháng (VD 1-2 ngày công) bị trừ bảo hiểm nguyên tháng, có thể vượt
   // quá cả thu nhập họ kiếm được trong tháng đó và làm "thực lĩnh" ra số âm.
   const qualifiesForInsurance = actualDays >= INSURANCE_MIN_WORKDAYS;
-  const bhxhNV = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.08 : 0;
-  const bhytNV = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.015 : 0;
-  const bhtnNV = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.01 : 0;
+  // CƠ CHẾ MỚI: bảo hiểm khai theo SỐ TIỀN CỐ ĐỊNH cho TỪNG nhân viên (cả phần NV đóng
+  // lẫn phần DN đóng) — bật/chỉnh ở popup "Bảo hiểm" trong Bảng lương. Nhân viên chưa
+  // bật chế độ tiền cố định vẫn tính theo % luật như cũ (tương thích ngược).
+  const insuranceFixed = Number(e.insuranceFixedMode) === 1;
+  let bhxhNV; let bhytNV; let bhtnNV; let bhxhDN; let bhytDN; let bhtnDN; let bhtnldBnnDN;
+  if (insuranceFixed) {
+    bhxhNV = qualifiesForInsurance ? Math.max(0, Number(e.insuranceEmployeeAmount) || 0) : 0;
+    bhytNV = 0; bhtnNV = 0;
+    bhxhDN = qualifiesForInsurance ? Math.max(0, Number(e.insuranceEmployerAmount) || 0) : 0;
+    bhytDN = 0; bhtnDN = 0; bhtnldBnnDN = 0;
+  } else {
+    bhxhNV = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.08 : 0;
+    bhytNV = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.015 : 0;
+    bhtnNV = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.01 : 0;
+    bhxhDN = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.17 : 0;
+    bhytDN = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.03 : 0;
+    bhtnDN = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.01 : 0;
+    bhtnldBnnDN = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.005 : 0;
+  }
   const employeeInsurance = bhxhNV + bhytNV + bhtnNV;
-
-  const bhxhDN = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.17 : 0;
-  const bhytDN = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.03 : 0;
-  const bhtnDN = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.01 : 0;
-  const bhtnldBnnDN = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.005 : 0;
   const employerInsurance = bhxhDN + bhytDN + bhtnDN + bhtnldBnnDN;
 
   let personalDeduction = 0, taxableIncome = 0, thueTNCN = 0;
@@ -2134,9 +2434,11 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
 
   return {
     contractType: e.contractType || "chinh_thuc", contractLabel: contract.label, probationRate, periodYear: year, periodMonth: month,
-    months, standardDays, actualDays, daySalary, salaryByDays, kpiBonus, seniorityAllowance, mealAllowance, mealAllowancePerDay, mealAllowanceDeducted, configuredMealAllowance, otherBonus, advance, attendanceBonus, hasAbsence, kpiMilestoneBonus, kpiMilestonePct, kpiMilestoneNetRevenue, grossIncome,
+    months, standardDays, actualDays, fullWorkDays, daySalary, salaryByDays, kpiBonus, seniorityAllowance, mealAllowance, mealAllowancePerDay, mealAllowanceDeducted, configuredMealAllowance, otherBonus, advance, attendanceBonus, hasAbsence, kpiMilestoneBonus, kpiMilestonePct, kpiMilestoneNetRevenue, grossIncome,
+    customAllowances: customAllowances.items, customAllowanceTotal: customAllowances.total,
+    customAllowanceConfigured: customAllowances.configuredTotal, customAllowanceDeducted: customAllowances.deductedTotal,
     usesRevenueModel, mainSalary, commission, compBonus, techUpsale, compStatusLabel, compRate, revenueUsed,
-    bhxhNV, bhytNV, bhtnNV, employeeInsurance,
+    bhxhNV, bhytNV, bhtnNV, employeeInsurance, insuranceFixed,
     bhxhDN, bhytDN, bhtnDN, bhtnldBnnDN, employerInsurance,
     personalDeduction, taxableIncome: Math.max(taxableIncome, 0), thueTNCN,
     net, employerTotalCost,
@@ -2277,7 +2579,17 @@ function exportPerformanceExcel(employees, financialSummary) {
   XLSX.writeFile(wb, `DOMIX_Hieu_suat_nhan_vien_${TODAY_STR}.xlsx`);
 }
 
-function exportPayrollExcel(payrollRows) {
+function exportPayrollExcel(payrollRows, payments = [], midMonthRequests = [], period = {}) {
+  const paymentOfRow = (row) => (payments || []).find((item) => (
+    Number(item.employeeId) === Number(row.id)
+    && Number(item.year) === Number(period.year)
+    && Number(item.month) === Number(period.month)
+  ));
+  const midMonthPaidOfRow = (row) => (midMonthRequests || [])
+    .filter((item) => Number(item.employeeId) === Number(row.id) && item.paid
+      && new Date(item.date).getFullYear() === Number(period.year)
+      && new Date(item.date).getMonth() + 1 === Number(period.month))
+    .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   const wb = XLSX.utils.book_new();
 
   const main = payrollRows.map((r) => ({
@@ -2294,6 +2606,8 @@ function exportPayrollExcel(payrollRows) {
     "PC thâm niên": Math.round(r.seniorityAllowance),
     "PC ăn trưa": Math.round(r.mealAllowance),
     "PC chuyên cần": Math.round(r.attendanceBonus), "Mất chuyên cần": r.hasAbsence ? "Có" : "Không",
+    "Phụ cấp khác (xăng xe, OT, sinh con...)": Math.round(r.customAllowanceTotal || 0),
+    "Chi tiết phụ cấp khác": (r.customAllowances || []).filter((item) => item.amount > 0).map((item) => `${item.label}: ${Math.round(item.amount)}`).join(" | ") || "—",
     "Thưởng khác": Math.round(r.otherBonus),
     "Tổng thu nhập": Math.round(r.grossIncome),
     "BHXH-BHYT-BHTN (NV đóng)": Math.round(r.employeeInsurance),
@@ -2301,12 +2615,17 @@ function exportPayrollExcel(payrollRows) {
     "Thu nhập chịu thuế": Math.round(r.taxableIncome),
     "Thuế TNCN": Math.round(r.thueTNCN),
     "Tạm ứng/Khấu trừ": Math.round(r.advance),
+    "Đã ứng giữa tháng": Math.round(midMonthPaidOfRow(r)),
     "Thực lãnh": Math.round(r.net),
+    "Đã trả": Math.round(Number(paymentOfRow(r)?.amount) || 0),
+    "Hình thức trả": paymentOfRow(r) ? (paymentOfRow(r).paymentMethod === "tien_mat" ? "Tiền mặt" : "Chuyển khoản") : "Chưa chi",
+    "Ngày trả": paymentOfRow(r)?.paidDate || "",
+    "Còn phải trả": Math.round(Math.max(0, (Number(r.net) || 0) - (Number(paymentOfRow(r)?.amount) || 0))),
     "BH doanh nghiệp đóng": Math.round(r.employerInsurance),
     "Tổng chi phí DN": Math.round(r.employerTotalCost),
   }));
   const ws1 = XLSX.utils.json_to_sheet(main);
-  ws1["!cols"] = new Array(25).fill({ wch: 16 });
+  ws1["!cols"] = new Array(33).fill({ wch: 16 });
   XLSX.utils.book_append_sheet(wb, ws1, "Bảng lương chi tiết");
 
   const insurance = payrollRows.map((r) => ({
@@ -2423,7 +2742,7 @@ function RangeModePicker({ rangeMode, setRangeMode, rangeFrom, setRangeFrom, ran
         <CalendarCheck size={12} /> {label} <ChevronRight size={11} className={`transition-transform ${show ? "rotate-90" : ""}`} />
       </button>
       {show && (
-        <div className="absolute top-full right-0 mt-1 w-[min(26rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] bg-white border border-paper-line rounded-md shadow-lg p-3 z-20">
+        <div className="absolute left-0 top-full z-[80] mt-1 w-[min(26rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] rounded-md border border-paper-line bg-white p-3 shadow-xl">
           <button onClick={() => { setRangeMode("month"); setShow(false); }} className={`w-full text-left text-xs px-2 py-1.5 rounded ${rangeMode === "month" ? "bg-paper font-medium" : "hover:bg-paper"}`}>Cả tháng {reportMonth}/{reportYear}</button>
           <button onClick={() => { setRangeMode("all"); setShow(false); }} className={`w-full text-left text-xs px-2 py-1.5 rounded ${rangeMode === "all" ? "bg-paper font-medium" : "hover:bg-paper"}`}>Toàn bộ lịch sử</button>
           <div className={`px-2 py-1.5 rounded ${rangeMode === "custom" ? "bg-paper" : ""}`}>
@@ -2439,11 +2758,35 @@ function RangeModePicker({ rangeMode, setRangeMode, rangeFrom, setRangeFrom, ran
     </div>
   );
 }
+// Dòng thống kê gọn MỘT hàng — thay cho các dãy thẻ to choán màn hình; bảng dữ liệu là nhân vật
+// chính của trang, số liệu tổng chỉ cần lướt qua được.
+function InlineStats({ items, dark, compact }) {
+  const rendered = (items || []).filter(Boolean);
+  if (rendered.length === 0) return null;
+  return (
+    <div className={`ktns-menu-rail flex shrink-0 items-center gap-3 overflow-x-auto rounded-lg border px-3 ${compact ? "py-1.5" : "py-2"} ${dark ? "border-white/10 bg-white/5" : "border-paper-line bg-white"}`}>
+      {rendered.map((item, index) => (
+        <React.Fragment key={item.label}>
+          {index > 0 && <span className={`h-4 w-px shrink-0 ${dark ? "bg-white/10" : "bg-paper-line"}`} />}
+          {/* compact: chữ giải thích chuyển vào tooltip — dữ liệu là trung tâm, không phải chú thích. */}
+          <span
+            className={`flex shrink-0 items-center gap-1.5 whitespace-nowrap text-xs ${compact && item.sub ? "cursor-help" : ""}`}
+            title={compact && item.sub ? `${item.label}: ${item.sub}` : undefined}
+          >
+            <span className={`${dark ? "text-[#8fa4c8]" : "text-muted"} ${compact && item.sub ? "underline decoration-dotted underline-offset-2" : ""}`}>{item.label}</span>
+            <strong className={`ktns-mono text-sm ${item.className || (dark ? "text-white" : "text-ink")}`}>{item.value}</strong>
+            {!compact && item.sub && <span className={`text-[10px] ${dark ? "text-[#7d90b3]" : "text-muted"}`}>{item.sub}</span>}
+          </span>
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
 function KpiCard({ icon: Icon, label, value, tone, sub }) {
   const toneColor = tone === "up" ? "var(--ledger-green)" : tone === "down" ? "var(--stamp-red)" : "var(--charcoal)";
   return (
     <div className="relative bg-white rounded-lg border border-paper-line p-3.5 flex flex-col gap-1.5 shadow-sm hover:shadow-md transition-all duration-200 overflow-hidden">
-      <div className="absolute top-0 left-0 w-full h-[2px]" style={{ background: `linear-gradient(90deg, var(--gold), transparent)`, opacity: 0.4 }} />
       <div className="flex items-center gap-2">
         <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0" style={{ background: `color-mix(in srgb, ${toneColor} 12%, transparent)` }}>
           <Icon size={12} color={toneColor} />
@@ -2535,30 +2878,74 @@ function SectionViewSwitcher({ value, onChange, options }) {
     };
   }, []);
 
+  // Menu con của mỗi mục lớn là một THANH NGANG TRƯỢT ở đầu trang: mục đang chọn giữ nguyên kích
+  // thước, các mục còn lại không bị bóp méo, thừa chỗ thì cuộn ngang thay vì xuống dòng lộn xộn.
+  const railRef = useRef(null);
+  const [railOverflow, setRailOverflow] = useState(false);
+
+  useEffect(() => {
+    const rail = railRef.current;
+    if (!rail) return undefined;
+    const updateOverflow = () => setRailOverflow(rail.scrollWidth > rail.clientWidth + 4);
+    updateOverflow();
+    const resizeObserver = typeof ResizeObserver !== "undefined" ? new ResizeObserver(updateOverflow) : null;
+    resizeObserver?.observe(rail);
+    window.addEventListener("resize", updateOverflow);
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updateOverflow);
+    };
+  }, [options.length]);
+
+  useEffect(() => {
+    const rail = railRef.current;
+    const activeButton = rail?.querySelector('[data-active="true"]');
+    activeButton?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+  }, [value]);
+
+  const slide = (direction) => {
+    const rail = railRef.current;
+    if (!rail) return;
+    rail.scrollBy({ left: direction * Math.max(200, rail.clientWidth * 0.6), behavior: "smooth" });
+  };
+
   return (
     <div className="sticky z-20" style={{ top: stickyTop }}>
-      <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.max(1, options.length)}, minmax(0, 1fr))` }}>
-        {options.map((option) => {
-          const active = value === option.id;
-          const Icon = option.icon || Layers;
-          return (
-            <button
-              key={option.id}
-              type="button"
-              onClick={() => onChange(option.id)}
-              className={`min-h-[46px] min-w-0 rounded-xl border px-3 py-2.5 text-xs font-semibold transition-all duration-150 ${active ? "border-[#5f8df8] bg-[linear-gradient(180deg,#315ba5,#26457b)] text-white shadow-[0_8px_20px_rgba(49,91,165,0.35)]" : "border-[#29364f] bg-[#141c2a] text-[#ccd6e5] hover:border-[#40619c] hover:bg-[#192438] hover:text-white"}`}
-              title={option.label}
-            >
-              <span className="flex min-w-0 items-center justify-center gap-2">
-                <Icon size={14} className="shrink-0" />
-                <span className="truncate">{option.label}</span>
-                {option.count !== undefined && (
-                  <span className={`inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] ktns-mono ${active ? "bg-white/18 text-white" : "bg-[#1f2a3d] text-[#9db0cd]"}`}>{option.count}</span>
-                )}
-              </span>
-            </button>
-          );
-        })}
+      <div className="relative flex items-center gap-1.5">
+        {railOverflow && (
+          <button type="button" onClick={() => slide(-1)} aria-label="Xem mục trước" className="hidden h-[46px] w-8 shrink-0 items-center justify-center rounded-xl border border-[#29364f] bg-[#141c2a] text-[#ccd6e5] hover:border-[#40619c] hover:text-white sm:flex">
+            <ChevronLeft size={16} />
+          </button>
+        )}
+        <div ref={railRef} className="ktns-menu-rail flex min-w-0 flex-1 gap-2 overflow-x-auto scroll-smooth pb-0.5">
+          {options.map((option) => {
+            const active = value === option.id;
+            const Icon = option.icon || Layers;
+            return (
+              <button
+                key={option.id}
+                type="button"
+                data-active={active ? "true" : "false"}
+                onClick={() => onChange(option.id)}
+                className={`min-h-[46px] shrink-0 whitespace-nowrap rounded-xl border px-4 py-2.5 text-xs font-semibold transition-colors duration-150 ${active ? "border-[#5f8df8] bg-[linear-gradient(180deg,#315ba5,#26457b)] text-white shadow-[0_8px_20px_rgba(49,91,165,0.35)]" : "border-[#29364f] bg-[#141c2a] text-[#ccd6e5] hover:border-[#40619c] hover:bg-[#192438] hover:text-white"}`}
+                title={option.label}
+              >
+                <span className="flex items-center gap-2">
+                  <Icon size={14} className="shrink-0" />
+                  <span>{option.label}</span>
+                  {option.count !== undefined && (
+                    <span className={`inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full px-1.5 text-[10px] font-bold ktns-mono ${Number(option.count) > 0 ? "bg-stamp-red text-white" : active ? "bg-white/20 text-white" : "bg-paper text-muted"}`}>{option.count}</span>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {railOverflow && (
+          <button type="button" onClick={() => slide(1)} aria-label="Xem mục sau" className="hidden h-[46px] w-8 shrink-0 items-center justify-center rounded-xl border border-[#29364f] bg-[#141c2a] text-[#ccd6e5] hover:border-[#40619c] hover:text-white sm:flex">
+            <ChevronRight size={16} />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -2676,6 +3063,7 @@ function KpiBar({ value }) {
 // kỳ báo cáo hiện tại và cho báo cáo theo Quý, để mỗi tháng luôn ra đúng số của tháng đó.
 function summarizeMarketingFinance(marketingLogs = [], year, month) {
   return (marketingLogs || []).reduce((summary, log) => {
+    if (log.archived) return summary;
     const d = new Date(log.date);
     if (Number.isNaN(d.getTime()) || d.getFullYear() !== year || d.getMonth() + 1 !== month) return summary;
     summary.revenue += Number(log.revenue) || 0;
@@ -2684,7 +3072,7 @@ function summarizeMarketingFinance(marketingLogs = [], year, month) {
   }, { revenue: 0, spend: 0 });
 }
 
-function computeMonthSnapshot(year, month, { transactions = [], orders = [], marketingLogs = [], distributionOrders = [], employees = [], kpiTiers = DEFAULT_KPI_TIERS }) {
+function computeMonthSnapshot(year, month, { transactions = [], orders = [], marketingLogs = [], distributionOrders = [], employees = [], inventory = [], kpiTiers = DEFAULT_KPI_TIERS }) {
   const inMonth = (dateStr) => {
     const d = new Date(dateStr);
     return !Number.isNaN(d.getTime()) && d.getFullYear() === year && d.getMonth() + 1 === month;
@@ -2700,13 +3088,10 @@ function computeMonthSnapshot(year, month, { transactions = [], orders = [], mar
   const chi = revenueLedger.totalCashOut;
   const missingInvoices = orders.filter((o) => inMonth(o.date) && recognizedOrderAmount(o) > 0 && o.invoiceStatus !== "issued").length;
 
-  const revenueByEmployee = {};
-  const upsaleByEmployee = {};
-  orders.filter((o) => inMonth(o.date) && recognizedOrderAmount(o) > 0).forEach((o) => {
-    if (!o.saleEmployeeId) return;
-    if ((o.dealType || "sale") === "upsale") upsaleByEmployee[o.saleEmployeeId] = (upsaleByEmployee[o.saleEmployeeId] || 0) + recognizedOrderAmount(o);
-    else revenueByEmployee[o.saleEmployeeId] = (revenueByEmployee[o.saleEmployeeId] || 0) + recognizedOrderAmount(o);
-  });
+  // Hoa hồng/thưởng doanh số tính trên tiền THỰC THU (khách đã thanh toán thật) — đơn chốt
+  // nhưng chưa thu tiền CHƯA phát sinh thưởng; hoàn tiền/hủy thanh toán tự giảm thưởng.
+  // Dùng chung hàm thuần túy commissionBaseByEmployee (có unit test riêng trong domain.test.js).
+  const { sale: revenueByEmployee, upsale: upsaleByEmployee } = commissionBaseByEmployee(orders, year, month);
   const marketingByEmployee = {};
   (marketingLogs || []).filter((l) => inMonth(l.date)).forEach((l) => {
     const cur = marketingByEmployee[l.employeeId] || { adSpend: 0, adRevenue: 0, conversions: 0 };
@@ -2728,12 +3113,49 @@ function computeMonthSnapshot(year, month, { transactions = [], orders = [], mar
   const employerCost = payrollRows.reduce((a, r) => a + r.employerTotalCost, 0);
   const payrollCashSpent = txThisMonth.filter((t) => ["payroll", "payroll_payment", "bangluong", "salary_payment"].includes(String(t.sourceModule || t.source || "").toLowerCase())).reduce((a, t) => a + (Number(t.amount) || 0), 0);
   const operatingExpense = Math.max(0, chi - payrollCashSpent);
-  const accountingProfit = revenue - operatingExpense - payrollTotal - employerInsurance;
+  // VAT đầu ra + giá vốn của các đơn trong tháng — lợi nhuận kế toán dùng doanh thu
+  // CHƯA VAT trừ giá vốn (khớp Sổ cái 511/632), không phải tổng giá trị đơn gồm VAT.
+  const productById = new Map((inventory || []).map((p) => [String(p.id), p]));
+  let vatOutput = 0;
+  let cogs = 0;
+  orders.filter((o) => inMonth(o.date) && recognizedOrderAmount(o) > 0).forEach((o) => {
+    const items = Array.isArray(o.items) && o.items.length ? o.items : null;
+    if (items) {
+      items.forEach((line) => {
+        const rate = Number(line.vatRate) || 0;
+        const lineTotal = Number(line.lineTotal) || 0;
+        // Tròn VỀ ĐỒNG theo TỪNG DÒNG — khớp sổ cái (_split_vat) và financial_summary backend.
+        if (rate > 0) vatOutput += Math.round(lineTotal - lineTotal / (1 + rate / 100));
+        const product = line.productId != null ? productById.get(String(line.productId)) : null;
+        if (product) cogs += (Number(line.quantity) || 0) * (Number(product.costPrice) || 0);
+      });
+    } else {
+      const amount = recognizedOrderAmount(o);
+      const product = o.productId != null ? productById.get(String(o.productId)) : null;
+      const rate = Number(o.vatRate ?? product?.vatRate) || 0;
+      if (rate > 0) vatOutput += Math.round(amount - amount / (1 + rate / 100));
+      if (product) cogs += (Number(o.quantity) || 1) * (Number(product.costPrice) || 0);
+    }
+  });
+  const revenueExVat = Math.max(0, revenue - vatOutput);
+  // Chi phí Marketing hằng ngày (adSpend) không tự sinh giao dịch Thu Chi. Nếu khoản chi
+  // quảng cáo ĐÃ được ghi vào sổ Thu Chi (danh mục marketing_ads / nguồn marketing_daily)
+  // thì nó đã nằm trong operatingExpense — chỉ trừ thêm PHẦN CHƯA GHI SỔ, khớp backend.
+  const marketingSpend = summarizeMarketingFinance(marketingLogs, year, month).spend;
+  const marketingTxSpent = txThisMonth
+    .filter((t) => t.kind === "chi"
+      && !["cancelled", "canceled", "rejected", "huy", "đã hủy", "da_huy"].includes(String(t.status || "").toLowerCase())
+      && (String(t.category || "").trim() === "marketing_ads"
+        || String(t.sourceModule || t.source || "").toLowerCase() === "marketing_daily"))
+    .reduce((a, t) => a + (Number(t.amount) || 0), 0);
+  const marketingSpendUnrecorded = Math.max(0, marketingSpend - marketingTxSpent);
+  const accountingProfit = revenueExVat - cogs - operatingExpense - payrollTotal - employerInsurance - marketingSpendUnrecorded;
   const netCashFlow = thu - chi;
 
   return {
-    year, month, revenue, recognizedRevenue: revenue, thu, cashCollected, cashReceived: thu,
-    chi, cashSpent: chi, operatingExpense, payrollCashSpent, netCashFlow,
+    year, month, revenue, recognizedRevenue: revenue, revenueExVat, vatOutput, cogs,
+    thu, cashCollected, cashReceived: thu,
+    chi, cashSpent: chi, operatingExpense, payrollCashSpent, netCashFlow, marketingSpend,
     profit: accountingProfit, accountingProfit, missingInvoices,
     payrollTotal, employeeInsurance, employerInsurance, taxTotal, employerCost, payrollRows,
     ...revenueLedger,
@@ -2743,7 +3165,7 @@ function quarterOf(month) { return Math.ceil(month / 3); }
 function quarterMonths(year, quarter) { return [1, 2, 3].map((i) => ({ year, month: (quarter - 1) * 3 + i })); }
 
 // ---------- Main App ----------
-const DOMIX_THEME_STORAGE_KEY = "domix_theme_mode";
+const DOMIX_THEME_STORAGE_KEY = "domix_theme_mode_v2"; // v2: mặc định giao diện SÁNG kiểu TailAdmin
 const DOMIX_TASK_SEEN_STORAGE_PREFIX = "domix_task_seen_v1:";
 
 const DOMIX_TASK_SOUND_STORAGE_PREFIX = "domix_task_sound_v2:";
@@ -2805,12 +3227,17 @@ function clearTaskPeriodicReminderAt(email = "") {
   }
 }
 
-function getTaskAudioContext() {
+// Chrome chỉ cho phép TẠO/chạy AudioContext sau một thao tác thật của người dùng. Vì vậy chỉ hàm
+// unlock (chạy trong handler click/phím) mới được phép khởi tạo; các nơi khác chỉ dùng lại context
+// đã có, tránh cảnh báo "The AudioContext was not allowed to start".
+function getTaskAudioContext(allowCreate = false) {
   if (typeof window === "undefined") return null;
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextClass) return null;
   try {
-    if (!domixTaskAudioContext || domixTaskAudioContext.state === "closed") domixTaskAudioContext = new AudioContextClass();
+    if (domixTaskAudioContext && domixTaskAudioContext.state !== "closed") return domixTaskAudioContext;
+    if (!allowCreate) return null;
+    domixTaskAudioContext = new AudioContextClass();
     return domixTaskAudioContext;
   } catch {
     return null;
@@ -2818,14 +3245,14 @@ function getTaskAudioContext() {
 }
 
 function unlockTaskAlertSound() {
-  const context = getTaskAudioContext();
+  const context = getTaskAudioContext(true);
   if (!context) return false;
   if (context.state === "suspended") context.resume().catch(() => {});
   return context.state === "running";
 }
 
 function playTaskAlertSound() {
-  const context = getTaskAudioContext();
+  const context = getTaskAudioContext(false);
   if (!context) return false;
   // Trình duyệt thường khóa Web Audio cho tới khi người dùng bấm vào trang.
   // Không đánh dấu đã phát khi context chưa chạy; App sẽ giữ cảnh báo và phát lại sau lần bấm đầu tiên.
@@ -2906,6 +3333,35 @@ function writeSeenTaskIds(email = "", ids = []) {
 
 function DomixApp({ authUser, onLogout }) {
   const [tab, setTab] = useState(() => defaultTabForRole(authUser?.role));
+  // Giao việc từ Trung tâm vận hành: nội dung + người phụ trách điền sẵn, mở form Giao việc.
+  const [taskPrefill, setTaskPrefill] = useState(null);
+  const assignTaskFromOps = useCallback((prefill) => {
+    setTaskPrefill(prefill || null);
+    setTab("giaoviec");
+  }, []);
+  // Tạo yêu cầu hỗ trợ TỪ khách hàng/đơn hàng: mang theo đúng khách + đơn + sản phẩm,
+  // form hỗ trợ tự điền — không bắt nhập lại thông tin đã có.
+  const [supportPrefill, setSupportPrefill] = useState(null);
+  const createSupportFromContext = useCallback((prefill) => {
+    setSupportPrefill(prefill || null);
+    setTab("hotro");
+  }, []);
+  // Tạo ĐƠN mới từ drawer khách hàng: mở tab Đơn hàng với form điền sẵn thông tin khách.
+  const [orderPrefill, setOrderPrefill] = useState(null);
+  const createOrderFromContext = useCallback((prefill) => {
+    setOrderPrefill(prefill || null);
+    setTab("donhang");
+  }, []);
+  // Mở ĐÚNG bản ghi từ Trung tâm vận hành: đơn hàng được mở rộng + tô sáng ngay khi tới nơi.
+  const [recordFocus, setRecordFocus] = useState(null);
+  // Bộ lọc của Trung tâm vận hành nâng lên App để KHÔNG mất khi nhảy sang màn khác rồi quay lại.
+  const [opsTypeFilter, setOpsTypeFilter] = useState("all");
+  const openRecordFromOps = useCallback((target, focus) => {
+    setRecordFocus(focus ? { ...focus, returnTo: "dieuhanh" } : null);
+    setTab(target);
+  }, []);
+  // Đóng drawer đã mở từ Trung tâm vận hành → quay lại đúng Trung tâm vận hành (giữ bộ lọc).
+  const returnToOps = useCallback(() => setTab("dieuhanh"), []);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
@@ -3050,6 +3506,9 @@ function DomixApp({ authUser, onLogout }) {
   const taskNoticeTimerRef = useRef(null);
   const taskSummaryTimerRef = useRef(null);
   const taskSoundPendingRef = useRef(false);
+  const knownChatUnreadRef = useRef(null);
+  const knownSupportCaseIdsRef = useRef(null);
+  const workflowSignalsReadyRef = useRef(false);
   const [lang, setLang] = useState("vi");
   const [company, setCompany] = useState(DEFAULT_COMPANY);
   const [tickerNow, setTickerNow] = useState(() => Date.now());
@@ -3220,6 +3679,11 @@ function DomixApp({ authUser, onLogout }) {
     setLeads([]); setSupportCases([]); setChatMessages([]); setPayrollApprovals([]); setAttendanceRequests([]); setMidMonthRequests([]);
     setCustomers([]); setDistributionSettlements([]); setStockMovements([]);
     setPaymentLedger([]); setSecurityAuditLog([]);
+    // SỐNG CÒN: state vừa bị đưa về rỗng thì các field đó phải coi là CHƯA TẢI LẠI.
+    // Nếu giữ nguyên cờ đã-tải, auto-save sẽ diff "[]" với bản persisted và ĐẨY MẢNG RỖNG
+    // lên server — chính là lỗi từng xóa sạch yêu cầu hỗ trợ sau khi duyệt hoàn tất.
+    loadedDataFieldsRef.current = new Set();
+    lastPersistedFieldJsonRef.current = {};
   }, []);
 
   const markDataFieldsLoaded = useCallback((data, markPersisted = true) => {
@@ -3291,7 +3755,17 @@ function DomixApp({ authUser, onLogout }) {
             return true;
           });
         }
-        applyAppData(result.data || {}, { markPersisted: true });
+        // Vòng làm mới định kỳ KHÔNG được đè lên field vừa bị sửa cục bộ mà chưa kịp lưu — nếu
+        // không, thao tác "gửi hoàn tất"/"duyệt" bấm ngay trước nhịp poll sẽ bị nuốt mất.
+        const incoming = result.data || {};
+        const safeData = {};
+        Object.keys(incoming).forEach((field) => {
+          const persistedJson = lastPersistedFieldJsonRef.current[field];
+          const localJson = JSON.stringify(appDataSnapshotRef.current[field]);
+          if (persistedJson !== undefined && localJson !== persistedJson) return;
+          safeData[field] = incoming[field];
+        });
+        applyAppData(safeData, { markPersisted: true });
         return true;
       })
       .catch((error) => {
@@ -3313,6 +3787,17 @@ function DomixApp({ authUser, onLogout }) {
 
   const areDataFieldsReady = useCallback((fields) => (fields || []).every((field) => loadedDataFieldsRef.current.has(field)), [dataFieldVersion]);
   const areDataFieldsLoading = useCallback((fields) => (fields || []).some((field) => loadingDataFields.has(field)), [loadingDataFields]);
+
+  // ĐỒNG BỘ CỘNG TÁC REALTIME giữa các tài khoản: nhiệm vụ, yêu cầu hỗ trợ, yêu cầu
+  // chấm công được làm tươi nền mỗi 5 giây DÙ ĐANG ĐỨNG Ở TAB NÀO — người giao duyệt
+  // xong là phía người nhận tự thấy (kể cả lịch sử), không ai phải tải lại trang.
+  useEffect(() => {
+    if (!authUser) return undefined;
+    const timer = window.setInterval(() => {
+      ensureDataFields(["tasks", "supportCases", "attendanceRequests"], { force: true });
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [authUser, ensureDataFields]);
 
   useEffect(() => {
     try {
@@ -3402,6 +3887,14 @@ function DomixApp({ authUser, onLogout }) {
           if (Object.keys(accepted).length > 0) {
             applyAppData(accepted, { markPersisted: true });
           }
+          // Thẻ Tổng quan đọc FinancialSummary từ máy chủ — sau khi một field tài chính vừa
+          // được LƯU THÀNH CÔNG thì tải lại ngay, không bắt người dùng reload trang mới thấy
+          // Tổng chi/Số dư quỹ đổi số.
+          const financeFields = ["transactions", "orders", "marketingLogs", "debts", "payrollPayments",
+            "payrollApprovals", "capitalContributions", "distributionOrders", "stockMovements", "inventory", "paymentLedger"];
+          if (Object.keys(payload).some((field) => financeFields.includes(field))) {
+            refreshFinancialSummary();
+          }
         })
         .catch(async (err) => {
           if (err.status === 409 && err.payload?.code === "STATE_VERSION_CONFLICT") {
@@ -3416,7 +3909,7 @@ function DomixApp({ authUser, onLogout }) {
         });
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [appDataSnapshot, canWriteData, applyAppData, ensureDataFields]);
+  }, [appDataSnapshot, canWriteData, applyAppData, ensureDataFields, refreshFinancialSummary]);
 
   // Khi một tài khoản thao tác xét duyệt lương, tạm ngừng nhận bản polling cũ trong lúc
   // dữ liệu mới đang được debounce lưu lên PostgreSQL. Khi dữ liệu đến từ polling thì không
@@ -3755,8 +4248,8 @@ function DomixApp({ authUser, onLogout }) {
   const isCurrentPeriod = reportYear === ATT_YEAR && reportMonth === ATT_MONTH;
 
   const snapshot = useMemo(
-    () => computeMonthSnapshot(reportYear, reportMonth, { transactions, orders, marketingLogs, distributionOrders, employees, kpiTiers }),
-    [reportYear, reportMonth, transactions, orders, marketingLogs, distributionOrders, employees, kpiTiers]
+    () => computeMonthSnapshot(reportYear, reportMonth, { transactions, orders, marketingLogs, distributionOrders, employees, inventory, kpiTiers }),
+    [reportYear, reportMonth, transactions, orders, marketingLogs, distributionOrders, employees, inventory, kpiTiers]
   );
   // Biểu đồ 6 tháng lấy từ cùng FinancialSummaryService với các thẻ Tổng quan.
   // Không tự cộng ở frontend vì sẽ tạo ra một định nghĩa tài chính thứ hai.
@@ -3771,6 +4264,9 @@ function DomixApp({ authUser, onLogout }) {
   const localTotals = { revenue: snapshot.revenue, thu: snapshot.thu, chi: snapshot.chi, profit: snapshot.profit, missing: snapshot.missingInvoices };
   const totals = financialSummary ? {
     revenue: Number(financialSummary.recognized_revenue) || 0,
+    revenueExVat: Number.isFinite(Number(financialSummary.revenue_ex_vat)) ? Number(financialSummary.revenue_ex_vat) : (Number(financialSummary.recognized_revenue) || 0),
+    vatOutput: Number(financialSummary.vat_output) || 0,
+    cogs: Number(financialSummary.cogs) || 0,
     thu: Number(financialSummary.cash_received) || 0,
     chi: Number(financialSummary.cash_spent) || 0,
     profit: Number(financialSummary.operating_profit) || 0,
@@ -3781,7 +4277,7 @@ function DomixApp({ authUser, onLogout }) {
   const cashFromOperations = transactions
     .filter((transaction) => !["cancelled", "rejected"].includes(String(transaction.status || "").toLowerCase()))
     .reduce((total, transaction) => total + (transaction.kind === "thu" ? Number(transaction.amount) || 0 : -(Number(transaction.amount) || 0)), 0);
-  const totalCharterCapitalContributed = capitalContributions.filter((c) => c.status !== "chua_gop").reduce((a, c) => a + c.value, 0);
+  const totalCharterCapitalContributed = capitalContributions.filter((c) => !["chua_gop", "da_huy"].includes(c.status)).reduce((a, c) => a + c.value, 0);
   const cashBalance = financialSummary ? Number(financialSummary.cash_balance) || 0 : null;
   const totalReceivable = financialSummary ? Number(financialSummary.accounts_receivable) || 0 : null;
   // Doanh thu ròng đang CHỜ đối tác xác nhận hoá đơn (Hợp tác phân phối) — số này CHƯA nằm trong
@@ -3798,7 +4294,14 @@ function DomixApp({ authUser, onLogout }) {
     }, 0);
   const totalPayable = debts.filter((d) => d.type === "tra" && d.status !== "paid" && d.status !== "cancelled").reduce((a, d) => a + Number(d.remainingAmount ?? d.amount ?? 0), 0);
   const overdueDebts = debts.filter((d) => d.status !== "paid" && new Date(d.dueDate) < TODAY).length;
-  const payrollRows = snapshot.payrollRows;
+  // MỘT nguồn Task duy nhất cho cả Giao việc → Hiệu suất → KPI & Thưởng → Bảng lương:
+  // số nhiệm vụ lấy từ hệ Giao việc thật (computeEmployeeTaskStats), KHÔNG dùng trường
+  // tasksAssigned/tasksCompleted tĩnh trên hồ sơ — trước đây KPI đọc hồ sơ tĩnh (0 task)
+  // trong khi Hiệu suất đếm 4/4 từ Giao việc, gây ba màn hình ba con số.
+  const payrollRows = useMemo(() => snapshot.payrollRows.map((row) => {
+    const taskStats = computeEmployeeTaskStats(row.id, tasks, orders, marketingLogs, reportYear, reportMonth);
+    return { ...row, tasksAssigned: taskStats.total, tasksCompleted: taskStats.done, tasksOnTime: taskStats.done };
+  }), [snapshot.payrollRows, tasks, orders, marketingLogs, reportYear, reportMonth]);
   const totalPayroll = snapshot.payrollTotal;
   // Dùng RIÊNG cho tính Lợi nhuận — employerCost là TOÀN BỘ chi phí lương công ty gánh (gồm cả
   // BHXH-BHYT-BHTN phần DN đóng), khác với totalPayroll (chỉ lương thực lãnh NV nhận, dùng để
@@ -3849,7 +4352,10 @@ function DomixApp({ authUser, onLogout }) {
   const activeEmployees = employees.filter((e) => isEmployeeActiveInMonth(e, reportYear, reportMonth));
   // Bản "hiệu lực" của nhân viên theo đúng kỳ báo cáo — Hiệu suất/Dashboard/Trợ lý AI dùng cái này.
   const effectiveActiveEmployees = activeEmployees.map((e) => {
-    let eff = e;
+    // Task lấy THẬT từ module Giao việc (cùng nguồn computeEmployeeTaskStats với Bảng lương/KPI)
+    // — không dùng số tự gõ tay trên hồ sơ, để Giao việc/Hiệu suất/KPI/Lương luôn khớp nhau.
+    const taskStats = computeEmployeeTaskStats(e.id, tasks, orders, marketingLogs, reportYear, reportMonth);
+    let eff = { ...e, tasksAssigned: taskStats.total, tasksCompleted: taskStats.done, tasksOnTime: taskStats.done };
     if (e.roleType === "sale") eff = { ...eff, salesActual: revenueByEmployee[e.id] || 0 };
     if (e.roleType === "ads") eff = { ...eff, adSpend: marketingByEmployee[e.id]?.adSpend || 0, adRevenue: marketingByEmployee[e.id]?.adRevenue || 0, conversions: marketingByEmployee[e.id]?.conversions || 0 };
     if (e.roleType === "ky_thuat") eff = { ...eff, upsaleValue: upsaleByEmployee[e.id] || 0 };
@@ -3866,7 +4372,7 @@ function DomixApp({ authUser, onLogout }) {
   // Xếp hạng tổng hợp — gộp Chấm công + CRM/Marketing + Giao việc + Hiệu suất thành 1 kết quả chuẩn/người.
   const masterRanking = effectiveActiveEmployees.map((e) => {
     const payrollRow = payrollRows.find((p) => p.id === e.id);
-    const taskStats = computeEmployeeTaskStats(e.id, tasks, orders, marketingLogs);
+    const taskStats = computeEmployeeTaskStats(e.id, tasks, orders, marketingLogs, reportYear, reportMonth);
     const resolvedPerformance = performanceOf(e, financialSummary);
     return {
       emp: e,
@@ -3881,8 +4387,8 @@ function DomixApp({ authUser, onLogout }) {
   // Số liệu tháng trước — dùng để đề xuất phân bổ ngân sách/nhân sự cho tháng đang xem.
   const prevPeriod = reportMonth === 1 ? { year: reportYear - 1, month: 12 } : { year: reportYear, month: reportMonth - 1 };
   const prevSnapshot = useMemo(
-    () => computeMonthSnapshot(prevPeriod.year, prevPeriod.month, { transactions, orders, marketingLogs, distributionOrders, employees }),
-    [prevPeriod.year, prevPeriod.month, transactions, orders, marketingLogs, employees]
+    () => computeMonthSnapshot(prevPeriod.year, prevPeriod.month, { transactions, orders, marketingLogs, distributionOrders, employees, inventory }),
+    [prevPeriod.year, prevPeriod.month, transactions, orders, marketingLogs, employees, inventory]
   );
   const roleGroupStats = useMemo(() => {
     const groups = {};
@@ -3979,21 +4485,137 @@ function DomixApp({ authUser, onLogout }) {
   }, []);
 
   useEffect(() => {
-    if (!taskSoundEnabled) return undefined;
+    // Gắn ở mọi phiên (kể cả khi âm thanh đang tắt) để context được tạo đúng trong thao tác đầu
+    // tiên của người dùng; gỡ listener ngay khi đã mở khóa thành công.
+    let done = false;
     const unlock = () => {
-      unlockTaskAlertSound();
-      window.setTimeout(() => {
-        if (!taskSoundPendingRef.current) return;
-        if (playTaskAlertSound()) taskSoundPendingRef.current = false;
-      }, 90);
+      const ready = unlockTaskAlertSound();
+      if (taskSoundEnabled) {
+        window.setTimeout(() => {
+          if (!taskSoundPendingRef.current) return;
+          if (playTaskAlertSound()) taskSoundPendingRef.current = false;
+        }, 90);
+      }
+      if (ready && !done) {
+        done = true;
+        window.removeEventListener("pointerdown", unlock);
+        window.removeEventListener("keydown", unlock);
+      }
     };
-    window.addEventListener("pointerdown", unlock, { once: true });
-    window.addEventListener("keydown", unlock, { once: true });
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
     return () => {
       window.removeEventListener("pointerdown", unlock);
       window.removeEventListener("keydown", unlock);
     };
   }, [taskSoundEnabled]);
+
+  // Tin nhắn mới cũng phải gây chú ý như việc mới: chuông + thẻ thông báo góc màn hình, bấm vào mở
+  // thẳng tab Tin nhắn. Không báo khi đang đứng sẵn trong tab Tin nhắn.
+  useEffect(() => {
+    const previous = knownChatUnreadRef.current;
+    knownChatUnreadRef.current = chatUnread;
+    if (!hasLoadedDbData.current) return;
+    if (previous === null) return;
+    if (tab === "chat" || chatUnread <= previous) return;
+    const arrived = chatUnread - previous;
+    if (taskSoundEnabled) taskSoundPendingRef.current = !playTaskAlertSound();
+    showTaskReminder({
+      count: arrived,
+      title: arrived > 1 ? `${arrived} tin nhắn mới` : "Bạn có tin nhắn mới",
+      text: `Đang có ${chatUnread} tin nhắn chưa đọc trong DOMIX.`,
+      subtitle: "Bấm để mở Tin nhắn",
+      tone: "chat",
+      target: "chat",
+    }, 4000);
+  }, [chatUnread, tab, taskSoundEnabled, showTaskReminder]);
+
+  // Yêu cầu hỗ trợ khách hàng giao đích danh cũng là một việc mới — báo chuông và thẻ thông báo.
+  useEffect(() => {
+    if (!hasLoadedDbData.current || !payrollCurrentEmployee?.id) return;
+    const myPending = (supportCases || []).filter((item) => (
+      item?.status === "cho_xac_nhan" && String(item.employeeId) === String(payrollCurrentEmployee.id)
+    ));
+    const currentIds = new Set(myPending.map((item) => String(item.id)));
+    if (knownSupportCaseIdsRef.current === null) {
+      knownSupportCaseIdsRef.current = currentIds;
+      return;
+    }
+    const arrived = myPending.filter((item) => !knownSupportCaseIdsRef.current.has(String(item.id)));
+    knownSupportCaseIdsRef.current = currentIds;
+    if (!arrived.length) return;
+    const newest = arrived[arrived.length - 1];
+    if (taskSoundEnabled) taskSoundPendingRef.current = !playTaskAlertSound();
+    showTaskReminder({
+      count: arrived.length,
+      title: arrived.length > 1 ? `${arrived.length} nhiệm vụ hỗ trợ mới` : "Bạn vừa được giao nhiệm vụ hỗ trợ",
+      text: `${newest.customerName || "Khách hàng"} — ${newest.issue || "cần hỗ trợ"}`,
+      subtitle: "Bấm để mở Giao việc và xác nhận",
+      tone: "support",
+      target: "giaoviec",
+    }, 5000);
+  }, [supportCases, payrollCurrentEmployee?.id, taskSoundEnabled, showTaskReminder]);
+
+  // Phản hồi ngược chiều — cả hai đầu đều phải biết ngay:
+  //  · người GIAO: có việc/ca vừa được báo hoàn tất, cần vào duyệt;
+  //  · người NHẬN: việc/ca vừa được duyệt hoặc bị trả lại.
+  useEffect(() => {
+    if (!hasLoadedDbData.current) return;
+    const email = String(authUser?.email || "").trim().toLowerCase();
+    const employeeId = payrollCurrentEmployee?.id;
+    const isAdminAccount = isAdminRole(authUser?.role);
+
+    const signals = [];
+    (tasks || []).forEach((task) => {
+      const assigner = String(task.createdByEmail || "").trim().toLowerCase();
+      const mineToReview = isAdminAccount || (assigner && assigner === email);
+      if (mineToReview && !task.doneManual && task.completionStatus === "submitted") {
+        signals.push({ key: `task-review-${task.id}-${task.completionSubmittedAt || ""}`, title: "Nhân viên vừa gửi hoàn tất công việc", text: task.description || "Công việc được giao", target: "giaoviec", tone: "new" });
+      }
+      const mineToDo = employeeId !== undefined && employeeId !== null && Number(task.employeeId) === Number(employeeId);
+      if (mineToDo && task.completionStatus === "approved") {
+        signals.push({ key: `task-approved-${task.id}-${task.completionReviewedAt || ""}`, title: "Công việc của bạn đã được duyệt hoàn tất", text: task.description || "Công việc được giao", target: "giaoviec", tone: "new" });
+      }
+      if (mineToDo && task.completionStatus === "returned") {
+        signals.push({ key: `task-returned-${task.id}-${task.completionReturnedAt || ""}`, title: "Công việc bị trả lại để làm lại", text: task.completionReturnReason || task.description || "—", target: "giaoviec", tone: "due" });
+      }
+    });
+    (supportCases || []).forEach((item) => {
+      const assigner = String(item.assignedBy || "").trim().toLowerCase();
+      const assignedTo = String(item.assignedToEmail || "").trim().toLowerCase();
+      const mineToReview = isAdminAccount || (assigner && assigner === email);
+      const mineToDo = (assignedTo && assignedTo === email)
+        || (employeeId !== undefined && employeeId !== null && String(item.employeeId) === String(employeeId));
+      if (mineToReview && item.status === "cho_duyet_hoan_tat") {
+        signals.push({ key: `case-review-${item.id}-${item.reportedAt || ""}`, title: "Kỹ thuật vừa báo hoàn tất yêu cầu hỗ trợ", text: `${item.customerName || "Khách hàng"} — chờ bạn duyệt`, target: "hotro", tone: "support" });
+      }
+      if (mineToDo && item.status === "hoan_tat" && item.approvedByEmail) {
+        signals.push({ key: `case-approved-${item.id}-${item.completedAt || ""}`, title: "Yêu cầu hỗ trợ đã được duyệt hoàn tất", text: item.customerName || "Khách hàng", target: "hotro", tone: "support" });
+      }
+      if (mineToDo && item.status === "dang_ho_tro" && item.reviewNote) {
+        signals.push({ key: `case-rejected-${item.id}-${item.reviewedAt || ""}`, title: "Yêu cầu hỗ trợ bị trả lại", text: item.reviewNote, target: "hotro", tone: "due" });
+      }
+    });
+
+    if (workflowSignalsReadyRef.current === false) {
+      workflowSignalsReadyRef.current = new Set(signals.map((signal) => signal.key));
+      return;
+    }
+    const known = workflowSignalsReadyRef.current;
+    const fresh = signals.filter((signal) => !known.has(signal.key));
+    signals.forEach((signal) => known.add(signal.key));
+    if (!fresh.length) return;
+    const newest = fresh[fresh.length - 1];
+    if (taskSoundEnabled) taskSoundPendingRef.current = !playTaskAlertSound();
+    showTaskReminder({
+      count: fresh.length,
+      title: fresh.length > 1 ? `${fresh.length} phản hồi công việc mới` : newest.title,
+      text: newest.text,
+      subtitle: newest.target === "hotro" ? "Bấm để mở Hỗ trợ khách hàng" : "Bấm để mở Giao việc",
+      tone: newest.tone,
+      target: newest.target,
+    }, 5000);
+  }, [tasks, supportCases, authUser?.email, authUser?.role, payrollCurrentEmployee?.id, taskSoundEnabled, showTaskReminder]);
 
   const unreadAssignedTaskIds = useMemo(() => (
     ownAssignedTasks
@@ -4017,6 +4639,9 @@ function DomixApp({ authUser, onLogout }) {
     setTaskSoundEnabled(readTaskSoundEnabled(authUser?.email));
     taskNotificationReadyRef.current = false;
     knownAssignedTaskIdsRef.current = new Set();
+    knownChatUnreadRef.current = null;
+    knownSupportCaseIdsRef.current = null;
+    workflowSignalsReadyRef.current = false;
   }, [authUser?.email]);
 
   useEffect(() => {
@@ -4037,9 +4662,10 @@ function DomixApp({ authUser, onLogout }) {
       count: newTasks.length,
       title: newTasks.length > 1 ? `${newTasks.length} công việc mới` : "Bạn vừa được giao việc mới",
       text: newest.description || "Công việc mới",
-      subtitle: "Bấm để mở Giao việc",
+      subtitle: "Bấm để mở Giao việc và xác nhận nhận việc",
       tone: "new",
-    }, 3000);
+      target: "giaoviec",
+    }, 5000);
   }, [ownAssignedTasks, taskReminderEligible, authUser?.email, taskSoundEnabled, showTaskReminder]);
 
   useEffect(() => {
@@ -4126,15 +4752,61 @@ function DomixApp({ authUser, onLogout }) {
     return { monthly, midmonth, total: monthly + midmonth };
   }, [payrollApprovals, midMonthRequests, payrollPayments, payrollRows, payrollCurrentEmployee, payrollCurrentIsBoss, payrollCurrentIsAccountant, payrollHasAccountant, reportYear, reportMonth]);
   const payrollActionCount = payrollActionSummary.total;
+  // Chỉ NGƯỜI GIAO việc (và admin) mới duyệt hoàn tất, nên badge chờ duyệt tính theo người giao.
   const taskReviewCount = useMemo(() => {
-    if (!payrollCurrentIsBoss && !payrollCurrentIsAccountant) return 0;
-    return (tasks || []).filter((task) => !task.doneManual && task.completionStatus === "submitted").length;
-  }, [tasks, payrollCurrentIsBoss, payrollCurrentIsAccountant]);
-  const taskBadgeCount = payrollCurrentIsBoss
-    ? taskReviewCount
-    : payrollCurrentIsAccountant
-      ? taskReviewCount + unreadAssignedTaskIds.length
-      : unreadAssignedTaskIds.length;
+    const email = String(authUser?.email || "").trim().toLowerCase();
+    const isAdminAccount = isAdminRole(authUser?.role);
+    if (!isAdminAccount && !email) return 0;
+    return (tasks || []).filter((task) => {
+      if (task.doneManual || task.completionStatus !== "submitted") return false;
+      if (isAdminAccount) return true;
+      return String(task.createdByEmail || "").trim().toLowerCase() === email;
+    }).length;
+  }, [tasks, authUser?.email, authUser?.role]);
+  // Badge tab Giao việc phải đúng kể cả khi đang đứng ở tab khác, nên yêu cầu hỗ trợ được nạp nền.
+  // Admin/người giao yêu cầu có thể KHÔNG có hồ sơ nhân viên — vẫn phải nạp để nhận thông báo
+  // "kỹ thuật vừa báo hoàn tất" ngay lập tức (trước đây bị bỏ qua khiến người giao không được báo).
+  useEffect(() => {
+    if (!ensureDataFields) return undefined;
+    if (!payrollCurrentEmployee?.id && !isAdminRole(authUser?.role)) return undefined;
+    ensureDataFields(["supportCases"]);
+    const timer = window.setInterval(() => ensureDataFields(["supportCases"], { force: true }), 8000);
+    return () => window.clearInterval(timer);
+  }, [ensureDataFields, payrollCurrentEmployee?.id, authUser?.role]);
+
+  // Badge đếm việc CHƯA XÁC NHẬN (giống badge tin nhắn chưa đọc): chỉ hết khi người nhận bấm xác
+  // nhận, không tự hết vì đã mở tab.
+  const pendingAcceptTaskCount = useMemo(() => {
+    if (!payrollCurrentEmployee?.id) return 0;
+    return (tasks || []).filter((task) => (
+      Number(task.employeeId) === Number(payrollCurrentEmployee.id)
+      && !task.acceptedAt
+      && !task.doneManual
+      && task.completionStatus !== "approved"
+      && task.completionStatus !== "submitted"
+    )).length;
+  }, [tasks, payrollCurrentEmployee?.id]);
+  const pendingSupportConfirmCount = useMemo(() => {
+    const email = String(authUser?.email || "").trim().toLowerCase();
+    return (supportCases || []).filter((item) => {
+      if (item?.status !== "cho_xac_nhan") return false;
+      const assignedEmail = String(item.assignedToEmail || "").trim().toLowerCase();
+      if (assignedEmail && email && assignedEmail === email) return true;
+      return Boolean(payrollCurrentEmployee?.id) && String(item.employeeId) === String(payrollCurrentEmployee.id);
+    }).length;
+  }, [supportCases, payrollCurrentEmployee?.id, authUser?.email]);
+  // Yêu cầu hỗ trợ đã được kỹ thuật báo hoàn tất — NGƯỜI GIAO (hoặc admin) phải thấy badge đỏ
+  // thường trực cho tới khi vào duyệt, không chỉ một thông báo thoáng qua.
+  const pendingSupportReviewCount = useMemo(() => {
+    const email = String(authUser?.email || "").trim().toLowerCase();
+    const isAdminAccount = isAdminRole(authUser?.role);
+    return (supportCases || []).filter((item) => {
+      if (item?.status !== "cho_duyet_hoan_tat") return false;
+      if (isAdminAccount) return true;
+      return String(item.assignedBy || "").trim().toLowerCase() === email;
+    }).length;
+  }, [supportCases, authUser?.email, authUser?.role]);
+  const taskBadgeCount = taskReviewCount + pendingAcceptTaskCount + pendingSupportConfirmCount + pendingSupportReviewCount;
   const attendancePendingCount = (attendanceRequests || []).filter((request) => {
     if (request.status !== "pending") return false;
     if (payrollCurrentIsBoss || payrollCurrentIsAccountant) return true;
@@ -4172,10 +4844,21 @@ function DomixApp({ authUser, onLogout }) {
     () => new Set(allowedTabsForRole(effectiveAccountRole, payrollCurrentEmployee)),
     [effectiveAccountRole, payrollCurrentEmployee]
   );
+  // Mục lớn (hub) hiện khi còn ít nhất một tab con được phép; mục thường lọc theo quyền như cũ.
   const navGroups = allNavGroups
-    .map((group) => ({ ...group, items: group.items.filter((item) => allowedTabIds.has(item.id)) }))
+    .map((group) => ({
+      ...group,
+      items: group.items
+        .map((item) => (item.children
+          ? { ...item, children: item.children.filter((child) => allowedTabIds.has(child.id)) }
+          : item))
+        .filter((item) => (item.children ? item.children.length > 0 : allowedTabIds.has(item.id))),
+    }))
     .filter((group) => group.items.length > 0);
-  const nav = navGroups.flatMap((g) => g.items);
+  // Danh sách phẳng mọi tab con — dùng cho tìm nhanh và tiêu đề trang.
+  const nav = navGroups.flatMap((g) => g.items.flatMap((item) => (item.children ? item.children : [item])));
+  // Hub đang chứa tab hiện tại (nếu có) — quyết định thanh menu ngang của vùng làm việc.
+  const activeHub = navGroups.flatMap((g) => g.items).find((item) => item.children?.some((child) => child.id === tab)) || null;
   const activeTabAllowed = allowedTabIds.has(tab);
 
   useEffect(() => {
@@ -4195,6 +4878,13 @@ function DomixApp({ authUser, onLogout }) {
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, []);
+  // Tiêu đề tab trình duyệt bám theo màn hình đang mở — ví dụ đang ở Bảng lương thì tab ghi "Bảng lương · DOMIX".
+  useEffect(() => {
+    const label = nav.find((n) => n.id === tab)?.label || (tab === "taikhoan" ? "Cài đặt tài khoản" : "");
+    document.title = label ? `${label} · DOMIX` : "DOMIX — Kế toán · Nhân sự · CRM · Bán hàng";
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, lang]);
+
   const paletteMatches = paletteQuery
     ? nav.filter((n) => n.label.toLowerCase().includes(paletteQuery.toLowerCase()))
     : nav;
@@ -4213,7 +4903,7 @@ function DomixApp({ authUser, onLogout }) {
       }, 90);
       showTaskReminder({
         title: "Đã bật âm báo kiểu iPhone",
-        text: `DOMIX sẽ phát chuông khi có việc mới; cứ mỗi ${taskReminderIntervalHours} giờ sẽ đếm và báo tổng số việc chưa hoàn thành.`,
+        text: `DOMIX sẽ phát chuông khi có tin nhắn mới, việc mới hoặc nhiệm vụ hỗ trợ mới; cứ mỗi ${taskReminderIntervalHours} giờ sẽ đếm và báo tổng số việc chưa hoàn thành.`,
         subtitle: "Cài đặt âm thanh đã được lưu cho tài khoản này",
         tone: "due",
         count: 1,
@@ -4275,17 +4965,19 @@ function DomixApp({ authUser, onLogout }) {
 
       {taskRealtimeNotice && (
         <div
-          className="fixed left-3 right-3 top-[82px] z-[120] rounded-xl sm:left-auto sm:right-5 sm:top-[94px] sm:max-w-sm border border-[#4f7ee8]/50 bg-[#132443] text-white shadow-2xl"
+          className={`fixed left-3 right-3 top-[82px] z-[120] rounded-xl sm:left-auto sm:right-5 sm:top-[94px] sm:max-w-sm border bg-[#132443] text-white shadow-2xl ring-2 animate-[pulse_1.3s_ease-in-out_3] ${taskRealtimeNotice.tone === "support" ? "border-[#d9a441]/60 ring-[#d9a441]/35" : "border-[#4f7ee8]/50 ring-[#4f7ee8]/30"}`}
           role="status"
           aria-live="polite"
         >
           <button
             type="button"
-            onClick={() => { setTab("giaoviec"); closeTaskRealtimeNotice(); }}
+            onClick={() => { setTab(taskRealtimeNotice.target || "giaoviec"); closeTaskRealtimeNotice(); }}
             className="flex w-full items-start gap-3 rounded-xl px-4 py-3 pr-11 text-left transition-colors hover:bg-[#19305a]"
-            title="Mở tab Giao việc"
+            title={taskRealtimeNotice.target === "chat" ? "Mở tab Tin nhắn" : "Mở tab Giao việc"}
           >
-            <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#315fae]">{taskRealtimeNotice.tone === "new" ? <ClipboardList size={17} /> : <BellRing size={17} />}</span>
+            <span className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${taskRealtimeNotice.tone === "support" ? "bg-[#8a6b23]" : "bg-[#315fae]"}`}>
+              {taskRealtimeNotice.tone === "chat" ? <MessageCircle size={17} /> : taskRealtimeNotice.tone === "support" ? <Headphones size={17} /> : taskRealtimeNotice.tone === "new" ? <ClipboardList size={17} /> : <BellRing size={17} />}
+            </span>
             <span className="min-w-0">
               <span className="block text-xs font-bold text-[#9fc0ff]">{taskRealtimeNotice.title || (taskRealtimeNotice.count > 1 ? `${taskRealtimeNotice.count} công việc mới` : "Nhắc việc")}</span>
               <span className="mt-1 block text-sm text-white">{taskRealtimeNotice.text}</span>
@@ -4326,16 +5018,8 @@ function DomixApp({ authUser, onLogout }) {
         navGroups={navGroups}
         activeTab={tab}
         onSelectTab={(nextTab) => { setTab(nextTab); setMobileNavOpen(false); }}
-        lang={lang}
-        onLanguageChange={setLang}
         t={t}
         tagline={t("sidebar_tagline")}
-        darkMode={darkMode}
-        onToggleDarkMode={() => setDarkMode((value) => !value)}
-        taskReminderEligible={taskReminderEligible}
-        taskSoundEnabled={taskSoundEnabled}
-        onToggleTaskSound={handleToggleTaskSound}
-        onOpenCommandPalette={() => { setShowCommandPalette(true); setPaletteQuery(""); setMobileNavOpen(false); }}
         company={company}
         chatUnread={chatUnread}
         taskBadgeCount={taskBadgeCount}
@@ -4371,10 +5055,53 @@ function DomixApp({ authUser, onLogout }) {
               </div>
             )}
             {(totals?.missing || 0) > 0 && (
-              <div className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full bg-stamp-red/10 text-stamp-red">
+              <button
+                type="button"
+                onClick={() => setTab("crm")}
+                className="flex items-center gap-2 rounded-full bg-stamp-red/10 px-3 py-1.5 text-xs text-stamp-red transition hover:bg-stamp-red/20"
+                title="Mở Trung tâm doanh thu để phát hành hóa đơn cho các đơn còn thiếu"
+                aria-label={`Xem ${totals.missing} đơn chưa phát hành hóa đơn trong Trung tâm doanh thu`}
+              >
                 <AlertTriangle size={13} /> {totals.missing} {t("missing_invoice_tx")}
-              </div>
+              </button>
             )}
+            {/* Cụm điều khiển kiểu TailAdmin: các nút tròn (tìm kiếm · sáng-tối · âm báo) + ngôn ngữ + user. */}
+            <button
+              type="button"
+              onClick={() => { setShowCommandPalette(true); setPaletteQuery(""); }}
+              className="hidden h-10 w-10 items-center justify-center rounded-full border border-paper-line bg-white text-muted transition-colors hover:border-[#3C50E0]/60 hover:text-ink sm:flex"
+              aria-label={t("sidebar_search") || "Tìm nhanh (Ctrl+K)"}
+              title="Tìm nhanh · Ctrl+K"
+            ><Search size={16} /></button>
+            <button
+              type="button"
+              onClick={() => setDarkMode((value) => !value)}
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-paper-line bg-white text-muted transition-colors hover:border-[#3C50E0]/60 hover:text-ink"
+              aria-label={darkMode ? "Chuyển chế độ sáng" : "Chuyển chế độ tối"}
+              title={darkMode ? "Chế độ sáng" : "Chế độ tối"}
+            >{darkMode ? <Sun size={16} /> : <Moon size={16} />}</button>
+            {Boolean(authUser?.email) && (
+              <button
+                type="button"
+                onClick={handleToggleTaskSound}
+                className={`hidden h-10 w-10 items-center justify-center rounded-full border transition-colors sm:flex ${taskSoundEnabled ? "border-ledger-green/40 bg-ledger-green/10 text-ledger-green" : "border-paper-line bg-white text-muted hover:border-[#3C50E0]/60 hover:text-ink"}`}
+                aria-label={taskSoundEnabled ? "Tắt âm thanh thông báo" : "Bật âm thanh thông báo"}
+                title="Âm thanh thông báo"
+              >{taskSoundEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}</button>
+            )}
+            <select
+              value={lang}
+              onChange={(event) => setLang(event.target.value)}
+              title="Ngôn ngữ / Language"
+              aria-label="Ngôn ngữ"
+              className="h-10 cursor-pointer rounded-full border border-paper-line bg-white px-2.5 text-xs font-semibold text-ink outline-none hover:border-[#3C50E0]/60"
+            >
+              <option value="vi">🇻🇳 VI</option>
+              <option value="en">🇺🇸 EN</option>
+              <option value="zh">🇨🇳 中文</option>
+              <option value="ja">🇯🇵 日本語</option>
+              <option value="th">🇹🇭 ไทย</option>
+            </select>
             <UserMenu authUser={effectiveAuthUser} employees={employees} onLogout={onLogout} onOpenSettings={() => setTab("taikhoan")} />
           </div>
         </header>
@@ -4416,6 +5143,30 @@ function DomixApp({ authUser, onLogout }) {
             </div>
           );
         })()}
+
+        {/* Thanh menu ngang của mục lớn — các bảng con (Nhân sự · Chấm công · Lương...) nằm ở đây,
+            luôn dính dưới header để chuyển bảng không cần quay lại sidebar. */}
+        {activeHub && activeTabAllowed && (
+          <div className="border-b border-paper-line bg-white px-2 py-2 sm:px-3 lg:px-8">
+            <div className="ktns-menu-rail flex gap-1.5 overflow-x-auto">
+              {activeHub.children.map((child) => {
+                const ChildIcon = child.icon;
+                const childActive = tab === child.id;
+                return (
+                  <button
+                    key={child.id}
+                    type="button"
+                    onClick={() => setTab(child.id)}
+                    className={`inline-flex min-h-[38px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3.5 text-xs font-semibold transition-colors ${childActive ? "border-[#5f8df8] bg-[linear-gradient(180deg,#315ba5,#26457b)] text-white shadow-[0_6px_16px_rgba(49,91,165,0.3)]" : "border-paper-line bg-paper text-ink-light hover:border-[#5f8df8]/50 hover:text-ink"}`}
+                  >
+                    <ChildIcon size={14} />{child.label}
+                    {child.beta && <span className="rounded-full border border-gold/40 bg-gold/15 px-1.5 py-0.5 text-[9px] font-bold uppercase text-gold">Beta</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         </div>
 
         <div className={tab === "chat" ? "flex-1 min-h-0 p-0 overflow-hidden" : TABLE_FOCUSED_TABS.includes(tab) ? "flex-1 min-h-0 overflow-hidden p-2 sm:p-3 xl:p-4" : "p-3 pb-24 sm:p-4 sm:pb-24 lg:p-8 lg:pb-24"} key={tab} style={{ animation: "ktnsFadeIn 0.2s ease" }}>
@@ -4428,24 +5179,31 @@ function DomixApp({ authUser, onLogout }) {
               onRetry={() => ensureDataFields(activeTabRequiredFields, { force: true })}
             />
           ) : (<>
-          {tab === "dashboard" && <Dashboard totals={totals} financialSummary={financialSummary} financialSummaryLoading={financialSummaryLoading} financialSummaryError={financialSummaryError} financialSummaryIncidentId={financialSummaryIncidentId} financialSeriesError={financialSeriesError} refreshFinancialSummary={refreshFinancialSummary} transactions={transactions} payrollRows={payrollRows} totalPayroll={totalPayroll} activeEmployees={effectiveActiveEmployees} warnCount={warnCount} warnNames={warnNames} cashBalance={cashBalance} totalReceivable={totalReceivable} totalPayable={totalPayable} overdueDebts={overdueDebts} t={t} lang={lang} totalCharterCapitalContributed={totalCharterCapitalContributed} registeredCharterCapital={company.registeredCharterCapital} monthlyChart={monthlyChart} orders={orders} distributionOrders={distributionOrders} cvReviews={cvReviews} masterRanking={masterRanking} inventory={inventory} debts={debts} setTab={setTab} pendingDistRevenue={pendingDistRevenue} contracts={contracts} leads={leads} perfWarningApprovedAt={perfWarningApprovedAt} setPerfWarningApprovedAt={setPerfWarningApprovedAt} announcements={announcements} setAnnouncements={setAnnouncements} totalEmployerCost={totalEmployerCost} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "dashboard" && <Dashboard totals={totals} financialSummary={financialSummary} financialSummaryLoading={financialSummaryLoading} financialSummaryError={financialSummaryError} financialSummaryIncidentId={financialSummaryIncidentId} financialSeriesError={financialSeriesError} refreshFinancialSummary={refreshFinancialSummary} transactions={transactions} payrollRows={payrollRows} totalPayroll={totalPayroll} activeEmployees={effectiveActiveEmployees} warnCount={warnCount} warnNames={warnNames} cashBalance={cashBalance} totalReceivable={totalReceivable} totalPayable={totalPayable} overdueDebts={overdueDebts} t={t} lang={lang} totalCharterCapitalContributed={totalCharterCapitalContributed} registeredCharterCapital={company.registeredCharterCapital} monthlyChart={monthlyChart} orders={orders} distributionOrders={distributionOrders} cvReviews={cvReviews} masterRanking={masterRanking} inventory={inventory} debts={debts} setTab={setTab} pendingDistRevenue={pendingDistRevenue} contracts={contracts} leads={leads} perfWarningApprovedAt={perfWarningApprovedAt} setPerfWarningApprovedAt={setPerfWarningApprovedAt} announcements={announcements} setAnnouncements={setAnnouncements} totalEmployerCost={totalEmployerCost} supportCases={supportCases} tasks={tasks} attendanceRequests={attendanceRequests} employees={activeEmployees} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "dieuhanh" && <OperationsCenter orders={orders} debts={debts} supportCases={supportCases} tasks={tasks} inventory={inventory} employees={activeEmployees} attendanceRequests={attendanceRequests} transactions={transactions} setTab={setTab} onAssignTask={assignTaskFromOps} onOpenRecord={openRecordFromOps} typeFilter={opsTypeFilter} onTypeFilterChange={setOpsTypeFilter} isManager={["admin", "accountant"].includes(normalizeAccountRole(effectiveAuthUser?.role))} />}
           {tab === "settings" && <CaiDatCongTy company={company} setCompany={setCompany} authUser={authUser} t={t} lang={lang} exportAllData={exportAllData} importAllData={importAllData} announcements={announcements} setAnnouncements={setAnnouncements} applyAppData={applyAppData} />}
-          {tab === "task-reminder-settings" && <CauHinhNhacViec company={company} setCompany={setCompany} authUser={effectiveAuthUser} />}
+          {tab === "task-reminder-settings" && <CauHinhNhacViec company={company} setCompany={setCompany} authUser={effectiveAuthUser} announcements={announcements} setAnnouncements={setAnnouncements} />}
+          {tab === "socai" && <SoCaiKeToan authUser={effectiveAuthUser} />}
           {tab === "thuchi" && <ThuChi transactions={transactions} setTransactions={setTransactions} showForm={showTxForm} setShowForm={setShowTxForm} company={company} orders={orders} setOrders={setOrders} reportYear={reportYear} reportMonth={reportMonth} employees={activeEmployees} distributionOrders={distributionOrders} distributionPartners={distributionPartners} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
-          {tab === "congno" && <CongNo debts={debts} setDebts={setDebts} setTransactions={setTransactions} transactions={transactions} paymentLedger={paymentLedger} distributionOrders={distributionOrders} distributionPartners={distributionPartners} setTab={setTab} authUser={effectiveAuthUser} allEmployees={employees} payDebt={payDebt} unpayDebt={unpayDebt} customers={customers} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "congno" && <CongNo debts={debts} setDebts={setDebts} setTransactions={setTransactions} transactions={transactions} paymentLedger={paymentLedger} distributionOrders={distributionOrders} distributionPartners={distributionPartners} setTab={setTab} authUser={effectiveAuthUser} allEmployees={employees} payDebt={payDebt} unpayDebt={unpayDebt} customers={customers} recordFocus={recordFocus} onRecordFocusConsumed={() => setRecordFocus(null)} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
           {tab === "hopdong" && <HopDong contracts={contracts} setContracts={setContracts} partners={distributionPartners} employees={activeEmployees} />}
           {tab === "vongop" && <VonGop contributions={capitalContributions} setContributions={setCapitalContributions} company={company} setCompany={setCompany} totalContributed={totalCharterCapitalContributed} />}
-          {tab === "hoptac" && <HopTacPhanPhoi partners={distributionPartners} setPartners={setDistributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} setTransactions={setTransactions} transactions={transactions} company={company} inventory={inventory} setInventory={setInventory} reportYear={reportYear} reportMonth={reportMonth} orders={orders} employees={activeEmployees} authUser={effectiveAuthUser} allEmployees={employees} debts={debts} setDebts={setDebts} settlements={distributionSettlements} setSettlements={setDistributionSettlements} moveStock={moveStock} payDebt={payDebt} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
-          {tab === "kho" && <KhoHang inventory={inventory} setInventory={setInventory} orders={orders} distOrders={distributionOrders} distPartners={distributionPartners} moveStock={moveStock} stockMovements={stockMovements} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} positionAccess={positionAccess} employees={activeEmployees} persistInventoryProduct={persistInventoryProduct} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "hoptac" && <HopTacPhanPhoi partners={distributionPartners} setPartners={setDistributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} setTransactions={setTransactions} transactions={transactions} company={company} inventory={inventory} setInventory={setInventory} reportYear={reportYear} reportMonth={reportMonth} orders={orders} employees={activeEmployees} authUser={effectiveAuthUser} allEmployees={employees} debts={debts} setDebts={setDebts} settlements={distributionSettlements} setSettlements={setDistributionSettlements} moveStock={moveStock} payDebt={payDebt} paymentLedger={paymentLedger} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "kho" && <KhoHang inventory={inventory} setInventory={setInventory} orders={orders} distOrders={distributionOrders} distPartners={distributionPartners} moveStock={moveStock} stockMovements={stockMovements} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} positionAccess={positionAccess} employees={activeEmployees} persistInventoryProduct={persistInventoryProduct} recordFocus={recordFocus} onRecordFocusConsumed={() => setRecordFocus(null)} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
           {tab === "taisan" && <TaiSanCoDinh assets={fixedAssets} setAssets={setFixedAssets} setTransactions={setTransactions} reportYear={reportYear} reportMonth={reportMonth} />}
-          {tab === "giaoviec" && <GiaoViec authUser={effectiveAuthUser} tasks={tasks} setTasks={setTasks} employees={activeEmployees} orders={orders} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} realtimeUnreadTaskIds={unreadAssignedTaskIds} onOpenProfile={setProfileEmployeeId} />}
-          {tab === "hotro" && <HoTroKhachHang cases={supportCases} setCases={setSupportCases} employees={activeEmployees} orders={orders} setOrders={setOrders} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
-          {tab === "chat" && <ChatPage authUser={effectiveAuthUser} onUnreadChange={setChatUnread} employees={employees} tasks={tasks} setTasks={setTasks} setTab={setTab} />}
-          {tab === "crm" && <RevenueFinanceHub financialSummary={financialSummary} financialSummaryError={financialSummaryError} refreshFinancialSummary={refreshFinancialSummary} transactions={transactions} setTransactions={setTransactions} orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} payrollRows={payrollRows} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} revenueByEmployee={revenueByEmployee} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} debts={debts} setDebts={setDebts} company={company} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
+          {tab === "giaoviec" && <GiaoViec authUser={effectiveAuthUser} tasks={tasks} setTasks={setTasks} employees={activeEmployees} orders={orders} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} realtimeUnreadTaskIds={unreadAssignedTaskIds} onOpenProfile={setProfileEmployeeId} supportCases={supportCases} setSupportCases={setSupportCases} taskPrefill={taskPrefill} onTaskPrefillConsumed={() => setTaskPrefill(null)} recordFocus={recordFocus} onRecordFocusConsumed={() => setRecordFocus(null)} onOpenRecord={openRecordFromOps} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
+          {tab === "hotro" && <HoTroKhachHang cases={supportCases} setCases={setSupportCases} employees={activeEmployees} orders={orders} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} supportPrefill={supportPrefill} onSupportPrefillConsumed={() => setSupportPrefill(null)} recordFocus={recordFocus} onRecordFocusConsumed={() => setRecordFocus(null)} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
+          {tab === "hotro-lichsu" && <HoTroKhachHang key="hotro-lichsu" initialView="history" cases={supportCases} setCases={setSupportCases} employees={activeEmployees} orders={orders} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
+          {tab === "khachhang" && <CustomerDirectory key="khachhang" customers={customers} orders={orders} supportCases={supportCases} employees={activeEmployees} setTab={setTab} onCreateSupport={createSupportFromContext} onCreateOrder={createOrderFromContext} onCreateTask={assignTaskFromOps} />}
+          {tab === "hotro-khach" && <CustomerDirectory customers={customers} orders={orders} supportCases={supportCases} employees={activeEmployees} setTab={setTab} onCreateSupport={createSupportFromContext} onCreateOrder={createOrderFromContext} onCreateTask={assignTaskFromOps} />}
+          {tab === "hotro-congno" && <CongNo key="hotro-congno" debts={debts} setDebts={setDebts} setTransactions={setTransactions} transactions={transactions} paymentLedger={paymentLedger} distributionOrders={distributionOrders} distributionPartners={distributionPartners} setTab={setTab} authUser={effectiveAuthUser} allEmployees={employees} payDebt={payDebt} unpayDebt={unpayDebt} customers={customers} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "chat" && <ChatPage authUser={effectiveAuthUser} onUnreadChange={setChatUnread} employees={employees} tasks={tasks} setTasks={setTasks} setTab={setTab} supportCases={supportCases} setSupportCases={setSupportCases} dataLoader={{ ensureDataFields, applyAppData }} />}
+          {(tab === "donhang" || tab === "hotro-donhang") && <RevenueFinanceHub key={tab} ordersOnly={tab === "hotro-donhang"} recordFocus={recordFocus} onRecordFocusConsumed={() => setRecordFocus(null)} onReturnToOps={returnToOps} orderPrefill={orderPrefill} onOrderPrefillConsumed={() => setOrderPrefill(null)} financialSummary={financialSummary} financialSummaryError={financialSummaryError} refreshFinancialSummary={refreshFinancialSummary} transactions={transactions} setTransactions={setTransactions} orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} payrollRows={payrollRows} kpiTiers={kpiTiers} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} revenueByEmployee={revenueByEmployee} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} debts={debts} setDebts={setDebts} company={company} unlockedMonths={unlockedMonths} onOpenReceivables={() => setTab("congno")} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
+          {tab === "crm" && <RevenueFinanceHub onOpenReceivables={() => setTab("congno")} financialSummary={financialSummary} financialSummaryError={financialSummaryError} refreshFinancialSummary={refreshFinancialSummary} transactions={transactions} setTransactions={setTransactions} orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} payrollRows={payrollRows} kpiTiers={kpiTiers} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} revenueByEmployee={revenueByEmployee} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} debts={debts} setDebts={setDebts} company={company} unlockedMonths={unlockedMonths} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
           {tab === "marketing" && <MarketingDaily logs={marketingLogs} setLogs={setMarketingLogs} employees={activeEmployees} marketingByEmployee={marketingByEmployee} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setPages={setMarketingPages} orders={orders} inventory={inventory} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} positionAccess={positionAccess} leads={leads} setLeads={setLeads} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
           {tab === "nhansu" && <NhanSu authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} onEmployeesPersisted={applyPersistedEmployees} refreshEmployees={refreshEmployees} showForm={showEmpForm} setShowForm={setShowEmpForm} reportYear={reportYear} reportMonth={reportMonth} prefillEmployee={prefillEmployee} setPrefillEmployee={setPrefillEmployee} onOpenProfile={setProfileEmployeeId} lang={lang} />}
           {tab === "tuyendung" && <><BetaFeatureNotice /><TuyenDungAI cvReviews={cvReviews} setCvReviews={setCvReviews} employees={activeEmployees} masterRanking={masterRanking} company={company} queue={cvQueue} setQueue={setCvQueue} processing={cvProcessing} setProcessing={setCvProcessing} progress={cvProgress} setProgress={setCvProgress} setPrefillEmployee={setPrefillEmployee} setTab={setTab} setShowEmpForm={setShowEmpForm} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} /></>}
-          {tab === "chamcong" && <ChamCong authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} refreshEmployees={refreshEmployees} employeesSyncing={employeesSyncing} employeeSyncError={employeeSyncError} attendanceRequests={attendanceRequests} setAttendanceRequests={setAttendanceRequests} unlockedMonths={unlockedMonths} setUnlockedMonths={setUnlockedMonths} company={company} lang={lang} />}
+          {tab === "chamcong" && <ChamCong authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} refreshEmployees={refreshEmployees} employeesSyncing={employeesSyncing} employeeSyncError={employeeSyncError} attendanceRequests={attendanceRequests} setAttendanceRequests={setAttendanceRequests} unlockedMonths={unlockedMonths} setUnlockedMonths={setUnlockedMonths} company={company} lang={lang} dataLoader={{ ensureDataFields }} />}
           {tab === "hieusuat" && <HieuSuat employees={effectiveActiveEmployees} masterRanking={masterRanking} supportCases={supportCases} financialSummary={financialSummary} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} onOpenProfile={setProfileEmployeeId} />}
           {tab === "luong" && <BangLuong payrollRows={payrollRows} totalPayroll={totalPayroll} setEmployees={setEmployees} reportYear={reportYear} reportMonth={reportMonth} setTransactions={setTransactions} payrollPayments={payrollPayments} setPayrollPayments={setPayrollPayments} company={company} kpiTiers={kpiTiers} setKpiTiers={setKpiTiers} payrollApprovals={payrollApprovals} setPayrollApprovals={setPayrollApprovals} midMonthRequests={midMonthRequests} setMidMonthRequests={setMidMonthRequests} employees={employees} authUser={effectiveAuthUser} applyAppData={applyAppData} refreshFinancialSummary={refreshFinancialSummary} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
           {tab === "quy" && <QuarterReport transactions={transactions} orders={orders} marketingLogs={marketingLogs} employees={employees} reportYear={reportYear} reportMonth={reportMonth} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
@@ -4562,8 +5320,8 @@ function QuickAnnouncementBox({ announcements, setAnnouncements }) {
     setTimeout(() => setJustSent(false), 3000);
   };
   return (
-    <div className="bg-white rounded-lg border border-gold/40 p-4">
-      <div className="text-xs font-semibold text-gold uppercase mb-2 flex items-center gap-1.5"><Megaphone size={14} /> Gửi thông báo nhanh — hiển thị ở thanh thông báo công ty</div>
+    <div className="bg-white rounded-lg border border-paper-line p-4">
+      <div className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-ink"><Megaphone size={14} className="text-gold" /> Gửi thông báo công ty<span className="ml-1 text-[11px] font-normal text-muted">hiển thị ở thanh thông báo cho mọi người</span></div>
       <div className="flex gap-2">
         <input value={text} onChange={(e) => setText(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder="Nhập nội dung thông báo..." className="flex-1 border border-paper-line rounded-md px-3 py-2 text-sm" />
         <button onClick={send} className="bg-ink text-white text-sm px-4 py-2 rounded-md hover:bg-ink-light shrink-0">Gửi ngay</button>
@@ -4571,7 +5329,7 @@ function QuickAnnouncementBox({ announcements, setAnnouncements }) {
       <div className="flex items-center gap-1.5 mt-2 flex-wrap">
         <span className="text-[10px] text-muted">Mẫu nhanh:</span>
         {QUICK_TEMPLATES.map((tpl, i) => (
-          <button key={i} onClick={() => setText(tpl)} className="text-[10px] text-ink-light border border-paper-line rounded-full px-2 py-0.5 hover:border-gold">{tpl.slice(0, 24)}...</button>
+          <button key={i} onClick={() => setText(tpl)} className="text-[10px] text-ink-light border border-paper-line rounded-full px-2 py-0.5 hover:border-[#3C50E0]/60">{tpl.slice(0, 24)}...</button>
         ))}
       </div>
       {justSent && <p className="text-xs text-ledger-green mt-2 flex items-center gap-1"><CheckCircle2 size={12} /> Đã gửi — đang hiển thị ở thanh thông báo công ty trong 30 phút.</p>}
@@ -4580,13 +5338,21 @@ function QuickAnnouncementBox({ announcements, setAnnouncements }) {
   );
 }
 
-function Dashboard({ totals, financialSummary, financialSummaryLoading, financialSummaryError, financialSummaryIncidentId, financialSeriesError, refreshFinancialSummary, transactions, payrollRows, totalPayroll, activeEmployees, warnCount, warnNames, cashBalance, totalReceivable, totalPayable, overdueDebts, t, lang, totalCharterCapitalContributed, registeredCharterCapital, monthlyChart, orders, distributionOrders, cvReviews, masterRanking, inventory, debts, setTab, pendingDistRevenue, contracts, leads, perfWarningApprovedAt, setPerfWarningApprovedAt, announcements, setAnnouncements, totalEmployerCost, dataLoader }) {
-  const [activeTableView, setActiveTableView] = useState("finance");
+function Dashboard({ totals, financialSummary, financialSummaryLoading, financialSummaryError, financialSummaryIncidentId, financialSeriesError, refreshFinancialSummary, transactions, payrollRows, totalPayroll, activeEmployees, warnCount, warnNames, cashBalance, totalReceivable, totalPayable, overdueDebts, t, lang, totalCharterCapitalContributed, registeredCharterCapital, monthlyChart, orders, distributionOrders, cvReviews, masterRanking, inventory, debts, setTab, pendingDistRevenue, contracts, leads, perfWarningApprovedAt, setPerfWarningApprovedAt, announcements, setAnnouncements, totalEmployerCost, dataLoader, initialView, supportCases, tasks, attendanceRequests, employees }) {
+  // Menu "Điều hành" tái dùng đúng trung tâm này nhưng mở thẳng khu "Việc cần xử lý" —
+  // mọi cảnh báo dẫn về đúng màn hình nguồn, không sửa dữ liệu chuyên môn tại chỗ.
+  const [activeTableView, setActiveTableView] = useState(initialView || "finance");
   const lazyTableData = useLazyTableData(activeTableView, {
-    finance: ["transactions", "orders", "marketingLogs", "debts", "capitalContributions", "kpiTiers", "inventory", "stockMovements", "distributionOrders", "payrollPayments", "payrollApprovals"],
-    actions: ["orders", "distributionOrders", "inventory", "stockMovements", "cvReviews", "debts", "contracts", "transactions", "leads"],
+    finance: ["transactions", "orders", "marketingLogs", "debts", "capitalContributions", "kpiTiers", "inventory", "stockMovements", "distributionOrders", "payrollPayments", "payrollApprovals", "supportCases", "tasks", "attendanceRequests"],
+    actions: ["orders", "distributionOrders", "inventory", "stockMovements", "cvReviews", "debts", "contracts", "transactions", "leads", "supportCases", "tasks", "attendanceRequests"],
     recent: ["transactions"],
   }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
+  // Đếm "việc cần xử lý" bằng CHUNG một hàm với Trung tâm vận hành — hai màn không lệch số.
+  const opsRows = useMemo(
+    () => buildOperationsRows({ orders, debts, supportCases, tasks, inventory, employees, attendanceRequests, transactions }),
+    [orders, debts, supportCases, tasks, inventory, employees, attendanceRequests, transactions],
+  );
+  const opsHighCount = opsRows.filter((row) => row.priority === "Cao").length;
   const lowKpi = payrollRows.filter((r) => r.kpi < 80).length;
   const lowKpiNames = payrollRows.filter((r) => r.kpi < 80).map((r) => r.name);
   const [showLowKpiList, setShowLowKpiList] = useState(false);
@@ -4606,9 +5372,16 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
   const expiringContracts = (contracts || []).filter((c) => c.expiryDate && Math.ceil((new Date(c.expiryDate) - TODAY) / 86400000) <= 30);
   const cashRiskCount = (transactions || []).filter((t) => t.kind === "chi" && t.paymentMethod === "tien_mat" && t.amount >= CASH_PAYMENT_DEDUCTIBLE_LIMIT).length;
   const overdueLeadsCount = (leads || []).filter((l) => l.status === "dang_cham_soc" && l.nextFollowUpDate && l.nextFollowUpDate <= TODAY_STR).length;
+  // Đơn chưa thu đủ tiền — cùng điều kiện với dòng "Công nợ" ở Trung tâm vận hành.
+  const unpaidOrdersCount = (orders || []).filter((o) => {
+    if (isOrderCancelled(o)) return false;
+    const remaining = Number(o.amountBreakdown?.remaining);
+    return Number.isFinite(remaining) ? remaining > 0 : (o.paymentStatus && o.paymentStatus !== "paid");
+  }).length;
 
   const actionItems = [
-    crmPending > 0 && { icon: ShoppingCart, text: `${crmPending} đơn CRM chưa xuất hóa đơn`, tab: "crm", tone: "gold" },
+    unpaidOrdersCount > 0 && { icon: CreditCard, text: `${unpaidOrdersCount} đơn chưa thu đủ tiền — theo dõi ở Công nợ/Trung tâm vận hành`, tab: "dieuhanh", tone: "red", count: unpaidOrdersCount },
+    crmPending > 0 && { icon: ShoppingCart, text: `${crmPending} đơn CRM chưa xuất hóa đơn`, tab: "crm", tone: "gold", count: crmPending },
     distPending > 0 && { icon: Handshake, text: `${fmtVND(pendingDistRevenue)} doanh thu ròng đang chờ đối tác phân phối xác nhận (${distPending} đơn) — chưa vào Thu Chi`, tab: "hoptac", tone: "gold" },
     lowStockProducts.length > 0 && { icon: Package, text: `${lowStockProducts.length} sản phẩm sắp hết hàng trong Kho`, tab: "kho", tone: "red" },
     overdueDebtList.length > 0 && { icon: AlertTriangle, text: `${overdueDebtList.length} khoản công nợ quá hạn`, tab: "congno", tone: "red" },
@@ -4630,7 +5403,6 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
 
   return (
     <div className="flex flex-col gap-6">
-      <QuickAnnouncementBox announcements={announcements} setAnnouncements={setAnnouncements} />
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {[
           { id: "crm", label: "Doanh thu & Thu chi", note: "Doanh thu, bảng thu, bảng chi và chi phí nhân sự", icon: BarChart3 },
@@ -4643,17 +5415,25 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
           </button>
         ))}
       </div>
+      <QuickAnnouncementBox announcements={announcements} setAnnouncements={setAnnouncements} />
       <SectionViewSwitcher
         value={activeTableView}
         onChange={setActiveTableView}
         options={[
           { id: "finance", label: "Tổng quan tài chính", icon: Wallet },
-          { id: "actions", label: "Việc cần xử lý", icon: AlertTriangle, count: actionItems.length },
+          { id: "actions", label: "Việc cần xử lý", icon: AlertTriangle, count: opsRows.length },
           { id: "recent", label: "Giao dịch gần đây", icon: ClipboardList, count: transactions.length },
         ]}
       />
 
       {activeTableView === "actions" && (<>
+      {/* Số đếm giống HỆT Trung tâm vận hành (chung buildOperationsRows) — bấm để mở bảng chi tiết. */}
+      <button type="button" onClick={() => setTab && setTab("dieuhanh")} className="flex w-full items-center gap-3 rounded-lg border border-stamp-red/40 bg-stamp-red/5 px-4 py-3 text-left hover:bg-stamp-red/10">
+        <AlertTriangle size={18} className="shrink-0 text-stamp-red" />
+        <span className="min-w-0 flex-1 text-sm text-charcoal"><strong className="text-ink">{opsRows.length} việc cần xử lý</strong> · trong đó <strong className="text-stamp-red">{opsHighCount} ưu tiên cao</strong> — cùng nguồn đếm với Trung tâm vận hành.</span>
+        <span className="shrink-0 text-xs font-semibold text-[#315fae]">Mở Trung tâm vận hành</span>
+        <ChevronRight size={15} className="shrink-0 text-muted" />
+      </button>
       {warnNames && warnNames.length > 0 && (() => {
         const minutesSince = (stamp) => {
           if (!stamp) return Infinity;
@@ -4680,7 +5460,7 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
 
       {actionItems.length > 0 && (
         <div className="bg-white rounded-lg border border-stamp-red/30 overflow-hidden">
-          <div className="px-4 py-2.5 bg-stamp-red/5 text-xs font-semibold text-stamp-red uppercase flex items-center gap-1.5"><AlertTriangle size={13} /> Cần xử lý ({actionItems.length}) — gom từ khắp hệ thống</div>
+          <div className="px-4 py-2.5 bg-stamp-red/5 text-xs font-semibold text-stamp-red uppercase flex items-center gap-1.5"><AlertTriangle size={13} /> {actionItems.length} nhóm cảnh báo — gom từ khắp hệ thống</div>
           <div className="divide-y divide-paper-line">
             {actionItems.map((item, i) => (
               <button key={i} onClick={() => setTab && setTab(item.tab)} className="w-full text-left px-4 py-2.5 flex items-center gap-2 text-sm hover:bg-paper/60">
@@ -4709,7 +5489,7 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          <KpiCard icon={BarChart3} label="Doanh thu" value={fmtVND(totals.revenue)} tone="up" sub="Giá trị hàng hóa, dịch vụ đã ghi nhận" />
+          <KpiCard icon={BarChart3} label="Tổng giá trị đơn hàng" value={fmtVND(totals.revenue)} tone="up" sub={`Gồm VAT — doanh thu kế toán chưa VAT: ${fmtVND(totals.revenueExVat ?? totals.revenue)}`} />
           <KpiCard icon={TrendingUp} label="Thực thu" value={fmtVND(totals.thu)} tone="up" sub="Tiền đã thật sự nhận vào quỹ" />
           <KpiCard icon={CreditCard} label="Còn phải thu" value={fmtVND(totalReceivable)} tone={totalReceivable > 0 ? "down" : "up"} sub="Số tiền khách hàng còn nợ" />
           <KpiCard icon={TrendingDown} label="Tổng chi" value={fmtVND(totals.chi)} tone="down" sub="Tiền đã thật sự chi khỏi quỹ" />
@@ -4722,7 +5502,7 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
           <span>Phân tích và cảnh báo chi tiết</span><ChevronRight size={16} className={`transition-transform ${showFinancialDetails ? "rotate-90" : ""}`} />
         </button>
         {showFinancialDetails && <div className="grid grid-cols-1 gap-3 border-t border-paper-line p-4 sm:grid-cols-2 xl:grid-cols-5">
-          <KpiCard icon={Wallet} label="Lợi nhuận kế toán" value={fmtVND(totals.profit)} tone={totals.profit >= 0 ? "up" : "down"} sub="Doanh thu ghi nhận − chi phí vận hành − lương − bảo hiểm DN" />
+          <KpiCard icon={Wallet} label="Lợi nhuận kế toán" value={fmtVND(totals.profit)} tone={totals.profit >= 0 ? "up" : "down"} sub="Doanh thu chưa VAT − giá vốn − chi phí vận hành − lương − bảo hiểm DN" />
           <KpiCard icon={CreditCard} label={t("kpi_payable")} value={fmtVND(totalPayable)} tone="down" sub={t("kpi_payable_sub")} />
           <KpiCard icon={AlertTriangle} label={t("kpi_overdue")} value={overdueDebts} tone={overdueDebts > 0 ? "down" : "up"} sub={t("kpi_overdue_sub")} />
           <KpiCard icon={Gauge} label={t("kpi_perf_warn")} value={warnCount} tone={warnCount > 0 ? "down" : "up"} sub={`${activeEmployees.length} ${t("employees_tracked")}`} />
@@ -4839,8 +5619,8 @@ function AnnouncementPanel({ announcements, setAnnouncements }) {
   return (
     <div className="bg-white rounded-lg border border-paper-line p-5">
       <h3 className="ktns-serif font-semibold text-ink mb-1 flex items-center gap-2"><Megaphone size={16} /> Thông báo chạy chữ đầu trang</h3>
-      <p className="text-xs text-muted mb-3">Mỗi thông báo được đặt giờ bắt đầu và thời lượng chạy riêng. Ví dụ chọn 13:30, thời lượng 30 phút thì ticker chỉ hiển thị trong khoảng 13:30–14:00. Phải bấm <strong className="text-charcoal">Duyệt hiển thị</strong> thì thông báo mới chạy.</p>
-      <div className="grid grid-cols-[minmax(0,1fr)_220px_150px_auto] gap-2 mb-3">
+      <p className="text-xs text-muted mb-3" title="Ví dụ: chọn 13:30, thời lượng 30 phút thì ticker chỉ hiển thị 13:30–14:00.">Đặt giờ bắt đầu và thời lượng; bấm <strong className="text-charcoal">Duyệt hiển thị</strong> để chạy.</p>
+      <div className="mb-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_200px_130px_auto]">
         <input value={draftText} onChange={(e) => setDraftText(e.target.value)} placeholder="VD: Họp toàn công ty lúc 15h..." className="border border-paper-line rounded px-2.5 py-1.5 text-sm" />
         <label className="text-[10px] text-muted flex flex-col gap-0.5">Bắt đầu chạy<input type="datetime-local" value={draftStartAt} onChange={(e) => setDraftStartAt(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
         <label className="text-[10px] text-muted flex flex-col gap-0.5">Thời lượng (phút)<input type="number" min="1" max="1440" value={draftDurationMinutes} onChange={(e) => setDraftDurationMinutes(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
@@ -4856,7 +5636,7 @@ function AnnouncementPanel({ announcements, setAnnouncements }) {
               <span className="flex-1 text-sm text-charcoal">{a.text}</span>
               <label className="text-[9px] text-muted flex flex-col gap-0.5">Bắt đầu<input type="datetime-local" value={a.startAt || toLocalDateTimeInputValue(new Date())} onChange={(e) => updateAnnouncement(a.id, { startAt: e.target.value })} className="w-[190px] border border-paper-line rounded px-1.5 py-1 text-[10px] ktns-mono" /></label>
               <label className="text-[9px] text-muted flex flex-col gap-0.5">Phút<input type="number" min="1" max="1440" value={a.durationMinutes || 30} onChange={(e) => updateAnnouncement(a.id, { durationMinutes: Math.min(1440, Math.max(1, Number(e.target.value) || 30)) })} className="w-16 border border-paper-line rounded px-1.5 py-1 text-[10px] ktns-mono" /></label>
-              <span className="text-[10px] text-muted ktns-mono">{a.createdAt}</span>
+              <span className="text-[10px] text-muted ktns-mono">{fmtContactTime(a.createdAt)}</span>
               <button onClick={() => toggleApprove(a.id)} className={`text-[11px] px-2.5 py-1 rounded-md ${a.approved ? "bg-ledger-green text-white" : "border border-gold text-gold"}`}>
                 {a.approved ? "Đã duyệt / theo lịch" : "Duyệt hiển thị"}
               </button>
@@ -4869,7 +5649,8 @@ function AnnouncementPanel({ announcements, setAnnouncements }) {
   );
 }
 
-function CauHinhNhacViec({ company, setCompany, authUser }) {
+// Trang "Cấu hình thông báo": gom (1) thông báo chạy chữ đầu trang và (2) chu kỳ nhắc việc.
+function CauHinhNhacViec({ company, setCompany, authUser, announcements, setAnnouncements }) {
   const isAdmin = isAdminRole(authUser?.role);
   const [hours, setHours] = useState(() => Math.min(168, Math.max(1, Math.round(Number(company?.taskReminderIntervalHours) || 5))));
   const [saved, setSaved] = useState(false);
@@ -4888,17 +5669,23 @@ function CauHinhNhacViec({ company, setCompany, authUser }) {
   };
 
   if (!isAdmin) {
-    return <div className="max-w-2xl rounded-xl border border-stamp-red/30 bg-stamp-red/5 p-6 text-sm text-stamp-red">Chỉ Admin được phép cấu hình chu kỳ kiểm tra công việc.</div>;
+    return (
+      <div className="flex flex-col gap-4">
+        <AnnouncementPanel announcements={announcements} setAnnouncements={setAnnouncements} />
+        <div className="rounded-xl border border-stamp-red/30 bg-stamp-red/5 p-5 text-sm text-stamp-red">Chỉ Admin được phép cấu hình chu kỳ nhắc việc.</div>
+      </div>
+    );
   }
 
   return (
-    <div className="max-w-3xl space-y-4">
+    <div className="grid content-start items-start gap-4 xl:grid-cols-2">
+      <AnnouncementPanel announcements={announcements} setAnnouncements={setAnnouncements} />
       <div className="rounded-xl border border-paper-line bg-white p-5">
         <div className="mb-4 flex items-start gap-3">
           <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-ink text-white"><BellRing size={18} /></span>
           <div>
             <h3 className="ktns-serif text-lg font-semibold text-ink">Cấu hình thời gian kiểm tra công việc</h3>
-            <p className="mt-1 text-xs leading-5 text-muted">Admin chỉ thiết lập chu kỳ chung và không nhận thông báo. Cứ đủ chu kỳ, DOMIX chỉ kiểm tra tài khoản đang được giao việc. Người còn việc chưa hoàn thành sẽ nghe âm báo kiểu iPhone và thấy thông báo “Bạn còn X công việc chưa hoàn thành”.</p>
+            <p className="mt-1 text-xs leading-5 text-muted" title="Admin chỉ thiết lập chu kỳ, không nhận thông báo. Người còn việc chưa hoàn thành sẽ nghe âm báo và thấy nhắc nhở.">Nhắc người còn việc chưa hoàn thành theo chu kỳ bên dưới.</p>
           </div>
         </div>
 
@@ -4924,7 +5711,7 @@ function CauHinhNhacViec({ company, setCompany, authUser }) {
                 key={value}
                 type="button"
                 onClick={() => setHours(value)}
-                className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${Number(hours) === value ? "border-ledger-green bg-ledger-green text-white" : "border-paper-line bg-white text-ink hover:border-gold"}`}
+                className={`rounded-md border px-3 py-2 text-xs font-semibold transition-colors ${Number(hours) === value ? "border-ledger-green bg-ledger-green text-white" : "border-paper-line bg-white text-ink hover:border-[#3C50E0]/60"}`}
               >
                 {value} giờ
               </button>
@@ -5045,39 +5832,22 @@ function CaiDatCongTy({ company, setCompany, authUser, t, lang, exportAllData, i
   };
 
   const fields = [
-    { key: "name", label: t("company_name"), required: true },
-    { key: "address", label: t("company_address") },
+    { key: "name", label: t("company_name"), required: true, span: true },
+    { key: "address", label: t("company_address"), span: true },
     { key: "phone", label: t("company_phone"), mono: true },
     { key: "email", label: t("company_email") },
     { key: "taxCode", label: t("company_tax"), mono: true },
     { key: "representative", label: t("company_rep") },
+    { key: "establishedDate", label: "Ngày thành lập (theo ĐKKD)", type: "date", mono: true },
+    { key: "bankName", label: "Ngân hàng (tên · chi nhánh)" },
+    { key: "bankAccount", label: "Số tài khoản ngân hàng", mono: true },
   ];
+  // MST Việt Nam chuẩn: 10 số, chi nhánh/đơn vị phụ thuộc dạng 10 số - 3 số. Chỉ CẢNH BÁO,
+  // không chặn lưu — kế toán vẫn nhập được khi mã đang chờ cấp.
+  const taxCodeInvalid = String(form.taxCode || "").trim() !== "" && !/^\d{10}(-\d{3})?$/.test(String(form.taxCode).trim());
 
   return (
-    <div className="flex flex-col gap-4 max-w-2xl">
-      <div className="bg-white rounded-lg border border-stamp-red/40 p-5">
-        <h3 className="ktns-serif font-semibold text-stamp-red mb-1 flex items-center gap-2"><AlertTriangle size={16} /> Sao lưu &amp; Phục hồi dữ liệu — QUAN TRỌNG</h3>
-        <p className="text-xs text-muted mb-3">DOMIX đang lưu dữ liệu tập trung trên <strong className="text-charcoal">máy chủ PostgreSQL</strong>. Tải lại trang hoặc mở từ máy khác không làm mất dữ liệu. File xuất bên dưới là bản sao lưu bổ sung; việc sao lưu PostgreSQL định kỳ trên máy chủ vẫn là nguồn khôi phục chính.</p>
-        {isAdmin ? (
-          <>
-            <div className="flex items-center gap-3 flex-wrap">
-              <button onClick={exportAllData} className="flex items-center gap-1.5 text-sm bg-ink text-white px-4 py-2 rounded-md hover:bg-ink-light">
-                <Download size={15} /> Tải file sao lưu toàn bộ dữ liệu
-              </button>
-              <label className="flex items-center gap-1.5 text-sm border border-paper-line px-4 py-2 rounded-md text-ink hover:border-ink cursor-pointer">
-                <FileUp size={15} /> Nạp lại từ file sao lưu
-                <input ref={fileInputRef} type="file" accept=".json" onChange={handleImportFile} className="hidden" />
-              </label>
-            </div>
-            {importMsg && <p className="text-xs text-ledger-green mt-2 flex items-center gap-1.5"><CheckCircle2 size={13} /> {importMsg}</p>}
-            {importErr && <p className="text-xs text-stamp-red mt-2 flex items-center gap-1.5"><AlertTriangle size={13} /> {importErr}</p>}
-            <p className="text-[10px] text-muted mt-2">* Nạp file sẽ thay thế dữ liệu nghiệp vụ hiện tại. Chỉ dùng khi có quyền quản trị và đã tạo backup PostgreSQL trước đó.</p>
-          </>
-        ) : (
-          <p className="rounded-md border border-paper-line bg-paper px-3 py-2 text-xs text-muted">Chỉ tài khoản Admin được tải/nạp file sao lưu toàn bộ dữ liệu công ty.</p>
-        )}
-      </div>
-
+    <div className="flex flex-col gap-4">
       {isAdmin && pendingImport && (
         <div className="fixed inset-0 z-[120] flex items-center justify-center bg-ink/55 p-4" onClick={() => !importingBackup && setPendingImport(null)}>
           <div className="w-full max-w-xl overflow-hidden rounded-xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
@@ -5112,84 +5882,127 @@ function CaiDatCongTy({ company, setCompany, authUser, t, lang, exportAllData, i
         </div>
       )}
 
-      <AnnouncementPanel announcements={announcements} setAnnouncements={setAnnouncements} />
-
-      <div className="bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
-        <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
-        <span>{t("company_note")}</span>
-      </div>
-
-      <div className="bg-white rounded-lg border border-paper-line p-5">
-        <h3 className="ktns-serif font-semibold text-ink mb-4 flex items-center gap-2"><Building2 size={16} /> {t("company_settings_title")}</h3>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {fields.map((f) => (
-            <label key={f.key} className={`text-xs text-muted flex flex-col gap-1 ${f.key === "name" || f.key === "address" ? "col-span-2" : ""}`}>
-              {f.label}{f.required && <span className="text-stamp-red"> *</span>}
-              <input
-                value={form[f.key]}
-                onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
-                className={`border border-paper-line rounded px-2.5 py-2 text-sm ${f.mono ? "ktns-mono" : ""}`}
-              />
-            </label>
-          ))}
-        </div>
-        <div className="mt-4 rounded-lg border border-paper-line bg-paper/60 p-4">
-          <label className="flex max-w-md flex-col gap-1 text-xs text-muted">
-            Số dư quỹ ban đầu
-            <MoneyInput
-              value={form.openingCashBalance ?? 0}
-              onChange={(value) => setForm({ ...form, openingCashBalance: Number(value) || 0 })}
-              placeholder="0"
-              className="w-full rounded-md border border-paper-line bg-white px-3 py-2.5 text-sm ktns-mono focus:border-ledger-green"
-            />
-          </label>
-          <p className="mt-2 text-xs text-muted">Số dư hiện tại = số dư ban đầu + tổng Thu thực tế − tổng Chi thực tế. Chỉ nhập số dư đã đối soát tại ngày bắt đầu dùng DOMIX.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3 mt-5">
-          <button type="button" onClick={save} className="bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90 flex items-center gap-1.5">
-            <CheckCircle2 size={14} /> {t("btn_save")}
-          </button>
-          {saved && <span className="text-xs text-ledger-green flex items-center gap-1"><CheckCircle2 size={12} /> {t("saved_label")}</span>}
-        </div>
-      </div>
-
-      <div className="bg-white rounded-lg border border-paper-line p-5">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="ktns-serif font-semibold text-ink flex items-center gap-2"><KeyRound size={16} /> Mật khẩu Giám đốc</h3>
-            <p className="mt-1 text-xs text-muted">Dùng để mở khóa sổ nhạy cảm. Mật khẩu được băm trên máy chủ, không hiển thị lại và mọi lần xác thực đều được ghi nhật ký.</p>
-          </div>
-          <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${company?.directorPasswordConfigured ? "bg-ledger-green/10 text-ledger-green" : "bg-gold/10 text-gold"}`}>{company?.directorPasswordConfigured ? "Đã cấu hình" : "Chưa cấu hình"}</span>
-        </div>
-        {normalizeAccountRole(authUser?.role) === "admin" ? (
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            <label className="text-xs text-muted flex flex-col gap-1 sm:col-span-2">Xác thực lại mật khẩu tài khoản Admin
-              <input type="password" autoComplete="current-password" value={directorCredentials.currentPassword} onChange={(e) => setDirectorCredentials((prev) => ({ ...prev, currentPassword: e.target.value }))} className="rounded-md border border-paper-line px-3 py-2.5 text-sm" />
-            </label>
-            <label className="text-xs text-muted flex flex-col gap-1">Mật khẩu Giám đốc mới
-              <div className="flex items-center rounded-md border border-paper-line pr-2 focus-within:border-ledger-green">
-                <input type={showDirectorPassword ? "text" : "password"} autoComplete="new-password" value={directorCredentials.newPassword} onChange={(e) => setDirectorCredentials((prev) => ({ ...prev, newPassword: e.target.value }))} className="min-w-0 flex-1 rounded-md border-0 px-3 py-2.5 text-sm outline-none" />
-                <button type="button" onClick={() => setShowDirectorPassword((value) => !value)} className="rounded p-1.5 text-muted hover:bg-paper hover:text-ink" aria-label={showDirectorPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"} title={showDirectorPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}>{showDirectorPassword ? <EyeOff size={15} /> : <Eye size={15} />}</button>
+      <div className="grid items-start gap-4 xl:grid-cols-3">
+        {/* ===== CỘT TRÁI (2/3): hồ sơ pháp lý + thông số kế toán ===== */}
+        <div className="flex min-w-0 flex-col gap-4 xl:col-span-2">
+          <div className="bg-white rounded-lg border border-paper-line p-5">
+            <h3 className="ktns-serif font-semibold text-ink mb-1 flex items-center gap-2"><Building2 size={16} /> {t("company_settings_title")}</h3>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {fields.map((f) => {
+                // Field đang được quản lý từ .env (DOMIX_COMPANY_*) — khóa ô nhập, sửa trong file .env.
+                const envManaged = (company?.envManagedFields || []).includes(f.key);
+                return (
+                <label key={f.key} className={`text-xs text-muted flex flex-col gap-1 ${f.span ? "sm:col-span-2 lg:col-span-3" : ""}`}>
+                  <span className="flex items-center gap-1.5">{f.label}{f.required && <span className="text-stamp-red">*</span>}{envManaged && <span className="rounded border border-gold/40 bg-gold/10 px-1 py-px text-[9px] font-bold text-gold" title={`Giá trị đặt trong file .env (DOMIX_COMPANY_${f.key === "name" ? "NAME" : f.key === "address" ? "ADDRESS" : "PHONE"}) — sửa .env rồi khởi động lại backend.`}>.env</span>}</span>
+                  <input
+                    type={f.type || "text"}
+                    value={form[f.key] ?? ""}
+                    onChange={(e) => setForm({ ...form, [f.key]: e.target.value })}
+                    disabled={envManaged}
+                    title={envManaged ? "Giá trị đặt trong file .env — ô chỉ đọc." : undefined}
+                    className={`border rounded px-2.5 py-2 text-sm disabled:bg-paper disabled:text-ink disabled:cursor-not-allowed ${f.key === "taxCode" && taxCodeInvalid ? "border-stamp-red/60" : "border-paper-line"} ${f.mono ? "ktns-mono" : ""}`}
+                  />
+                  {f.key === "taxCode" && taxCodeInvalid && (
+                    <span className="text-[10px] text-stamp-red">MST chuẩn gồm 10 số (chi nhánh: 10 số - 3 số) — kiểm tra lại trước khi xuất hóa đơn/hợp đồng.</span>
+                  )}
+                </label>
+                );
+              })}
+            </div>
+            <div className="mt-4 rounded-lg border border-paper-line bg-paper/60 p-4">
+              <div className="mb-3 text-[11px] font-semibold uppercase tracking-wide text-ink">Thông số kế toán gốc</div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="flex flex-col gap-1 text-xs text-muted">
+                  Vốn điều lệ đăng ký (theo ĐKKD)
+                  <MoneyInput
+                    value={form.registeredCharterCapital ?? 0}
+                    onChange={(value) => setForm({ ...form, registeredCharterCapital: Number(value) || 0 })}
+                    placeholder="0"
+                    className="w-full rounded-md border border-paper-line bg-white px-3 py-2.5 text-sm ktns-mono focus:border-ledger-green"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-muted" title="Số dư hiện tại = số dư ban đầu + tổng Thu − tổng Chi. Chỉ nhập số dư đã đối soát tại ngày bắt đầu dùng DOMIX.">
+                  Số dư quỹ ban đầu
+                  <MoneyInput
+                    value={form.openingCashBalance ?? 0}
+                    onChange={(value) => setForm({ ...form, openingCashBalance: Number(value) || 0 })}
+                    placeholder="0"
+                    className="w-full rounded-md border border-paper-line bg-white px-3 py-2.5 text-sm ktns-mono focus:border-ledger-green"
+                  />
+                </label>
               </div>
-            </label>
-            <label className="text-xs text-muted flex flex-col gap-1">Nhập lại mật khẩu mới
-              <input type={showDirectorPassword ? "text" : "password"} autoComplete="new-password" value={directorCredentials.confirmPassword} onChange={(e) => setDirectorCredentials((prev) => ({ ...prev, confirmPassword: e.target.value }))} className="rounded-md border border-paper-line px-3 py-2.5 text-sm" />
-            </label>
-            <div className="sm:col-span-2 flex flex-wrap items-center gap-3">
-              <button type="button" onClick={saveDirectorCredential} disabled={directorSaving || !directorCredentials.currentPassword || !directorCredentials.newPassword || !directorCredentials.confirmPassword} className="inline-flex items-center gap-1.5 rounded-md bg-ink px-4 py-2.5 text-sm font-semibold text-white hover:bg-ink-light disabled:cursor-not-allowed disabled:opacity-50"><ShieldCheck size={15} /> {directorSaving ? "Đang lưu..." : "Cập nhật mật khẩu bảo mật"}</button>
-              {directorMessage && <span className="text-xs text-ledger-green">{directorMessage}</span>}
-              {directorError && <span className="text-xs text-stamp-red">{directorError}</span>}
+            </div>
+            <div className="flex flex-wrap items-center gap-3 mt-5">
+              <button type="button" onClick={save} className="bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90 flex items-center gap-1.5">
+                <CheckCircle2 size={14} /> {t("btn_save")}
+              </button>
+              {saved && <span className="text-xs text-ledger-green flex items-center gap-1"><CheckCircle2 size={12} /> {t("saved_label")}</span>}
             </div>
           </div>
-        ) : <p className="mt-4 rounded-md border border-paper-line bg-paper px-3 py-2 text-xs text-muted">Chỉ tài khoản Sếp/Admin được thay đổi mật khẩu Giám đốc.</p>}
-      </div>
 
-      <div className="bg-white rounded-lg border border-paper-line p-4">
-        <div className="text-xs font-semibold text-ink uppercase mb-2">{t("preview_label")}</div>
-        <div className="bg-ink rounded-md p-4 flex flex-col gap-2 max-w-xs">
-          <div className="flex items-center gap-2"><Building2 size={13} className="text-gold" /><span className="text-[11px] text-white/80 font-medium">{form.name || "—"}</span></div>
-          <div className="flex items-center gap-2"><MapPin size={13} className="text-gold" /><span className="text-[11px] text-white/70">{form.address || "—"}</span></div>
-          <div className="flex items-center gap-2"><Phone size={13} className="text-gold" /><span className="text-[11px] text-white/70 ktns-mono">{form.phone || "—"}</span></div>
+          <div className="bg-white rounded-lg border border-paper-line p-4">
+            <div className="text-xs font-semibold text-ink uppercase mb-2">{t("preview_label")}</div>
+            <div className="bg-ink rounded-md p-4 flex flex-col gap-2 max-w-sm">
+              <div className="flex items-center gap-2"><Building2 size={13} className="text-gold" /><span className="text-[11px] text-white/80 font-medium">{form.name || "—"}</span></div>
+              <div className="flex items-center gap-2"><MapPin size={13} className="text-gold" /><span className="text-[11px] text-white/70">{form.address || "—"}</span></div>
+              <div className="flex items-center gap-2"><Phone size={13} className="text-gold" /><span className="text-[11px] text-white/70 ktns-mono">{form.phone || "—"}</span></div>
+            </div>
+          </div>
+        </div>
+
+        {/* ===== CỘT PHẢI (1/3): sao lưu + bảo mật ===== */}
+        <div className="flex min-w-0 flex-col gap-4">
+          <div className="bg-white rounded-lg border border-stamp-red/40 p-5">
+            <h3 className="ktns-serif font-semibold text-stamp-red mb-3 flex items-center gap-2" title="Dữ liệu lưu tập trung trên PostgreSQL; file xuất là bản sao lưu bổ sung."><AlertTriangle size={16} /> Sao lưu &amp; Phục hồi dữ liệu</h3>
+            {isAdmin ? (
+              <>
+                <div className="flex flex-col gap-2">
+                  <button onClick={exportAllData} className="flex items-center justify-center gap-1.5 text-sm bg-ink text-white px-4 py-2 rounded-md hover:bg-ink-light">
+                    <Download size={15} /> Tải file sao lưu toàn bộ dữ liệu
+                  </button>
+                  <label className="flex items-center justify-center gap-1.5 text-sm border border-paper-line px-4 py-2 rounded-md text-ink hover:border-ink cursor-pointer">
+                    <FileUp size={15} /> Nạp lại từ file sao lưu
+                    <input ref={fileInputRef} type="file" accept=".json" onChange={handleImportFile} className="hidden" />
+                  </label>
+                </div>
+                {importMsg && <p className="text-xs text-ledger-green mt-2 flex items-center gap-1.5"><CheckCircle2 size={13} /> {importMsg}</p>}
+                {importErr && <p className="text-xs text-stamp-red mt-2 flex items-center gap-1.5"><AlertTriangle size={13} /> {importErr}</p>}
+              </>
+            ) : (
+              <p className="rounded-md border border-paper-line bg-paper px-3 py-2 text-xs text-muted">Chỉ tài khoản Admin được tải/nạp file sao lưu toàn bộ dữ liệu công ty.</p>
+            )}
+          </div>
+
+          <div className="bg-white rounded-lg border border-paper-line p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="ktns-serif font-semibold text-ink flex items-center gap-2"><KeyRound size={16} /> Mật khẩu Giám đốc</h3>
+                <p className="mt-1 text-xs text-muted" title="Mật khẩu được băm trên máy chủ, không hiển thị lại; mọi lần xác thực đều ghi nhật ký.">Dùng để mở khóa sổ nhạy cảm.</p>
+              </div>
+              <span className={`rounded-full px-2.5 py-1 text-[10px] font-semibold ${company?.directorPasswordConfigured ? "bg-ledger-green/10 text-ledger-green" : "bg-gold/10 text-gold"}`}>{company?.directorPasswordConfigured ? "Đã cấu hình" : "Chưa cấu hình"}</span>
+            </div>
+            {normalizeAccountRole(authUser?.role) === "admin" ? (
+              <div className="mt-4 grid gap-3">
+                <label className="text-xs text-muted flex flex-col gap-1">Xác thực lại mật khẩu tài khoản Admin
+                  <input type="password" autoComplete="current-password" value={directorCredentials.currentPassword} onChange={(e) => setDirectorCredentials((prev) => ({ ...prev, currentPassword: e.target.value }))} className="rounded-md border border-paper-line px-3 py-2.5 text-sm" />
+                </label>
+                <label className="text-xs text-muted flex flex-col gap-1">Mật khẩu Giám đốc mới
+                  <div className="flex items-center rounded-md border border-paper-line pr-2 focus-within:border-ledger-green">
+                    <input type={showDirectorPassword ? "text" : "password"} autoComplete="new-password" value={directorCredentials.newPassword} onChange={(e) => setDirectorCredentials((prev) => ({ ...prev, newPassword: e.target.value }))} className="min-w-0 flex-1 rounded-md border-0 px-3 py-2.5 text-sm outline-none" />
+                    <button type="button" onClick={() => setShowDirectorPassword((value) => !value)} className="rounded p-1.5 text-muted hover:bg-paper hover:text-ink" aria-label={showDirectorPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"} title={showDirectorPassword ? "Ẩn mật khẩu" : "Hiện mật khẩu"}>{showDirectorPassword ? <EyeOff size={15} /> : <Eye size={15} />}</button>
+                  </div>
+                </label>
+                <label className="text-xs text-muted flex flex-col gap-1">Nhập lại mật khẩu mới
+                  <input type={showDirectorPassword ? "text" : "password"} autoComplete="new-password" value={directorCredentials.confirmPassword} onChange={(e) => setDirectorCredentials((prev) => ({ ...prev, confirmPassword: e.target.value }))} className="rounded-md border border-paper-line px-3 py-2.5 text-sm" />
+                </label>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button type="button" onClick={saveDirectorCredential} disabled={directorSaving || !directorCredentials.currentPassword || !directorCredentials.newPassword || !directorCredentials.confirmPassword} className="inline-flex items-center gap-1.5 rounded-md bg-ink px-4 py-2.5 text-sm font-semibold text-white hover:bg-ink-light disabled:cursor-not-allowed disabled:opacity-50"><ShieldCheck size={15} /> {directorSaving ? "Đang lưu..." : "Cập nhật mật khẩu bảo mật"}</button>
+                  {directorMessage && <span className="text-xs text-ledger-green">{directorMessage}</span>}
+                  {directorError && <span className="text-xs text-stamp-red">{directorError}</span>}
+                </div>
+              </div>
+            ) : <p className="mt-4 rounded-md border border-paper-line bg-paper px-3 py-2 text-xs text-muted">Chỉ tài khoản Sếp/Admin được thay đổi mật khẩu Giám đốc.</p>}
+          </div>
         </div>
       </div>
     </div>
@@ -5230,6 +6043,19 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
   const vatTransactions = transactions.filter((t) => VAT_INVOICE_TYPES.includes(t.invoiceType) && inRange(t));
   const vatOutputRows = vatTransactions.filter((t) => t.kind === "thu");
   const vatInputRows = vatTransactions.filter((t) => t.kind === "chi");
+  // Sổ VAT đọc từ SỔ CÁI (3331/133) — nguồn sự thật duy nhất, thay cho việc tự cộng từ
+  // giao dịch giao diện vốn bỏ sót VAT của đơn hàng và chứng từ cũ.
+  const [ledgerVat, setLedgerVat] = useState({ output: [], input: [], loaded: false, error: "" });
+  // Tải NGAY khi vào trang (không đợi mở tab VAT) — số đếm trên thanh tab và bảng VAT
+  // luôn cùng một nguồn sổ cái, không bao giờ hiện 0 trong khi Sổ VAT có chứng từ.
+  useEffect(() => {
+    let alive = true;
+    setLedgerVat((prev) => ({ ...prev, loaded: false, error: "" }));
+    fetchVatBooks(rangeMode === "all" ? {} : { from: rangeFrom, to: rangeTo })
+      .then((res) => { if (alive) setLedgerVat({ output: res.output || [], input: res.input || [], loaded: true, error: "" }); })
+      .catch((err) => { if (alive) setLedgerVat((prev) => ({ ...prev, loaded: true, error: err.message || "Lỗi tải sổ VAT." })); });
+    return () => { alive = false; };
+  }, [rangeMode, rangeFrom, rangeTo]);
   const printRef = useRef(null);
   const fileInputRef = useRef(null);
 
@@ -5291,18 +6117,53 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
   };
   const [blockedMsg, setBlockedMsg] = useState("");
   const AUTO_SOURCE_LABELS = { bangluong: "Bảng lương", hoptac: "Hợp tác phân phối", hoptac_muahang: "Hợp tác phân phối (nhập hàng)", congno: "Công nợ", congno_payment: "Công nợ (thanh toán)", distribution_settlement: "Quyết toán đối tác", payroll_payment: "Chi trả lương" };
-  const removeTx = (id) => {
+  const removeTx = async (id) => {
     const tx = transactions.find((t) => t.id === id);
-    if (tx?.source === "crm" && tx.sourceOrderId && setOrders) {
+    if (!tx) return;
+    if (tx.source === "crm" && tx.sourceOrderId && setOrders) {
+      // Hóa đơn của đơn CRM: gỡ hóa đơn trả đơn về trạng thái chờ — không phải xóa tiền.
       setOrders((prev) => prev.map((o) => (o.id === tx.sourceOrderId ? { ...o, invoiceStatus: "pending", invoiceNo: "", invoiceAttachmentData: "", invoiceAttachmentName: "", linkedTxId: null } : o)));
-    } else if (tx?.source && AUTO_SOURCE_LABELS[tx.sourceModule || tx.source]) {
+      setTransactions((prev) => prev.filter((t) => t.id !== id));
+      return;
+    }
+    if (tx.source && AUTO_SOURCE_LABELS[tx.sourceModule || tx.source]) {
       // Giao dịch tự sinh: chặn xoá trực tiếp — thanh toán công nợ phải xóa Ở TAB CÔNG NỢ
       // (xóa lần thanh toán sẽ tự đảo giao dịch này + phục hồi số dư nợ, mục VI/VII).
       setBlockedMsg(`Giao dịch này tự động sinh ra từ "${AUTO_SOURCE_LABELS[tx.sourceModule || tx.source]}" — vui lòng huỷ/sửa đúng ở tab gốc để dữ liệu 2 bên luôn khớp nhau, không xoá trực tiếp ở đây.`);
       setTimeout(() => setBlockedMsg(""), 5000);
       return;
     }
-    setTransactions((prev) => prev.filter((t) => t.id !== id));
+    if (tx.reversalOf || tx.reversedByEntryId) {
+      setBlockedMsg("Bút toán này thuộc cặp đã hủy — giữ nguyên làm dấu vết kiểm toán, không thao tác tiếp.");
+      setTimeout(() => setBlockedMsg(""), 5000);
+      return;
+    }
+    // Giao dịch nhập tay đã lưu sổ: KHÔNG hard-delete (backend cũng chặn 409) — tạo
+    // BÚT TOÁN ĐỎ ngược dấu cùng sổ, số liệu tự triệt tiêu, dấu vết giữ nguyên.
+    const accepted = await confirmOverlay(
+      `Hủy khoản "${tx.desc || ""}" (${fmtVND(Math.abs(Number(tx.amount) || 0))})?\n\nHệ thống KHÔNG xóa dữ liệu — sẽ tạo BÚT TOÁN ĐỎ ngược dấu để triệt tiêu số liệu và giữ dấu vết kiểm toán; sổ cái tự tạo chứng từ đảo tương ứng.`,
+      { title: "Hủy giao dịch (tạo bút toán đỏ)", confirmLabel: "Hủy & tạo bút toán đỏ", tone: "danger" },
+    );
+    if (!accepted) return;
+    const stamp = new Date().toISOString();
+    const reversalId = `rev-${id}`;
+    setTransactions((prev) => prev
+      .map((item) => (item.id === id ? { ...item, reversedByEntryId: reversalId, reversedAt: stamp } : item))
+      .concat([{
+        id: reversalId,
+        date: TODAY_STR,
+        kind: tx.kind,
+        category: tx.category || "khac",
+        desc: `BÚT TOÁN ĐỎ — hủy: ${tx.desc || ""}`,
+        amount: -(Number(tx.amount) || 0),
+        paymentMethod: tx.paymentMethod || "chuyen_khoan",
+        invoiceType: tx.invoiceType || "Chưa xác định",
+        invoiceNo: tx.invoiceNo || "",
+        vatRate: Number(tx.vatRate) || 0,
+        reversalOf: id,
+        source: "manual_finance_hub",
+        updatedAt: stamp,
+      }]));
   };
   const filteredTransactions = transactions.filter((t) => {
     // Có gõ tìm kiếm thì bỏ qua giới hạn kỳ — tìm xuyên suốt mọi tháng, vì khách/kế toán chỉ nhớ
@@ -5361,7 +6222,7 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
                 <td style="padding:4px;">${t.desc}</td>
                 <td style="padding:4px;">${t.partnerName || "—"}${t.partnerTaxCode ? " (MST " + t.partnerTaxCode + ")" : ""}</td>
                 <td style="padding:4px;">${categoryDisplayLabel(t.kind, t.category) === "(Chưa phân loại)" ? "—" : categoryDisplayLabel(t.kind, t.category)}</td>
-                <td style="padding:4px; text-align:right;">${t.kind === "thu" ? "+" : "-"}${t.amount.toLocaleString("vi-VN")}đ</td>
+                <td style="padding:4px; text-align:right;">${(t.kind === "thu" ? 1 : -1) * t.amount >= 0 ? "+" : "-"}${Math.abs(t.amount).toLocaleString("vi-VN")}đ</td>
                 <td style="padding:4px;">${t.invoiceType}</td>
                 <td style="padding:4px;">${t.invoiceNo || "—"}</td>
                 <td style="padding:4px;">${t.attachmentName ? "Có" : "Không"}</td>
@@ -5427,8 +6288,8 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
           onChange={setActiveTableView}
           options={[
             { id: "transactions", label: "Danh sách giao dịch", icon: Wallet, count: filteredTransactions.length },
-            { id: "vat_output", label: "VAT đầu ra", icon: TrendingUp, count: vatOutputRows.length },
-            { id: "vat_input", label: "VAT đầu vào", icon: TrendingDown, count: vatInputRows.length },
+            { id: "vat_output", label: "VAT đầu ra", icon: TrendingUp, count: ledgerVat.loaded ? ledgerVat.output.length : vatOutputRows.length },
+            { id: "vat_input", label: "VAT đầu vào", icon: TrendingDown, count: ledgerVat.loaded ? ledgerVat.input.length : vatInputRows.length },
           ]}
         />
       </div>
@@ -5483,7 +6344,7 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
             <label className="text-xs text-muted flex flex-col gap-1">MST đối tác (nếu có)<input value={form.partnerTaxCode} onChange={(e) => setForm({ ...form, partnerTaxCode: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Hình thức thanh toán<select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm"><option value="tien_mat">Tiền mặt (TM)</option><option value="chuyen_khoan">Chuyển khoản (CK)</option></select></label>
             <label className="text-xs text-muted flex flex-col gap-1">Số tiền (đ)<MoneyInput value={form.amount} onChange={(v) => setForm({ ...form, amount: v })} disabled={isCrmLocked} /></label>
-            <label className="text-xs text-muted flex flex-col gap-1">Loại hóa đơn <span className="text-stamp-red">*</span><select value={form.invoiceType} onChange={(e) => setForm({ ...form, invoiceType: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">{INVOICE_TYPES.map((it) => (<option key={it}>{it}</option>))}</select></label>
+            <label className="text-xs text-muted flex flex-col gap-1">Loại hóa đơn <span className="text-stamp-red">*</span><select value={form.invoiceType} onChange={(e) => setForm({ ...form, invoiceType: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">{form.invoiceType && !INVOICE_TYPES.includes(form.invoiceType) && <option value={form.invoiceType} disabled>{form.invoiceType} — hết hiệu lực (NĐ 70/2025)</option>}{INVOICE_TYPES.map((it) => (<option key={it}>{it}</option>))}</select>{form.invoiceType && !INVOICE_TYPES.includes(form.invoiceType) && <span className="text-[10px] text-stamp-red">Từ 01/6/2025 (NĐ 70/2025 sửa đổi NĐ 123/2020), bán hàng hóa/dịch vụ phải lập hóa đơn không phân biệt giá trị — hãy chọn lại loại hóa đơn đúng.</span>}</label>
             <label className="text-xs text-muted flex flex-col gap-1">Số hóa đơn<input value={form.invoiceNo} onChange={(e) => setForm({ ...form, invoiceNo: e.target.value })} disabled={form.invoiceType.startsWith("Không cần") || form.invoiceType === "Chưa xác định"} className="border border-paper-line rounded px-2 py-1.5 text-sm disabled:bg-paper ktns-mono" /></label>
             {VAT_INVOICE_TYPES.includes(form.invoiceType) && (
               <label className="text-xs text-muted flex flex-col gap-1">Thuế suất VAT
@@ -5519,7 +6380,7 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
 
       {activeTableView === "transactions" && categoryBreakdown.length > 0 && (
         <div className="bg-white rounded-lg border border-paper-line p-4">
-          <div className="text-xs font-semibold text-ink uppercase mb-2">Tổng hợp theo danh mục (đang lọc)</div>
+          <div className="mb-2 text-sm font-semibold text-ink">Tổng hợp theo danh mục<span className="ml-1 text-[11px] font-normal text-muted">theo bộ lọc hiện tại</span></div>
           <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
             {categoryBreakdown.map((c) => (
               <div key={c.category} className="flex items-center justify-between text-xs border-b border-paper-line py-1">
@@ -5532,61 +6393,92 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
       )}
 
       {["vat_output", "vat_input"].includes(activeTableView) && (() => {
+        // NGUỒN SỰ THẬT = SỔ CÁI (TK 3331 đầu ra / TK 133 đầu vào) — không tự cộng lại từ
+        // giao dịch giao diện. Chứng từ đã hạch toán mà CHƯA có số hóa đơn được nêu rõ để
+        // đối soát, tuyệt đối không âm thầm hiển thị 0.
         const isOutput = activeTableView === "vat_output";
-        const rows = isOutput ? vatOutputRows : vatInputRows;
-        const vatAmount = isOutput ? vatOutput : vatInput;
-        const Row = (t) => {
-          const v = splitVAT(t.amount, t.vatRate || 0);
-          return (
-            <tr key={t.id} className="border-t border-paper-line">
-              <td className="px-3 py-2 ktns-mono text-xs text-muted">{t.date}</td>
-              <td className="px-3 py-2 text-xs">{t.category ? categoryDisplayLabel(t.kind, t.category) : "—"}</td>
-              <td className="px-3 py-2 text-xs">{t.desc}</td>
-              <td className="px-3 py-2 text-xs">{t.partnerName || "—"}</td>
-              <td className="px-3 py-2 text-right ktns-mono text-xs">{fmtVND(t.amount)}</td>
-              <td className="px-3 py-2 text-right ktns-mono text-xs text-stamp-red">{fmtVND(v.vatAmount)} ({t.vatRate || 0}%)</td>
-            </tr>
-          );
+        const rows = isOutput ? ledgerVat.output : ledgerVat.input;
+        const invoiceNoOf = (row) => {
+          if (row.sourceType === "order") {
+            const order = (orders || []).find((o) => String(o.id) === String(row.sourceId));
+            return order?.invoiceNo || "";
+          }
+          if (row.sourceType === "manual_tx") {
+            const tx = (transactions || []).find((t) => String(t.id) === String(row.sourceId));
+            return tx?.invoiceNo || "";
+          }
+          if (row.sourceType === "purchase_order") {
+            const po = (distributionOrders || []).find((d) => String(d.id) === String(row.sourceId));
+            return po?.invoiceNo || "";
+          }
+          return "";
         };
+        const enriched = rows.map((row) => ({ ...row, invoiceNoResolved: invoiceNoOf(row) }));
+        const missingInvoiceRows = isOutput ? enriched.filter((row) => !row.invoiceNoResolved && Number(row.vat) > 0) : [];
+        const totalVat = enriched.reduce((sum, row) => sum + Number(row.vat || 0), 0);
+        const ledgerPayable = ledgerVat.output.reduce((s, r) => s + Number(r.vat || 0), 0) - ledgerVat.input.reduce((s, r) => s + Number(r.vat || 0), 0);
         return (
           <div className="flex h-full min-h-0 flex-col gap-2">
+            {ledgerVat.error && <div className="shrink-0 rounded-lg border border-stamp-red/40 bg-stamp-red/5 px-3 py-2 text-xs text-stamp-red">Không tải được sổ VAT từ sổ cái: {ledgerVat.error} — số dưới đây có thể thiếu, KHÔNG dùng để kê khai.</div>}
+            {isOutput && missingInvoiceRows.length > 0 && (
+              <div className="shrink-0 rounded-lg border border-gold/40 bg-gold/5 px-3 py-2 text-xs text-[#92610A]">
+                <strong>{missingInvoiceRows.length} chứng từ đã hạch toán 3331 nhưng CHƯA phát hành hóa đơn</strong> — cần bổ sung số hóa đơn (bấm dòng tương ứng ở Danh sách giao dịch/Đơn hàng) trước khi kê khai thuế.
+              </div>
+            )}
             <div className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
               <div className={`shrink-0 px-4 py-3 text-xs font-semibold uppercase flex items-center gap-1.5 ${isOutput ? "text-ledger-green" : "text-stamp-red"}`}>
                 {isOutput ? <TrendingUp size={13} /> : <TrendingDown size={13} />}
-                {isOutput ? "VAT đầu ra — công ty bán ra" : "VAT đầu vào — công ty mua vào"}
+                {isOutput ? "VAT đầu ra — sổ cái TK 3331" : "VAT đầu vào — sổ cái TK 133"}
+                {!ledgerVat.loaded && <span className="ml-2 font-normal normal-case text-muted">đang tải sổ cái...</span>}
               </div>
               <div className="min-h-0 flex-1 overflow-auto">
                 <table data-sticky-columns="true" data-mobile-cards="true" className="w-full text-sm">
-                  <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-[10px] uppercase text-muted"><th className="px-3 py-2">Ngày</th><th className="px-3 py-2">Danh mục</th><th className="px-3 py-2">Mô tả</th><th className="px-3 py-2">Đối tác</th><th className="px-3 py-2 text-right">Số tiền</th><th className="px-3 py-2 text-right">VAT</th></tr></thead>
+                  <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-[10px] uppercase text-muted"><th className="px-3 py-2">Số CT</th><th className="px-3 py-2">Ngày</th><th className="px-3 py-2">Diễn giải</th><th className="px-3 py-2 text-right">Chưa VAT</th><th className="px-3 py-2 text-right">VAT</th><th className="px-3 py-2 text-right">Tổng</th><th className="px-3 py-2">Hóa đơn</th></tr></thead>
                   <tbody>
-                    {rows.length === 0 && <tr><td colSpan={6} className="px-3 py-8 text-center text-xs text-muted">Chưa có chứng từ phù hợp trong khoảng ngày đã chọn.</td></tr>}
-                    {rows.map(Row)}
+                    {ledgerVat.loaded && enriched.length === 0 && <tr><td colSpan={7} className="px-3 py-8 text-center text-xs text-muted">Sổ cái chưa có chứng từ VAT trong khoảng ngày đã chọn — bấm "Đồng bộ sổ cái" ở tab Sổ cái & Nhật ký nếu vừa nhập nghiệp vụ mới.</td></tr>}
+                    {enriched.map((row) => (
+                      <tr key={row.entryNo} className={`border-t border-paper-line ${row.status === "reversed" ? "opacity-50" : ""}`}>
+                        <td className="px-3 py-2 ktns-mono text-xs font-semibold text-ink">{row.entryNo}</td>
+                        <td className="px-3 py-2 ktns-mono text-xs text-muted">{formatDateVN(row.date)}</td>
+                        <td className="max-w-[260px] px-3 py-2 text-xs text-charcoal">{row.description}</td>
+                        <td className="px-3 py-2 text-right ktns-mono text-xs">{fmtVND(Number(row.net))}</td>
+                        <td className="px-3 py-2 text-right ktns-mono text-xs font-semibold text-[#92610A]">{fmtVND(Number(row.vat))}</td>
+                        <td className="px-3 py-2 text-right ktns-mono text-xs">{fmtVND(Number(row.gross))}</td>
+                        <td className="px-3 py-2 text-xs">
+                          {row.invoiceNoResolved
+                            ? <span className="ktns-mono text-ledger-green">{row.invoiceNoResolved}</span>
+                            : (isOutput && Number(row.vat) > 0
+                              ? <span className="rounded border border-gold/40 bg-gold/10 px-1.5 py-0.5 text-[9px] font-bold text-[#92610A]" title="Đã hạch toán 3331 nhưng chưa có số hóa đơn — cần bổ sung trước khi kê khai">CHƯA PHÁT HÀNH HĐ</span>
+                              : <span className="text-muted">—</span>)}
+                        </td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
               <div className="domix-table-total-bar shrink-0 border-t border-paper-line bg-paper px-3 py-2.5 font-semibold">
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
-                  <span className="text-muted">{isOutput ? "VAT đầu ra" : "VAT đầu vào"}: <strong className={isOutput ? "text-ledger-green" : "text-stamp-red"}>{fmtVND(vatAmount)}</strong></span>
-                  <span className="text-muted">{vatPayable >= 0 ? "VAT phải nộp" : "VAT được khấu trừ"}: <strong>{fmtVND(Math.abs(vatPayable))}</strong></span>
-                  <span className="text-muted">Số chứng từ: <strong className="text-ink">{rows.length}</strong></span>
+                  <span className="text-muted">{isOutput ? "VAT đầu ra (3331)" : "VAT đầu vào (133)"}: <strong className={isOutput ? "text-ledger-green" : "text-stamp-red"}>{fmtVND(totalVat)}</strong></span>
+                  <span className="text-muted">{ledgerPayable >= 0 ? "VAT phải nộp" : "VAT được khấu trừ"}: <strong>{fmtVND(Math.abs(ledgerPayable))}</strong></span>
+                  <span className="text-muted">Số chứng từ: <strong className="text-ink">{enriched.length}</strong></span>
+                  {isOutput && missingInvoiceRows.length > 0 && <span className="text-[#92610A]">Chưa phát hành HĐ: <strong>{missingInvoiceRows.length}</strong></span>}
                 </div>
               </div>
-              <p className="shrink-0 px-4 py-2.5 text-[10px] text-muted border-t border-paper-line">Chỉ tính giao dịch có hóa đơn GTGT. Giao dịch thu hộ đối tác mà VAT do đối tác chịu không được tính vào nghĩa vụ VAT của công ty.</p>
             </div>
           </div>
         );
       })()}
 
-      <div style={{ display: activeTableView === "transactions" ? undefined : "none" }} className="shrink-0 bg-white rounded-lg border border-paper-line p-4">
-        <div className="text-xs font-semibold text-ink uppercase mb-2 flex items-center gap-1.5"><Printer size={13} /> In hóa đơn theo khoảng ngày — phục vụ khi cơ quan thuế kiểm tra</div>
-        <div className="flex items-end gap-3 flex-wrap">
+      <details style={{ display: activeTableView === "transactions" ? undefined : "none" }} className="shrink-0 rounded-lg border border-paper-line bg-white">
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 px-4 py-3 text-sm font-semibold text-ink hover:bg-paper/60"><Printer size={13} className="text-ink-light" /> In bảng kê hóa đơn<span className="ml-1 text-[11px] font-normal text-muted">chọn khoảng ngày · phục vụ kiểm tra thuế</span><ChevronDown size={14} className="ml-auto text-muted" /></summary>
+        <div className="flex items-end gap-3 flex-wrap border-t border-paper-line px-4 py-3">
           <label className="text-xs text-muted flex flex-col gap-1">Từ ngày<input type="date" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
           <label className="text-xs text-muted flex flex-col gap-1">Đến ngày<input type="date" value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
           <button onClick={printInvoicesInRange} className="text-sm bg-ink text-white px-4 py-2 rounded-md hover:bg-ink-light flex items-center gap-1.5"><Printer size={14} /> In / Lưu PDF bảng kê + ảnh hóa đơn</button>
-          <button onClick={downloadInvoiceStatement} className="text-sm border border-paper-line text-ink px-4 py-2 rounded-md hover:border-gold flex items-center gap-1.5" title="Nếu nút In không hiện hộp thoại, dùng nút này — tải file về máy rồi mở bằng trình duyệt để in"><Download size={14} /> Tải file HTML để in</button>
+          <button onClick={downloadInvoiceStatement} className="text-sm border border-paper-line text-ink px-4 py-2 rounded-md hover:border-[#3C50E0]/60 flex items-center gap-1.5" title="Nếu nút In không hiện hộp thoại, dùng nút này — tải file về máy rồi mở bằng trình duyệt để in"><Download size={14} /> Tải file HTML để in</button>
           <span className="text-[11px] text-muted">{transactions.filter((t) => t.date >= rangeFrom && t.date <= rangeTo).length} giao dịch trong khoảng ngày này</span>
         </div>
-      </div>
+      </details>
 
       <div style={{ display: activeTableView === "transactions" ? "flex" : "none" }} className="order-2 min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
         <div className="min-h-0 flex-1 overflow-auto">
@@ -5625,7 +6517,7 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
                 <React.Fragment key={t.id}>
                 <tr className={`border-t border-paper-line cursor-pointer hover:bg-paper/40 ${missing || cashRiskFlag ? "ktns-warn-row" : ""}`} onClick={() => setExpandedTxId(isExpanded ? null : t.id)}>
                   <td className="px-4 py-2.5 ktns-mono text-xs text-muted">{idx + 1}</td>
-                  <td className="px-4 py-2.5 ktns-mono text-xs text-muted">{t.date}</td>
+                  <td className="px-4 py-2.5 ktns-mono text-xs text-muted whitespace-nowrap">{formatDateVN(t.date)}</td>
                   <td className="px-4 py-2.5">
                     {t.category ? categoryDisplayLabel(t.kind, t.category) : "—"}
                     <div className="text-[9px] text-ink-light ktns-mono">TK {t.accountCode || suggestAccountCode(t)}</div>
@@ -5646,7 +6538,8 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-right ktns-mono font-medium" style={{ color: t.kind === "thu" ? "var(--ledger-green)" : "var(--stamp-red)" }}>
-                    {t.kind === "thu" ? "+" : "-"}{fmtVND(t.amount)}
+                    {/* Bút toán đỏ mang số ÂM: dấu hiển thị tính theo giá trị hiệu dụng, không nối 2 dấu trừ. */}
+                    {(t.kind === "thu" ? 1 : -1) * (Number(t.amount) || 0) >= 0 ? "+" : "-"}{fmtVND(Math.abs(Number(t.amount) || 0))}
                     {owedToPartner && (
                       <div className="text-[10px] text-stamp-red font-normal normal-case">
                         còn nợ {owedToPartner.partnerName}: -{fmtVND(owedToPartner.amount)}<br />
@@ -5669,7 +6562,11 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
                       ) : (
                         <button onClick={() => startEditTx(t)} className="text-muted hover:text-ink" title={t.source === "crm" ? "Xử lý hoá đơn cho đơn Sale này" : "Sửa giao dịch"}><Pencil size={13} /></button>
                       )}
-                      <button onClick={() => removeTx(t.id)} className="text-muted hover:text-stamp-red" title={t.source === "crm" ? "Xoá sẽ trả đơn về trạng thái chờ hoá đơn bên CRM" : "Xoá giao dịch"}><Trash2 size={14} /></button>
+                      {(t.reversalOf || t.reversedByEntryId) ? (
+                        <span className="text-[9px] font-semibold text-muted" title="Cặp bút toán đỏ được giữ làm dấu vết kiểm toán">Lưu vết</span>
+                      ) : (
+                        <button onClick={() => removeTx(t.id)} className="text-muted hover:text-stamp-red" title={t.source === "crm" ? "Gỡ hóa đơn — trả đơn về trạng thái chờ hoá đơn bên CRM" : (t.source && AUTO_SOURCE_LABELS[t.sourceModule || t.source]) ? "Giao dịch tự sinh — hủy ở tab gốc" : "Hủy giao dịch (tạo bút toán đỏ, không xóa dữ liệu)"}>{t.source === "crm" ? <Trash2 size={14} /> : <RotateCcw size={14} />}</button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -5804,7 +6701,23 @@ function VonGop({ contributions, setContributions, company, setCompany, totalCon
     setForm({ ...item, value: String(item.value || 0), ownershipPercent: String(item.ownershipPercent || 0) });
     setShowForm(true);
   };
-  const removeContribution = (id) => setContributions((prev) => prev.filter((c) => c.id !== id));
+  // KHÔNG xóa lượt góp vốn — chỉ HỦY kèm lý do, bản ghi giữ lại để đối soát vốn điều lệ.
+  const [cancelContribTarget, setCancelContribTarget] = useState(null);
+  const [cancelContribReason, setCancelContribReason] = useState("");
+  const removeContribution = (id) => {
+    const target = contributions.find((c) => c.id === id);
+    if (!target) return;
+    setCancelContribReason("");
+    setCancelContribTarget(target);
+  };
+  const confirmCancelContribution = () => {
+    if (!cancelContribTarget || !cancelContribReason.trim()) return;
+    setContributions((prev) => prev.map((c) => (c.id === cancelContribTarget.id
+      ? { ...c, status: "da_huy", cancelReason: cancelContribReason.trim(), cancelledAt: new Date().toISOString() }
+      : c)));
+    setCancelContribTarget(null);
+    setCancelContribReason("");
+  };
 
   const registeredCapital = company.registeredCharterCapital || 0;
   const contributedPct = registeredCapital > 0 ? Math.min(100, Math.round((totalContributed / registeredCapital) * 100)) : 0;
@@ -5847,7 +6760,7 @@ function VonGop({ contributions, setContributions, company, setCompany, totalCon
       <div className="shrink-0 flex justify-between items-center">
         <p className="text-sm text-muted">{contributions.length} lượt góp vốn đã ghi nhận.</p>
         <div className="flex gap-2">
-          <button onClick={() => exportCapitalExcel(contributions, company)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90">
+          <button onClick={() => exportCapitalExcel(contributions, company)} className="flex items-center gap-1.5 text-sm border border-ledger-green/40 bg-ledger-green/10 text-ledger-green px-3.5 py-2 rounded-md hover:opacity-90">
             <FileSpreadsheet size={15} /> Xuất Excel
           </button>
           <button onClick={() => { setEditingContributionId(null); setForm({ contributorName: "", assetType: "tien_mat", value: "", ownershipPercent: "", contributionDate: TODAY_STR, status: "da_gop_du", note: "" }); setShowForm(true); }} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light">
@@ -5916,8 +6829,13 @@ function VonGop({ contributions, setContributions, company, setCompany, totalCon
                   {c.status === "da_gop_du" && <StampBadge text="ĐÃ GÓP ĐỦ" gold />}
                   {c.status === "gop_mot_phan" && <StampBadge text="GÓP MỘT PHẦN" muted />}
                   {c.status === "chua_gop" && <StampBadge text="CHƯA GÓP" />}
+                  {c.status === "da_huy" && <span title={c.cancelReason ? `Lý do hủy: ${c.cancelReason}` : undefined}><StampBadge text="ĐÃ HỦY" /></span>}
                 </td>
-                <td className="px-4 py-2.5 text-right"><div className="flex justify-end gap-2"><button type="button" onClick={() => editContribution(c)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2 py-1 text-xs text-ink-light hover:border-ink/30" title="Sửa lượt góp vốn" aria-label={`Sửa lượt góp vốn của ${c.contributorName}`}><Pencil size={13} /> Sửa</button><button type="button" onClick={() => removeContribution(c.id)} className="inline-flex items-center gap-1 rounded-md border border-stamp-red/30 px-2 py-1 text-xs text-stamp-red hover:bg-stamp-red/5" title="Xóa lượt góp vốn" aria-label={`Xóa lượt góp vốn của ${c.contributorName}`}><Trash2 size={13} /> Xóa</button></div></td>
+                <td className="px-4 py-2.5 text-right">{c.status === "da_huy" ? (
+                  <span className="text-[10px] font-semibold text-muted" title={c.cancelReason ? `Lý do: ${c.cancelReason}` : "Đã hủy — giữ lại làm dấu vết"}>Lưu vết</span>
+                ) : (
+                  <div className="flex justify-end gap-2"><button type="button" onClick={() => editContribution(c)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2 py-1 text-xs text-ink-light hover:border-ink/30" title="Sửa lượt góp vốn" aria-label={`Sửa lượt góp vốn của ${c.contributorName}`}><Pencil size={13} /> Sửa</button><button type="button" onClick={() => removeContribution(c.id)} className="inline-flex items-center gap-1 rounded-md border border-stamp-red/30 px-2 py-1 text-xs text-stamp-red hover:bg-stamp-red/5" title="Hủy lượt góp vốn kèm lý do — bản ghi được giữ lại, không xóa" aria-label={`Hủy lượt góp vốn của ${c.contributorName}`}><RotateCcw size={13} /> Hủy</button></div>
+                )}</td>
               </tr>
             ))}
           </tbody>
@@ -5932,6 +6850,21 @@ function VonGop({ contributions, setContributions, company, setCompany, totalCon
         </div>
       </div>
       <p className="shrink-0 text-xs text-muted">* Hình thức góp vốn hợp pháp theo Điều 34 Luật Doanh nghiệp 2020: Đồng Việt Nam, ngoại tệ tự do chuyển đổi, vàng, quyền sử dụng đất, quyền sở hữu trí tuệ/công nghệ/bí quyết kỹ thuật, tài sản khác định giá được bằng VNĐ. Thông tin ở đây mang tính tham khảo, không thay thế tư vấn của luật sư/kế toán khi làm thủ tục với cơ quan đăng ký kinh doanh.</p>
+      {cancelContribTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/45 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="cancel-contrib-title">
+            <h3 id="cancel-contrib-title" className="ktns-serif font-semibold text-ink">Hủy lượt góp vốn</h3>
+            <p className="mt-1 text-xs text-muted">Lượt góp của <strong className="text-ink">{cancelContribTarget.contributorName}</strong> ({fmtVND(cancelContribTarget.value)}) sẽ chuyển sang ĐÃ HỦY, không tính vào vốn đã góp — bản ghi giữ lại để đối soát, không xóa dữ liệu.</p>
+            <label className="mt-4 flex flex-col gap-1 text-xs text-muted">Lý do hủy (bắt buộc)
+              <textarea value={cancelContribReason} onChange={(event) => setCancelContribReason(event.target.value)} rows={3} className="rounded-lg border border-paper-line px-3 py-2 text-sm text-ink" placeholder="Ví dụ: Ghi nhầm giá trị, thành viên rút cam kết góp…" />
+            </label>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button type="button" onClick={() => setCancelContribTarget(null)} className="min-h-10 rounded-lg border border-paper-line px-4 text-sm text-muted">Không hủy</button>
+              <button type="button" onClick={confirmCancelContribution} disabled={!cancelContribReason.trim()} className="min-h-10 rounded-lg bg-stamp-red px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Xác nhận hủy</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -5980,7 +6913,7 @@ function exportDistributionExcel(distOrders, partners) {
   XLSX.writeFile(wb, `DOMIX_Hop_tac_phan_phoi_${TODAY_STR}.xlsx`);
 }
 
-function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setTransactions, transactions, company, inventory, setInventory, reportYear, reportMonth, orders, employees, authUser, allEmployees, debts, setDebts, settlements, setSettlements, moveStock, payDebt, dataLoader }) {
+function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setTransactions, transactions, company, inventory, setInventory, reportYear, reportMonth, orders, employees, authUser, allEmployees, debts, setDebts, settlements, setSettlements, moveStock, payDebt, paymentLedger = [], dataLoader }) {
   const [activeTableView, setActiveTableView] = useState("sales");
   const lazyTableData = useLazyTableData(activeTableView, { sales: ["distributionPartners", "distributionOrders", "transactions", "inventory", "orders", "debts"], purchases: ["distributionPartners", "distributionOrders", "inventory", "stockMovements"], settlements: ["distributionPartners", "distributionOrders", "distributionSettlements", "debts", "transactions"], partners: ["distributionPartners"], summary: ["distributionPartners", "distributionOrders", "distributionSettlements", "debts"] }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   const [rangeMode, setRangeMode] = useState("month");
@@ -6551,7 +7484,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
                           <tbody>
                             {(s.lines || []).map((l) => (
                               <tr key={l.orderId} className="border-t border-paper-line">
-                                <td className="px-3 py-1.5 ktns-mono">{l.date}</td>
+                                <td className="px-3 py-1.5 ktns-mono">{formatDateVN(l.date)}</td>
                                 <td className="px-3 py-1.5">{l.endCustomerName || `#${l.orderId}`}</td>
                                 <td className="px-3 py-1.5">{l.productName}</td>
                                 <td className="px-3 py-1.5 text-right ktns-mono">{fmtVND(l.grossCustomerAmount)}</td>
@@ -6613,7 +7546,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
                     <tbody>
                       {settlementPreview.lines.map((l) => (
                         <tr key={l.orderId} className="border-t border-paper-line">
-                          <td className="px-3 py-1 ktns-mono">{l.date}</td><td className="px-3 py-1">{l.endCustomerName || `#${l.orderId}`}</td>
+                          <td className="px-3 py-1 ktns-mono">{formatDateVN(l.date)}</td><td className="px-3 py-1">{l.endCustomerName || `#${l.orderId}`}</td>
                           <td className="px-3 py-1 text-right ktns-mono">{fmtVND(l.grossCustomerAmount)}</td>
                           <td className="px-3 py-1 text-right ktns-mono">{l.commissionPct}%</td>
                           <td className="px-3 py-1 text-right ktns-mono font-medium">{fmtVND(l.amountDueToCompany || l.amountDueToPartner)}</td>
@@ -7411,7 +8344,21 @@ function HopDong({ contracts, setContracts, partners, employees }) {
   );
 }
 
-function CongNo({ debts, setDebts, setTransactions, transactions, paymentLedger = [], distributionOrders, distributionPartners, setTab, authUser, allEmployees, payDebt, unpayDebt, customers, dataLoader }) {
+function CongNo({ debts, setDebts, setTransactions, transactions, paymentLedger = [], distributionOrders, distributionPartners, setTab, authUser, allEmployees, payDebt, unpayDebt, customers, recordFocus, onRecordFocusConsumed, dataLoader }) {
+  // Mở ĐÚNG khoản nợ từ Trung tâm vận hành: về tab danh sách, tô sáng + cuộn tới dòng.
+  const [focusDebtId, setFocusDebtId] = useState(null);
+  useEffect(() => {
+    if (!recordFocus || recordFocus.type !== "debt") return;
+    setActiveTableView("debts");
+    setFocusDebtId(recordFocus.id);
+    onRecordFocusConsumed?.();
+    const scrollTimer = setTimeout(() => {
+      document.querySelector(`[data-debt-row="${recordFocus.id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 350);
+    const timer = setTimeout(() => setFocusDebtId(null), 6000);
+    return () => { clearTimeout(timer); clearTimeout(scrollTimer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordFocus]);
   const [activeTableView, setActiveTableView] = useState("debts");
   const lazyTableData = useLazyTableData(activeTableView, {
     debts: ["debts", "transactions", "customers", "paymentLedger"],
@@ -7588,14 +8535,28 @@ function CongNo({ debts, setDebts, setTransactions, transactions, paymentLedger 
       setReversalSubmitting(false);
     }
   };
+  // KHÔNG xóa công nợ trực tiếp — chỉ HỦY kèm lý do: bản ghi giữ lại (status cancelled)
+  // để đối soát, tổng phải thu/phải trả tự loại khoản đã hủy.
+  const [cancelDebtTarget, setCancelDebtTarget] = useState(null);
+  const [cancelDebtReason, setCancelDebtReason] = useState("");
   const removeDebt = async (id) => {
     const d = debts.find((x) => x.id === id);
-    if (d && (d.paidAmount || 0) > 0) {
-      await noticeOverlay("Khoản nợ này đã có thanh toán — xóa từng lần thanh toán trước (để đảo giao dịch Thu Chi), rồi mới xóa được khoản nợ.", { title: "Không thể xóa công nợ" });
+    if (!d) return;
+    if ((d.paidAmount || 0) > 0) {
+      await noticeOverlay("Khoản nợ này đã có thanh toán — đảo từng lần thanh toán trước (giao dịch Thu Chi được đảo kèm), rồi mới hủy được khoản nợ.", { title: "Không thể hủy công nợ" });
       return;
     }
-    if (!(await confirmOverlay("Xóa khoản công nợ này?", { title: "Xóa khoản công nợ", confirmLabel: "Xóa công nợ", tone: "danger" }))) return;
-    setDebts((prev) => prev.filter((x) => x.id !== id));
+    setCancelDebtReason("");
+    setCancelDebtTarget(d);
+  };
+  const confirmCancelDebt = () => {
+    if (!cancelDebtTarget || !cancelDebtReason.trim()) return;
+    const stamp = new Date().toISOString();
+    setDebts((prev) => prev.map((x) => (x.id === cancelDebtTarget.id
+      ? { ...x, status: "cancelled", cancelReason: cancelDebtReason.trim(), cancelledBy: authUser?.email || "", cancelledAt: stamp }
+      : x)));
+    setCancelDebtTarget(null);
+    setCancelDebtReason("");
   };
 
   // Doanh thu ròng đang CHỜ đối tác phân phối xác nhận — CHƯA vào Thu Chi, CHƯA phải là công nợ
@@ -7697,7 +8658,7 @@ function CongNo({ debts, setDebts, setTransactions, transactions, paymentLedger 
           ))}
         </div>
         <div className="flex gap-2">
-          <button onClick={() => exportDebtsExcel(debts)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90">
+          <button onClick={() => exportDebtsExcel(debts)} className="flex items-center gap-1.5 text-sm border border-ledger-green/40 bg-ledger-green/10 text-ledger-green px-3.5 py-2 rounded-md hover:opacity-90">
             <FileSpreadsheet size={15} /> Xuất Excel
           </button>
           <button onClick={openNewDebt} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light">
@@ -7761,7 +8722,7 @@ function CongNo({ debts, setDebts, setTransactions, transactions, paymentLedger 
               const expanded = expandedDebtId === d.id;
               return (
                 <React.Fragment key={d.id}>
-                <tr className={`border-t border-paper-line ${isOverdue ? "ktns-warn-row" : ""} cursor-pointer hover:bg-paper/40`} onClick={() => toggleDebtDetails(d.id)}>
+                <tr data-debt-row={d.id} className={`border-t border-paper-line ${String(focusDebtId) === String(d.id) ? "ring-2 ring-inset ring-[#3C50E0] bg-[#3C50E0]/10" : isOverdue ? "ktns-warn-row" : ""} cursor-pointer hover:bg-paper/40`} onClick={() => toggleDebtDetails(d.id)}>
                   <td className="px-3 py-2">
                     <span className={`text-[11px] px-2 py-0.5 rounded font-medium ${d.type === "thu" ? "bg-ledger-green" : "bg-stamp-red"}`} style={{ color: "white" }}>{d.type === "thu" ? "Họ nợ mình" : "Mình nợ họ"}</span>
                   </td>
@@ -7773,7 +8734,7 @@ function CongNo({ debts, setDebts, setTransactions, transactions, paymentLedger 
                   <td className="px-3 py-2 text-right ktns-mono text-ledger-green">{d.paidAmount > 0 ? fmtVND(d.paidAmount) : "—"}</td>
                   <td className={`px-3 py-2 text-right ktns-mono font-semibold ${d.type === "thu" ? "text-ledger-green" : "text-stamp-red"}`}>{fmtVND(d.remainingAmount ?? d.amount)}</td>
                   <td className="px-3 py-2 ktns-mono text-xs">
-                    <span className={isOverdue ? "text-stamp-red font-semibold" : "text-muted"}>{d.dueDate || "—"}</span>
+                    <span className={isOverdue ? "text-stamp-red font-semibold" : "text-muted"}>{d.dueDate ? formatDateVN(d.dueDate) : "—"}</span>
                     {isOverdue && <div className="text-[10px] text-stamp-red">quá hạn {od} ngày</div>}
                   </td>
                   <td className="px-3 py-2">
@@ -7785,14 +8746,18 @@ function CongNo({ debts, setDebts, setTransactions, transactions, paymentLedger 
                         <button type="button" onClick={() => openPayModal(d)} className="rounded-md bg-ink px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-ink-light">{d.type === "thu" ? "Thu tiền" : "Trả tiền"}</button>
                       )}
                       {d.sourceModule === "manual" && <button type="button" onClick={() => openEditDebt(d)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2 py-1 text-[11px] font-semibold text-ink-light" title="Sửa khoản công nợ" aria-label={`Sửa công nợ của ${d.counterpartyName || d.partner}`}><Pencil size={12} /> Sửa</button>}
-                      <button type="button" onClick={() => removeDebt(d.id)} className="inline-flex items-center gap-1 rounded-md border border-stamp-red/30 px-2 py-1 text-[11px] font-semibold text-stamp-red" title="Xóa khoản công nợ" aria-label={`Xóa công nợ của ${d.counterpartyName || d.partner}`}><Trash2 size={12} /> Xóa</button>
+                      {(d.paidAmount || 0) > 0 ? (
+                        <span className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2 py-1 text-[10px] text-muted" title="Công nợ đã có thanh toán — không xóa được. Hãy đảo từng lần thanh toán trong lịch sử (giao dịch tự đảo theo), backend cũng chặn xóa trực tiếp.">Đã có thanh toán</span>
+                      ) : (
+                        <button type="button" onClick={() => removeDebt(d.id)} className="inline-flex items-center gap-1 rounded-md border border-stamp-red/30 px-2 py-1 text-[11px] font-semibold text-stamp-red" title="Hủy khoản công nợ kèm lý do — bản ghi được giữ lại để đối soát, không xóa dữ liệu" aria-label={`Hủy công nợ của ${d.counterpartyName || d.partner}`}><RotateCcw size={12} /> Hủy</button>
+                      )}
                     </div>
                   </td>
                 </tr>
                 {expanded && (
                   <tr className="border-t border-paper-line bg-paper/40">
                     <td colSpan={9} className="px-4 py-3">
-                      <div className="text-[11px] text-muted mb-1.5">{d.note || "Không có ghi chú."} {d.issueDate && <span> · Phát sinh: <span className="ktns-mono">{d.issueDate}</span></span>}{d.createdBy && <span> · Tạo bởi {d.createdBy}</span>}</div>
+                      <div className="text-[11px] text-muted mb-1.5">{d.note || "Không có ghi chú."} {d.issueDate && <span> · Phát sinh: <span className="ktns-mono">{formatDateVN(d.issueDate)}</span></span>}{d.createdBy && <span> · Tạo bởi {d.createdBy}</span>}</div>
                       {paymentHistoryLoading && String(expandedDebtId) === String(d.id) ? (
                         <p className="text-xs text-muted">Đang tải sổ thanh toán…</p>
                       ) : paymentRowsForDebt(d).length === 0 ? (
@@ -7838,6 +8803,22 @@ function CongNo({ debts, setDebts, setTransactions, transactions, paymentLedger 
       <p className="shrink-0 text-xs text-muted">* Bấm vào dòng để xem lịch sử và dấu vết kiểm toán. Mỗi lần thu/trả có mã giao dịch riêng; thao tác hủy tạo bút toán đảo, không xóa dấu vết và số dư được tính lại từ sổ giao dịch.</p>
 
       </div>)}
+
+      {cancelDebtTarget && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/45 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="cancel-debt-title">
+            <h3 id="cancel-debt-title" className="ktns-serif font-semibold text-ink">Hủy khoản công nợ</h3>
+            <p className="mt-1 text-xs text-muted">Khoản nợ của <strong className="text-ink">{cancelDebtTarget.counterpartyName || cancelDebtTarget.partner}</strong> ({fmtVND(cancelDebtTarget.amount)}) sẽ chuyển sang trạng thái ĐÃ HỦY và được giữ lại để đối soát — không xóa dữ liệu.</p>
+            <label className="mt-4 flex flex-col gap-1 text-xs text-muted">Lý do hủy (bắt buộc)
+              <textarea value={cancelDebtReason} onChange={(event) => setCancelDebtReason(event.target.value)} rows={3} className="rounded-lg border border-paper-line px-3 py-2 text-sm text-ink" placeholder="Ví dụ: Ghi nhầm đối tác, khoản nợ đã thỏa thuận xóa…" />
+            </label>
+            <div className="mt-4 flex flex-wrap justify-end gap-2">
+              <button type="button" onClick={() => setCancelDebtTarget(null)} className="min-h-10 rounded-lg border border-paper-line px-4 text-sm text-muted">Không hủy</button>
+              <button type="button" onClick={confirmCancelDebt} disabled={!cancelDebtReason.trim()} className="min-h-10 rounded-lg bg-stamp-red px-4 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">Xác nhận hủy</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {reversalTarget && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-ink/45 p-4">
@@ -8048,8 +9029,22 @@ function TaiSanCoDinh({ assets, setAssets, setTransactions, reportYear, reportMo
   );
 }
 
-function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, moveStock, stockMovements, authUser, currentEmployee, positionAccess, employees = [], persistInventoryProduct, dataLoader }) {
+function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, moveStock, stockMovements, authUser, currentEmployee, positionAccess, employees = [], persistInventoryProduct, recordFocus, onRecordFocusConsumed, dataLoader }) {
   const [activeTableView, setActiveTableView] = useState("inventory");
+  // Mở ĐÚNG sản phẩm từ Trung tâm vận hành: nhảy về Danh mục, tô sáng + cuộn tới dòng.
+  const [focusProductId, setFocusProductId] = useState(null);
+  useEffect(() => {
+    if (!recordFocus || recordFocus.type !== "product") return;
+    setActiveTableView("inventory");
+    setFocusProductId(recordFocus.id);
+    onRecordFocusConsumed?.();
+    const scrollTimer = setTimeout(() => {
+      document.querySelector(`[data-product-row="${recordFocus.id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 350);
+    const timer = setTimeout(() => setFocusProductId(null), 6000);
+    return () => { clearTimeout(timer); clearTimeout(scrollTimer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordFocus]);
   const lazyTableData = useLazyTableData(activeTableView, { inventory: ["inventory", "stockMovements"], revenue: ["inventory", "stockMovements", "orders", "distributionOrders"], keys: ["inventory", "stockMovements"], movements: ["stockMovements", "inventory"] }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   const [showForm, setShowForm] = useState(false);
   const [editingProductId, setEditingProductId] = useState(null);
@@ -8069,8 +9064,18 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
   const canEditAssignedInventory = !canManageInventory && Boolean(positionAccess?.inventoryWrite && currentEmployee?.id);
   const canViewAllInventory = canManageInventory || positionAccess?.inventoryScope === "all-read" || positionAccess?.inventoryScope === "all";
   const isAssignedProduct = (product) => Number(product?.assignedEmployeeId) === Number(currentEmployee?.id);
+  // Hàng chung (chưa giao cho ai phụ trách) là danh mục của cả công ty — mọi nhân viên đều xem
+  // được; chỉ mặt hàng đã giao đích danh mới giới hạn đúng người phụ trách.
+  const isUnassignedProduct = (product) => {
+    const assigned = product?.assignedEmployeeId;
+    if (assigned === null || assigned === undefined || assigned === "") return true;
+    const numeric = Number(assigned);
+    return !Number.isFinite(numeric) || numeric <= 0;
+  };
   const canEditProduct = (product) => canManageInventory || (canEditAssignedInventory && isAssignedProduct(product));
-  const visibleInventory = canViewAllInventory ? inventory : inventory.filter(isAssignedProduct);
+  const visibleInventory = canViewAllInventory
+    ? inventory
+    : inventory.filter((product) => isUnassignedProduct(product) || isAssignedProduct(product));
   const activeEmployeesWithEmail = (employees || []).filter((employee) => employee.status !== "inactive" && String(employee.email || "").includes("@"));
 
   useEffect(() => {
@@ -8115,6 +9120,12 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
     setForm(blankProduct);
     setShowForm(false);
   };
+  // Mốc dữ liệu lúc mở form sản phẩm — form Sửa được điền sẵn không tính là "đã nhập".
+  const productFormBaselineRef = useRef("");
+  useEffect(() => {
+    if (showForm) productFormBaselineRef.current = JSON.stringify(form);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showForm]);
 
   const openNewProduct = () => {
     if (!canManageInventory) return;
@@ -8191,22 +9202,26 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
           moveStock({ productId, movementType: "opening", quantity: openingQty, sourceModule: "kho", sourceId: productId, note: "Tồn đầu khi tạo sản phẩm", createdBy: authUser?.email || "" });
         }
       }
+      // Giao trách nhiệm sản phẩm cũng là GIAO VIỆC — nhắn DOMIX realtime ngay cho người phụ trách mới.
+      const previousAssigneeId = Number(editingProduct?.assignedEmployeeId) || null;
+      const nextAssigneeId = Number(normalized.assignedEmployeeId) || null;
+      if (nextAssigneeId && nextAssigneeId !== previousAssigneeId) {
+        const assignee = (employees || []).find((item) => Number(item.id) === nextAssigneeId);
+        const assigneeEmail = String(assignee?.email || "").trim();
+        if (assigneeEmail) {
+          sendChatMessage(assigneeEmail, [
+            "[GIAO TRÁCH NHIỆM SẢN PHẨM KHO]",
+            `Bạn vừa được giao phụ trách sản phẩm: ${normalized.name}${normalized.sku ? ` (${normalized.sku})` : ""}.`,
+            `Nhóm hàng: ${normalized.groupName || "—"} · Đơn vị: ${normalized.unit || "—"}`,
+            `Người giao: ${authUser?.email || "—"}`,
+            "Mở DOMIX > Kho hàng để xem các sản phẩm bạn phụ trách.",
+          ].join("\n")).catch(() => {});
+        }
+      }
       resetProductForm();
     } finally {
       setProductSaving(false);
     }
-  };
-  // Thêm nhanh 1 gói thời hạn khác CÙNG NHÓM sản phẩm.
-  const addVariant = (baseProduct) => {
-    if (!canManageInventory) return;
-    setEditingProductId(null);
-    setForm({
-      sku: "", name: baseProduct.name, groupName: baseProduct.groupName || baseProduct.name,
-      unit: baseProduct.unit, stock: "", minStock: String(baseProduct.minStock),
-      costPrice: String(baseProduct.costPrice), sellPrice: "", durationMonths: "1", vatRate: baseProduct.vatRate ?? 8,
-      expiryDate: "", assignedEmployeeId: baseProduct.assignedEmployeeId || "",
-    });
-    setShowForm(true);
   };
   // Điều chỉnh tay = movement adjustment_in/out có nhật ký + người thao tác — không sửa số trực tiếp.
   // Luôn yêu cầu nhập lý do (qua modal pendingAdjust) để Nhật ký kho biết "vì sao" chứ không chỉ "bao nhiêu".
@@ -8228,9 +9243,21 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
     setPendingAdjust(null);
     setAdjustReason("");
   };
-  const removeProduct = (id) => {
+  const removeProduct = async (id) => {
     if (!canManageInventory) return;
-    setInventory((prev) => prev.filter((p) => p.id !== id));
+    // Sản phẩm ĐÃ CÓ lịch sử kho (nhập/xuất/tồn đầu) là gốc đối chiếu 156/632 — không được
+    // xóa (mất dấu vết kiểm toán). Thay bằng NGỪNG KINH DOANH: giữ nguyên lịch sử, ẩn khỏi bán mới.
+    const hasHistory = (stockMovements || []).some((movement) => String(movement.productId) === String(id));
+    if (hasHistory) {
+      const accepted = await confirmOverlay(
+        "Sản phẩm này đã có lịch sử nhập/xuất kho nên KHÔNG thể xóa (phải giữ dấu vết đối chiếu kho và giá vốn).\n\nChuyển sang trạng thái NGỪNG KINH DOANH? Sản phẩm sẽ ẩn khỏi việc bán mới nhưng toàn bộ lịch sử được giữ nguyên.",
+        { title: "Không thể xóa — chỉ được ngừng kinh doanh", confirmLabel: "Ngừng kinh doanh" },
+      );
+      if (accepted) setInventory((prev) => prev.map((p) => (p.id === id ? { ...p, discontinued: true, discontinuedAt: new Date().toISOString() } : p)));
+      return;
+    }
+    const accepted = await confirmOverlay("Xóa sản phẩm chưa có lịch sử kho này?", { title: "Xóa sản phẩm", confirmLabel: "Xóa", tone: "danger" });
+    if (accepted) setInventory((prev) => prev.filter((p) => p.id !== id));
   };
 
   const totalValue = visibleInventory.reduce((a, p) => a + p.stock * p.costPrice, 0);
@@ -8338,7 +9365,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
-      <div style={{ display: activeTableView === "inventory" ? undefined : "none" }} className="shrink-0 rounded-lg border border-paper-line bg-white px-3 py-2 text-xs text-muted">{canManageInventory ? "Quản lý toàn bộ sản phẩm, tồn kho, ngày hết hạn và người phụ trách." : canEditAssignedInventory ? "Bạn chỉ thấy và được sửa các sản phẩm đã phân công cho mình. Không được tạo mới, xóa hoặc chuyển người phụ trách." : canViewAllInventory ? "Bạn được xem toàn bộ Kho hàng ở chế độ chỉ đọc." : "Bạn chỉ thấy sản phẩm được giao phụ trách; hiện chưa có sản phẩm nào được phân công."}</div>
+      <div style={{ display: activeTableView === "inventory" ? undefined : "none" }} className="shrink-0 rounded-lg border border-paper-line bg-white px-3 py-2 text-xs text-muted">{canManageInventory ? "Quản lý toàn bộ sản phẩm, tồn kho, ngày hết hạn và người phụ trách." : canEditAssignedInventory ? "Bạn xem được hàng chung của công ty và hàng được giao cho mình; chỉ sửa được hàng đã giao cho mình. Không được tạo mới, xóa hoặc chuyển người phụ trách." : canViewAllInventory ? "Bạn được xem toàn bộ Kho hàng ở chế độ chỉ đọc." : "Bạn xem được hàng chung của công ty và hàng được giao cho mình ở chế độ chỉ đọc."}</div>
 
       <div className="shrink-0">
         <SectionViewSwitcher
@@ -8351,7 +9378,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
       <div style={{ display: activeTableView === "inventory" ? "flex" : "none" }} className="shrink-0 justify-between items-center">
         <p className="text-xs text-muted">{visibleInventory.length} sản phẩm bạn được phép xem.</p>
         <div className="flex gap-2">
-          <button onClick={() => exportInventoryExcel(visibleInventory, employees)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90">
+          <button onClick={() => exportInventoryExcel(visibleInventory, employees)} className="flex items-center gap-1.5 text-sm border border-ledger-green/40 bg-ledger-green/10 text-ledger-green px-3.5 py-2 rounded-md hover:opacity-90">
             <FileSpreadsheet size={15} /> Xuất Excel
           </button>
           {canManageInventory && (
@@ -8364,7 +9391,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
 
       {showForm && (
         <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
-          <button type="button" aria-label="Đóng form sản phẩm" title="Đóng" className="absolute top-3 right-3 rounded p-2 text-muted hover:bg-paper hover:text-ink" onClick={async () => { if (form.name && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; resetProductForm(); }}><X size={16} /></button>
+          <button type="button" aria-label="Đóng form sản phẩm" title="Đóng" className="absolute top-3 right-3 rounded p-2 text-muted hover:bg-paper hover:text-ink" onClick={async () => { const dirty = JSON.stringify(form) !== productFormBaselineRef.current; if (dirty && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; resetProductForm(); }}><X size={16} /></button>
           <h3 className="ktns-serif font-semibold text-ink mb-4">{editingProductId !== null ? "Sửa thông tin sản phẩm" : (form.groupName ? `Gói mới cho "${form.groupName}"` : "Sản phẩm mới")}</h3>
           <div className="grid grid-cols-4 gap-3">
             <label className="text-xs text-muted flex flex-col gap-1">Mã SKU<input value={form.sku} onChange={(e) => setForm({ ...form, sku: e.target.value })} placeholder="SP-006" className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
@@ -8427,10 +9454,10 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
                 <th className="px-4 py-2">Sản phẩm</th>
                 <th className="px-4 py-2">Chủ sở hữu</th>
                 <th className="px-4 py-2 text-right">SL bán (Sale)</th>
-                <th className="px-4 py-2 text-right">DT Sale trực tiếp</th>
+                <th className="px-4 py-2 text-right">Giá trị Sale trực tiếp (gồm VAT)</th>
                 <th className="px-4 py-2">Qua đối tác nào</th>
-                <th className="px-4 py-2 text-right">DT Phân phối</th>
-                <th className="px-4 py-2 text-right">Tổng doanh thu</th>
+                <th className="px-4 py-2 text-right">Giá trị phân phối</th>
+                <th className="px-4 py-2 text-right">Tổng giá trị (gồm VAT)</th>
               </tr>
             </thead>
             <tbody>
@@ -8467,7 +9494,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
       )}
 
       <div style={{ display: activeTableView === "inventory" ? "flex" : "none" }} className="h-full flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
-        <div className="shrink-0 px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Danh mục sản phẩm — các gói thời hạn cùng 1 sản phẩm được gộp chung nhóm</div>
+        <div className="shrink-0 px-4 pt-3 pb-1 text-sm font-semibold text-ink">Danh mục sản phẩm</div>
         <div className="min-h-0 flex-1 overflow-auto">
         <table data-sticky-columns="true" data-mobile-cards="true" className="w-full text-sm">
           <thead>
@@ -8487,14 +9514,6 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
           <tbody>
             {groupedInventory.map((g) => (
               <React.Fragment key={g.groupName}>
-                {g.items.length > 1 && (
-                  <tr className="bg-paper/60">
-                    <td colSpan={10} className="px-4 py-1.5 text-[11px] font-semibold text-ink uppercase flex items-center justify-between">
-                      <span>{g.groupName} — {g.items.length} gói</span>
-                      {canManageInventory && <button onClick={() => addVariant(g.items[0])} className="text-[10px] bg-ink text-white px-2 py-1 rounded flex items-center gap-1 normal-case font-normal"><Plus size={10} /> Thêm gói thời hạn khác</button>}
-                    </td>
-                  </tr>
-                )}
                 {g.items.map((p) => {
                   const low = p.stock <= p.minStock;
                   const daysLeft = expiryDaysLeft(p);
@@ -8503,9 +9522,9 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
                   const handlingPartners = (distPartners || []).filter((dp) => (dp.productIds || []).includes(p.id));
                   const vat = splitVAT(p.sellPrice, p.vatRate || 0);
                   return (
-                    <tr key={p.id} className={`border-t border-paper-line ${low || expiryWarning ? "ktns-warn-row" : ""}`}>
+                    <tr key={p.id} data-product-row={p.id} className={`border-t border-paper-line ${String(focusProductId) === String(p.id) ? "ring-2 ring-inset ring-[#3C50E0] bg-[#3C50E0]/10" : low || expiryWarning ? "ktns-warn-row" : ""}`}>
                       <td className="px-4 py-2 ktns-mono text-xs text-muted">{p.sku}</td>
-                      <td className="px-4 py-2 font-medium">{p.durationMonths > 0 && g.items.length > 1 ? `↳ Gói ${p.durationMonths} tháng` : p.name} <span className="text-[11px] text-muted">/{p.unit}</span></td>
+                      <td className="px-4 py-2 font-medium">{p.name} <span className="text-[11px] text-muted">/{p.unit}</span></td>
                       <td className="px-4 py-2 text-right">
                         <div className="flex items-center justify-end gap-1.5">
                           {canEditProduct(p) && <button onClick={() => requestAdjustStock(p, -1)} className="w-5 h-5 rounded border border-paper-line text-muted hover:border-stamp-red hover:text-stamp-red text-xs">−</button>}
@@ -8529,7 +9548,11 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
                         {p.supplierName && <div className="mt-0.5 text-[10px] text-muted">NCC nhập hàng: {p.supplierName}</div>}
                       </td>
                       <td className="px-4 py-2"><div className="flex flex-col items-start gap-1">{low ? <StampBadge text="SẮP HẾT HÀNG" /> : <StampBadge text="CÒN HÀNG" gold />}{daysLeft !== null && daysLeft < 0 && <StampBadge text="ĐÃ HẾT HẠN" />}{daysLeft !== null && daysLeft >= 0 && daysLeft <= 5 && <StampBadge text="SẮP HẾT HẠN" />}{!p.expiryDate && Number(p.durationMonths) > 0 && <StampBadge text="CHƯA NHẬP HẠN" />}{!p.expiryDate && Number(p.durationMonths) <= 0 && <span className="rounded-full border border-paper-line px-2 py-0.5 text-[10px] font-semibold text-muted">KHÔNG QUẢN LÝ HẠN</span>}</div></td>
-                      <td className="px-4 py-2 text-right">{canEditProduct(p) && <div className="flex flex-wrap items-center justify-end gap-1.5"><button type="button" onClick={() => openEditProduct(p)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2 py-1 text-[11px] font-semibold text-ink-light" title="Sửa sản phẩm được phân công" aria-label={`Sửa sản phẩm ${p.name}`}><Pencil size={12} /> Sửa</button>{canManageInventory && <button type="button" onClick={() => removeProduct(p.id)} className="inline-flex items-center gap-1 rounded-md border border-stamp-red/30 px-2 py-1 text-[11px] font-semibold text-stamp-red" title="Xóa sản phẩm" aria-label={`Xóa sản phẩm ${p.name}`}><Trash2 size={12} /> Xóa</button>}</div>}</td>
+                      <td className="px-4 py-2 text-right">{canEditProduct(p) && <div className="flex flex-wrap items-center justify-end gap-1.5"><button type="button" onClick={() => openEditProduct(p)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2 py-1 text-[11px] font-semibold text-ink-light" title="Sửa sản phẩm được phân công" aria-label={`Sửa sản phẩm ${p.name}`}><Pencil size={12} /> Sửa</button>{canManageInventory && ((stockMovements || []).some((m) => String(m.productId) === String(p.id)) ? (
+                        <button type="button" onClick={() => removeProduct(p.id)} className="inline-flex items-center gap-1 rounded-md border border-gold/40 px-2 py-1 text-[11px] font-semibold text-gold" title="Sản phẩm đã có lịch sử kho — không xóa được, chỉ ngừng kinh doanh (giữ nguyên lịch sử 156/632)" aria-label={`Ngừng kinh doanh sản phẩm ${p.name}`}><Archive size={12} /> Ngừng KD</button>
+                      ) : (
+                        <button type="button" onClick={() => removeProduct(p.id)} className="inline-flex items-center gap-1 rounded-md border border-stamp-red/30 px-2 py-1 text-[11px] font-semibold text-stamp-red" title="Xóa sản phẩm chưa có lịch sử kho" aria-label={`Xóa sản phẩm ${p.name}`}><Trash2 size={12} /> Xóa</button>
+                      ))}</div>}</td>
                     </tr>
                   );
                 })}
@@ -8612,7 +9635,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
                   const product = inventory.find((i) => i.id === m.productId);
                   return (
                     <tr key={m.id} className="border-t border-paper-line">
-                      <td className="px-3 py-1.5 ktns-mono">{m.date}</td>
+                      <td className="px-3 py-1.5 ktns-mono whitespace-nowrap">{formatDateVN(m.date)}</td>
                       <td className="px-3 py-1.5 font-medium">{product?.name || m.productName || `#${m.productId}`}</td>
                       <td className="px-3 py-1.5">{MOVEMENT_LABELS[m.movementType] || m.movementType}</td>
                       <td className={`px-3 py-1.5 text-right ktns-mono font-semibold ${m.delta > 0 ? "text-ledger-green" : "text-stamp-red"}`}>{m.delta > 0 ? `+${m.delta}` : m.delta}</td>
@@ -8635,6 +9658,14 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
 
 // ---------- Giao việc ----------
 const GIAOVIEC_TODAY = TODAY_STR; // luôn khớp đúng ngày thật, không lệch với Chấm công
+
+// Dịch một mốc ngày YYYY-MM-DD đi N ngày — dùng cho các mốc lọc nhanh "7 ngày", "30 ngày".
+function shiftDateStr(dateStr, days) {
+  const base = new Date(`${String(dateStr || TODAY_STR).slice(0, 10)}T00:00:00`);
+  if (Number.isNaN(base.getTime())) return String(dateStr || TODAY_STR).slice(0, 10);
+  base.setDate(base.getDate() + Number(days || 0));
+  return `${base.getFullYear()}-${String(base.getMonth() + 1).padStart(2, "0")}-${String(base.getDate()).padStart(2, "0")}`;
+}
 
 function computeTaskProgress(task, orders, marketingLogs) {
   if (task.targetType === "doanh_so") {
@@ -8697,13 +9728,23 @@ const RANKING_CATEGORY = {
 // oan cho người mới đi làm vài ngày hoặc tháng vừa mới bắt đầu, chưa kịp chấm công.
 const MIN_DAYS_FOR_EVALUATION = 6;
 
-function computeEmployeeTaskStats(employeeId, tasks, orders, marketingLogs) {
-  const own = (tasks || []).filter((t) => t.employeeId === employeeId);
+// NGUỒN NHIỆM VỤ DUY NHẤT cho Giao việc/Hiệu suất/KPI/Bảng lương: task giao TRONG KỲ
+// báo cáo; "đạt" = task đã được NGHIỆM THU (approved) — không đếm số tự khai, không đếm
+// task tháng khác. Thiếu kỳ (gọi cũ) thì tính toàn bộ để không vỡ chỗ chưa truyền kỳ.
+function computeEmployeeTaskStats(employeeId, tasks, orders, marketingLogs, reportYear, reportMonth) {
+  const inPeriod = (t) => {
+    if (!reportYear || !reportMonth) return true;
+    const date = new Date(t.date || t.createdAt || "");
+    return !Number.isNaN(date.getTime())
+      && date.getFullYear() === Number(reportYear)
+      && date.getMonth() + 1 === Number(reportMonth);
+  };
+  const own = (tasks || []).filter((t) => t.employeeId === employeeId && inPeriod(t));
   let done = 0, warned = 0;
   own.forEach((t) => {
+    if (t.completionStatus === "approved") done++;
     const progress = computeTaskProgress(t, orders, marketingLogs);
     const status = evaluateTaskStatus(t, progress.value);
-    if (status === "dat") done++;
     if (status === "canh_bao" || status === "can_lam_lai") warned++;
   });
   return { total: own.length, done, warned };
@@ -8759,12 +9800,39 @@ function exportMasterRankingExcel(rows) {
   XLSX.writeFile(wb, `DOMIX_Xep_hang_tong_hop_${TODAY_STR}.xlsx`);
 }
 
-function exportTasksExcel(tasks, employees, orders, marketingLogs) {
+// Nhật ký từng công việc — giữ đủ mốc để trích xuất và đối chiếu lại về sau, kể cả khi công việc
+// đã được duyệt hoàn tất từ lâu.
+const TASK_HISTORY_LABELS = {
+  assigned: "Giao việc",
+  edited: "Chỉnh sửa nội dung",
+  accepted: "Xác nhận nhận việc",
+  reported: "User gửi hoàn tất",
+  approved: "Người giao duyệt hoàn tất",
+  returned: "Trả về làm lại",
+};
+
+function withTaskHistory(task, entry) {
+  const history = Array.isArray(task?.history) ? task.history.slice() : [];
+  history.push({
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    at: nowStamp(),
+    ...entry,
+  });
+  return history;
+}
+
+function taskDateKey(task) {
+  const raw = String(task?.date || "").slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+  return String(task?.createdAt || "").slice(0, 10);
+}
+
+function exportTasksExcel(tasks, employees, orders, marketingLogs, meta = {}) {
   const wb = XLSX.utils.book_new();
   const nameOf = (id) => employees.find((e) => e.id === id)?.name || "—";
   const statusLabel = {
-    dat: "Đã xác nhận hoàn thành",
-    cho_duyet: "Chờ kế toán/sếp kiểm tra",
+    dat: "Đã hoàn tất (người giao đã duyệt)",
+    cho_duyet: "Chờ người giao duyệt hoàn tất",
     can_lam_lai: "Trả về làm lại",
     dang_lam: "Đang làm",
     canh_bao: "Cảnh báo - chưa có tiến độ",
@@ -8776,12 +9844,45 @@ function exportTasksExcel(tasks, employees, orders, marketingLogs) {
       "Ngày": t.date, "Nhân viên": nameOf(t.employeeId), "Loại mục tiêu": TASK_TYPES[t.targetType]?.label,
       "Chỉ tiêu": t.targetType === "khac" ? "—" : t.targetValue, "Tiến độ thực tế": progress.label,
       "Mô tả công việc": t.description, "Trạng thái": statusLabel[status],
+      "Người giao": t.createdByEmail || "—",
+      "Xác nhận nhận việc": t.acceptedAt || "—",
+      "User gửi hoàn tất lúc": t.completionSubmittedAt || "—",
+      "Kết quả user báo cáo": t.completionReport || "—",
+      "Người giao duyệt lúc": t.completionReviewedAt || "—",
+      "Người duyệt hoàn tất": t.completionReviewedByName || t.completionReviewedByEmail || "—",
+      "Lý do trả về": t.completionReturnReason || "—",
     };
   });
   const ws = XLSX.utils.json_to_sheet(rows);
-  ws["!cols"] = [{ wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 16 }, { wch: 40 }, { wch: 22 }];
+  ws["!cols"] = [
+    { wch: 12 }, { wch: 18 }, { wch: 20 }, { wch: 14 }, { wch: 16 }, { wch: 40 }, { wch: 24 },
+    { wch: 24 }, { wch: 18 }, { wch: 18 }, { wch: 40 }, { wch: 18 }, { wch: 20 }, { wch: 32 },
+  ];
   XLSX.utils.book_append_sheet(wb, ws, "Giao việc");
-  XLSX.writeFile(wb, `DOMIX_Giao_viec_${TODAY_STR}.xlsx`);
+
+  // Sheet lịch sử tách riêng để theo dõi lại toàn bộ diễn biến của từng công việc.
+  const historyRows = [];
+  tasks.forEach((task) => {
+    (Array.isArray(task.history) ? task.history : []).forEach((entry) => {
+      historyRows.push({
+        "Ngày việc": task.date || "—",
+        "Nhân viên": nameOf(task.employeeId),
+        "Công việc": task.description || "—",
+        "Thời điểm": entry.at || "—",
+        "Hành động": TASK_HISTORY_LABELS[entry.action] || entry.action || "—",
+        "Người thực hiện": entry.byName || entry.byEmail || "—",
+        "Ghi chú": entry.note || "—",
+      });
+    });
+  });
+  if (historyRows.length) {
+    const historySheet = XLSX.utils.json_to_sheet(historyRows);
+    historySheet["!cols"] = [{ wch: 12 }, { wch: 18 }, { wch: 40 }, { wch: 20 }, { wch: 22 }, { wch: 24 }, { wch: 44 }];
+    XLSX.utils.book_append_sheet(wb, historySheet, "Lịch sử");
+  }
+
+  const suffix = meta.from && meta.to ? `${meta.from}_den_${meta.to}` : TODAY_STR;
+  XLSX.writeFile(wb, `DOMIX_Giao_viec_${suffix}.xlsx`);
 }
 
 // ---------- Hỗ trợ khách hàng — tránh nhiều người cùng hỗ trợ 1 khách, biết ai đang bận ----------
@@ -8840,7 +9941,7 @@ function resizeAvatarFile(file, targetSize = 480) {
   });
 }
 
-function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTasks, setTab }) {
+function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTasks, setTab, supportCases = [], setSupportCases, dataLoader }) {
   const CHAT_PAGE_SIZE = 40;
   const isAdmin = isAdminRole(authUser?.role);
   const [mode, setMode] = useState("direct");
@@ -9344,8 +10445,10 @@ function ChatPage({ authUser, onUnreadChange, employees = [], tasks = [], setTas
     const targetLabel = TASK_TYPES[task.targetType]?.label || task.targetType;
     const targetLine = task.targetType === "khac" ? "" : `
 Chỉ tiêu: ${task.targetValue} ${TASK_TYPES[task.targetType]?.unit || ""}`;
-    return `Bạn được giao việc mới.
-Ngày: ${task.date}
+    const idLine = task.id ? `
+Mã việc: ${task.id}` : "";
+    return `Bạn được giao việc mới.${idLine}
+Ngày: ${formatDateVN(task.date)}
 Chế độ: ${task.visibility === "public" ? "Công khai" : "Riêng tư"}
 Loại: ${targetLabel}${targetLine}
 Nội dung: ${task.description}`;
@@ -9362,7 +10465,16 @@ Nội dung: ${task.description}`;
       doneManual: false,
       visibility: mode === "group" ? "public" : (taskForm.visibility === "public" ? "public" : "private"),
       createdByEmail: authUser?.email || "",
+      createdByName: myChatEmployee?.name || authUser?.email || "",
       createdAt: new Date().toISOString(),
+      history: [{
+        id: `${Date.now()}-init`,
+        at: nowStamp(),
+        action: "assigned",
+        byEmail: authUser?.email || "",
+        byName: myChatEmployee?.name || authUser?.email || "",
+        note: taskForm.description.trim(),
+      }],
     };
     let createdTaskIds = [];
     setLoading(true);
@@ -9381,7 +10493,9 @@ Nội dung: ${task.description}`;
         }));
         createdTaskIds = groupTasks.map((task) => task.id);
         if (groupTasks.length) setTasks((current) => [...current, ...groupTasks]);
-        const result = await sendChatGroupMessage(selectedGroupId, buildTaskMessage(newTask));
+        // Việc giao trong nhóm tạo cho mỗi thành viên một bản ghi riêng nên không nhúng mã việc —
+        // người nhận được khớp theo chính hồ sơ nhân sự của họ.
+        const result = await sendChatGroupMessage(selectedGroupId, buildTaskMessage({ ...newTask, id: null }));
         appendMessage(result.message);
       } else {
         if (!newTask.employeeId) {
@@ -9422,6 +10536,7 @@ Nội dung: ${task.description}`;
       if (separator < 0) return;
       const key = line.slice(0, separator).trim();
       const value = line.slice(separator + 1).trim();
+      if (key === "Mã việc") task.taskId = value;
       if (key === "Ngày") task.date = value;
       if (key === "Chế độ") task.visibility = value;
       if (key === "Loại") task.type = value;
@@ -9430,6 +10545,40 @@ Nội dung: ${task.description}`;
     });
     return task;
   };
+
+  // Tin nhắn giao yêu cầu hỗ trợ do máy chủ gửi — dựng lại đủ thông tin để hiện nút xác nhận ngay tại
+  // tab Tin nhắn, bấm vào tương đương nút "Xác nhận nhiệm vụ" ở tab Giao việc.
+  const parseSupportMessage = (body = "") => {
+    if (!String(body).startsWith("[YÊU CẦU HỖ TRỢ KHÁCH HÀNG]")) return null;
+    const parsed = {};
+    String(body).split("\n").slice(1).forEach((line) => {
+      const separator = line.indexOf(":");
+      if (separator < 0) return;
+      const key = line.slice(0, separator).trim();
+      const value = line.slice(separator + 1).trim();
+      // "Mã yêu cầu" là nhãn mới; vẫn nhận "Mã ca" để tin nhắn cũ trong lịch sử không mất nút xác nhận.
+      if (key === "Mã yêu cầu" || key === "Mã ca") parsed.caseId = value === "—" ? "" : value;
+      if (key === "Loại yêu cầu") parsed.typeLabel = value;
+      if (key === "Cách thức hỗ trợ") parsed.channelLabel = value;
+      if (key === "Khách hàng") parsed.customerName = value;
+      if (key === "Liên hệ khách") parsed.contact = value;
+      if (key === "Vấn đề cần hỗ trợ") parsed.issue = value;
+      if (key === "Nội dung cần hỗ trợ") parsed.details = value;
+      if (key === "Người giao") parsed.assignedByName = value;
+    });
+    return parsed.caseId ? parsed : null;
+  };
+
+  const supportCaseById = (caseId) => (supportCases || []).find((item) => String(item?.id) === String(caseId)) || null;
+  const [chatSupportTarget, setChatSupportTarget] = useState(null);
+  const [chatSupportNotice, setChatSupportNotice] = useState("");
+  const ensureChatDataFields = dataLoader?.ensureDataFields;
+  useEffect(() => {
+    if (!ensureChatDataFields) return undefined;
+    ensureChatDataFields(["supportCases"]);
+    const timer = window.setInterval(() => ensureChatDataFields(["supportCases"], { force: true }), 10000);
+    return () => window.clearInterval(timer);
+  }, [ensureChatDataFields]);
   const previewMessage = (body = "") => {
     const task = parseTaskMessage(body);
     if (task) return `Công việc: ${task.description || task.type || "Công việc mới"}`;
@@ -9521,12 +10670,42 @@ Nội dung: ${task.description}`;
       .map((match) => Number(match[1]))
   ), [authUser?.email, messages]);
 
+  const myChatEmployee = employeeForEmail(authUser?.email);
+
+  // Khớp tin nhắn giao việc với đúng bản ghi công việc: ưu tiên mã việc nhúng trong tin nhắn, tin
+  // nhắn cũ chưa có mã thì khớp theo người nhận + ngày + nội dung.
+  const findTaskForMessage = (parsed) => {
+    if (!parsed) return null;
+    const list = tasks || [];
+    if (parsed.taskId) {
+      const byId = list.find((item) => String(item.id) === String(parsed.taskId));
+      if (byId) return byId;
+    }
+    return list.find((item) => (
+      String(item.description || "") === String(parsed.description || "")
+      && String(item.date || "") === String(parsed.date || "")
+      && (myChatEmployee ? Number(item.employeeId) === Number(myChatEmployee.id) : true)
+    )) || null;
+  };
+
+  // Bấm "Xác nhận nhận việc" trong tin nhắn = bấm đúng nút đó ở tab Giao việc: công việc được ghi
+  // nhận đã tiếp nhận và người giao nhận được báo lại.
   const acknowledgeTask = async (task) => {
     if (!task?.messageId || loading || !hasDestination || acknowledgedTaskMessageIds.has(Number(task.messageId))) return;
+    const linkedTask = findTaskForMessage(task);
     const body = `Đã nhận việc #${task.messageId}: ${task.description || task.type || "Công việc mới"}`;
     setLoading(true);
     setError("");
     try {
+      if (linkedTask && !linkedTask.acceptedAt && setTasks) {
+        const acceptedAt = nowStamp();
+        setTasks((current) => current.map((item) => item.id === linkedTask.id ? {
+          ...item,
+          acceptedAt,
+          acceptedByEmail: authUser?.email || "",
+          acceptedByName: myChatEmployee?.name || authUser?.email || "",
+        } : item));
+      }
       const result = mode === "group"
         ? await sendChatGroupMessage(selectedGroupId, body)
         : await sendChatMessage(selectedEmail, body);
@@ -9706,14 +10885,50 @@ Nội dung: ${task.description}`;
                   const time = formatChatTime(message.createdAt);
                   const task = parseTaskMessage(message.body);
                   if (task) task.messageId = message.id;
-                  const taskAcknowledged = task ? acknowledgedTaskMessageIds.has(Number(message.id)) : false;
+                  const taskAcknowledged = task
+                    ? (acknowledgedTaskMessageIds.has(Number(message.id)) || Boolean(findTaskForMessage(task)?.acceptedAt))
+                    : false;
+                  const supportMessage = task ? null : parseSupportMessage(message.body);
+                  const linkedSupportCase = supportMessage ? supportCaseById(supportMessage.caseId) : null;
+                  const supportPending = supportMessage
+                    ? (linkedSupportCase ? linkedSupportCase.status === "cho_xac_nhan" : !mine)
+                    : false;
                   const senderEmployee = employeeForEmail(message.senderEmail);
                   return (
                     <div key={message.id} className={`group flex items-end gap-3 ${mine ? "justify-end" : "justify-start"}`}>
                       {!mine && <AccountAvatar employee={senderEmployee} email={message.senderEmail} className="mb-5 h-10 w-10" textClassName="text-[10px]" />}
-                      <div className={`min-w-0 ${task ? "w-full max-w-[690px]" : "max-w-[78%]"}`}>
+                      <div className={`min-w-0 ${task || supportMessage ? "w-full max-w-[690px]" : "max-w-[78%]"}`}>
                         {mode === "group" && !mine && <div className="mb-1.5 px-1 text-[11px] font-medium text-[#86a5d6]">{accountDisplayName(senderEmployee, message.senderEmail)}</div>}
-                        {task ? (
+                        {supportMessage ? (
+                          <div className="overflow-hidden rounded-[23px] border border-[#8a6b23] bg-[linear-gradient(180deg,rgba(43,33,12,0.96),rgba(20,15,6,0.98))] shadow-[0_20px_48px_rgba(2,8,23,0.42)]">
+                            <div className="flex items-center justify-between gap-4 border-b border-[#57431a] px-6 py-5">
+                              <div className="min-w-0">
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#ffd489]">Nhiệm vụ hỗ trợ khách hàng</div>
+                                <div className="mt-3 text-[18px] font-semibold leading-snug text-white">{supportMessage.customerName || "Khách hàng"}</div>
+                              </div>
+                              <span className={`shrink-0 rounded-full px-4 py-2 text-xs font-semibold ${supportPending ? "bg-[#76551f] text-[#ffe1a1]" : "bg-[#1f5b3c] text-[#a7f0c8]"}`}>{supportPending ? "Chờ xác nhận" : "Đã tiếp nhận"}</span>
+                            </div>
+                            <div className="grid gap-4 px-6 py-5 sm:grid-cols-2">
+                              <div><div className="text-[10px] uppercase tracking-wider text-[#c2ab7e]">Loại yêu cầu</div><div className="mt-2 text-[15px] font-semibold text-[#ffd489]">{supportMessage.typeLabel || "Yêu cầu hỗ trợ"}</div></div>
+                              <div><div className="text-[10px] uppercase tracking-wider text-[#c2ab7e]">Liên hệ khách</div><div className="mt-2 text-[15px] font-semibold text-white">{supportMessage.contact || "—"}</div></div>
+                              <div className="sm:col-span-2"><div className="text-[10px] uppercase tracking-wider text-[#c2ab7e]">Vấn đề</div><div className="mt-2 text-[15px] font-semibold text-white">{supportMessage.issue || "—"}</div></div>
+                              <div className="sm:col-span-2"><div className="text-[10px] uppercase tracking-wider text-[#c2ab7e]">Nội dung cần xử lý</div><div className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-[#f0e5cf]">{supportMessage.details || "—"}</div></div>
+                            </div>
+                            <div className="flex flex-wrap gap-3 border-t border-[#57431a] px-6 py-5">
+                              <button type="button" onClick={() => setTab?.("giaoviec")} className="rounded-[15px] border border-[#8a6b23] bg-white/[0.03] px-5 py-3 text-sm font-semibold text-white hover:bg-white/[0.07]">Mở tab Giao việc</button>
+                              {!mine && supportPending && (
+                                <button
+                                  type="button"
+                                  onClick={() => setChatSupportTarget(linkedSupportCase || { id: supportMessage.caseId, customerName: supportMessage.customerName, issue: supportMessage.issue, details: supportMessage.details, assignedByName: supportMessage.assignedByName })}
+                                  className="flex items-center gap-2 rounded-[15px] bg-[#1f7a50] px-5 py-3 text-sm font-bold text-white shadow-[0_12px_28px_rgba(31,122,80,0.45)] ring-1 ring-[#43c98a]/50 hover:brightness-110"
+                                >
+                                  <UserCheck size={15} /> Xác nhận tiếp nhận
+                                </button>
+                              )}
+                              {!mine && !supportPending && <span className="self-center text-xs font-semibold text-[#a7f0c8]">Bạn đã xác nhận tiếp nhận yêu cầu này.</span>}
+                            </div>
+                          </div>
+                        ) : task ? (
                           <div className="overflow-hidden rounded-[23px] border border-[#2e58a7] bg-[linear-gradient(180deg,rgba(13,29,57,0.96),rgba(7,18,36,0.98))] shadow-[0_20px_48px_rgba(2,8,23,0.42)]">
                             <div className="flex items-center justify-between gap-4 border-b border-[#1b3763] px-6 py-5">
                               <div>
@@ -9730,7 +10945,16 @@ Nội dung: ${task.description}`;
                             </div>
                             <div className="flex flex-wrap gap-3 border-t border-[#1b3763] px-6 py-5">
                               <button type="button" onClick={() => setTab?.("giaoviec")} className="rounded-[15px] border border-[#476cae] bg-white/[0.03] px-5 py-3 text-sm font-semibold text-white hover:bg-white/[0.07]">Xem công việc</button>
-                              {!mine && <button type="button" onClick={() => acknowledgeTask(task)} disabled={loading || taskAcknowledged} className="rounded-[12px] bg-[#2f69ff] px-3.5 py-2 text-xs font-semibold text-white shadow-[0_12px_28px_rgba(47,105,255,0.34)] disabled:opacity-50">{taskAcknowledged ? "Đã nhận" : "Đã nhận việc"}</button>}
+                              {!mine && (
+                                <button
+                                  type="button"
+                                  onClick={() => acknowledgeTask(task)}
+                                  disabled={loading || taskAcknowledged}
+                                  className="flex items-center gap-2 rounded-[15px] bg-[#1f7a50] px-5 py-3 text-sm font-bold text-white shadow-[0_12px_28px_rgba(31,122,80,0.45)] ring-1 ring-[#43c98a]/50 hover:brightness-110 disabled:opacity-50"
+                                >
+                                  <CheckCircle2 size={15} /> {taskAcknowledged ? "Đã xác nhận nhận việc" : "Xác nhận nhận việc"}
+                                </button>
+                              )}
                             </div>
                           </div>
                         ) : (
@@ -9883,135 +11107,1037 @@ Nội dung: ${task.description}`;
           </div>
         </div>
       )}
+
+      {chatSupportNotice && (
+        <div className="pointer-events-none fixed bottom-6 left-1/2 z-[96] -translate-x-1/2 rounded-full border border-[#43c98a]/50 bg-[#12492f] px-5 py-2.5 text-xs font-semibold text-[#c8f7de] shadow-[0_16px_40px_rgba(2,8,23,0.45)]">
+          {chatSupportNotice}
+        </div>
+      )}
+
+      {chatSupportTarget && (
+        <SupportAssignmentConfirmOverlay
+          supportCase={chatSupportTarget}
+          dataLoader={dataLoader}
+          setCases={setSupportCases}
+          onClose={() => setChatSupportTarget(null)}
+          onResult={(message) => {
+            setChatSupportNotice(message);
+            window.setTimeout(() => setChatSupportNotice(""), 6000);
+          }}
+        />
+      )}
     </div>
   );
 }
 
-function HoTroKhachHang({ cases, setCases, employees, orders, setOrders, authUser, currentEmployee, dataLoader }) {
-  const [activeTableView, setActiveTableView] = useState("active");
-  const lazyTableData = useLazyTableData(activeTableView, { active: ["supportCases", "orders"], history: ["supportCases"] }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
+// Toàn bộ thao tác nhập liệu/xác nhận của module Hỗ trợ khách hàng đều đi qua lớp phủ này —
+// không còn form inline chèn giữa bảng và không dùng alert/confirm của trình duyệt.
+function SupportOverlay({ title, subtitle, onClose, children, footer, tone = "default", size = "md" }) {
+  useEffect(() => {
+    const onKeyDown = (event) => { if (event.key === "Escape") onClose?.(); };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
+
+  const width = size === "lg" ? "max-w-3xl" : size === "sm" ? "max-w-md" : "max-w-xl";
+  return (
+    <div
+      className="fixed inset-0 z-[95] flex items-center justify-center bg-ink/50 p-4 backdrop-blur-[2px]"
+      role="presentation"
+      onMouseDown={(event) => { if (event.target === event.currentTarget) onClose?.(); }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className={`flex max-h-[calc(100vh-3rem)] w-full ${width} flex-col overflow-hidden rounded-2xl border border-paper-line bg-white shadow-[0_24px_70px_rgba(7,16,31,0.28)]`}
+      >
+        <header className="flex shrink-0 items-start justify-between gap-4 border-b border-paper-line px-6 py-4">
+          <div className="min-w-0">
+            <div className={`mb-2 h-1 w-10 rounded-full ${tone === "danger" ? "bg-stamp-red" : "bg-gold"}`} />
+            <h3 className="ktns-serif text-[17px] font-semibold leading-tight text-ink">{title}</h3>
+            {subtitle && <p className="mt-1 text-xs leading-relaxed text-muted">{subtitle}</p>}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-paper-line bg-paper text-muted hover:bg-white hover:text-ink"
+            aria-label="Đóng cửa sổ"
+            title="Đóng"
+          ><X size={15} /></button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-auto px-6 py-5">{children}</div>
+        {footer && <footer className="flex shrink-0 flex-wrap items-center justify-end gap-2 border-t border-paper-line bg-paper/50 px-6 py-4">{footer}</footer>}
+      </section>
+    </div>
+  );
+}
+
+function SupportField({ label, hint, children, full }) {
+  return (
+    <label className={`flex flex-col gap-1.5 ${full ? "sm:col-span-2" : ""}`}>
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-muted">{label}</span>
+      {children}
+      {hint && <span className="text-[11px] text-muted">{hint}</span>}
+    </label>
+  );
+}
+
+const SUPPORT_INPUT_CLASS = "rounded-lg border border-paper-line bg-white px-3 py-2.5 text-sm text-charcoal outline-none focus:border-[#3C50E0]";
+
+function SupportDetailRow({ label, value }) {
+  return (
+    <div className="flex flex-wrap items-baseline gap-2 border-b border-paper-line/70 py-2 last:border-b-0">
+      <span className="w-40 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-muted">{label}</span>
+      <span className="min-w-0 flex-1 text-sm text-charcoal">{value || "—"}</span>
+    </div>
+  );
+}
+
+// Kỹ thuật báo kết quả yêu cầu hỗ trợ — dùng chung cho tab Hỗ trợ khách hàng và tab Giao việc để hai nơi
+// luôn cùng một luồng: báo cáo xong ca mới chuyển sang chờ NGƯỜI GIAO duyệt, chưa phải hoàn tất.
+// Nhân viên thường KHÔNG ghi được supportCases qua autosave chung (máy chủ giữ nguyên bản cũ), nên
+// hai bước báo hoàn tất và duyệt phải đi qua endpoint nghiệp vụ riêng.
+function applySupportWorkflowResult(result, { setCases, dataLoader }) {
+  if (result?.data && dataLoader?.applyAppData) {
+    dataLoader.applyAppData(result.data, { markPersisted: true });
+  } else if (result?.case && setCases) {
+    setCases((prev) => prev.map((item) => (String(item.id) === String(result.case.id) ? result.case : item)));
+  }
+}
+
+async function reportSupportCaseResult({ supportCase, resultNote, setCases, dataLoader }) {
+  const assignerLabel = supportCase.assignedByName || supportCase.assignedBy || "người giao yêu cầu";
+  try {
+    const result = await reportSupportCaseApi(supportCase.id, resultNote);
+    applySupportWorkflowResult(result, { setCases, dataLoader });
+    return {
+      notice: result?.notificationSent
+        ? `Đã gửi kết quả hỗ trợ cho ${assignerLabel} kiểm tra. Ca chỉ hoàn tất khi người giao duyệt.`
+        : `Đã gửi kết quả hỗ trợ. Ca chờ ${assignerLabel} duyệt hoàn tất${result?.notificationError ? ` (chưa nhắn được: ${result.notificationError})` : ""}.`,
+      error: "",
+    };
+  } catch (error) {
+    return { notice: "", error: error.message || "Không gửi được kết quả hỗ trợ." };
+  }
+}
+
+// Người GIAO ca duyệt hoàn tất — chỉ lúc này ca mới đóng và kết quả được ghi vào nhật ký đơn CRM.
+// Dùng chung cho tab Hỗ trợ khách hàng và tab Giao việc.
+async function approveSupportCaseCompletion({ supportCase, setCases, dataLoader }) {
+  const accepted = await confirmOverlay(
+    `Duyệt hoàn tất yêu cầu hỗ trợ của ${supportCase.customerName || "khách hàng"}?\n\nKết quả kỹ thuật báo: ${supportCase.resultNote || "—"}`,
+    { title: "Duyệt hoàn tất yêu cầu hỗ trợ", confirmLabel: "Duyệt hoàn tất" },
+  );
+  if (!accepted) return null;
+  try {
+    const result = await approveSupportCaseApi(supportCase.id);
+    applySupportWorkflowResult(result, { setCases, dataLoader });
+    return { notice: `Đã duyệt hoàn tất yêu cầu hỗ trợ của ${supportCase.customerName || "khách hàng"}.`, error: "" };
+  } catch (error) {
+    return { notice: "", error: error.message || "Không duyệt được yêu cầu hỗ trợ." };
+  }
+}
+
+async function rejectSupportCaseCompletion({ supportCase, reason, setCases, dataLoader }) {
+  try {
+    const result = await rejectSupportCaseApi(supportCase.id, reason);
+    applySupportWorkflowResult(result, { setCases, dataLoader });
+    return { notice: `Đã trả yêu cầu hỗ trợ của ${supportCase.customerName || "khách hàng"} về cho kỹ thuật xử lý tiếp.`, error: "" };
+  } catch (error) {
+    return { notice: "", error: error.message || "Không trả được yêu cầu hỗ trợ về." };
+  }
+}
+
+function SupportCompletionReportOverlay({ supportCase, setCases, dataLoader, onClose, onResult, onError }) {
+  const [note, setNote] = useState(supportCase?.resultNote || "");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const assignerLabel = supportCase?.assignedByName || supportCase?.assignedBy || "người giao yêu cầu";
+
+  const submit = async () => {
+    const resultNote = note.trim();
+    if (!resultNote) { setError("Hãy ghi kết quả hỗ trợ trước khi gửi hoàn tất."); return; }
+    setSubmitting(true);
+    const result = await reportSupportCaseResult({ supportCase, resultNote, setCases, dataLoader });
+    setSubmitting(false);
+    if (result.error) onError?.(result.error);
+    if (result.notice) onResult?.(result.notice);
+    onClose?.();
+  };
+
+  return (
+    <SupportOverlay
+      title="Hoàn tất yêu cầu hỗ trợ"
+      subtitle={`Khách hàng: ${supportCase?.customerName || "—"} · ${supportCase?.phone || "—"}`}
+      onClose={onClose}
+      footer={(
+        <>
+          <button type="button" onClick={onClose} className="rounded-lg border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-light hover:border-ink/25">Hủy</button>
+          <button type="button" onClick={submit} disabled={submitting} className="inline-flex items-center gap-2 rounded-lg bg-ledger-green px-4 py-2.5 text-sm font-bold text-white hover:brightness-110 disabled:opacity-50">
+            <Send size={14} /> {submitting ? "Đang gửi..." : "Gửi kết quả cho người giao"}
+          </button>
+        </>
+      )}
+    >
+      <SupportField label="Kết quả hỗ trợ" hint="Người giao yêu cầu sẽ đọc nội dung này để kiểm tra trước khi duyệt hoàn tất.">
+        <textarea value={note} onChange={(event) => setNote(event.target.value)} rows={4} placeholder="VD: đã gửi lại mã key, hướng dẫn khách kích hoạt xong, khách xác nhận dùng được." className={`${SUPPORT_INPUT_CLASS} resize-none`} />
+      </SupportField>
+      <div className="mt-4 flex items-start gap-2 rounded-lg border border-gold/40 bg-gold/10 px-3 py-2.5 text-[11px] leading-relaxed text-charcoal">
+        <AlertTriangle size={13} className="mt-0.5 shrink-0 text-gold" />
+        <span>Yêu cầu <strong className="text-ink">chưa được tính là hoàn tất</strong> khi bạn bấm gửi. Kết quả chuyển tới <strong className="text-ink">{assignerLabel}</strong> kiểm tra; chỉ khi người đó duyệt thì yêu cầu mới đóng và ghi vào nhật ký đơn CRM.</span>
+      </div>
+      {error && <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} /> {error}</p>}
+    </SupportOverlay>
+  );
+}
+
+// Popup xác nhận nhiệm vụ hỗ trợ — dùng chung cho tab Hỗ trợ khách hàng và tab Giao việc để hai
+// nơi luôn hiển thị cùng thông tin và gọi cùng một API.
+function SupportAssignmentConfirmOverlay({ supportCase, onClose, onResult, dataLoader, setCases }) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    setSubmitting(true);
+    setError("");
+    try {
+      const result = await confirmSupportRequest(supportCase.id);
+      if (result?.data && dataLoader?.applyAppData) {
+        dataLoader.applyAppData(result.data, { markPersisted: true });
+      } else if (result?.case && setCases) {
+        setCases((prev) => prev.map((item) => String(item.id) === String(result.case.id) ? result.case : item));
+      }
+      onResult?.(
+        result?.notificationSent
+          ? "Đã xác nhận tiếp nhận nhiệm vụ. Sale giao yêu cầu đã nhận thông báo DOMIX."
+          : `Đã xác nhận tiếp nhận nhưng chưa gửi được thông báo cho Sale: ${result?.notificationError || "không xác định"}.`,
+      );
+      onClose?.();
+    } catch (err) {
+      setError(err.message || "Không xác nhận được yêu cầu hỗ trợ.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <SupportOverlay
+      title="Xác nhận tiếp nhận nhiệm vụ"
+      subtitle="Sau khi xác nhận, hệ thống nhắn lại ngay cho Sale đã giao yêu cầu."
+      onClose={onClose}
+      footer={(
+        <>
+          <button type="button" onClick={onClose} className="rounded-lg border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-light hover:border-ink/25">Để sau</button>
+          <button type="button" onClick={submit} disabled={submitting} className="inline-flex items-center gap-2 rounded-lg bg-ledger-green px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+            <UserCheck size={14} /> {submitting ? "Đang xác nhận..." : "Xác nhận tiếp nhận"}
+          </button>
+        </>
+      )}
+    >
+      <div className="rounded-xl border border-paper-line bg-paper/40 px-4 py-2">
+        <SupportDetailRow label="Khách hàng" value={supportCase.customerName} />
+        <SupportDetailRow label="Liên hệ" value={[supportCase.phone, supportCase.email].filter(Boolean).join(" · ")} />
+        <SupportDetailRow label="Sản phẩm" value={[supportCase.productName, supportCase.durationLabel].filter(Boolean).join(" — ")} />
+        <SupportDetailRow label="Loại hỗ trợ" value={SUPPORT_TYPES[supportCase.supportType] || "—"} />
+        <SupportDetailRow label="Cách thức" value={SUPPORT_CHANNELS[supportCase.supportChannel] || "—"} />
+        <SupportDetailRow label="Vấn đề" value={supportCase.issue} />
+        <SupportDetailRow label="Nội dung cần xử lý" value={supportCase.details} />
+        <SupportDetailRow label="Người giao" value={supportCase.assignedByName || supportCase.assignedBy} />
+        <SupportDetailRow label="Giao lúc" value={fmtContactTime(supportCase.assignedAt)} />
+      </div>
+      {error && <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} /> {error}</p>}
+    </SupportOverlay>
+  );
+}
+
+function HoTroKhachHang({ cases, setCases, employees, orders, authUser, currentEmployee, initialView, supportPrefill, onSupportPrefillConsumed, recordFocus, onRecordFocusConsumed, dataLoader }) {
+  const [activeTableView, setActiveTableView] = useState(initialView || "active");
+  // Mở ĐÚNG ca từ Trung tâm vận hành: nhảy tới đúng tab (đang xử lý/lịch sử), tô sáng dòng.
+  const [focusCaseId, setFocusCaseId] = useState(null);
+  useEffect(() => {
+    if (!recordFocus || recordFocus.type !== "support") return undefined;
+    const target = (cases || []).find((c) => String(c.id) === String(recordFocus.id));
+    // Dữ liệu nạp lười: nếu danh sách chưa về thì CHỜ (không tiêu thụ focus) — effect
+    // chạy lại khi cases đổ về, nhờ vậy nút "Mở" từ TT vận hành luôn tô sáng đúng dòng.
+    if (!target && (cases || []).length === 0) return undefined;
+    if (target && ["hoan_tat", "da_huy"].includes(target.status)) {
+      setActiveTableView("history");
+      setHistoryMode("all"); // bảo đảm bản ghi không bị bộ lọc thời gian che mất
+    } else {
+      setActiveTableView("active");
+    }
+    setFocusCaseId(recordFocus.id);
+    onRecordFocusConsumed?.();
+    const scrollTimer = setTimeout(() => {
+      document.querySelector(`[data-case-row="${recordFocus.id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 350);
+    const timer = setTimeout(() => setFocusCaseId(null), 6000);
+    return () => { clearTimeout(timer); clearTimeout(scrollTimer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordFocus, cases]);
   const supportStaff = employees.filter((e) => SUPPORT_ASSIGNABLE_ROLE_TYPES.has(e.roleType));
-  const blankForm = { customerName: "", phone: "", issue: "", employeeId: supportStaff[0]?.id || "" };
-  const [form, setForm] = useState(blankForm);
+  const makeBlankForm = () => ({
+    customerId: "",
+    customerName: "",
+    phone: "",
+    email: "",
+    productName: "",
+    productId: "",
+    orderItemId: "",
+    supportType: "kich_hoat",
+    supportChannel: "phone",
+    issue: "",
+    details: "",
+    priority: "trung_binh",
+    dueAt: "",
+    employeeId: supportStaff[0]?.id ? String(supportStaff[0].id) : "",
+  });
+  // Danh sách KHÁCH CÓ ĐƠN — nguồn chọn khách bằng customer_id, dẫn xuất từ đơn hàng.
+  const customersWithOrders = useMemo(() => {
+    const byKey = new Map();
+    (orders || []).forEach((o) => {
+      if (isOrderCancelled(o)) return;
+      const key = o.customerId != null ? `id:${o.customerId}` : `legacy:${o.customerName || ""}:${o.phone || ""}`;
+      if (!byKey.has(key)) {
+        byKey.set(key, {
+          key, customerId: o.customerId ?? null,
+          name: o.customerName || "(Chưa rõ tên)", phone: o.phone || "", email: o.email || "",
+          orders: [],
+        });
+      }
+      byKey.get(key).orders.push(o);
+    });
+    return Array.from(byKey.values())
+      .sort((a, b) => String(a.name).localeCompare(String(b.name), "vi"));
+  }, [orders]);
+  const [form, setForm] = useState(makeBlankForm);
   const [showForm, setShowForm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [dupWarning, setDupWarning] = useState(null);
   const [formError, setFormError] = useState("");
-  const [resolveDraft, setResolveDraft] = useState({});
+  // Mốc dữ liệu lúc mở form — prefill hệ thống không bị tính là "đã chỉnh sửa".
+  const supportFormBaselineRef = useRef("");
+  useEffect(() => {
+    if (showForm) supportFormBaselineRef.current = JSON.stringify(form);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showForm]);
+  // Khóa chọn khách trong form: "" = chưa chọn; key của customersWithOrders khi đã chọn.
+  const [formCustomerKey, setFormCustomerKey] = useState("");
+  const selectFormCustomer = (key) => {
+    setFormCustomerKey(key);
+    setFormOrderId("");
+    const entry = customersWithOrders.find((c) => c.key === key);
+    setForm((current) => ({
+      ...current,
+      customerId: entry?.customerId != null ? String(entry.customerId) : "",
+      customerName: entry?.name || "",
+      phone: entry?.phone || "",
+      email: entry?.email || "",
+      // Đổi khách → xóa sạch lựa chọn đơn + dòng sản phẩm cũ (không để lẫn đơn khách khác).
+      productName: "", productId: "", orderItemId: "",
+    }));
+  };
+  // Đơn của KHÁCH ĐÃ CHỌN (liên kết bằng ID) — chọn đơn mới hiện được sản phẩm của đơn.
+  const customerOrdersForForm = useMemo(() => {
+    const entry = customersWithOrders.find((c) => c.key === formCustomerKey);
+    if (!entry) return [];
+    return entry.orders.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+  }, [customersWithOrders, formCustomerKey]);
+  const [formOrderId, setFormOrderId] = useState("");
+
+  // Mở form TỪ khách hàng/đơn hàng: tự CHỌN đúng khách bằng ID (ưu tiên customerId,
+  // fallback SĐT cho hồ sơ cũ) rồi điền sẵn khách + đơn + sản phẩm.
+  useEffect(() => {
+    if (!supportPrefill) return;
+    const entry = customersWithOrders.find((c) => (
+      (supportPrefill.customerId != null && String(c.customerId) === String(supportPrefill.customerId))
+      || (supportPrefill.phone && c.phone && String(c.phone).trim() === String(supportPrefill.phone).trim())
+    ));
+    setFormCustomerKey(entry?.key || "");
+    setForm(() => ({
+      ...makeBlankForm(),
+      customerId: entry?.customerId != null ? String(entry.customerId) : "",
+      customerName: entry?.name || supportPrefill.customerName || "",
+      phone: entry?.phone || supportPrefill.phone || "",
+      email: entry?.email || supportPrefill.email || "",
+      productName: supportPrefill.productName || "",
+      supportType: "su_co",
+    }));
+    const prefillOrderId = supportPrefill.orderId ? String(supportPrefill.orderId) : "";
+    setFormOrderId(prefillOrderId);
+    if (prefillOrderId) {
+      const order = (orders || []).find((o) => String(o.id) === prefillOrderId);
+      if (order?.productId != null) {
+        setForm((current) => ({ ...current, productId: String(order.productId), productName: order.productName || order.importedProductName || current.productName }));
+      }
+    }
+    setFormError("");
+    setShowForm(true);
+    setActiveTableView("active");
+    onSupportPrefillConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supportPrefill]);
+
+  const selectedFormOrder = useMemo(
+    () => (orders || []).find((o) => String(o.id) === String(formOrderId)) || null,
+    [orders, formOrderId],
+  );
+  const selectedOrderItems = Array.isArray(selectedFormOrder?.items) ? selectedFormOrder.items : [];
+  const selectFormOrder = (orderId) => {
+    setFormOrderId(orderId);
+    const order = (orders || []).find((o) => String(o.id) === String(orderId));
+    if (!order) {
+      // Bỏ chọn đơn → mở khóa ô sản phẩm cho nhập tự do.
+      setForm((current) => ({ ...current, productId: "", orderItemId: "", productName: "" }));
+      return;
+    }
+    const items = Array.isArray(order.items) ? order.items : [];
+    if (items.length === 1) {
+      // Đơn 1 dòng: tự khóa luôn theo order_item_id.
+      const line = items[0];
+      setForm((current) => ({
+        ...current,
+        orderItemId: String(line.id || ""),
+        productId: line.productId != null ? String(line.productId) : "",
+        productName: line.description || order.productName || "",
+      }));
+    } else if (items.length > 1) {
+      // Đơn NHIỀU dòng: bắt chọn đúng dòng sản phẩm cần hỗ trợ.
+      setForm((current) => ({ ...current, orderItemId: "", productId: "", productName: "" }));
+    } else {
+      // Đơn cũ chưa có items: khóa theo productId của đơn.
+      setForm((current) => ({
+        ...current,
+        orderItemId: "",
+        productId: order.productId != null ? String(order.productId) : "",
+        productName: order.productName || order.importedProductName || "",
+      }));
+    }
+  };
+  const selectFormOrderItem = (itemId) => {
+    const line = selectedOrderItems.find((it) => String(it.id) === String(itemId));
+    setForm((current) => ({
+      ...current,
+      orderItemId: itemId,
+      productId: line?.productId != null ? String(line.productId) : "",
+      productName: line?.description || "",
+    }));
+  };
   // Lịch sử đã hoàn tất — lọc theo ngày/khoảng ngày, mặc định xem trong ngày hôm nay.
-  const [historyMode, setHistoryMode] = useState("today"); // today | custom | all
+  const [historyMode, setHistoryMode] = useState("all"); // today | custom | all — mặc định xem toàn bộ để không ai tưởng ca cũ bị xóa
   const [historyFrom, setHistoryFrom] = useState(TODAY_STR);
   const [historyTo, setHistoryTo] = useState(TODAY_STR);
   const [showHistoryPicker, setShowHistoryPicker] = useState(false);
-  const [editingHistoryCaseId, setEditingHistoryCaseId] = useState(null);
+  const [historyDraftMode, setHistoryDraftMode] = useState("all");
+  const [historyDraftFrom, setHistoryDraftFrom] = useState(TODAY_STR);
+  const [historyDraftTo, setHistoryDraftTo] = useState(TODAY_STR);
+  const [historyEditTarget, setHistoryEditTarget] = useState(null);
   const [historyResultDraft, setHistoryResultDraft] = useState("");
   const [showSupportHelp, setShowSupportHelp] = useState(false);
-  const [caseActionId, setCaseActionId] = useState(null);
+  const [claimTarget, setClaimTarget] = useState(null);
+  const [claimEmployeeId, setClaimEmployeeId] = useState("");
+  const [confirmTarget, setConfirmTarget] = useState(null);
+  const [completeTarget, setCompleteTarget] = useState(null);
+  const [rejectTarget, setRejectTarget] = useState(null);
+  const [rejectReason, setRejectReason] = useState("");
+  const [overlayError, setOverlayError] = useState("");
   const [caseActionNotice, setCaseActionNotice] = useState("");
   const [caseActionError, setCaseActionError] = useState("");
   const canManageAllSupport = isAdminRole(authUser?.role) || isAccountantRole(authUser?.role);
+  // Yêu cầu hỗ trợ và công việc đã hoàn tất là hồ sơ đối soát — không bao giờ tự xóa. Chỉ tài khoản
+  // Quản trị mới được chủ động xóa khi thật sự cần.
+  const canDeleteSupportCase = isAdminRole(authUser?.role);
+  const currentUserEmail = String(authUser?.email || "").trim().toLowerCase();
+  // Người được giao ca mới được bấm "Hoàn tất" (báo cáo kết quả); người GIAO ca (Sale) mới là người
+  // kiểm tra và duyệt hoàn tất.
+  // Nhận diện "người được giao ca" theo NHIỀU cách: email tài khoản mà máy chủ đã ghi vào ca, hồ sơ
+  // nhân sự đang đăng nhập, hoặc email trong hồ sơ nhân sự của ca. Chỉ dựa vào employeeId thì tài
+  // khoản chưa liên kết hồ sơ sẽ mất luôn nút Xác nhận/Hoàn tất.
+  const isCaseOwner = (item) => {
+    if (!item) return false;
+    const assignedEmail = String(item.assignedToEmail || "").trim().toLowerCase();
+    if (assignedEmail && currentUserEmail && assignedEmail === currentUserEmail) return true;
+    if (currentEmployee?.id && String(item.employeeId) === String(currentEmployee.id)) return true;
+    const employeeEmail = String(
+      employees.find((employee) => String(employee.id) === String(item.employeeId))?.email || "",
+    ).trim().toLowerCase();
+    return Boolean(employeeEmail) && employeeEmail === currentUserEmail;
+  };
+  const canApproveCase = (item) => {
+    if (canManageAllSupport) return true;
+    const assigner = String(item?.assignedBy || "").trim().toLowerCase();
+    return Boolean(assigner) && assigner === currentUserEmail;
+  };
+  const caseAssignerLabel = (item) => item?.assignedByName || item?.assignedBy || "người giao yêu cầu";
   const refreshSupportData = dataLoader?.ensureDataFields;
 
   useEffect(() => {
     if (!refreshSupportData) return undefined;
+    // supportCases đã có vòng poll toàn cục 5s ở App — ở đây chỉ cần làm tươi orders.
     const timer = window.setInterval(() => {
-      refreshSupportData(["supportCases", "orders"], { force: true });
-    }, 4000);
+      refreshSupportData(["orders"], { force: true });
+    }, 5000);
     return () => window.clearInterval(timer);
   }, [refreshSupportData]);
 
   // "cho_nhan" = tín hiệu từ Sale gửi sang, CHƯA có ai nhận — vẫn cần hiện trong danh sách cần xử
   // lý, nhưng KHÔNG tính là "đang bận" cho ai (chưa ai nhận thì chưa bận).
-  const activeCases = cases.filter((c) => ["dang_ho_tro", "cho_nhan", "cho_xac_nhan"].includes(c.status));
+  const activeCases = cases.filter((c) => ["dang_ho_tro", "cho_nhan", "cho_xac_nhan", "cho_duyet_hoan_tat"].includes(c.status));
   const busyByEmployee = {};
+  // Ca đã báo xong và đang chờ duyệt thì kỹ thuật không còn phải làm việc với khách nữa — coi là rảnh.
   cases.filter((c) => c.status === "dang_ho_tro").forEach((c) => { busyByEmployee[c.employeeId] = c; });
 
-  const findActiveDuplicate = (phone) => cases.find((c) => c.phone === phone && (c.status === "dang_ho_tro" || c.status === "cho_nhan"));
+  // Nhiệm vụ của chính tài khoản đang đăng nhập: ca được giao đích danh, phải tự xác nhận tiếp nhận
+  // rồi hệ thống mới báo ngược lại cho Sale đã giao.
+  const myAssignedCases = cases.filter((c) => (
+    isCaseOwner(c) && ["cho_xac_nhan", "dang_ho_tro", "cho_duyet_hoan_tat"].includes(c.status)
+  ));
+  const myPendingCount = myAssignedCases.filter((c) => c.status === "cho_xac_nhan").length;
+  // Ca kỹ thuật đã báo hoàn tất và đang chờ CHÍNH TÔI (người giao / admin) duyệt.
+  const casesAwaitingMyApproval = cases.filter((c) => c.status === "cho_duyet_hoan_tat" && canApproveCase(c));
+  const showMyTasksView = myAssignedCases.length > 0 || SUPPORT_ASSIGNABLE_ROLE_TYPES.has(currentEmployee?.roleType);
 
-  const startSupport = (force) => {
-    if (!form.customerName || !form.phone || !form.employeeId) {
-      setFormError("Vui lòng nhập tên khách hàng, số điện thoại và chọn nhân viên phụ trách.");
+  useEffect(() => {
+    if (activeTableView === "mytasks" && !showMyTasksView) setActiveTableView("active");
+  }, [activeTableView, showMyTasksView]);
+
+  const tableViewOptions = [
+    { id: "active", label: "Yêu cầu đang xử lý", icon: Headphones, count: activeCases.length },
+    ...(showMyTasksView ? [{ id: "mytasks", label: "Nhiệm vụ của tôi", icon: ClipboardList, count: myPendingCount }] : []),
+    { id: "history", label: "Lịch sử hoàn tất", icon: Archive, count: cases.filter((item) => item.status === "hoan_tat").length },
+  ];
+  const lazyTableData = useLazyTableData(
+    activeTableView,
+    { active: ["supportCases", "orders"], mytasks: ["supportCases", "orders"], history: ["supportCases"] },
+    dataLoader?.ensureDataFields,
+    dataLoader?.areDataFieldsReady,
+    dataLoader?.areDataFieldsLoading,
+  );
+
+  const employeeName = (id) => employees.find((e) => String(e.id) === String(id))?.name || "—";
+
+  const openNewCaseForm = () => {
+    setForm(makeBlankForm());
+    setFormCustomerKey("");
+    setFormOrderId("");
+    setFormError("");
+    setDupWarning(null);
+    setShowForm(true);
+  };
+
+  const closeNewCaseForm = async () => {
+    // Chỉ cảnh báo khi khác dữ liệu lúc mở form — prefill tự động không tính là chỉnh sửa.
+    const dirty = JSON.stringify(form) !== supportFormBaselineRef.current;
+    if (dirty && !(await confirmOverlay("Chưa gửi — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được gửi", confirmLabel: "Đóng form", tone: "danger" }))) return;
+    setFormError("");
+    setDupWarning(null);
+    setShowForm(false);
+  };
+
+  // Giao ca mới LUÔN đi qua API: backend gửi tin nhắn DOMIX + email cho nhân sự phụ trách và đặt
+  // ca ở trạng thái "chờ xác nhận" — người nhận phải vào nhiệm vụ bấm xác nhận, hệ thống mới báo
+  // ngược lại cho Sale đã giao.
+  const submitSupportCase = async (force) => {
+    const employee = supportStaff.find((item) => String(item.id) === String(form.employeeId));
+    if (!formCustomerKey || !form.customerName.trim()) {
+      setFormError("Hãy chọn khách hàng từ danh sách khách đã có đơn — yêu cầu hỗ trợ liên kết bằng customer_id, không nhập tự do.");
+      return;
+    }
+    // Hỗ trợ SAU BÁN bắt buộc gắn đơn + đúng dòng sản phẩm; khách chưa mua dùng "Tư vấn trước bán".
+    if (!SUPPORT_PRESALE_TYPES.has(form.supportType)) {
+      if (!formOrderId) {
+        setFormError("Hỗ trợ sau bán bắt buộc chọn ĐƠN HÀNG của khách. Nếu khách chưa mua hàng, đổi loại hỗ trợ sang 'Tư vấn trước bán'.");
+        return;
+      }
+      if (selectedOrderItems.length > 0 && !form.orderItemId) {
+        setFormError("Hãy chọn đúng DÒNG SẢN PHẨM của đơn cần hỗ trợ (order_item_id).");
+        return;
+      }
+    }
+    if (!employee) {
+      setFormError("Vui lòng chọn nhân viên phụ trách.");
+      return;
+    }
+    if (!form.issue.trim()) {
+      setFormError("Hãy nhập vấn đề khách hàng đang gặp.");
+      return;
+    }
+    if (!form.details.trim()) {
+      setFormError("Hãy nhập nội dung cần hỗ trợ để người nhận có đủ thông tin xử lý.");
       return;
     }
     setFormError("");
-    if (!force) {
-      const dup = findActiveDuplicate(form.phone);
-      if (dup) { setDupWarning(dup); return; }
-    }
-    setCases((prev) => [...prev, {
-      id: Date.now(), customerName: form.customerName, phone: form.phone, issue: form.issue,
-      employeeId: Number(form.employeeId), status: "dang_ho_tro", startedAt: nowStamp(), completedAt: null, note: "",
-    }]);
-    setForm(blankForm);
-    setShowForm(false);
+    // KHÔNG lọc trùng: cùng một khách có thể mở nhiều yêu cầu hỗ trợ song song
+    // (nhiều vấn đề, nhiều người xử lý) — mỗi yêu cầu là một bản ghi độc lập.
     setDupWarning(null);
-  };
-  const claimCase = (id, employeeId) => setCases((prev) => prev.map((c) => (c.id === id ? { ...c, employeeId: Number(employeeId), status: "dang_ho_tro", startedAt: nowStamp() } : c)));
-  const confirmAssignedCase = async (supportCase) => {
-    setCaseActionId(supportCase.id);
-    setCaseActionError("");
-    setCaseActionNotice("");
+    setSubmitting(true);
     try {
-      const result = await confirmSupportRequest(supportCase.id);
+      const result = await assignSupportRequest({
+        recipientEmployeeId: employee.id,
+        supportType: form.supportType,
+        supportTypeLabel: SUPPORT_TYPES[form.supportType] || SUPPORT_TYPES.kich_hoat,
+        supportChannel: form.supportChannel,
+        supportChannelLabel: SUPPORT_CHANNELS[form.supportChannel] || SUPPORT_CHANNELS.phone,
+        issue: form.issue.trim(),
+        details: form.details.trim(),
+        customerName: form.customerName.trim(),
+        customerPhone: form.phone.trim(),
+        customerEmail: form.email.trim(),
+        // Liên kết khách bằng ID — không dùng tên/SĐT làm khóa ghép.
+        customerId: form.customerId ? Number(form.customerId) : undefined,
+        productName: form.productName.trim(),
+        // Khóa theo product_id + order_item_id khi yêu cầu gắn với đơn.
+        productId: form.productId ? Number(form.productId) : undefined,
+        orderItemId: form.orderItemId || undefined,
+        priority: form.priority || "trung_binh",
+        dueAt: form.dueAt || "",
+        durationLabel: "",
+        orderDate: TODAY_STR,
+        // Liên kết bằng ID với đơn đã mua (nếu chọn) — yêu cầu hỗ trợ hiện đúng trên đơn nguồn.
+        orderId: formOrderId || undefined,
+      });
       if (result?.data && dataLoader?.applyAppData) {
         dataLoader.applyAppData(result.data, { markPersisted: true });
       } else if (result?.case) {
-        setCases((prev) => prev.map((item) => String(item.id) === String(result.case.id) ? result.case : item));
+        setCases((prev) => [...prev, result.case]);
       }
+      setCaseActionError("");
       setCaseActionNotice(
-        result?.notificationSent
-          ? "Đã xác nhận tiếp nhận. Sale giao ca đã nhận thông báo DOMIX."
-          : `Đã xác nhận tiếp nhận nhưng chưa gửi được thông báo cho Sale: ${result?.notificationError || "không xác định"}.`,
+        result?.emailSent === false
+          ? `Đã giao yêu cầu cho ${employee.name} — tin nhắn DOMIX đã gửi, email chưa gửi được (${result?.emailError || "chưa cấu hình SMTP"}). Yêu cầu đang chờ ${employee.name} xác nhận tiếp nhận.`
+          : `Đã giao yêu cầu cho ${employee.name} — tin nhắn DOMIX và email đã gửi. Yêu cầu đang chờ ${employee.name} vào mục nhiệm vụ xác nhận tiếp nhận.`,
       );
+      setForm(makeBlankForm());
+      setFormOrderId("");
+      setShowForm(false);
     } catch (error) {
-      setCaseActionError(error.message || "Không xác nhận được ca hỗ trợ.");
+      setFormError(error.message || "Không giao được yêu cầu hỗ trợ.");
     } finally {
-      setCaseActionId(null);
+      setSubmitting(false);
     }
   };
-  // Hoàn tất PHẢI kèm ghi chú kết quả — kết quả này tự động đẩy về đúng đơn CRM gốc (contactLog)
-  // để Sale xem lại được khách đã được hỗ trợ ra sao, KHÔNG đụng gì tới số tiền/doanh thu.
-  const completeCase = (id) => {
-    const draft = resolveDraft[id];
-    const resultNote = draft?.result || "Đã hỗ trợ xong, không ghi chú thêm.";
-    setCases((prev) => prev.map((c) => (c.id === id ? { ...c, status: "hoan_tat", completedAt: nowStamp(), resultNote } : c)));
-    const c = cases.find((x) => x.id === id);
-    if (c?.sourceCrmOrderId && setOrders) {
-      setOrders((prev) => prev.map((o) => (o.id === c.sourceCrmOrderId ? {
-        ...o,
-        contactLog: [...(o.contactLog || []), { id: Date.now(), date: nowStamp(), type: "support", note: `[Kết quả hỗ trợ kỹ thuật] ${resultNote}`, acknowledged: false }],
-      } : o)));
-    }
-    setResolveDraft((p) => ({ ...p, [id]: { result: "" } }));
+
+  const openClaimCase = (supportCase) => {
+    setOverlayError("");
+    setClaimEmployeeId(supportStaff[0]?.id ? String(supportStaff[0].id) : "");
+    setClaimTarget(supportCase);
   };
-  const removeCase = async (id) => {
+
+  const submitClaimCase = () => {
+    if (!claimTarget) return;
+    if (!claimEmployeeId) { setOverlayError("Hãy chọn nhân sự nhận yêu cầu này."); return; }
+    setCases((prev) => prev.map((c) => (c.id === claimTarget.id ? {
+      ...c,
+      employeeId: Number(claimEmployeeId),
+      status: "dang_ho_tro",
+      startedAt: nowStamp(),
+    } : c)));
+    setCaseActionError("");
+    setCaseActionNotice(`${employeeName(claimEmployeeId)} đã nhận yêu cầu hỗ trợ của ${claimTarget.customerName || "khách hàng"}.`);
+    setClaimTarget(null);
+    setOverlayError("");
+  };
+
+  const openConfirmCase = (supportCase) => {
+    setOverlayError("");
+    setConfirmTarget(supportCase);
+  };
+
+  const openCompleteCase = (supportCase) => {
+    setOverlayError("");
+    setCompleteTarget(supportCase);
+  };
+
+  // BƯỚC 1 — kỹ thuật được giao bấm "Hoàn tất": chỉ là BÁO CÁO kết quả (xem
+  // SupportCompletionReportOverlay), ca chuyển sang chờ người giao (Sale) kiểm tra.
+
+  // BƯỚC 2 — người GIAO ca (Sale) kiểm tra rồi duyệt: lúc này ca mới thật sự hoàn tất, kết quả được
+  // ghi vào nhật ký liên hệ của đúng đơn CRM.
+  const approveCaseCompletion = async (supportCase) => {
+    if (!canApproveCase(supportCase)) return;
+    const outcome = await approveSupportCaseCompletion({ supportCase, setCases, dataLoader });
+    if (!outcome) return;
+    if (outcome.error) { setCaseActionNotice(""); setCaseActionError(outcome.error); return; }
+    setCaseActionError("");
+    setCaseActionNotice(outcome.notice);
+  };
+
+  const openRejectCase = (supportCase) => {
+    if (!canApproveCase(supportCase)) return;
+    setRejectReason("");
+    setOverlayError("");
+    setRejectTarget(supportCase);
+  };
+
+  const submitRejectCase = async () => {
+    const supportCase = rejectTarget;
+    if (!supportCase) return;
+    const reason = rejectReason.trim();
+    if (!reason) { setOverlayError("Hãy ghi rõ điểm chưa đạt để kỹ thuật xử lý tiếp."); return; }
+    const outcome = await rejectSupportCaseCompletion({ supportCase, reason, setCases, dataLoader });
+    if (outcome.error) { setOverlayError(outcome.error); return; }
+    setRejectTarget(null);
+    setRejectReason("");
+    setOverlayError("");
+    setCaseActionError("");
+    setCaseActionNotice(outcome.notice);
+  };
+
+  // Yêu cầu hỗ trợ ĐÃ tiếp nhận/xử lý không được xóa (mất lịch sử thống kê — backend cũng
+  // chặn 409). Chỉ ca mới "chờ xác nhận" được xóa như bản nháp; còn lại dùng HỦY kèm lý do.
+  const removeCase = (id) => {
+    // KHÔNG còn xóa thật ở bất kỳ trạng thái nào — mọi yêu cầu đều HỦY kèm lý do
+    // (soft-delete có nhật ký: cancelReason/cancelledBy/cancelledAt, giữ lại thống kê).
     const current = cases.find((item) => item.id === id);
-    const accepted = await confirmOverlay(`Xóa ca hỗ trợ của ${current?.customerName || "khách hàng"}?`, { title: "Xóa ca hỗ trợ", confirmLabel: "Xóa ca", tone: "danger" });
-    if (accepted) setCases((prev) => prev.filter((c) => c.id !== id));
+    if (!current) return;
+    setCancelCaseTarget(current);
+    setCancelCaseReason("");
   };
-  const reopenCase = (id) => setCases((prev) => prev.map((item) => item.id === id ? {
-    ...item,
-    status: "dang_ho_tro",
-    completedAt: null,
-    reopenedAt: nowStamp(),
-  } : item));
-  const startEditHistoryCase = (item) => {
-    setEditingHistoryCaseId(item.id);
+  const [cancelCaseTarget, setCancelCaseTarget] = useState(null);
+  const [cancelCaseReason, setCancelCaseReason] = useState("");
+  const submitCancelCase = () => {
+    if (!cancelCaseTarget || !cancelCaseReason.trim()) return;
+    setCases((prev) => prev.map((c) => (c.id === cancelCaseTarget.id ? {
+      ...c,
+      status: "da_huy",
+      cancelReason: cancelCaseReason.trim(),
+      cancelledBy: authUser?.email || "",
+      cancelledAt: new Date().toISOString(),
+    } : c)));
+    setCancelCaseTarget(null);
+    setCancelCaseReason("");
+    setCaseActionNotice("Đã hủy yêu cầu — bản ghi được giữ lại trong Lịch sử để thống kê.");
+  };
+  const reopenCase = async (item) => {
+    const accepted = await confirmOverlay(`Mở lại yêu cầu hỗ trợ của ${item.customerName || "khách hàng"} để xử lý tiếp?`, { title: "Mở lại yêu cầu hỗ trợ", confirmLabel: "Mở lại yêu cầu" });
+    if (!accepted) return;
+    setCases((prev) => prev.map((row) => row.id === item.id ? {
+      ...row,
+      status: "dang_ho_tro",
+      completedAt: null,
+      reopenedAt: nowStamp(),
+    } : row));
+    setCaseActionError("");
+    setCaseActionNotice(`Đã mở lại yêu cầu hỗ trợ của ${item.customerName || "khách hàng"}.`);
+  };
+  const openHistoryEdit = (item) => {
+    setOverlayError("");
     setHistoryResultDraft(item.resultNote || "");
+    setHistoryEditTarget(item);
   };
-  const saveHistoryResult = (id) => {
-    setCases((prev) => prev.map((item) => item.id === id ? {
+  const saveHistoryResult = () => {
+    if (!historyEditTarget) return;
+    const resultNote = historyResultDraft.trim();
+    if (!resultNote) { setOverlayError("Kết quả hỗ trợ không được để trống."); return; }
+    setCases((prev) => prev.map((item) => item.id === historyEditTarget.id ? {
       ...item,
-      resultNote: historyResultDraft.trim(),
+      resultNote,
       updatedAt: nowStamp(),
     } : item));
-    setEditingHistoryCaseId(null);
+    setHistoryEditTarget(null);
     setHistoryResultDraft("");
+    setOverlayError("");
   };
+  const openHistoryPicker = () => {
+    setHistoryDraftMode(historyMode);
+    setHistoryDraftFrom(historyFrom);
+    setHistoryDraftTo(historyTo);
+    setOverlayError("");
+    setShowHistoryPicker(true);
+  };
+  const applyHistoryPicker = () => {
+    if (historyDraftMode === "custom" && historyDraftFrom > historyDraftTo) {
+      setOverlayError("Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc.");
+      return;
+    }
+    setHistoryMode(historyDraftMode);
+    setHistoryFrom(historyDraftFrom);
+    setHistoryTo(historyDraftTo);
+    setShowHistoryPicker(false);
+    setOverlayError("");
+  };
+  const historyRangeLabel = historyMode === "today"
+    ? "Hôm nay"
+    : historyMode === "all"
+      ? "Toàn bộ lịch sử"
+      : `${historyFrom.split("-").reverse().join("/")} → ${historyTo.split("-").reverse().join("/")}`;
+
+  const overlays = (
+    <>
+      {showSupportHelp && (
+        <SupportOverlay title="Quy trình hỗ trợ khách hàng" subtitle="Ba bước bắt buộc để không ai bị bỏ sót ca." onClose={() => setShowSupportHelp(false)}>
+          <ol className="space-y-3 text-sm leading-relaxed text-charcoal">
+            <li><strong>1. Tạo yêu cầu hỗ trợ:</strong> chọn đúng tài khoản Kỹ thuật/IT/CSKH. Hệ thống gửi tin nhắn DOMIX và email cho người được giao, yêu cầu ở trạng thái chờ xác nhận.</li>
+            <li><strong>2. Xác nhận nhiệm vụ:</strong> người được giao mở mục “Nhiệm vụ của tôi”, xác nhận tiếp nhận; hệ thống nhắn ngược lại cho Sale đã giao yêu cầu.</li>
+            <li><strong>3. Kỹ thuật báo hoàn tất:</strong> chỉ tài khoản được giao mới thấy nút “Hoàn tất”; ghi kết quả rồi gửi cho người giao yêu cầu.</li>
+            <li><strong>4. Người giao duyệt:</strong> Sale/Admin kiểm tra kết quả rồi bấm “Duyệt hoàn tất” — lúc này yêu cầu mới đóng và kết quả được gắn vào nhật ký liên hệ của đơn CRM.</li>
+          </ol>
+        </SupportOverlay>
+      )}
+
+      {showForm && (
+        <SupportOverlay
+          title="Tạo yêu cầu hỗ trợ khách hàng"
+          subtitle="Người được giao sẽ nhận email và tin nhắn DOMIX, sau đó phải tự xác nhận tiếp nhận nhiệm vụ."
+          size="lg"
+          onClose={closeNewCaseForm}
+          footer={(
+            <>
+              <button type="button" onClick={closeNewCaseForm} className="rounded-lg border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-light hover:border-ink/25">Hủy</button>
+              <button type="button" onClick={() => submitSupportCase(false)} disabled={submitting} className="inline-flex items-center gap-2 rounded-lg bg-ledger-green px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">
+                <Send size={14} /> {submitting ? "Đang gửi yêu cầu..." : "Gửi yêu cầu & thông báo"}
+              </button>
+            </>
+          )}
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SupportField label="Khách hàng (chọn từ khách đã có đơn)" hint="Liên kết bằng customer_id — thông tin bên dưới tự điền và SỬA ĐƯỢC.">
+              <select value={formCustomerKey} onChange={(e) => selectFormCustomer(e.target.value)} className={SUPPORT_INPUT_CLASS}>
+                <option value="">— Chọn khách hàng —</option>
+                {customersWithOrders.map((c) => (
+                  <option key={c.key} value={c.key}>{c.name}{c.phone ? ` · ${c.phone}` : ""} ({c.orders.length} đơn)</option>
+                ))}
+              </select>
+            </SupportField>
+            <SupportField label="Tên khách hàng" hint="Tự điền theo hồ sơ — sửa được nếu cần cập nhật.">
+              <input value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })} disabled={!formCustomerKey} placeholder="Chọn khách để tự điền" className={`${SUPPORT_INPUT_CLASS} ${!formCustomerKey ? "bg-paper cursor-not-allowed" : ""}`} />
+            </SupportField>
+            <SupportField label="SĐT / Zalo" hint="Tự điền theo hồ sơ — sửa được nếu khách đổi số.">
+              <input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} disabled={!formCustomerKey} placeholder="Chọn khách để tự điền" className={`${SUPPORT_INPUT_CLASS} ktns-mono ${!formCustomerKey ? "bg-paper cursor-not-allowed" : ""}`} />
+            </SupportField>
+            <SupportField label="Email khách hàng" hint="Tự điền theo hồ sơ — sửa được nếu cần.">
+              <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} disabled={!formCustomerKey} placeholder="—" className={`${SUPPORT_INPUT_CLASS} ${!formCustomerKey ? "bg-paper cursor-not-allowed" : ""}`} /></SupportField>
+            <SupportField label={SUPPORT_PRESALE_TYPES.has(form.supportType) ? "Đơn hàng của khách (không bắt buộc)" : "Đơn hàng của khách (bắt buộc)"} hint={formCustomerKey ? "Chỉ hiện đơn của khách đã chọn — chọn đơn là khóa sản phẩm theo order." : "Chọn khách trước để hiện danh sách đơn."}>
+              <select value={formOrderId} onChange={(e) => selectFormOrder(e.target.value)} className={SUPPORT_INPUT_CLASS} disabled={customerOrdersForForm.length === 0}>
+                <option value="">{customerOrdersForForm.length === 0 ? "— Chọn khách trước —" : SUPPORT_PRESALE_TYPES.has(form.supportType) ? "— Không cần đơn (tư vấn trước bán) —" : "— Chọn đơn hàng của khách —"}</option>
+                {customerOrdersForForm.map((o) => (
+                  <option key={o.id} value={o.id}>#{String(o.id).slice(-6)} · {formatDateVN(o.date)} · {(o.productName || o.importedProductName || "Dịch vụ")} · {fmtVND(o.amount)}</option>
+                ))}
+              </select>
+            </SupportField>
+            <SupportField label="Sản phẩm / dịch vụ" hint={formOrderId ? (selectedOrderItems.length > 1 ? "Chọn đúng DÒNG sản phẩm của đơn cần hỗ trợ (order_item_id)." : "Khóa theo đơn đã chọn.") : (SUPPORT_PRESALE_TYPES.has(form.supportType) ? "Tư vấn trước bán — ghi sản phẩm khách quan tâm." : "Hỗ trợ sau bán lấy sản phẩm TỪ ĐƠN — hãy chọn đơn hàng trước.")}>
+              {formOrderId && selectedOrderItems.length > 0 ? (
+                <select value={form.orderItemId} onChange={(e) => selectFormOrderItem(e.target.value)} className={SUPPORT_INPUT_CLASS}>
+                  <option value="">— Chọn dòng sản phẩm của đơn —</option>
+                  {selectedOrderItems.map((line) => (
+                    <option key={line.id} value={line.id}>{line.description}{line.quantity ? ` ×${line.quantity}` : ""}{line.productId == null ? " (dịch vụ)" : ""}</option>
+                  ))}
+                </select>
+              ) : (
+                <input value={form.productName} onChange={(e) => setForm({ ...form, productName: e.target.value })} readOnly={Boolean(formOrderId) || !SUPPORT_PRESALE_TYPES.has(form.supportType)} placeholder={SUPPORT_PRESALE_TYPES.has(form.supportType) ? "VD: Phần mềm kế toán DOMIX" : "Chọn đơn hàng để hiện sản phẩm của đơn"} className={`${SUPPORT_INPUT_CLASS} ${(formOrderId || !SUPPORT_PRESALE_TYPES.has(form.supportType)) ? "bg-paper cursor-not-allowed" : ""}`} />
+              )}
+            </SupportField>
+            <SupportField label="Loại hỗ trợ">
+              <select value={form.supportType} onChange={(e) => setForm({ ...form, supportType: e.target.value })} className={SUPPORT_INPUT_CLASS}>
+                {Object.entries(SUPPORT_TYPES).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+              </select>
+            </SupportField>
+            <SupportField label="Cách thức hỗ trợ">
+              <select value={form.supportChannel} onChange={(e) => setForm({ ...form, supportChannel: e.target.value })} className={SUPPORT_INPUT_CLASS}>
+                {Object.entries(SUPPORT_CHANNELS).map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+              </select>
+            </SupportField>
+            <SupportField label="Mức ưu tiên">
+              <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })} className={SUPPORT_INPUT_CLASS}>
+                <option value="cao">Cao — xử lý ngay</option>
+                <option value="trung_binh">Trung bình</option>
+                <option value="thap">Thấp</option>
+              </select>
+            </SupportField>
+            <SupportField label="Hạn xử lý (SLA)" hint="Không bắt buộc — quá hạn sẽ cảnh báo đỏ trong bảng.">
+              <input type="datetime-local" value={form.dueAt} onChange={(e) => setForm({ ...form, dueAt: e.target.value })} className={`${SUPPORT_INPUT_CLASS} ktns-mono`} />
+            </SupportField>
+            <SupportField label="Vấn đề cần hỗ trợ" full>
+              <input value={form.issue} onChange={(e) => setForm({ ...form, issue: e.target.value })} placeholder="VD: Không đăng nhập được, lỗi key kích hoạt..." className={SUPPORT_INPUT_CLASS} />
+            </SupportField>
+            <SupportField label="Nội dung cần hỗ trợ" full hint="Mô tả đủ để người nhận xử lý được ngay, không phải hỏi lại khách.">
+              <textarea value={form.details} onChange={(e) => setForm({ ...form, details: e.target.value })} rows={4} placeholder="Tình trạng hiện tại, đã thử cách nào, khách mong muốn gì..." className={`${SUPPORT_INPUT_CLASS} resize-none`} />
+            </SupportField>
+            <SupportField label="Nhân viên phụ trách" full hint="Chỉ nhân sự Kỹ thuật/IT/CSKH có tài khoản email mới nhận được thông báo.">
+              <select value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: e.target.value })} className={SUPPORT_INPUT_CLASS}>
+                {supportStaff.length === 0 && <option value="">Chưa có nhân sự hỗ trợ</option>}
+                {supportStaff.map((e) => (<option key={e.id} value={e.id}>{e.name}{busyByEmployee[e.id] ? " — đang bận" : " — đang rảnh"}</option>))}
+              </select>
+            </SupportField>
+          </div>
+          {formError && <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} /> {formError}</p>}
+        </SupportOverlay>
+      )}
+
+      {dupWarning && (
+        <SupportOverlay
+          title="Khách này đang được hỗ trợ rồi"
+          subtitle="Tạo thêm yêu cầu có thể khiến hai người cùng liên hệ một khách."
+          tone="danger"
+          size="sm"
+          onClose={() => setDupWarning(null)}
+          footer={(
+            <>
+              <button type="button" onClick={() => setDupWarning(null)} className="rounded-lg border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-light hover:border-ink/25">Huỷ, không tạo</button>
+              <button type="button" onClick={() => submitSupportCase(true)} disabled={submitting} className="rounded-lg bg-stamp-red px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">{submitting ? "Đang gửi yêu cầu..." : "Vẫn gửi yêu cầu (biết rủi ro)"}</button>
+            </>
+          )}
+        >
+          <div className="rounded-xl border border-stamp-red/30 bg-stamp-red/5 px-4 py-3">
+            <SupportDetailRow label="Số điện thoại" value={dupWarning.phone} />
+            <SupportDetailRow label="Đang xử lý bởi" value={employeeName(dupWarning.employeeId)} />
+            <SupportDetailRow label="Vấn đề" value={dupWarning.issue} />
+          </div>
+        </SupportOverlay>
+      )}
+
+      {cancelCaseTarget && (
+        <SupportOverlay
+          title="Hủy yêu cầu hỗ trợ"
+          subtitle={`Khách hàng: ${cancelCaseTarget.customerName || "—"} · ${cancelCaseTarget.phone || "—"} — bản ghi được GIỮ LẠI ở trạng thái Đã hủy để thống kê.`}
+          size="sm"
+          onClose={() => { setCancelCaseTarget(null); setCancelCaseReason(""); }}
+          footer={(
+            <>
+              <button type="button" onClick={() => { setCancelCaseTarget(null); setCancelCaseReason(""); }} className="rounded-lg border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-light hover:border-ink/25">Không hủy</button>
+              <button type="button" onClick={submitCancelCase} disabled={!cancelCaseReason.trim()} className="rounded-lg bg-stamp-red px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50">Hủy yêu cầu</button>
+            </>
+          )}
+        >
+          <SupportField label="Lý do hủy" full hint="Bắt buộc — lưu kèm người thực hiện và thời gian.">
+            <textarea value={cancelCaseReason} onChange={(e) => setCancelCaseReason(e.target.value)} rows={3} placeholder="VD: Khách tự xử lý được, yêu cầu trùng, khách hủy dịch vụ..." className={`${SUPPORT_INPUT_CLASS} resize-none`} autoFocus />
+          </SupportField>
+        </SupportOverlay>
+      )}
+
+      {claimTarget && (
+        <SupportOverlay
+          title="Nhận yêu cầu hỗ trợ"
+          subtitle={`Khách hàng: ${claimTarget.customerName || "—"} · ${claimTarget.phone || "—"}`}
+          size="sm"
+          onClose={() => { setClaimTarget(null); setOverlayError(""); }}
+          footer={(
+            <>
+              <button type="button" onClick={() => { setClaimTarget(null); setOverlayError(""); }} className="rounded-lg border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-light hover:border-ink/25">Hủy</button>
+              <button type="button" onClick={submitClaimCase} className="rounded-lg bg-ledger-green px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90">Nhận yêu cầu này</button>
+            </>
+          )}
+        >
+          <SupportField label="Nhân sự nhận yêu cầu">
+            <select value={claimEmployeeId} onChange={(e) => setClaimEmployeeId(e.target.value)} className={SUPPORT_INPUT_CLASS}>
+              {supportStaff.length === 0 && <option value="">Chưa có nhân sự hỗ trợ</option>}
+              {supportStaff.map((e) => (<option key={e.id} value={e.id}>{e.name}{busyByEmployee[e.id] ? " — đang bận" : " — đang rảnh"}</option>))}
+            </select>
+          </SupportField>
+          {overlayError && <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} /> {overlayError}</p>}
+        </SupportOverlay>
+      )}
+
+      {confirmTarget && (
+        <SupportAssignmentConfirmOverlay
+          supportCase={confirmTarget}
+          dataLoader={dataLoader}
+          setCases={setCases}
+          onClose={() => setConfirmTarget(null)}
+          onResult={(message) => { setCaseActionError(""); setCaseActionNotice(message); }}
+        />
+      )}
+
+      {completeTarget && (
+        <SupportCompletionReportOverlay
+          supportCase={completeTarget}
+          setCases={setCases}
+          dataLoader={dataLoader}
+          onClose={() => setCompleteTarget(null)}
+          onResult={(message) => { setCaseActionError(""); setCaseActionNotice(message); }}
+          onError={(message) => setCaseActionError(message)}
+        />
+      )}
+
+      {rejectTarget && (
+        <SupportOverlay
+          title="Chưa duyệt hoàn tất"
+          subtitle={`Khách hàng: ${rejectTarget.customerName || "—"} · kỹ thuật: ${employeeName(rejectTarget.employeeId)}`}
+          tone="danger"
+          onClose={() => { setRejectTarget(null); setRejectReason(""); setOverlayError(""); }}
+          footer={(
+            <>
+              <button type="button" onClick={() => { setRejectTarget(null); setRejectReason(""); setOverlayError(""); }} className="rounded-lg border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-light hover:border-ink/25">Hủy</button>
+              <button type="button" onClick={submitRejectCase} className="rounded-lg bg-stamp-red px-4 py-2.5 text-sm font-bold text-white hover:brightness-110">Trả về kỹ thuật</button>
+            </>
+          )}
+        >
+          <div className="mb-4 rounded-xl border border-paper-line bg-paper/40 px-4 py-2">
+            <SupportDetailRow label="Vấn đề" value={rejectTarget.issue} />
+            <SupportDetailRow label="Kết quả kỹ thuật báo" value={rejectTarget.resultNote} />
+            <SupportDetailRow label="Báo lúc" value={rejectTarget.reportedAt} />
+          </div>
+          <SupportField label="Điểm chưa đạt" hint="Kỹ thuật nhận được nội dung này qua tin nhắn DOMIX và xử lý tiếp.">
+            <textarea value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} rows={4} placeholder="VD: khách báo vẫn chưa kích hoạt được, cần gọi lại hướng dẫn." className={`${SUPPORT_INPUT_CLASS} resize-none`} />
+          </SupportField>
+          {overlayError && <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} /> {overlayError}</p>}
+        </SupportOverlay>
+      )}
+
+      {historyEditTarget && (
+        <SupportOverlay
+          title="Sửa kết quả hỗ trợ"
+          subtitle={`Khách hàng: ${historyEditTarget.customerName || "—"} · hoàn tất ${historyEditTarget.completedAt || "—"}`}
+          onClose={() => { setHistoryEditTarget(null); setOverlayError(""); }}
+          footer={(
+            <>
+              <button type="button" onClick={() => { setHistoryEditTarget(null); setOverlayError(""); }} className="rounded-lg border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-light hover:border-ink/25">Hủy</button>
+              <button type="button" onClick={saveHistoryResult} className="rounded-lg bg-ledger-green px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90">Lưu kết quả</button>
+            </>
+          )}
+        >
+          <SupportField label="Kết quả hỗ trợ">
+            <textarea value={historyResultDraft} onChange={(event) => setHistoryResultDraft(event.target.value)} rows={4} className={`${SUPPORT_INPUT_CLASS} resize-none`} />
+          </SupportField>
+          {overlayError && <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} /> {overlayError}</p>}
+        </SupportOverlay>
+      )}
+
+      {showHistoryPicker && (
+        <SupportOverlay
+          title="Chọn khoảng thời gian"
+          subtitle="Áp dụng cho danh sách yêu cầu hỗ trợ đã hoàn tất."
+          size="sm"
+          onClose={() => { setShowHistoryPicker(false); setOverlayError(""); }}
+          footer={(
+            <>
+              <button type="button" onClick={() => { setShowHistoryPicker(false); setOverlayError(""); }} className="rounded-lg border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-light hover:border-ink/25">Hủy</button>
+              <button type="button" onClick={applyHistoryPicker} className="rounded-lg bg-ink px-4 py-2.5 text-sm font-semibold text-white hover:bg-ink-light">Áp dụng</button>
+            </>
+          )}
+        >
+          <div className="flex flex-col gap-2">
+            {[{ id: "today", label: "Hôm nay" }, { id: "all", label: "Toàn bộ lịch sử" }, { id: "custom", label: "Tuỳ chỉnh khoảng ngày" }].map((option) => (
+              <button
+                key={option.id}
+                type="button"
+                onClick={() => setHistoryDraftMode(option.id)}
+                className={`rounded-lg border px-3.5 py-2.5 text-left text-sm font-semibold transition-colors ${historyDraftMode === option.id ? "border-gold bg-gold/10 text-ink" : "border-paper-line bg-white text-ink-light hover:border-ink/20"}`}
+              >{option.label}</button>
+            ))}
+          </div>
+          {historyDraftMode === "custom" && (
+            <div className="mt-4 grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-2">
+              <SupportField label="Từ ngày">
+                <input type="date" value={historyDraftFrom} onChange={(e) => setHistoryDraftFrom(e.target.value)} className={`${SUPPORT_INPUT_CLASS} w-full`} />
+              </SupportField>
+              <span className="pb-3 text-center text-xs text-muted">→</span>
+              <SupportField label="Đến ngày">
+                <input type="date" value={historyDraftTo} onChange={(e) => setHistoryDraftTo(e.target.value)} className={`${SUPPORT_INPUT_CLASS} w-full`} />
+              </SupportField>
+            </div>
+          )}
+          {overlayError && <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} /> {overlayError}</p>}
+        </SupportOverlay>
+      )}
+    </>
+  );
 
   if (!lazyTableData.ready) {
     return (
       <div className="flex flex-col gap-4">
-        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={[{ id: "active", label: "Đang hỗ trợ", icon: Headphones }, { id: "history", label: "Lịch sử hoàn tất", icon: Archive }]} />
+        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={tableViewOptions} />
         <DataLoadingPanel title="Đang tải dữ liệu hỗ trợ" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} />
       </div>
     );
@@ -10020,147 +12146,105 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders, authUse
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       <div className="shrink-0">
-      <SectionViewSwitcher
-        value={activeTableView}
-        onChange={setActiveTableView}
-        options={[
-          { id: "active", label: "Đang hỗ trợ", icon: Headphones, count: activeCases.length },
-          { id: "history", label: "Lịch sử hoàn tất", icon: Archive, count: cases.filter((item) => item.status === "hoan_tat").length },
-        ]}
-      />
+        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={tableViewOptions} />
       </div>
-      <div className="shrink-0 flex items-start justify-between gap-3 rounded-lg border border-paper-line bg-white p-3 text-xs text-muted">
-        <span className="flex min-w-0 items-start gap-2"><Link2 size={13} className="mt-0.5 shrink-0 text-ink-light" /><span>Ca hỗ trợ liên kết với đơn CRM nhưng không hiển thị doanh thu. Hệ thống cảnh báo khách đang được xử lý và gửi kết quả về đúng đơn hàng.</span></span>
-        <button type="button" onClick={() => setShowSupportHelp(true)} className="shrink-0 rounded-lg border border-paper-line px-3 py-2 font-semibold text-ink hover:border-gold" aria-label="Xem hướng dẫn hỗ trợ khách hàng">Xem hướng dẫn</button>
-      </div>
+      {casesAwaitingMyApproval.length > 0 && (
+        <div className="shrink-0 flex items-center gap-2 rounded-lg border border-[#4f7ee8]/40 bg-[#4f7ee8]/10 px-3 py-2 text-xs text-[#315fae]">
+          <CheckCircle2 size={14} className="shrink-0" />
+          <span><strong>{casesAwaitingMyApproval.length} yêu cầu hỗ trợ</strong> kỹ thuật đã báo xong và đang chờ bạn kiểm tra, duyệt hoàn tất.</span>
+        </div>
+      )}
       {caseActionNotice && <div role="status" className="shrink-0 rounded-lg border border-ledger-green/35 bg-ledger-green/10 px-3 py-2 text-xs font-semibold text-ledger-green">{caseActionNotice}</div>}
       {caseActionError && <div role="alert" className="shrink-0 rounded-lg border border-stamp-red/35 bg-stamp-red/10 px-3 py-2 text-xs font-semibold text-stamp-red">{caseActionError}</div>}
-      {showSupportHelp && (
-        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-ink/50 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowSupportHelp(false); }}>
-          <div className="w-full max-w-xl rounded-xl bg-white p-5 shadow-2xl">
-            <div className="flex items-center justify-between gap-3 border-b border-paper-line pb-3">
-              <h3 className="ktns-serif font-semibold text-ink">Quy trình hỗ trợ khách hàng</h3>
-              <button type="button" onClick={() => setShowSupportHelp(false)} className="inline-flex min-h-10 min-w-10 items-center justify-center rounded-lg border border-paper-line text-muted hover:text-ink" aria-label="Đóng hướng dẫn" title="Đóng"><X size={16} /></button>
-            </div>
-            <ol className="mt-4 space-y-3 text-sm text-charcoal">
-              <li><strong>1. Giao ca:</strong> Sale chọn đúng tài khoản Kỹ thuật/IT/CSKH. Hệ thống gửi tin nhắn DOMIX, email và đặt trạng thái chờ xác nhận.</li>
-              <li><strong>2. Xác nhận:</strong> Chỉ tài khoản được giao mới bấm xác nhận tiếp nhận; Sale được thông báo lại ngay sau đó.</li>
-              <li><strong>3. Hoàn tất:</strong> Kỹ thuật ghi kết quả rồi hoàn tất. Kết quả được gắn vào nhật ký liên hệ của đúng đơn CRM.</li>
-            </ol>
-          </div>
-        </div>
-      )}
 
       {activeTableView === "active" && (<div className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden">
-      <div className="shrink-0 grid grid-cols-4 gap-4">
-        <KpiCard icon={Headphones} label="Đang hỗ trợ" value={activeCases.length} tone={activeCases.length > 0 ? "down" : "up"} />
-        <KpiCard icon={UserCheck} label="Nhân viên đang bận" value={Object.keys(busyByEmployee).length} />
-        <KpiCard icon={CheckCircle2} label="Đã hoàn tất hôm nay" value={cases.filter((c) => c.status === "hoan_tat" && c.completedAt?.startsWith(TODAY_STR)).length} tone="up" />
-        <KpiCard icon={Users} label="Tổng nhân sự hỗ trợ/kỹ thuật" value={supportStaff.length} />
+      <InlineStats items={[
+        { label: "Đang hỗ trợ", value: activeCases.length, className: activeCases.length > 0 ? "text-stamp-red" : "text-ledger-green" },
+        { label: "Nhân viên đang bận", value: Object.keys(busyByEmployee).length },
+        { label: "Hoàn tất hôm nay", value: cases.filter((c) => c.status === "hoan_tat" && c.completedAt?.startsWith(TODAY_STR)).length, className: "text-ledger-green" },
+        { label: "Nhân sự hỗ trợ/kỹ thuật", value: supportStaff.length },
+      ]} />
+
+      {/* Trạng thái nhân sự thu thành MỘT hàng chip mỏng — bảng yêu cầu mới là trung tâm. */}
+      <div className="shrink-0 bg-white rounded-lg border border-paper-line px-3 py-1.5 flex flex-wrap items-center gap-2">
+        <span className="text-[11px] font-semibold uppercase text-muted">Nhân sự:</span>
+        {supportStaff.length === 0 && <span className="text-xs text-muted">Chưa có nhân viên Hỗ trợ kỹ thuật/CSKH.</span>}
+        {supportStaff.map((e) => {
+          const busy = busyByEmployee[e.id];
+          return (
+            <span key={e.id} className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] ${busy ? "border-stamp-red/40 bg-stamp-red/5 text-stamp-red" : "border-ledger-green/40 bg-ledger-green/5 text-ledger-green"}`} title={busy ? `Đang bận — hỗ trợ ${busy.customerName} (${busy.phone})` : "Đang rảnh"}>
+              <span className={`h-1.5 w-1.5 rounded-full ${busy ? "bg-stamp-red" : "bg-ledger-green"}`} />{e.name}
+            </span>
+          );
+        })}
+        <button type="button" onClick={() => setShowSupportHelp(true)} className="ml-auto shrink-0 rounded-md border border-paper-line px-2.5 py-1 text-xs font-semibold text-ink hover:border-[#3C50E0]/60" aria-label="Xem hướng dẫn hỗ trợ khách hàng">?</button>
+        <button type="button" onClick={openNewCaseForm} className="shrink-0 flex items-center gap-1.5 text-xs bg-ink text-white px-3 py-1.5 rounded-md hover:bg-ink-light">
+          <Plus size={13} /> Tạo yêu cầu hỗ trợ
+        </button>
       </div>
-
-      <div className="shrink-0 bg-white rounded-lg border border-paper-line p-4">
-        <div className="text-xs font-semibold text-ink uppercase mb-2">Trạng thái từng nhân viên — biết ngay ai rảnh</div>
-        <div className="grid grid-cols-4 gap-3">
-          {supportStaff.length === 0 && <p className="text-xs text-muted col-span-4">Chưa có nhân viên nào ở vị trí Hỗ trợ kỹ thuật/CSKH.</p>}
-          {supportStaff.map((e) => {
-            const busy = busyByEmployee[e.id];
-            return (
-              <div key={e.id} className={`rounded-md border p-3 ${busy ? "border-stamp-red/40 bg-stamp-red/5" : "border-ledger-green/40 bg-ledger-green/5"}`}>
-                <div className="text-sm font-medium text-charcoal">{e.name}</div>
-                {busy ? (
-                  <div className="text-[11px] text-stamp-red mt-1">Đang bận — hỗ trợ {busy.customerName} ({busy.phone})</div>
-                ) : (
-                  <div className="text-[11px] text-ledger-green mt-1">Đang rảnh</div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      <button onClick={() => { setForm(blankForm); setShowForm(true); }} className="shrink-0 flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light w-fit">
-        <Plus size={15} /> Bắt đầu ca hỗ trợ mới
-      </button>
-
-      {showForm && (
-        <div className="shrink-0 bg-white rounded-lg border border-paper-line p-4 relative">
-          <button
-            className="absolute top-3 right-3 text-muted hover:text-ink"
-            onClick={async () => { if ((form.customerName || form.phone) && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setFormError(""); setShowForm(false); }}
-          ><X size={16} /></button>
-          <h3 className="ktns-serif font-semibold text-ink mb-4">Bắt đầu ca hỗ trợ mới</h3>
-          <div className="grid grid-cols-2 gap-3">
-            <label className="text-xs text-muted flex flex-col gap-1">Tên khách hàng<input value={form.customerName} onChange={(e) => setForm({ ...form, customerName: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-            <label className="text-xs text-muted flex flex-col gap-1">SĐT<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-            <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Vấn đề cần hỗ trợ<input value={form.issue} onChange={(e) => setForm({ ...form, issue: e.target.value })} placeholder="VD: Không đăng nhập được, lỗi key kích hoạt..." className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-            <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Nhân viên phụ trách
-              <select value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
-                {supportStaff.map((e) => (<option key={e.id} value={e.id}>{e.name}{busyByEmployee[e.id] ? " — đang bận" : " — đang rảnh"}</option>))}
-              </select>
-            </label>
-          </div>
-          {dupWarning && (
-            <div className="mt-3 bg-stamp-red/10 border border-stamp-red rounded-md p-3 text-xs text-charcoal">
-              <div className="flex items-center gap-1.5 font-semibold text-stamp-red mb-1"><AlertTriangle size={13} /> Khách này đang được hỗ trợ rồi!</div>
-              <p>Số {dupWarning.phone} hiện đang được <strong>{employees.find((e) => e.id === dupWarning.employeeId)?.name || "—"}</strong> xử lý (vấn đề: {dupWarning.issue || "—"}) — tạo thêm ca nữa có thể khiến 2 người cùng liên hệ 1 khách.</p>
-              <div className="flex gap-2 mt-2">
-                <button onClick={() => startSupport(true)} className="bg-stamp-red text-white text-xs px-3 py-1.5 rounded-md">Vẫn tạo thêm (biết rủi ro)</button>
-                <button onClick={() => setDupWarning(null)} className="border border-paper-line text-xs px-3 py-1.5 rounded-md text-muted">Huỷ, không tạo</button>
-              </div>
-            </div>
-          )}
-          {formError && <p className="mt-3 text-xs text-stamp-red flex items-center gap-1"><AlertTriangle size={12} /> {formError}</p>}
-          <div className="flex gap-2 mt-3">
-            <button onClick={() => startSupport(false)} className="bg-ledger-green text-white text-sm px-3 py-1.5 rounded-md">Bắt đầu hỗ trợ</button>
-          </div>
-        </div>
-      )}
 
       <div className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
-        <div className="shrink-0 px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Đang hỗ trợ ({activeCases.length})</div>
+        <div className="shrink-0 px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Yêu cầu hỗ trợ đang xử lý ({activeCases.length})</div>
         <div className="min-h-0 flex-1 overflow-auto">
         <table data-sticky-columns="true" className="w-full text-sm">
-          <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-4 py-2">STT</th><th className="px-4 py-2">Khách hàng</th><th className="px-4 py-2">SĐT/Zalo</th><th className="px-4 py-2">Vấn đề</th><th className="px-4 py-2">Nhân viên</th><th className="px-4 py-2">Bắt đầu lúc</th><th className="px-4 py-2"></th></tr></thead>
+          <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-3 py-2">Mã</th><th className="px-3 py-2">Khách hàng</th><th className="px-3 py-2">Vấn đề</th><th className="px-3 py-2">Đơn hàng</th><th className="px-3 py-2">Ưu tiên</th><th className="px-3 py-2">Hạn xử lý</th><th className="px-3 py-2">Người giao</th><th className="px-3 py-2">Người xử lý · trạng thái</th><th className="px-3 py-2">Bắt đầu</th><th className="px-3 py-2 text-right">Thao tác</th></tr></thead>
           <tbody>
-            {activeCases.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-xs text-muted">Không có ca hỗ trợ nào đang xử lý — mọi người đang rảnh.</td></tr>}
-            {activeCases.slice().reverse().map((c, idx) => {
-              const draft = resolveDraft[c.id] || { result: "" };
+            {activeCases.length === 0 && <tr><td colSpan={10} className="px-4 py-6 text-center text-xs text-muted">Không có yêu cầu hỗ trợ nào đang xử lý — mọi người đang rảnh.</td></tr>}
+            {activeCases.slice().reverse().map((c) => {
+              const prio = SUPPORT_PRIORITY_META[c.priority] || SUPPORT_PRIORITY_META.trung_binh;
+              const overdue = c.dueAt && new Date(c.dueAt).getTime() < Date.now();
               return (
-              <React.Fragment key={c.id}>
-              <tr className={`border-t border-paper-line ${["cho_nhan", "cho_xac_nhan"].includes(c.status) ? "ktns-warn-row" : ""}`}>
-                <td className="px-4 py-2 ktns-mono text-xs text-muted">{idx + 1}</td>
-                <td className="px-4 py-2 font-medium">{c.customerName}{c.productName && <div className="text-[10px] text-muted">{c.productName}{c.durationLabel ? ` — ${c.durationLabel}` : ""}</div>}</td>
-                <td className="px-4 py-2 ktns-mono text-xs">{c.phone}</td>
-                <td className="px-4 py-2 text-xs">{c.issue || "—"}</td>
-                <td className="px-4 py-2 text-xs">
-                  {c.status === "cho_nhan" ? (
-                    <select onChange={(e) => e.target.value && claimCase(c.id, e.target.value)} defaultValue="" className="border border-paper-line rounded px-1.5 py-1 text-[11px]">
-                      <option value="" disabled>— Nhận ca này —</option>
-                      {supportStaff.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
-                    </select>
-                  ) : <div>{employees.find((e) => String(e.id) === String(c.employeeId))?.name || "—"}{c.status === "cho_xac_nhan" && <span className="mt-1 block w-fit rounded-full border border-gold/35 bg-gold/10 px-2 py-0.5 text-[10px] font-semibold text-gold">Chờ xác nhận</span>}</div>}
+              <tr key={c.id} data-case-row={c.id} className={`border-t border-paper-line ${String(focusCaseId) === String(c.id) ? "ring-2 ring-inset ring-[#3C50E0] bg-[#3C50E0]/10" : ["cho_nhan", "cho_xac_nhan"].includes(c.status) ? "ktns-warn-row" : ""}`}>
+                <td className="px-3 py-2 ktns-mono text-xs text-muted">#{String(c.id).slice(-6)}</td>
+                <td className="px-3 py-2 font-medium min-w-[140px] max-w-[200px]">
+                  <div className="truncate" title={c.customerName}>{c.customerName}</div>
+                  <div className="ktns-mono text-[10px] font-normal text-muted">{c.phone}</div>
+                  {c.productName && <div className="truncate text-[10px] font-normal text-muted" title={c.productName}>{c.productName}{c.durationLabel ? ` — ${c.durationLabel}` : ""}</div>}
                 </td>
-                <td className="px-4 py-2 ktns-mono text-xs text-muted">{c.startedAt || c.assignedAt || "—"}</td>
-                <td className="px-4 py-2 text-right">
-                  {c.status === "cho_xac_nhan" && String(c.employeeId) === String(currentEmployee?.id) && (
-                    <button type="button" onClick={() => confirmAssignedCase(c)} disabled={caseActionId === c.id} className="inline-flex items-center gap-1 rounded-md bg-ledger-green px-3 py-1.5 text-[11px] font-semibold text-white disabled:opacity-50"><UserCheck size={12} /> {caseActionId === c.id ? "Đang xác nhận..." : "Xác nhận tiếp nhận"}</button>
-                  )}
-                  {c.status === "cho_xac_nhan" && String(c.employeeId) !== String(currentEmployee?.id) && <span className="text-[10px] text-muted">Đang chờ đúng tài khoản được giao</span>}
-                  {canManageAllSupport && <button type="button" onClick={() => removeCase(c.id)} className="ml-2 inline-flex items-center gap-1 rounded-md border border-stamp-red/30 px-2 py-1 text-[11px] font-semibold text-stamp-red hover:bg-stamp-red/5" title="Xóa ca hỗ trợ" aria-label={`Xóa ca hỗ trợ của ${c.customerName}`}><Trash2 size={12} /> Xóa</button>}
+                <td className="px-3 py-2 text-xs max-w-[220px]"><div className="truncate" title={c.issue}>{c.issue || "—"}</div></td>
+                <td className="px-3 py-2 ktns-mono text-xs text-muted">{c.sourceCrmOrderId ? `#${String(c.sourceCrmOrderId).slice(-6)}` : (SUPPORT_PRESALE_TYPES.has(c.supportType) ? "—" : <span className="rounded border border-gold/40 bg-gold/10 px-1.5 py-0.5 text-[9px] font-bold text-[#92610A]" title="Bản ghi cũ tạo trước khi bắt buộc gắn đơn — cần bổ sung liên kết đơn hàng">CẦN BỔ SUNG LIÊN KẾT</span>)}</td>
+                <td className="px-3 py-2"><span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${prio.cls}`}>{prio.label}</span></td>
+                <td className={`px-3 py-2 ktns-mono text-xs whitespace-nowrap ${overdue ? "font-semibold text-stamp-red" : "text-muted"}`} title={overdue ? "Đã quá hạn xử lý" : undefined}>{c.dueAt ? fmtContactTime(c.dueAt) : "—"}</td>
+                <td className="px-3 py-2 text-xs whitespace-nowrap">{c.assignedByName || c.assignedBy || "—"}</td>
+                <td className="px-3 py-2 text-xs">
+                  {c.status === "cho_nhan"
+                    ? <span className="rounded-full border border-gold/35 bg-gold/10 px-2 py-0.5 text-[10px] font-semibold text-gold">Chưa có người nhận</span>
+                    : (
+                      <div>
+                        {employeeName(c.employeeId)}
+                        {c.status === "cho_xac_nhan" && <span className="mt-1 block w-fit rounded-full border border-gold/35 bg-gold/10 px-2 py-0.5 text-[10px] font-semibold text-gold">Chờ xác nhận</span>}
+                        {c.status === "cho_duyet_hoan_tat" && <span className="mt-1 block w-fit rounded-full border border-[#4f7ee8]/40 bg-[#4f7ee8]/10 px-2 py-0.5 text-[10px] font-semibold text-[#315fae]">Chờ duyệt hoàn tất</span>}
+                        {c.status === "cho_duyet_hoan_tat" && c.resultNote && <span className="mt-1 block max-w-[220px] text-[10px] text-charcoal">Kết quả: {c.resultNote}</span>}
+                        {c.status === "dang_ho_tro" && c.reviewNote && <span className="mt-1 block max-w-[220px] text-[10px] text-stamp-red">Trả lại: {c.reviewNote}</span>}
+                      </div>
+                    )}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 ktns-mono text-xs text-muted">{fmtDateTimeVN(c.startedAt || c.assignedAt)}</td>
+                <td className="px-3 py-2 text-right">
+                  <div className="flex flex-wrap justify-end gap-1.5">
+                    {c.status === "cho_nhan" && (
+                      <button type="button" onClick={() => openClaimCase(c)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2.5 py-1 text-[11px] font-semibold text-ink-light hover:border-[#3C50E0]/60"><UserCheck size={12} /> Nhận yêu cầu</button>
+                    )}
+                    {c.status === "cho_xac_nhan" && isCaseOwner(c) && (
+                      <button type="button" onClick={() => openConfirmCase(c)} className="inline-flex items-center gap-1 rounded-md bg-ledger-green px-3 py-1.5 text-[11px] font-semibold text-white hover:opacity-90"><UserCheck size={12} /> Xác nhận tiếp nhận</button>
+                    )}
+                    {c.status === "cho_xac_nhan" && !isCaseOwner(c) && <span className="self-center text-[10px] text-muted">Đang chờ {employeeName(c.employeeId)} xác nhận</span>}
+                    {/* Nút "Hoàn tất" CHỈ hiện ở tài khoản được giao ca — người giao không tự hoàn tất. */}
+                    {c.status === "dang_ho_tro" && isCaseOwner(c) && (
+                      <button type="button" onClick={() => openCompleteCase(c)} className="inline-flex items-center gap-1 rounded-md bg-ledger-green px-3 py-1.5 text-[11px] font-semibold text-white hover:opacity-90"><CheckCircle2 size={12} /> Hoàn tất</button>
+                    )}
+                    {c.status === "dang_ho_tro" && !isCaseOwner(c) && <span className="self-center text-[10px] text-muted">{employeeName(c.employeeId)} đang xử lý</span>}
+                    {c.status === "cho_duyet_hoan_tat" && canApproveCase(c) && (
+                      <>
+                        <button type="button" onClick={() => approveCaseCompletion(c)} className="inline-flex items-center gap-1 rounded-md bg-ledger-green px-3 py-1.5 text-[11px] font-bold text-white shadow-[0_6px_16px_rgba(31,122,80,0.35)] ring-1 ring-ledger-green/40 hover:brightness-110"><CheckCircle2 size={12} /> Duyệt hoàn tất</button>
+                        <button type="button" onClick={() => openRejectCase(c)} className="inline-flex items-center gap-1 rounded-md border border-stamp-red/30 bg-stamp-red/10 px-2 py-1 text-[11px] font-semibold text-stamp-red hover:bg-stamp-red/15"><X size={11} /> Chưa đạt</button>
+                      </>
+                    )}
+                    {c.status === "cho_duyet_hoan_tat" && !canApproveCase(c) && <span className="self-center text-[10px] text-gold">Đã báo hoàn tất — chờ {caseAssignerLabel(c)} duyệt</span>}
+                    {canDeleteSupportCase && <button type="button" onClick={() => removeCase(c.id)} className="inline-flex items-center gap-1 rounded-md border border-stamp-red/30 px-2 py-1 text-[11px] font-semibold text-stamp-red hover:bg-stamp-red/5" title="Hủy yêu cầu kèm lý do — bản ghi được giữ lại trong Lịch sử để thống kê, không xóa" aria-label={`Hủy yêu cầu của ${c.customerName}`}><RotateCcw size={12} /> Hủy</button>}
+                  </div>
                 </td>
               </tr>
-              {c.status === "dang_ho_tro" && (
-                <tr className="border-t border-paper-line bg-paper/40">
-                  <td colSpan={7} className="px-4 py-2.5">
-                    <div className="flex gap-2 items-center">
-                      <input value={draft.result} onChange={(e) => setResolveDraft((p) => ({ ...p, [c.id]: { result: e.target.value } }))} placeholder="Ghi kết quả hỗ trợ trước khi hoàn tất (VD: đã gửi lại mã key, hướng dẫn kích hoạt xong)..." className="flex-1 border border-paper-line rounded px-2 py-1.5 text-xs" />
-                      <button onClick={() => completeCase(c.id)} className="text-[11px] bg-ledger-green text-white px-3 py-1.5 rounded flex items-center gap-1 shrink-0"><CheckCircle2 size={11} /> Hoàn tất hỗ trợ</button>
-                    </div>
-                  </td>
-                </tr>
-              )}
-              </React.Fragment>
               );
             })}
           </tbody>
@@ -10170,58 +12254,87 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders, authUse
 
       </div>)}
 
+      {activeTableView === "mytasks" && (
+        <div className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
+          <div className="shrink-0 border-b border-paper-line px-4 py-3">
+            <div className="text-xs font-semibold uppercase text-ink">Nhiệm vụ hỗ trợ được giao cho tôi</div>
+            <p className="mt-1 text-[11px] text-muted">Xác nhận tiếp nhận để hệ thống báo lại cho Sale đã giao yêu cầu, sau đó mới bắt đầu xử lý.</p>
+          </div>
+          <div className="min-h-0 flex-1 overflow-auto p-4">
+            {myAssignedCases.length === 0 && <p className="py-10 text-center text-xs text-muted">Hiện chưa có nhiệm vụ hỗ trợ nào được giao cho bạn.</p>}
+            <div className="grid gap-3">
+              {myAssignedCases.slice().reverse().map((c) => {
+                const pending = c.status === "cho_xac_nhan";
+                const waitingApproval = c.status === "cho_duyet_hoan_tat";
+                return (
+                  <article key={c.id} className={`rounded-xl border p-4 ${pending ? "border-gold/45 bg-gold/5" : waitingApproval ? "border-[#4f7ee8]/40 bg-[#4f7ee8]/5" : "border-paper-line bg-white"}`}>
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h4 className="text-sm font-semibold text-ink">{c.customerName || "Khách hàng"}</h4>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${pending ? "border border-gold/40 bg-gold/15 text-gold" : waitingApproval ? "border border-[#4f7ee8]/40 bg-[#4f7ee8]/10 text-[#315fae]" : "border border-ledger-green/40 bg-ledger-green/10 text-ledger-green"}`}>{pending ? "Chờ bạn xác nhận" : waitingApproval ? "Chờ người giao duyệt" : "Đang hỗ trợ"}</span>
+                        </div>
+                        <p className="mt-1 ktns-mono text-[11px] text-muted">{[c.phone, c.email].filter(Boolean).join(" · ") || "—"}</p>
+                        <p className="mt-2 text-xs text-charcoal"><span className="font-semibold text-ink">Vấn đề:</span> {c.issue || "—"}</p>
+                        <p className="mt-1 text-xs text-muted">Người giao: {c.assignedByName || c.assignedBy || "—"} · {fmtContactTime(c.assignedAt)}</p>
+                        {waitingApproval && c.resultNote && <p className="mt-2 text-xs text-charcoal"><span className="font-semibold text-ink">Kết quả bạn đã báo:</span> {c.resultNote}</p>}
+                        {!pending && !waitingApproval && c.reviewNote && <p className="mt-2 text-xs text-stamp-red"><span className="font-semibold">Người giao trả lại:</span> {c.reviewNote}</p>}
+                      </div>
+                      <div className="flex shrink-0 flex-wrap gap-2">
+                        {pending && <button type="button" onClick={() => openConfirmCase(c)} className="inline-flex items-center gap-1.5 rounded-lg bg-ledger-green px-3.5 py-2 text-xs font-semibold text-white hover:opacity-90"><UserCheck size={13} /> Xem & xác nhận</button>}
+                        {!pending && !waitingApproval && <button type="button" onClick={() => openCompleteCase(c)} className="inline-flex items-center gap-1.5 rounded-lg bg-ledger-green px-3.5 py-2 text-xs font-bold text-white shadow-[0_6px_16px_rgba(31,122,80,0.35)] ring-1 ring-ledger-green/40 hover:brightness-110"><CheckCircle2 size={13} /> Hoàn tất & báo kết quả</button>}
+                        {waitingApproval && <span className="self-center text-[11px] font-semibold text-[#315fae]">Đang chờ {caseAssignerLabel(c)} duyệt</span>}
+                      </div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {activeTableView === "history" && (
         <div className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
           <div className="shrink-0 px-4 pt-3 pb-1 flex items-center justify-between flex-wrap gap-2">
             <div className="text-xs font-semibold text-ink uppercase">Lịch sử đã hoàn tất</div>
-            <div className="relative">
-              <button onClick={() => setShowHistoryPicker((v) => !v)} className="text-xs px-2.5 py-1.5 rounded-md border border-paper-line text-ink-light flex items-center gap-1.5">
-                <CalendarCheck size={12} />
-                {historyMode === "today" ? "Hôm nay" : historyMode === "all" ? "Toàn bộ lịch sử" : `${historyFrom.split("-").reverse().join("/")} → ${historyTo.split("-").reverse().join("/")}`}
-                <ChevronRight size={11} className={`transition-transform ${showHistoryPicker ? "rotate-90" : ""}`} />
-              </button>
-              {showHistoryPicker && (
-                <div className="absolute top-full right-0 mt-1 w-[min(26rem,calc(100vw-2rem))] max-w-[calc(100vw-2rem)] bg-white border border-paper-line rounded-md shadow-lg p-3 z-20">
-                  <button onClick={() => { setHistoryMode("today"); setShowHistoryPicker(false); }} className={`w-full text-left text-xs px-2 py-1.5 rounded ${historyMode === "today" ? "bg-paper font-medium" : "hover:bg-paper"}`}>Hôm nay</button>
-                  <button onClick={() => { setHistoryMode("all"); setShowHistoryPicker(false); }} className={`w-full text-left text-xs px-2 py-1.5 rounded ${historyMode === "all" ? "bg-paper font-medium" : "hover:bg-paper"}`}>Toàn bộ lịch sử</button>
-                  <div className={`px-2 py-1.5 rounded ${historyMode === "custom" ? "bg-paper" : ""}`}>
-                    <button onClick={() => setHistoryMode("custom")} className={`text-xs mb-2 ${historyMode === "custom" ? "font-medium" : ""}`}>Tuỳ chỉnh khoảng ngày</button>
-                    <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
-                      <input type="date" value={historyFrom} onChange={(e) => { setHistoryFrom(e.target.value); setHistoryMode("custom"); }} className="min-w-0 w-full border border-paper-line rounded px-2 py-1.5 text-xs" />
-                      <span className="text-muted text-[10px]">→</span>
-                      <input type="date" value={historyTo} onChange={(e) => { setHistoryTo(e.target.value); setHistoryMode("custom"); }} className="min-w-0 w-full border border-paper-line rounded px-2 py-1.5 text-xs" />
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+            <button type="button" onClick={openHistoryPicker} className="text-xs px-2.5 py-1.5 rounded-md border border-paper-line text-ink-light flex items-center gap-1.5 hover:border-[#3C50E0]/60">
+              <CalendarCheck size={12} />
+              {historyRangeLabel}
+              <ChevronRight size={11} />
+            </button>
           </div>
           <div className="min-h-0 flex-1 overflow-auto">
           <table data-sticky-columns="true" className="w-full text-sm">
-            <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-4 py-2">STT</th><th className="px-4 py-2">Khách hàng</th><th className="px-4 py-2">SĐT</th><th className="px-4 py-2">Vấn đề</th><th className="px-4 py-2">Kết quả</th><th className="px-4 py-2">Nhân viên</th><th className="px-4 py-2">Bắt đầu</th><th className="px-4 py-2">Hoàn tất</th><th className="px-4 py-2 text-right">Thao tác</th></tr></thead>
+            <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-4 py-2">STT</th><th className="px-4 py-2">Khách hàng</th><th className="px-4 py-2">SĐT</th><th className="px-4 py-2">Vấn đề</th><th className="px-4 py-2">Kết quả</th><th className="px-4 py-2">Nhân viên</th><th className="px-4 py-2">Bắt đầu</th><th className="px-4 py-2">Kết thúc</th><th className="px-4 py-2 text-right">Thao tác</th></tr></thead>
             <tbody>
               {(() => {
+                // Lịch sử gồm cả ca ĐÃ HỦY — hủy là soft-delete có nhật ký, không mất bản ghi.
                 const filtered = cases.filter((c) => {
-                  if (c.status !== "hoan_tat") return false;
+                  if (!["hoan_tat", "da_huy"].includes(c.status)) return false;
                   if (historyMode === "all") return true;
-                  const d = c.completedAt?.slice(0, 10);
+                  const d = (c.completedAt || c.cancelledAt || "").slice(0, 10);
                   if (historyMode === "today") return d === TODAY_STR;
                   return d >= historyFrom && d <= historyTo;
                 });
                 if (filtered.length === 0) {
-                  return <tr><td colSpan={9} className="px-4 py-6 text-center text-xs text-muted">Không có ca nào hoàn tất trong khoảng thời gian này.</td></tr>;
+                  return <tr><td colSpan={9} className="px-4 py-6 text-center text-xs text-muted">Không có yêu cầu hỗ trợ nào hoàn tất hoặc đã hủy trong khoảng thời gian này.</td></tr>;
                 }
                 return filtered.slice().reverse().map((c, idx) => (
-                  <tr key={c.id} className="border-t border-paper-line text-xs align-top">
+                  <tr key={c.id} data-case-row={c.id} className={`border-t border-paper-line text-xs align-top ${String(focusCaseId) === String(c.id) ? "ring-2 ring-inset ring-[#3C50E0] bg-[#3C50E0]/10" : ""}`}>
                     <td className="px-4 py-2 ktns-mono text-muted">{idx + 1}</td>
                     <td className="px-4 py-2 font-medium">{c.customerName}</td>
                     <td className="px-4 py-2 ktns-mono">{c.phone}</td>
                     <td className="px-4 py-2">{c.issue || "—"}</td>
-                    <td className="min-w-[240px] px-4 py-2">{editingHistoryCaseId === c.id ? <div className="flex flex-col gap-2"><textarea value={historyResultDraft} onChange={(event) => setHistoryResultDraft(event.target.value)} rows={2} className="w-full rounded-md border border-paper-line px-2 py-1.5 text-xs" /><div className="flex gap-2"><button type="button" onClick={() => saveHistoryResult(c.id)} className="rounded-md bg-ledger-green px-2.5 py-1 text-[11px] font-semibold text-white">Lưu kết quả</button><button type="button" onClick={() => setEditingHistoryCaseId(null)} className="rounded-md border border-paper-line px-2.5 py-1 text-[11px] text-muted">Hủy</button></div></div> : (c.resultNote || "—")}</td>
-                    <td className="px-4 py-2">{employees.find((e) => e.id === c.employeeId)?.name || "—"}</td>
-                    <td className="px-4 py-2 ktns-mono text-muted">{c.startedAt}</td>
-                    <td className="px-4 py-2 ktns-mono text-muted">{c.completedAt}</td>
-                    <td className="px-4 py-2 text-right"><div className="flex flex-wrap justify-end gap-1.5"><button type="button" onClick={() => startEditHistoryCase(c)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2 py-1 text-[11px] font-semibold text-ink-light" title="Sửa kết quả hỗ trợ" aria-label={`Sửa kết quả hỗ trợ của ${c.customerName}`}><Pencil size={12} /> Sửa</button><button type="button" onClick={() => reopenCase(c.id)} className="inline-flex items-center gap-1 rounded-md border border-gold/35 px-2 py-1 text-[11px] font-semibold text-gold" title="Mở lại ca hỗ trợ" aria-label={`Mở lại ca hỗ trợ của ${c.customerName}`}><RotateCcw size={12} /> Mở lại</button><button type="button" onClick={() => removeCase(c.id)} className="inline-flex items-center gap-1 rounded-md border border-stamp-red/30 px-2 py-1 text-[11px] font-semibold text-stamp-red" title="Xóa lịch sử hỗ trợ" aria-label={`Xóa lịch sử hỗ trợ của ${c.customerName}`}><Trash2 size={12} /> Xóa</button></div></td>
+                    <td className="min-w-[240px] px-4 py-2">
+                      {c.status === "da_huy"
+                        ? <><span className="rounded-full border border-stamp-red/40 bg-stamp-red/5 px-2 py-0.5 text-[10px] font-bold text-stamp-red">ĐÃ HỦY</span>{c.cancelReason && <span className="ml-1.5">{c.cancelReason}</span>}{c.cancelledBy && <div className="mt-0.5 text-[10px] text-muted">Người hủy: {c.cancelledBy}</div>}</>
+                        : (c.resultNote || "—")}
+                    </td>
+                    <td className="px-4 py-2">{employeeName(c.employeeId)}</td>
+                    <td className="whitespace-nowrap px-4 py-2 ktns-mono text-muted">{fmtDateTimeVN(c.startedAt)}</td>
+                    <td className="whitespace-nowrap px-4 py-2 ktns-mono text-muted">{fmtDateTimeVN(c.completedAt || c.cancelledAt)}</td>
+                    <td className="px-4 py-2 text-right"><div className="flex flex-nowrap justify-end gap-1.5 whitespace-nowrap">{c.status === "hoan_tat" && <button type="button" onClick={() => openHistoryEdit(c)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2 py-1 text-[11px] font-semibold text-ink-light" title="Sửa kết quả hỗ trợ" aria-label={`Sửa kết quả hỗ trợ của ${c.customerName}`}><Pencil size={12} /> Sửa</button>}<button type="button" onClick={() => reopenCase(c)} className="inline-flex items-center gap-1 rounded-md border border-gold/35 px-2 py-1 text-[11px] font-semibold text-gold" title="Mở lại yêu cầu hỗ trợ" aria-label={`Mở lại yêu cầu hỗ trợ của ${c.customerName}`}><RotateCcw size={12} /> Mở lại</button>{canDeleteSupportCase && c.status === "hoan_tat" && <button type="button" onClick={() => removeCase(c.id)} className="inline-flex items-center gap-1 rounded-md border border-stamp-red/30 px-2 py-1 text-[11px] font-semibold text-stamp-red" title="Hủy bản ghi kèm lý do — giữ lại nhật ký, không xóa" aria-label={`Hủy bản ghi hỗ trợ của ${c.customerName}`}><RotateCcw size={12} /> Hủy</button>}</div></td>
                   </tr>
                 ));
               })()}
@@ -10230,25 +12343,87 @@ function HoTroKhachHang({ cases, setCases, employees, orders, setOrders, authUse
           </div>
         </div>
       )}
+      {overlays}
     </div>
   );
 }
 
-function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs, reportYear, reportMonth, realtimeUnreadTaskIds = [], onOpenProfile }) {
+function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs, reportYear, reportMonth, realtimeUnreadTaskIds = [], onOpenProfile, supportCases = [], setSupportCases, taskPrefill, onTaskPrefillConsumed, recordFocus, onRecordFocusConsumed, onOpenRecord, dataLoader }) {
   const isAdmin = isAdminRole(authUser?.role);
   const currentEmail = (authUser?.email || "").trim().toLowerCase();
   const currentEmployee = employeeForAuthUser(employees, authUser);
   const currentIsAccountant = !isAdmin && (isAccountantRole(authUser?.role) || employeeIsAccountant(currentEmployee));
-  const currentCanReportTask = Boolean(currentEmployee) && !isAdmin && !currentIsAccountant && currentEmployee?.status !== "inactive";
-  const canReviewTasks = isAdmin || currentIsAccountant;
+  // Người được giao việc là người duy nhất được báo cáo hoàn thành.
+  const currentCanReportTask = Boolean(currentEmployee) && currentEmployee?.status !== "inactive";
+  // Nghiệm thu là việc của NGƯỜI GIAO (admin vẫn được vì là chủ hệ thống) — không phải của bất kỳ
+  // kế toán nào như trước.
+  const canReviewTask = useCallback((task) => {
+    if (!task) return false;
+    if (isAdmin) return true;
+    const assigner = String(task.createdByEmail || "").trim().toLowerCase();
+    return Boolean(assigner) && assigner === currentEmail;
+  }, [isAdmin, currentEmail]);
   const [showForm, setShowForm] = useState(false);
-  const [filterDate, setFilterDate] = useState(GIAOVIEC_TODAY);
-  // Nhân viên mở tab sẽ thấy ngay toàn bộ việc đang làm của mình, không bị ẩn bởi bộ lọc một ngày.
-  const [viewMonthMode, setViewMonthMode] = useState(() => !isAdmin && !currentIsAccountant);
+  const [editingTaskId, setEditingTaskId] = useState(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [returnTarget, setReturnTarget] = useState(null);
   const [returnReason, setReturnReason] = useState("");
+  // Nguồn của nhiệm vụ đang soạn (từ cảnh báo Trung tâm vận hành) — gắn ID khi lưu.
+  const taskSourceRef = useRef(null);
+  // Realtime tasks/supportCases đã có vòng poll TOÀN CỤC 5s ở App (chạy mọi tab) —
+  // vào thẳng tab này chỉ cần kéo mới ngay một lần cho tươi tức thì.
+  const refreshTaskData = dataLoader?.ensureDataFields;
+  useEffect(() => {
+    refreshTaskData?.(["tasks", "supportCases"], { force: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // 2 khu nhiệm vụ: "được giao" (mình/mọi người là NGƯỜI NHẬN) và "đã giao" (mình là NGƯỜI GIAO).
+  const [taskBoardView, setTaskBoardView] = useState("received");
+  // Mở ĐÚNG nhiệm vụ từ Trung tâm vận hành: tô sáng + cuộn tới dòng.
+  const [focusTaskId, setFocusTaskId] = useState(null);
+  useEffect(() => {
+    if (!recordFocus || recordFocus.type !== "task") return;
+    setFocusTaskId(recordFocus.id);
+    onRecordFocusConsumed?.();
+    const scrollTimer = setTimeout(() => {
+      document.querySelector(`[data-task-row="${recordFocus.id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" });
+    }, 350);
+    const timer = setTimeout(() => setFocusTaskId(null), 6000);
+    return () => { clearTimeout(timer); clearTimeout(scrollTimer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordFocus]);
+  // Bộ lọc chính: theo nhân sự và theo khoảng thời gian, mặc định trọn kỳ báo cáo (1 tháng).
+  const monthRange = useMemo(() => {
+    const start = new Date(reportYear, reportMonth - 1, 1);
+    const end = new Date(reportYear, reportMonth, 0);
+    const iso = (value) => `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`;
+    return { from: iso(start), to: iso(end) };
+  }, [reportYear, reportMonth]);
+  const [rangeFrom, setRangeFrom] = useState(monthRange.from);
+  const [rangeTo, setRangeTo] = useState(monthRange.to);
+  const [rangeTouched, setRangeTouched] = useState(false);
+  const [filterEmployeeId, setFilterEmployeeId] = useState(() => (isAdmin || currentIsAccountant ? "all" : "me"));
+  const [showRangePicker, setShowRangePicker] = useState(false);
+  const [rangeDraftFrom, setRangeDraftFrom] = useState(monthRange.from);
+  const [rangeDraftTo, setRangeDraftTo] = useState(monthRange.to);
+  const [rangeError, setRangeError] = useState("");
+  const [reportTarget, setReportTarget] = useState(null);
+  const [reportDraft, setReportDraft] = useState("");
+  const [reportError, setReportError] = useState("");
+  const [historyTarget, setHistoryTarget] = useState(null);
+  const [showDataAdmin, setShowDataAdmin] = useState(false);
+  const [cleanupMonth, setCleanupMonth] = useState("");
+  const [cleanupScope, setCleanupScope] = useState("approved");
+  const [cleanupError, setCleanupError] = useState("");
+
+  useEffect(() => {
+    // Đổi kỳ báo cáo thì khoảng lọc mặc định đi theo, trừ khi người dùng đã tự chọn khoảng riêng.
+    if (rangeTouched) return;
+    setRangeFrom(monthRange.from);
+    setRangeTo(monthRange.to);
+  }, [monthRange, rangeTouched]);
+
   const firstEmp = employees[0];
   const [form, setForm] = useState({
     date: GIAOVIEC_TODAY,
@@ -10264,6 +12439,34 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
     return ROLE_TASK_TYPES[emp?.roleType] || ["khac"];
   };
 
+  // Giao việc từ Trung tâm vận hành: nội dung + người phụ trách được điền sẵn, mở form ngay.
+  useEffect(() => {
+    if (!taskPrefill) return;
+    // KHÔNG tự chọn nhân viên bừa (từng rơi vào "demo") — chỉ nhận nhân viên hợp lệ
+    // từ prefill; không có thì để trống bắt chọn tay.
+    const empId = taskPrefill.employeeId && employees.some((e) => Number(e.id) === Number(taskPrefill.employeeId) && e.status !== "inactive")
+      ? Number(taskPrefill.employeeId)
+      : "";
+    const types = availableTypes(empId);
+    setForm((current) => ({
+      ...current,
+      employeeId: empId,
+      targetType: types.includes("khac") ? "khac" : types[0],
+      targetValue: "",
+      description: String(taskPrefill.description || ""),
+      date: GIAOVIEC_TODAY,
+    }));
+    // Nhiệm vụ tạo từ cảnh báo phải nhớ NGUỒN bằng ID để mở lại được bản ghi gốc.
+    taskSourceRef.current = taskPrefill.sourceType
+      ? { sourceType: taskPrefill.sourceType, sourceId: taskPrefill.sourceId, sourceTarget: taskPrefill.sourceTarget || "" }
+      : null;
+    setEditingTaskId(null);
+    setError("");
+    setShowForm(true);
+    onTaskPrefillConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskPrefill]);
+
   const selectEmployee = (empId) => {
     const types = availableTypes(empId);
     setForm((current) => ({
@@ -10273,12 +12476,68 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
     }));
   };
 
-  const closeForm = () => {
+  // Mốc dữ liệu lúc mở form nhiệm vụ — prefill từ cảnh báo không tính là "đã nhập".
+  const taskFormBaselineRef = useRef("");
+  useEffect(() => {
+    if (showForm) taskFormBaselineRef.current = JSON.stringify(form);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showForm]);
+  const closeForm = async () => {
+    const dirty = JSON.stringify(form) !== taskFormBaselineRef.current;
+    if (dirty && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất nội dung nhiệm vụ vừa nhập. Vẫn muốn đóng?", { title: "Nhiệm vụ chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return;
+    taskSourceRef.current = null;
     setShowForm(false);
+    setEditingTaskId(null);
     setError("");
   };
 
+  const openEditTask = (row) => {
+    if (!isAdmin) return;
+    setEditingTaskId(row.id);
+    setForm({
+      date: row.date || GIAOVIEC_TODAY,
+      employeeId: row.employeeId || firstEmp?.id || "",
+      targetType: row.targetType || "khac",
+      targetValue: row.targetValue ?? "",
+      description: row.description || "",
+      visibility: row.visibility === "public" ? "public" : "private",
+    });
+    setError("");
+    setShowForm(true);
+  };
+
+  // Admin sửa nội dung công việc đã giao — mọi thay đổi được ghi vào nhật ký của chính công việc đó.
+  const saveEditedTask = () => {
+    if (!isAdmin || !editingTaskId) return;
+    if (!form.employeeId || !form.description.trim()) {
+      setError("Cần chọn nhân viên và nhập nội dung công việc.");
+      return;
+    }
+    setTasks((current) => current.map((task) => task.id === editingTaskId ? {
+      ...task,
+      date: form.date,
+      employeeId: Number(form.employeeId),
+      targetType: form.targetType,
+      targetValue: Number(form.targetValue) || 0,
+      description: form.description.trim(),
+      visibility: form.visibility === "public" ? "public" : "private",
+      updatedAt: nowStamp(),
+      history: withTaskHistory(task, {
+        action: "edited",
+        byEmail: authUser?.email || "",
+        byName: currentEmployee?.name || authUser?.email || "Admin",
+        note: form.description.trim(),
+      }),
+    } : task));
+    setNotice("Đã cập nhật công việc.");
+    closeForm();
+  };
+
   const addTask = async () => {
+    if (editingTaskId) {
+      saveEditedTask();
+      return;
+    }
     if (!isAdmin || !form.employeeId || !form.description.trim()) {
       setError("Cần chọn nhân viên và nhập nội dung công việc.");
       return;
@@ -10293,14 +12552,26 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
       doneManual: false,
       completionStatus: "",
       visibility: form.visibility === "public" ? "public" : "private",
+      // Liên kết nguồn bằng ID (source_type + source_id) — mở lại được bản ghi gốc.
+      ...(taskSourceRef.current || {}),
       createdByEmail: authUser?.email || "",
+      createdByName: currentEmployee?.name || authUser?.email || "",
       createdAt: new Date().toISOString(),
+      history: [{
+        id: `${Date.now()}-init`,
+        at: nowStamp(),
+        action: "assigned",
+        byEmail: authUser?.email || "",
+        byName: currentEmployee?.name || authUser?.email || "Admin",
+        note: form.description.trim(),
+      }],
     };
     setTasks((current) => [...current, newTask]);
+    taskSourceRef.current = null;
     setShowForm(false);
     setError("");
     setForm({
-      date: filterDate,
+      date: GIAOVIEC_TODAY,
       employeeId: firstEmp?.id || "",
       targetType: (ROLE_TASK_TYPES[firstEmp?.roleType] || ["khac"])[0],
       targetValue: "",
@@ -10317,7 +12588,7 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
       const targetLine = newTask.targetType === "khac" ? "" : `\nChỉ tiêu: ${newTask.targetValue} ${TASK_TYPES[newTask.targetType]?.unit || ""}`;
       await sendChatMessage(
         assignedEmployee.email,
-        `Bạn được giao việc mới.\nNgày: ${newTask.date}\nChế độ: ${newTask.visibility === "public" ? "Công khai" : "Riêng tư"}\nLoại: ${targetLabel}${targetLine}\nNội dung: ${newTask.description}`
+        `Bạn được giao việc mới.\nMã việc: ${newTask.id}\nNgày: ${formatDateVN(newTask.date)}\nChế độ: ${newTask.visibility === "public" ? "Công khai" : "Riêng tư"}\nLoại: ${targetLabel}${targetLine}\nNội dung: ${newTask.description}`
       );
       setNotice(`Đã giao việc và gửi thông báo cho ${assignedEmployee.email}.`);
     } catch (err) {
@@ -10325,13 +12596,53 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
     }
   };
 
-  const removeTask = (id) => {
+  // Nhiệm vụ đã phát sinh lịch sử (nhận việc / báo hoàn tất / đã duyệt / đã tick xong)
+  // là hồ sơ đối chiếu ĐÁNH GIÁ HIỆU SUẤT: bản ghi LUÔN được lưu trong DB.
+  // Admin vẫn "xóa" được — nhưng là GỠ KHỎI DANH SÁCH (archived), không mất lịch sử;
+  // chỉ nhiệm vụ mới giao chưa ai đụng tới mới bị xóa thật.
+  const taskHasHistory = (task) => Boolean(task?.acceptedAt) || Boolean(task?.doneManual)
+    || ["approved", "submitted"].includes(String(task?.completionStatus || ""));
+  // CHỈ ADMIN được xóa nhiệm vụ khỏi lịch sử (backend cũng chỉ cho vai trò admin);
+  // người thường tuyệt đối không xóa được nhiệm vụ đã phát sinh lịch sử.
+  const removeTask = async (id) => {
     if (!isAdmin) return;
+    const target = tasks.find((task) => task.id === id);
+    if (!target) return;
+    const warning = taskHasHistory(target)
+      ? `Xóa VĨNH VIỄN nhiệm vụ "${target.description || "này"}" của ${nameOf(target.employeeId)} khỏi lịch sử?
+
+Nhiệm vụ đã có lịch sử (nhận việc/báo cáo/duyệt) — xóa sẽ loại bản ghi này khỏi thống kê hiệu suất. Chỉ Admin có quyền này.`
+      : `Xóa nhiệm vụ "${target.description || "này"}" của ${nameOf(target.employeeId)}? (mới giao, chưa có lịch sử)`;
+    const accepted = await confirmOverlay(warning, { title: "Xóa nhiệm vụ khỏi lịch sử", confirmLabel: "Xóa vĩnh viễn", tone: "danger" });
+    if (!accepted) return;
     setTasks((current) => current.filter((task) => task.id !== id));
+    setNotice("Đã xóa nhiệm vụ khỏi lịch sử.");
+  };
+  // ADMIN xóa được cả NHIỆM VỤ HỖ TRỢ ngay trong bảng nhiệm vụ (backend chỉ cho vai trò
+  // admin hard-delete supportCases; người thường vẫn phải dùng Hủy kèm lý do bên tab Hỗ trợ).
+  const removeSupportRow = async (id) => {
+    if (!isAdmin || !setSupportCases) return;
+    const target = (supportCases || []).find((item) => String(item.id) === String(id));
+    if (!target) return;
+    const accepted = await confirmOverlay(
+      `Xóa VĨNH VIỄN nhiệm vụ hỗ trợ của khách ${target.customerName || "—"} khỏi lịch sử?\n\nBản ghi sẽ bị loại khỏi thống kê hiệu suất. Muốn giữ lịch sử, hãy dùng nút Hủy (kèm lý do) bên tab Hỗ trợ khách hàng thay vì xóa.`,
+      { title: "Xóa nhiệm vụ hỗ trợ", confirmLabel: "Xóa vĩnh viễn", tone: "danger" },
+    );
+    if (!accepted) return;
+    setSupportCases((current) => (current || []).filter((item) => String(item.id) !== String(id)));
+    setNotice("Đã xóa nhiệm vụ hỗ trợ khỏi lịch sử.");
   };
   const nameOf = (id) => employees.find((employee) => employee.id === id)?.name || "—";
   const employeeEmailOf = (id) => (employees.find((employee) => employee.id === id)?.email || "").trim().toLowerCase();
   const taskOwnerName = (task) => nameOf(task.employeeId);
+  // Người duyệt hoàn tất luôn là người đã giao việc (Sale/Admin/Sếp) — hiển thị rõ để user biết
+  // công việc đang nằm ở bàn ai.
+  const taskReviewerLabel = (task) => {
+    const email = String(task?.createdByEmail || "").trim().toLowerCase();
+    if (task?.createdByName) return task.createdByName;
+    const employee = employees.find((item) => String(item.email || "").trim().toLowerCase() === email);
+    return employee?.name || email || "người giao việc";
+  };
   const notifyTaskOwner = async (task, message) => {
     const email = employeeEmailOf(task.employeeId);
     if (!email) return;
@@ -10341,26 +12652,108 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
       // Mất kết nối chat không được làm hỏng thao tác đánh giá công việc.
     }
   };
-  const reportTaskDone = (row) => {
+  // Việc được giao phải được người nhận XÁC NHẬN trước khi bắt tay làm — badge ở tab Giao việc chỉ
+  // hết khi đã xác nhận, giống badge tin nhắn chưa đọc.
+  const acceptTask = async (row) => {
+    if (Number(row.employeeId) !== Number(currentEmployee?.id) || row.acceptedAt) return;
+    const accepted = await confirmOverlay(
+      `Xác nhận đã nhận công việc: ${row.description || "công việc được giao"}?`,
+      { title: "Xác nhận nhận việc", confirmLabel: "Xác nhận nhận việc" },
+    );
+    if (!accepted) return;
+    const acceptedAt = nowStamp();
+    setTasks((current) => current.map((task) => task.id === row.id ? {
+      ...task,
+      acceptedAt,
+      acceptedByEmail: authUser?.email || "",
+      acceptedByName: currentEmployee?.name || authUser?.email || "",
+      history: withTaskHistory(task, {
+        action: "accepted",
+        byEmail: authUser?.email || "",
+        byName: currentEmployee?.name || authUser?.email || "",
+      }),
+    } : task));
+    setNotice("Đã xác nhận nhận việc. Người giao việc đã được báo lại.");
+    const assignerEmail = String(row.createdByEmail || "").trim();
+    if (!assignerEmail) return;
+    try {
+      await sendChatMessage(assignerEmail, [
+        "[ĐÃ XÁC NHẬN NHẬN VIỆC]",
+        `${currentEmployee?.name || authUser?.email} đã xác nhận nhận công việc.`,
+        `Ngày: ${row.date ? formatDateVN(row.date) : "—"}`,
+        `Nội dung: ${row.description || "—"}`,
+        `Xác nhận lúc: ${acceptedAt}`,
+      ].join("\n"));
+    } catch {
+      setNotice("Đã xác nhận nhận việc nhưng chưa gửi được thông báo cho người giao việc.");
+    }
+  };
+
+  // Chỉ người được giao mới gửi hoàn tất, kèm kết quả để người giao (Sale/Admin) duyệt.
+  const openReportTask = (row) => {
     if (!currentCanReportTask || Number(row.employeeId) !== Number(currentEmployee?.id)) return;
+    setReportTarget(row);
+    setReportDraft(row.completionReport || "");
+    setReportError("");
+  };
+  const submitTaskReport = async () => {
+    const row = reportTarget;
+    if (!row) return;
+    const report = reportDraft.trim();
+    if (!report) { setReportError("Hãy ghi kết quả đã làm được để người giao việc duyệt hoàn tất."); return; }
     const submittedAt = nowStamp();
+    const reporterName = currentEmployee?.name || authUser?.email || "";
     setTasks((current) => current.map((task) => task.id === row.id ? {
       ...task,
       doneManual: false,
       completionStatus: "submitted",
+      completionReport: report,
       completionSubmittedAt: submittedAt,
       completionSubmittedByEmail: authUser?.email || "",
-      completionSubmittedByName: taskOwnerName(task),
+      completionSubmittedByName: reporterName,
       completionReviewedAt: "",
       completionReviewedByEmail: "",
       completionReviewedByName: "",
+      history: withTaskHistory(task, {
+        action: "reported",
+        byEmail: authUser?.email || "",
+        byName: reporterName,
+        note: report,
+      }),
     } : task));
-    setNotice("Đã báo hoàn thành công việc. Kế toán hoặc Sếp sẽ kiểm tra và xác nhận.");
+    setReportTarget(null);
+    setReportDraft("");
+    setReportError("");
+    const reviewerLabel = taskReviewerLabel(row);
+    setNotice(`Đã gửi yêu cầu hoàn tất cho ${reviewerLabel}. Công việc chỉ được tính hoàn tất khi người giao duyệt.`);
+    const assignerEmail = String(row.createdByEmail || "").trim();
+    if (!assignerEmail) {
+      setNotice(`Đã gửi yêu cầu hoàn tất nhưng công việc này không lưu email người giao — hãy báo trực tiếp cho ${reviewerLabel} để được duyệt.`);
+      return;
+    }
+    try {
+      await sendChatMessage(assignerEmail, [
+        "[YÊU CẦU DUYỆT HOÀN TẤT CÔNG VIỆC]",
+        `${reporterName} đã làm xong công việc bạn giao và xin duyệt hoàn tất.`,
+        `Ngày: ${row.date ? formatDateVN(row.date) : "—"}`,
+        `Nội dung việc: ${row.description || "—"}`,
+        `Kết quả báo cáo: ${report}`,
+        "Mở DOMIX > Giao việc và bấm Duyệt hoàn tất để chốt công việc này.",
+      ].join("\n"));
+    } catch {
+      setNotice(`Đã gửi yêu cầu hoàn tất nhưng chưa nhắn được cho ${reviewerLabel}.`);
+    }
   };
-  const approveTaskDone = (row) => {
-    if (!canReviewTasks) return;
+
+  const approveTaskDone = async (row) => {
+    if (!canReviewTask(row)) return;
+    const accepted = await confirmOverlay(
+      `Duyệt hoàn tất công việc của ${taskOwnerName(row)}?\n\nKết quả báo cáo: ${row.completionReport || "—"}`,
+      { title: "Duyệt hoàn tất công việc", confirmLabel: "Duyệt hoàn tất" },
+    );
+    if (!accepted) return;
     const reviewedAt = nowStamp();
-    const reviewerName = currentIsAccountant ? "Kế toán" : "Sếp/Admin";
+    const reviewerName = currentEmployee?.name || authUser?.email || (isAdmin ? "Sếp/Admin" : "Người giao việc");
     setTasks((current) => current.map((task) => task.id === row.id ? {
       ...task,
       doneManual: true,
@@ -10369,20 +12762,26 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
       completionReviewedByEmail: authUser?.email || "",
       completionReviewedByName: reviewerName,
       completionReturnReason: "",
+      history: withTaskHistory(task, {
+        action: "approved",
+        byEmail: authUser?.email || "",
+        byName: reviewerName,
+        note: task.completionReport || "",
+      }),
     } : task));
-    notifyTaskOwner(row, `Công việc đã được ${reviewerName} xác nhận hoàn thành.\nNgày: ${row.date}\nNội dung: ${row.description}`);
-    setNotice(`Đã xác nhận ${taskOwnerName(row)} hoàn thành công việc.`);
+    notifyTaskOwner(row, `Công việc của bạn đã được ${reviewerName} duyệt hoàn tất.\nNgày: ${formatDateVN(row.date)}\nNội dung: ${row.description}`);
+    setNotice(`Đã duyệt hoàn tất công việc của ${taskOwnerName(row)}.`);
   };
   const openReturnTask = (row) => {
-    if (!canReviewTasks) return;
+    if (!canReviewTask(row)) return;
     setReturnTarget(row);
     setReturnReason("");
   };
   const confirmReturnTask = () => {
-    if (!returnTarget || !canReviewTasks) return;
+    if (!returnTarget || !canReviewTask(returnTarget)) return;
     const reason = returnReason.trim() || "Công việc chưa đạt yêu cầu, cần xử lý lại.";
     const returnedAt = nowStamp();
-    const reviewerName = currentIsAccountant ? "Kế toán" : "Sếp/Admin";
+    const reviewerName = currentEmployee?.name || authUser?.email || (isAdmin ? "Sếp/Admin" : "Người giao việc");
     setTasks((current) => current.map((task) => task.id === returnTarget.id ? {
       ...task,
       doneManual: false,
@@ -10391,21 +12790,91 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
       completionReturnedAt: returnedAt,
       completionReturnedByEmail: authUser?.email || "",
       completionReturnedByName: reviewerName,
+      history: withTaskHistory(task, {
+        action: "returned",
+        byEmail: authUser?.email || "",
+        byName: reviewerName,
+        note: reason,
+      }),
     } : task));
-    notifyTaskOwner(returnTarget, `Công việc chưa được xác nhận hoàn thành và đã được trả lại.\nNgày: ${returnTarget.date}\nNội dung: ${returnTarget.description}\nLý do: ${reason}`);
+    notifyTaskOwner(returnTarget, `Công việc chưa được duyệt hoàn tất và đã được trả lại.\nNgày: ${formatDateVN(returnTarget.date)}\nNội dung: ${returnTarget.description}\nLý do: ${reason}`);
     setNotice(`Đã trả công việc về cho ${taskOwnerName(returnTarget)}.`);
     setReturnTarget(null);
     setReturnReason("");
   };
 
+  // ---------- Nhiệm vụ hỗ trợ khách hàng — hiển thị y như một công việc được giao ----------
+  // Yêu cầu hỗ trợ được giao đích danh nên phải xuất hiện ngay trong tab Giao việc; người được giao xác
+  // nhận tại đây, hệ thống báo ngược lại cho Sale (cùng API với tab Hỗ trợ khách hàng).
+  const ensureDataFields = dataLoader?.ensureDataFields;
+  useEffect(() => {
+    // supportCases đã có vòng poll toàn cục 5s ở App — chỉ cần nạp lần đầu.
+    ensureDataFields?.(["supportCases"]);
+  }, [ensureDataFields]);
+
+  const [supportConfirmTarget, setSupportConfirmTarget] = useState(null);
+  const [supportReportTarget, setSupportReportTarget] = useState(null);
+  // Cùng cách nhận diện người được giao như tab Hỗ trợ khách hàng: ưu tiên email tài khoản máy chủ
+  // đã ghi vào ca, sau đó mới tới hồ sơ nhân sự.
+  const isSupportCaseMine = (item) => {
+    if (!item) return false;
+    const assignedEmail = String(item.assignedToEmail || "").trim().toLowerCase();
+    if (assignedEmail && currentEmail && assignedEmail === currentEmail) return true;
+    if (currentEmployee?.id && String(item.employeeId) === String(currentEmployee.id)) return true;
+    return Boolean(employeeEmailOf(Number(item.employeeId))) && employeeEmailOf(Number(item.employeeId)) === currentEmail;
+  };
+  const canApproveSupportCase = (item) => {
+    if (isAdmin || currentIsAccountant) return true;
+    const assigner = String(item?.assignedBy || "").trim().toLowerCase();
+    return Boolean(assigner) && assigner === currentEmail;
+  };
+  const approveSupportRow = async (row) => {
+    if (!canApproveSupportCase(row)) return;
+    const outcome = await approveSupportCaseCompletion({
+      supportCase: row,
+      setCases: setSupportCases,
+      dataLoader,
+    });
+    if (!outcome) return;
+    if (outcome.error) { setError(outcome.error); return; }
+    setError("");
+    setNotice(outcome.notice);
+  };
+  // Gồm cả HOÀN TẤT: duyệt xong nhiệm vụ hỗ trợ vẫn nằm trong bảng (kèm kết quả +
+  // mốc thời gian) để đối chiếu — không biến mất khỏi danh sách.
+  const openSupportCases = (supportCases || []).filter((item) => ["cho_xac_nhan", "dang_ho_tro", "cho_duyet_hoan_tat", "hoan_tat"].includes(item?.status));
+  // Người thường thấy ca mình NHẬN + ca mình ĐÃ GIAO (để theo dõi 2 bảng riêng).
+  const visibleSupportCases = (isAdmin || currentIsAccountant)
+    ? openSupportCases
+    : openSupportCases.filter((item) => isSupportCaseMine(item) || String(item.assignedBy || "").trim().toLowerCase() === currentEmail);
+  const supportRows = visibleSupportCases.slice().sort((a, b) => (
+    String(b.assignedAt || "").localeCompare(String(a.assignedAt || "")) || Number(b.id || 0) - Number(a.id || 0)
+  ));
+  const myPendingSupportCount = openSupportCases.filter((item) => (
+    item.status === "cho_xac_nhan" && isSupportCaseMine(item)
+  )).length;
+  const pendingSupportCount = supportRows.filter((item) => item.status === "cho_xac_nhan").length;
+
+  // Nhiệm vụ đã bị admin gỡ (archived) KHÔNG hiện trong bảng làm việc — nhưng vẫn nằm
+  // trong `tasks` (DB) nên đánh giá hiệu suất/lương vẫn tính đủ, không mất lịch sử.
+  const workingTasks = tasks.filter((task) => !task.archived);
+  const archivedCount = tasks.length - workingTasks.length;
   const permittedTasks = (isAdmin || currentIsAccountant)
-    ? tasks
-    : tasks.filter((task) => task.visibility !== "private" || employeeEmailOf(task.employeeId) === currentEmail);
-  const filtered = currentCanReportTask && viewMonthMode
-    ? permittedTasks.filter((task) => Number(task.employeeId) === Number(currentEmployee?.id) && !task.doneManual)
-    : viewMonthMode
-      ? permittedTasks.filter((task) => { const date = new Date(task.date); return date.getFullYear() === reportYear && date.getMonth() + 1 === reportMonth; })
-      : permittedTasks.filter((task) => task.date === filterDate);
+    ? workingTasks
+    : workingTasks.filter((task) => task.visibility !== "private" || employeeEmailOf(task.employeeId) === currentEmail);
+  // Danh sách xem theo NHÂN SỰ và theo KHOẢNG THỜI GIAN (mặc định trọn kỳ 1 tháng).
+  const filtered = permittedTasks.filter((task) => {
+    const key = taskDateKey(task);
+    if (key && (key < rangeFrom || key > rangeTo)) return false;
+    if (filterEmployeeId === "all") return true;
+    if (filterEmployeeId === "me") return Number(task.employeeId) === Number(currentEmployee?.id);
+    return String(task.employeeId) === String(filterEmployeeId);
+  });
+  const filterEmployeeLabel = filterEmployeeId === "all"
+    ? "Tất cả nhân sự"
+    : filterEmployeeId === "me"
+      ? `${currentEmployee?.name || "Tôi"} (tôi)`
+      : nameOf(Number(filterEmployeeId));
   const statusOrder = { can_lam_lai: 0, canh_bao: 1, cho_duyet: 2, dang_lam: 3, dat: 4 };
   const rows = filtered.map((task) => {
     const progress = computeTaskProgress(task, orders, marketingLogs);
@@ -10418,11 +12887,58 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
   ));
   const doneCount = rows.filter((row) => row.status === "dat").length;
   const pendingReviewCount = rows.filter((row) => row.status === "cho_duyet").length;
+  // Việc nhân viên đã gửi hoàn tất và đang chờ CHÍNH TÔI duyệt (tính trên toàn bộ dữ liệu, không
+  // phụ thuộc bộ lọc, để người giao không bỏ sót).
+  const awaitingMyApproval = permittedTasks.filter((task) => (
+    !task.doneManual && task.completionStatus === "submitted" && canReviewTask(task)
+  ));
   const unassigned = isAdmin ? employees.filter((employee) => !filtered.some((task) => task.employeeId === employee.id)) : [];
 
+  // ---------- Quản trị dữ liệu (chỉ admin): thống kê theo tháng và dọn bớt cho nhẹ CSDL ----------
+  const monthlyTaskStats = useMemo(() => {
+    const buckets = new Map();
+    (tasks || []).forEach((task) => {
+      const key = taskDateKey(task).slice(0, 7) || "—";
+      const bucket = buckets.get(key) || { month: key, total: 0, approved: 0, open: 0 };
+      bucket.total += 1;
+      if (task.doneManual || task.completionStatus === "approved") bucket.approved += 1;
+      else bucket.open += 1;
+      buckets.set(key, bucket);
+    });
+    return Array.from(buckets.values()).sort((a, b) => String(b.month).localeCompare(String(a.month)));
+  }, [tasks]);
+
+  const cleanupPreview = useMemo(() => {
+    if (!cleanupMonth) return 0;
+    return (tasks || []).filter((task) => {
+      if (taskDateKey(task).slice(0, 7) !== cleanupMonth) return false;
+      if (cleanupScope === "approved") return task.doneManual || task.completionStatus === "approved";
+      return true;
+    }).length;
+  }, [tasks, cleanupMonth, cleanupScope]);
+
+  const runTaskCleanup = async () => {
+    if (!isAdmin) return;
+    if (!cleanupMonth) { setCleanupError("Hãy chọn tháng cần dọn."); return; }
+    if (cleanupPreview === 0) { setCleanupError("Không có công việc nào khớp điều kiện đã chọn."); return; }
+    setCleanupError("");
+    const accepted = await confirmOverlay(
+      `Xóa vĩnh viễn ${cleanupPreview} công việc ${cleanupScope === "approved" ? "đã duyệt hoàn tất" : ""} trong tháng ${cleanupMonth}? Thao tác này không hoàn tác được — nên xuất Excel trước khi dọn.`,
+      { title: "Dọn dữ liệu công việc", confirmLabel: `Xóa ${cleanupPreview} công việc`, tone: "danger" },
+    );
+    if (!accepted) return;
+    setTasks((current) => current.filter((task) => {
+      if (taskDateKey(task).slice(0, 7) !== cleanupMonth) return true;
+      if (cleanupScope === "approved") return !(task.doneManual || task.completionStatus === "approved");
+      return false;
+    }));
+    setShowDataAdmin(false);
+    setNotice(`Đã dọn ${cleanupPreview} công việc của tháng ${cleanupMonth} khỏi cơ sở dữ liệu.`);
+  };
+
   const renderTaskStatus = (row) => {
-    if (row.status === "dat") return <StampBadge text="ĐÃ XÁC NHẬN" gold />;
-    if (row.status === "cho_duyet") return <StampBadge text="CHỜ KIỂM TRA" muted />;
+    if (row.status === "dat") return <StampBadge text="ĐÃ HOÀN TẤT" gold />;
+    if (row.status === "cho_duyet") return <StampBadge text="CHỜ DUYỆT HOÀN TẤT" muted />;
     if (row.status === "can_lam_lai") return <StampBadge text="TRẢ VỀ LÀM LẠI" />;
     if (row.status === "dang_lam") return <StampBadge text="ĐANG LÀM" muted />;
     return <StampBadge text="CẢNH BÁO" />;
@@ -10431,11 +12947,22 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
   const renderTaskActions = (row) => {
     const reviewStatus = row.doneManual ? "approved" : (row.completionStatus || "");
     const ownTask = Number(row.employeeId) === Number(currentEmployee?.id);
-    if (canReviewTasks && reviewStatus === "submitted") {
+    if (ownTask && !row.acceptedAt && reviewStatus !== "approved" && reviewStatus !== "submitted") {
+      return (
+        <button
+          type="button"
+          onClick={() => acceptTask(row)}
+          className="flex items-center gap-1.5 rounded-md bg-ledger-green px-3 py-1.5 text-[11px] font-bold text-white shadow-[0_6px_16px_rgba(31,122,80,0.35)] ring-1 ring-ledger-green/40 hover:brightness-110"
+        >
+          <CheckCircle2 size={12} /> Xác nhận nhận việc
+        </button>
+      );
+    }
+    if (canReviewTask(row) && reviewStatus === "submitted") {
       return (
         <>
-          <button onClick={() => approveTaskDone(row)} className="text-[10px] px-2 py-1 rounded border border-ledger-green/30 bg-ledger-green/10 text-ledger-green hover:bg-ledger-green/15 flex items-center gap-1 font-medium">
-            <CheckCircle2 size={10} /> Xác nhận
+          <button onClick={() => approveTaskDone(row)} className="flex items-center gap-1.5 rounded-md bg-ledger-green px-3 py-1.5 text-[11px] font-bold text-white shadow-[0_6px_16px_rgba(31,122,80,0.35)] ring-1 ring-ledger-green/40 hover:brightness-110">
+            <CheckCircle2 size={12} /> Duyệt hoàn tất
           </button>
           <button onClick={() => openReturnTask(row)} className="text-[10px] px-2 py-1 rounded border border-stamp-red/30 bg-stamp-red/10 text-stamp-red hover:bg-stamp-red/15 flex items-center gap-1 font-medium">
             <X size={10} /> Chưa đạt
@@ -10445,15 +12972,16 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
     }
     if (currentCanReportTask && ownTask && reviewStatus !== "approved" && reviewStatus !== "submitted") {
       return (
-        <button onClick={() => reportTaskDone(row)} className="text-[10px] px-2 py-1 rounded border border-[#315fae]/30 text-[#315fae] hover:bg-[#315fae]/5 flex items-center gap-1 font-medium">
-          <Send size={10} /> {reviewStatus === "returned" ? "Báo hoàn thành lại" : "Báo hoàn thành"}
+        <button onClick={() => openReportTask(row)} className="flex items-center gap-1.5 rounded-md bg-[#2f69ff] px-3 py-1.5 text-[11px] font-bold text-white shadow-[0_6px_16px_rgba(47,105,255,0.32)] ring-1 ring-[#2f69ff]/40 hover:brightness-110">
+          <Send size={12} /> {reviewStatus === "returned" ? "Gửi hoàn tất lại" : "Hoàn tất công việc"}
         </button>
       );
     }
-    if (reviewStatus === "submitted") return <span className="text-[10px] text-muted">Đã báo hoàn thành</span>;
+    if (reviewStatus === "submitted") return <span className="text-[10px] text-gold">Đã gửi hoàn tất — chờ {taskReviewerLabel(row)} duyệt</span>;
     if (reviewStatus === "returned") return <span className="text-[10px] text-stamp-red">Đang chờ làm lại</span>;
-    if (reviewStatus === "approved") return <span className="text-[10px] text-ledger-green">Đã xác nhận</span>;
-    return <span className="text-[10px] text-muted">Chưa báo hoàn thành</span>;
+    if (reviewStatus === "approved") return <span className="text-[10px] text-ledger-green">Đã hoàn tất (đã duyệt)</span>;
+    if (!row.acceptedAt) return <span className="text-[10px] text-gold">Chờ nhân viên xác nhận nhận việc</span>;
+    return <span className="text-[10px] text-muted">Chưa gửi hoàn tất</span>;
   };
 
   return (
@@ -10465,24 +12993,66 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
           <span><strong>{realtimeUnreadTaskIds.length} công việc mới</strong> vừa được đồng bộ. Danh sách tự cập nhật, không cần tải lại trang.</span>
         </div>
       )}
+      {awaitingMyApproval.length > 0 && (
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[#4f7ee8]/40 bg-[#4f7ee8]/10 px-3 py-2 text-xs text-[#315fae]">
+          <span className="flex min-w-0 items-center gap-2">
+            <CheckCircle2 size={14} className="shrink-0" />
+            <span><strong>{awaitingMyApproval.length} công việc</strong> nhân viên đã gửi hoàn tất và đang chờ bạn duyệt. Công việc chỉ được tính hoàn tất sau khi bạn bấm duyệt.</span>
+          </span>
+        </div>
+      )}
+      {myPendingSupportCount > 0 && (
+        <div className="shrink-0 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gold/40 bg-gold/10 px-3 py-2 text-xs text-ink">
+          <span className="flex min-w-0 items-center gap-2">
+            <Headphones size={14} className="shrink-0 text-gold" />
+            <span><strong>{myPendingSupportCount} nhiệm vụ hỗ trợ khách hàng</strong> đang chờ bạn xác nhận tiếp nhận. Xác nhận xong hệ thống báo lại ngay cho Sale đã giao yêu cầu.</span>
+          </span>
+          <button type="button" onClick={() => setSupportConfirmTarget(supportRows.find((item) => item.status === "cho_xac_nhan" && isSupportCaseMine(item)) || null)} className="shrink-0 rounded-md bg-ink px-3 py-1.5 text-[11px] font-semibold text-white hover:bg-ink-light">Xác nhận ngay</button>
+        </div>
+      )}
 
       <div className="shrink-0 flex justify-between items-center flex-wrap gap-3">
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={() => setViewMonthMode((value) => !value)} className={`text-xs px-3 py-2 rounded-md border flex items-center gap-1.5 ${viewMonthMode ? "bg-ink text-white border-ink" : "border-paper-line text-ink-light"}`}>
-            <CalendarCheck size={12} /> {currentCanReportTask ? (viewMonthMode ? "Việc đang làm của tôi" : "Xem theo ngày") : (viewMonthMode ? `Xem cả kỳ ${reportMonth}/${reportYear}` : "Xem theo ngày")}
+          <select
+            value={filterEmployeeId}
+            onChange={(event) => setFilterEmployeeId(event.target.value)}
+            className="border border-paper-line rounded-md px-3 py-2 text-sm bg-white"
+            aria-label="Lọc theo nhân sự"
+          >
+            {(isAdmin || currentIsAccountant) && <option value="all">Tất cả nhân sự</option>}
+            {currentEmployee && <option value="me">Việc của tôi</option>}
+            {(isAdmin || currentIsAccountant) && employees.map((employee) => (
+              <option key={employee.id} value={employee.id}>{employee.name}</option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={() => { setRangeDraftFrom(rangeFrom); setRangeDraftTo(rangeTo); setRangeError(""); setShowRangePicker(true); }}
+            className="text-xs px-3 py-2 rounded-md border border-paper-line text-ink-light flex items-center gap-1.5 hover:border-[#3C50E0]/60"
+          >
+            <CalendarCheck size={12} />
+            <span className="ktns-mono">{rangeFrom.split("-").reverse().join("/")} → {rangeTo.split("-").reverse().join("/")}</span>
+            <ChevronRight size={11} />
           </button>
-          {!viewMonthMode && <input type="date" value={filterDate} onChange={(event) => setFilterDate(event.target.value)} className="border border-paper-line rounded-md px-3 py-2 text-sm ktns-mono" />}
         </div>
-        <div className="flex gap-2">
-          <button onClick={() => exportTasksExcel(permittedTasks, employees, orders, marketingLogs)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md">
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => exportTasksExcel(filtered, employees, orders, marketingLogs, { from: rangeFrom, to: rangeTo })} className="flex items-center gap-1.5 text-sm border border-ledger-green/40 bg-ledger-green/10 text-ledger-green px-3.5 py-2 rounded-md">
             <FileSpreadsheet size={15} /> Xuất Excel
           </button>
           {isAdmin && (
-            <button onClick={() => { selectEmployee(firstEmp?.id || ""); setForm((current) => ({ ...current, date: filterDate, targetValue: "", description: "", visibility: "private" })); setShowForm(true); }} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md">
-              <Plus size={15} /> Giao việc mới
+            <button onClick={() => { setCleanupError(""); setCleanupMonth(monthlyTaskStats[0]?.month || ""); setShowDataAdmin(true); }} className="flex items-center gap-1.5 text-sm border border-paper-line text-ink px-3.5 py-2 rounded-md hover:border-[#3C50E0]/60">
+              <Database size={15} /> Quản trị dữ liệu
+            </button>
+          )}
+          {isAdmin && (
+            <button onClick={() => { setEditingTaskId(null); selectEmployee(firstEmp?.id || ""); setForm((current) => ({ ...current, date: GIAOVIEC_TODAY, targetValue: "", description: "", visibility: "private" })); setError(""); setShowForm(true); }} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md">
+              <Plus size={15} /> Tạo nhiệm vụ
             </button>
           )}
         </div>
+      </div>
+      <div className="shrink-0 text-[11px] text-muted">
+        Đang xem <strong className="text-ink">{filterEmployeeLabel}</strong> trong khoảng <strong className="text-ink ktns-mono">{rangeFrom.split("-").reverse().join("/")} → {rangeTo.split("-").reverse().join("/")}</strong> — {rows.length + supportRows.length} công việc{supportRows.length > 0 ? ` (gồm ${supportRows.length} yêu cầu hỗ trợ)` : ""}.
       </div>
 
       {isAdmin && unassigned.length > 0 && (
@@ -10497,8 +13067,8 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
           <div className="bg-white rounded-xl border border-paper-line shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden" onClick={(event) => event.stopPropagation()}>
             <div className="px-6 py-5 border-b border-paper-line flex items-center justify-between gap-4 bg-paper/30">
               <div>
-                <h3 className="ktns-serif font-semibold text-ink text-2xl">Giao việc mới</h3>
-                <p className="text-xs text-muted mt-1">Thông tin được lưu và gửi trực tiếp tới mục Tin nhắn của nhân viên.</p>
+                <h3 className="ktns-serif font-semibold text-ink text-2xl">{editingTaskId ? "Sửa nhiệm vụ" : "Tạo nhiệm vụ"}</h3>
+                <p className="text-xs text-muted mt-1">{editingTaskId ? "Mọi chỉnh sửa được ghi vào lịch sử của công việc này." : "Thông tin được lưu và gửi trực tiếp tới mục Tin nhắn của nhân viên."}</p>
               </div>
               <button type="button" onClick={closeForm} className="w-10 h-10 rounded-lg border border-paper-line text-muted hover:text-ink flex items-center justify-center" aria-label="Đóng biểu mẫu" title="Đóng"><X size={18} /></button>
             </div>
@@ -10548,7 +13118,7 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
 
             <div className="px-6 py-4 border-t border-paper-line bg-paper/30 flex justify-end gap-3">
               <button onClick={closeForm} className="border border-paper-line text-ink px-5 py-2.5 rounded-lg text-sm">Hủy</button>
-              <button onClick={addTask} className="bg-ledger-green text-white px-5 py-2.5 rounded-lg text-sm">Giao việc</button>
+              <button onClick={addTask} className="bg-ledger-green text-white px-5 py-2.5 rounded-lg text-sm font-semibold">{editingTaskId ? "Lưu thay đổi" : "Giao việc"}</button>
             </div>
           </div>
         </div>
@@ -10580,74 +13150,358 @@ function GiaoViec({ authUser, tasks, setTasks, employees, orders, marketingLogs,
         </div>
       )}
 
-      <div className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
+      {/* 2 KHU NHIỆM VỤ tách bạch theo CÁ NHÂN đang đăng nhập (mọi vai trò, kể cả admin):
+          "được giao" = mình là NGƯỜI NHẬN · "đã giao" = mình là NGƯỜI GIAO cho người khác. */}
+      {(() => {
+        const myId = Number(currentEmployee?.id);
+        const receivedTasks = rows.filter((r) => Number(r.employeeId) === myId);
+        const receivedSups = supportRows.filter((c) => isSupportCaseMine(c));
+        const assignedTasks = rows.filter((r) => String(r.createdByEmail || "").trim().toLowerCase() === currentEmail && Number(r.employeeId) !== myId);
+        const assignedSups = supportRows.filter((c) => String(c.assignedBy || "").trim().toLowerCase() === currentEmail && !isSupportCaseMine(c));
+        const board = taskBoardView === "assigned"
+          ? { taskList: assignedTasks, supList: assignedSups, emptyText: "Bạn chưa giao nhiệm vụ nào cho nhân viên khác." }
+          : { taskList: receivedTasks, supList: receivedSups, emptyText: "Chưa có nhiệm vụ nào được giao." };
+        const boardTaskRows = board.taskList;
+        const boardSupportRows = board.supList;
+        const emptyText = board.emptyText;
+        return (
+        <>
+        <div className="shrink-0">
+          <SectionViewSwitcher value={taskBoardView} onChange={setTaskBoardView} options={[
+            { id: "received", label: "Nhiệm vụ được giao", icon: ClipboardList, count: receivedTasks.length + receivedSups.length },
+            { id: "assigned", label: "Nhiệm vụ đã giao", icon: Send, count: assignedTasks.length + assignedSups.length },
+          ]} />
+        </div>
+        <div className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white flex">
         <div className="min-h-0 flex-1 overflow-auto ktns-scrollbar">
-          <table data-sticky-columns="true" className="w-full text-sm">
+            <table data-sticky-columns="true" className="w-full text-sm">
             <thead className="sticky top-0 z-10">
               <tr className="bg-paper text-left text-xs uppercase text-muted">
-                <th className="px-4 py-2.5">Nhân viên</th>
-                <th className="px-4 py-2.5">Công việc được giao</th>
-                <th className="px-4 py-2.5 text-right">Chỉ tiêu</th>
-                <th className="px-4 py-2.5 text-right">Tiến độ thực tế</th>
-                <th className="px-4 py-2.5">Trạng thái</th>
-                <th className="px-4 py-2.5">Hiển thị</th>
-                <th className="px-4 py-2.5 text-right">Thao tác</th>
+                <th className="px-3 py-2.5 min-w-[150px]">Nhân viên</th>
+                <th className="px-3 py-2.5 min-w-[280px]">Công việc được giao</th>
+                <th className="px-3 py-2.5 min-w-[200px]">Kết quả báo cáo</th>
+                <th className="px-3 py-2.5 min-w-[200px]">Trạng thái</th>
+                <th className="px-3 py-2.5 w-[75px] whitespace-nowrap">Hiển thị</th>
+                <th className="px-3 py-2.5 text-right w-[150px]">Thao tác</th>
               </tr>
             </thead>
             <tbody>
-              {rows.length === 0 && <tr><td colSpan={7} className="px-4 py-6 text-center text-xs text-muted">Chưa có công việc phù hợp.</td></tr>}
-              {rows.map((row) => {
+              {boardTaskRows.length === 0 && boardSupportRows.length === 0 && <tr><td colSpan={6} className="px-4 py-6 text-center text-xs text-muted">{emptyText}</td></tr>}
+              {boardSupportRows.map((row) => {
+                const pending = row.status === "cho_xac_nhan";
+                const ownCase = isSupportCaseMine(row);
+                return (
+                  <tr key={`support-${row.id}`} className={`border-t border-paper-line transition-colors ${pending ? "ktns-warn-row" : ""}`}>
+                    <td className="px-3 py-2">
+                      <div className="font-medium whitespace-nowrap">{onOpenProfile ? <button type="button" onClick={() => onOpenProfile(row.employeeId)} className="hover:underline">{nameOf(Number(row.employeeId))}</button> : nameOf(Number(row.employeeId))}</div>
+                      <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted whitespace-nowrap">
+                        <span className="rounded bg-gold/20 px-1.5 py-0.5 text-[9px] font-bold text-gold">HỖ TRỢ KH</span>
+                        {ROLE_META[employees.find((employee) => String(employee.id) === String(row.employeeId))?.roleType]?.label}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted max-w-sm">
+                      <div className="font-medium text-charcoal">Hỗ trợ khách hàng {row.customerName || "—"}</div>
+                      <div className="mt-0.5">{row.issue || "—"}</div>
+                      <div className="mt-0.5 text-[11px]">Người giao: {row.assignedByName || row.assignedBy || "—"} · {fmtContactTime(row.assignedAt)}</div>
+                    </td>
+                    {/* CỘT KẾT QUẢ: nội dung người nhận việc báo lên — người giao thấy ngay trên bảng. */}
+                    <td className="px-3 py-2 text-xs max-w-[240px]">
+                      {row.resultNote && ["cho_duyet_hoan_tat", "hoan_tat"].includes(row.status)
+                        ? <span className="text-charcoal">{row.resultNote}</span>
+                        : row.reviewNote && row.status === "dang_ho_tro"
+                          ? <span className="text-stamp-red">Bị trả lại: {row.reviewNote}</span>
+                          : <span className="text-muted">—</span>}
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex flex-col items-start gap-1">
+                        {pending && <StampBadge text="CHỜ XÁC NHẬN" />}
+                        {row.status === "dang_ho_tro" && <StampBadge text="ĐANG HỖ TRỢ" muted />}
+                        {row.status === "cho_duyet_hoan_tat" && <StampBadge text="CHỜ DUYỆT HOÀN TẤT" muted />}
+                        {row.status === "hoan_tat" && <StampBadge text="ĐÃ HOÀN TẤT" gold />}
+                        {/* Đủ mốc thời gian: nhận việc → báo hoàn thành → duyệt. */}
+                        {row.confirmedAt && <span className="text-[10px] text-muted">Nhận việc lúc {fmtDateTimeVN(row.confirmedAt)}</span>}
+                        {row.reportedAt && <span className="text-[10px] text-muted">Báo hoàn thành lúc {fmtDateTimeVN(row.reportedAt)}</span>}
+                        {row.status === "hoan_tat" && row.completedAt && <span className="text-[10px] text-ledger-green">Duyệt hoàn tất lúc {fmtDateTimeVN(row.completedAt)}</span>}
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted whitespace-nowrap">Riêng tư</td>
+                    <td className="px-3 py-2 text-right">
+                      <div className="flex flex-wrap items-center justify-end gap-2">
+                        {pending && ownCase && (
+                          <button type="button" onClick={() => setSupportConfirmTarget(row)} className="flex items-center gap-1.5 rounded-md bg-ledger-green px-3 py-1.5 text-[11px] font-bold text-white shadow-[0_6px_16px_rgba(31,122,80,0.35)] ring-1 ring-ledger-green/40 hover:brightness-110">
+                            <UserCheck size={12} /> Xác nhận nhiệm vụ
+                          </button>
+                        )}
+                        {pending && !ownCase && <span className="text-[10px] text-muted">Chờ {nameOf(Number(row.employeeId))} xác nhận</span>}
+                        {/* Kỹ thuật được giao báo kết quả ngay tại đây; người giao duyệt ở tab Hỗ trợ khách hàng. */}
+                        {row.status === "dang_ho_tro" && ownCase && (
+                          <button type="button" onClick={() => setSupportReportTarget(row)} className="flex items-center gap-1.5 rounded-md bg-ledger-green px-3 py-1.5 text-[11px] font-bold text-white shadow-[0_6px_16px_rgba(31,122,80,0.35)] ring-1 ring-ledger-green/40 hover:brightness-110">
+                            <CheckCircle2 size={12} /> Hoàn tất & báo kết quả
+                          </button>
+                        )}
+                        {row.status === "dang_ho_tro" && !ownCase && <span className="text-[10px] text-ledger-green">{nameOf(Number(row.employeeId))} đang xử lý</span>}
+                        {row.status === "cho_duyet_hoan_tat" && canApproveSupportCase(row) && (
+                          <button type="button" onClick={() => approveSupportRow(row)} className="flex items-center gap-1.5 rounded-md bg-ledger-green px-3 py-1.5 text-[11px] font-bold text-white shadow-[0_6px_16px_rgba(31,122,80,0.35)] ring-1 ring-ledger-green/40 hover:brightness-110">
+                            <CheckCircle2 size={12} /> Duyệt hoàn tất
+                          </button>
+                        )}
+                        {row.status === "cho_duyet_hoan_tat" && !canApproveSupportCase(row) && <span className="text-[10px] text-[#315fae]">Đã báo kết quả — chờ {row.assignedByName || row.assignedBy || "người giao"} duyệt</span>}
+                        {row.status === "hoan_tat" && <span className="text-[10px] text-muted" title="Nhiệm vụ hỗ trợ đã hoàn tất — giữ trong bảng để đối chiếu đánh giá hiệu suất">Lưu lịch sử đối chiếu</span>}
+                        {/* ADMIN luôn có nút xóa trên MỌI dòng của bảng nhiệm vụ — kể cả nhiệm vụ hỗ trợ. */}
+                        {isAdmin && <button type="button" onClick={() => removeSupportRow(row.id)} className="text-muted hover:text-stamp-red" title="Xóa vĩnh viễn nhiệm vụ hỗ trợ khỏi lịch sử (chỉ Admin)" aria-label={`Xóa nhiệm vụ hỗ trợ của khách ${row.customerName || ""}`}><Trash2 size={14} /></button>}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {boardTaskRows.map((row) => {
                 const isRealtimeNew = realtimeUnreadTaskIds.includes(String(row.id));
                 return (
-                <tr key={row.id} className={`border-t border-paper-line transition-colors ${isRealtimeNew ? "bg-[#315fae]/10" : ""} ${["canh_bao", "can_lam_lai"].includes(row.status) ? "ktns-warn-row" : ""}`}>
-                  <td className="px-4 py-2"><div className="font-medium flex items-center gap-1.5">{onOpenProfile ? <button type="button" onClick={() => onOpenProfile(row.employeeId)} className="hover:underline">{nameOf(row.employeeId)}</button> : nameOf(row.employeeId)}{isRealtimeNew && <span className="rounded bg-stamp-red px-1.5 py-0.5 text-[9px] font-bold text-white">MỚI</span>}</div><div className="text-[11px] text-muted">{ROLE_META[employees.find((employee) => employee.id === row.employeeId)?.roleType]?.label}</div></td>
-                  <td className="px-4 py-2 text-xs text-muted max-w-sm">{row.description}</td>
-                  <td className="px-4 py-2 text-right ktns-mono text-xs">{row.targetType === "khac" ? "—" : `${row.targetValue} ${TASK_TYPES[row.targetType].unit}`}</td>
-                  <td className="px-4 py-2 text-right ktns-mono text-xs font-medium">{row.progress.label}</td>
-                  <td className="px-4 py-2">
+                <tr key={row.id} data-task-row={row.id} className={`border-t border-paper-line transition-colors ${String(focusTaskId) === String(row.id) ? "ring-2 ring-inset ring-[#3C50E0] bg-[#3C50E0]/10" : isRealtimeNew ? "bg-[#315fae]/10" : ""} ${["canh_bao", "can_lam_lai"].includes(row.status) ? "ktns-warn-row" : ""}`}>
+                  <td className="px-3 py-2"><div className="font-medium whitespace-nowrap flex items-center gap-1.5">{onOpenProfile ? <button type="button" onClick={() => onOpenProfile(row.employeeId)} className="hover:underline">{nameOf(row.employeeId)}</button> : nameOf(row.employeeId)}{isRealtimeNew && <span className="rounded bg-stamp-red px-1.5 py-0.5 text-[9px] font-bold text-white">MỚI</span>}</div><div className="text-[11px] text-muted whitespace-nowrap">{ROLE_META[employees.find((employee) => employee.id === row.employeeId)?.roleType]?.label}</div></td>
+                  <td className="px-3 py-2 text-xs text-muted max-w-sm">
+                    {row.description}
+                    {row.sourceType && row.sourceId != null && onOpenRecord && (
+                      <button type="button" onClick={() => onOpenRecord(row.sourceTarget || "dieuhanh", { type: row.sourceType, id: row.sourceId })} className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-[#3C50E0] hover:underline" title="Mở lại bản ghi nguồn đã sinh ra nhiệm vụ này">
+                        <Link2 size={9} /> Mở bản ghi nguồn
+                      </button>
+                    )}
+                  </td>
+                  {/* CỘT KẾT QUẢ: báo cáo người nhận việc gửi lên — người giao đọc ngay tại bảng. */}
+                  <td className="px-3 py-2 text-xs max-w-[240px]">
+                    {row.completionReport
+                      ? <span className="text-charcoal">{row.completionReport}</span>
+                      : row.completionStatus === "returned" && row.completionReturnReason
+                        ? <span className="text-stamp-red">Bị trả lại: {row.completionReturnReason}</span>
+                        : <span className="text-muted">—</span>}
+                  </td>
+                  <td className="px-3 py-2">
                     <div className="flex flex-col items-start gap-1">
                       {renderTaskStatus(row)}
-                      {row.completionStatus === "submitted" && <span className="text-[10px] text-muted">User báo lúc {row.completionSubmittedAt || "—"}</span>}
+                      {!row.acceptedAt && !row.doneManual && row.completionStatus !== "submitted" && <span className="rounded-full border border-gold/40 bg-gold/15 px-2 py-0.5 text-[10px] font-bold text-gold">CHƯA XÁC NHẬN NHẬN VIỆC</span>}
+                      {row.acceptedAt && <span className="text-[10px] text-ledger-green">Đã nhận việc lúc {fmtDateTimeVN(row.acceptedAt)}</span>}
+                      {row.completionStatus === "submitted" && <span className="text-[10px] text-muted">{row.completionSubmittedByName || "User"} gửi hoàn tất lúc {fmtDateTimeVN(row.completionSubmittedAt)}</span>}
+                      {row.completionStatus === "approved" && row.completionReviewedAt && <span className="text-[10px] text-ledger-green">Duyệt hoàn tất bởi {row.completionReviewedByName || "—"} lúc {fmtDateTimeVN(row.completionReviewedAt)}</span>}
                       {row.completionStatus === "returned" && row.completionReturnReason && <span className="text-[10px] text-stamp-red max-w-[220px]">{row.completionReturnReason}</span>}
                     </div>
                   </td>
-                  <td className="px-4 py-2 text-xs text-muted">{row.visibility === "public" ? "Công khai" : "Riêng tư"}</td>
-                  <td className="px-4 py-2 text-right">
+                  <td className="px-3 py-2 text-xs text-muted whitespace-nowrap">{row.visibility === "public" ? "Công khai" : "Riêng tư"}</td>
+                  <td className="px-3 py-2 text-right">
                     <div className="flex flex-wrap items-center justify-end gap-2">
                       {renderTaskActions(row)}
-                      {isAdmin && <button onClick={() => removeTask(row.id)} className="text-muted hover:text-stamp-red" title="Xóa công việc"><Trash2 size={14} /></button>}
+                      <button type="button" onClick={() => setHistoryTarget(row)} className="text-muted hover:text-ink" title="Xem chi tiết & lịch sử công việc" aria-label={`Xem chi tiết công việc của ${nameOf(row.employeeId)}`}><Eye size={14} /></button>
+                      {isAdmin && <button type="button" onClick={() => openEditTask(row)} className="text-muted hover:text-ink" title="Sửa công việc" aria-label={`Sửa công việc của ${nameOf(row.employeeId)}`}><Pencil size={14} /></button>}
+                      {/* CHỈ ADMIN có nút xóa — xóa vĩnh viễn nhiệm vụ được chọn khỏi lịch sử. */}
+                      {isAdmin && <button type="button" onClick={() => removeTask(row.id)} className="text-muted hover:text-stamp-red" title="Xóa vĩnh viễn nhiệm vụ khỏi lịch sử (chỉ Admin)" aria-label={`Xóa nhiệm vụ của ${nameOf(row.employeeId)}`}><Trash2 size={14} /></button>}
                     </div>
                   </td>
                 </tr>
                 );
               })}
             </tbody>
-          </table>
+            </table>
         </div>
         <div className="domix-table-total-bar shrink-0 border-t border-paper-line bg-paper px-4 py-2.5 font-semibold">
           <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
-            <span className="text-muted">{viewMonthMode && currentCanReportTask ? "Việc đang làm của tôi" : (viewMonthMode ? `Nhiệm vụ kỳ ${reportMonth}/${reportYear}` : "Nhiệm vụ hôm nay")}: <strong className="text-ink">{filtered.length}</strong></span>
-            <span className="text-muted">Đã đạt chỉ tiêu: <strong className="text-ledger-green">{doneCount}</strong></span>
-            <span className={pendingReviewCount > 0 ? "text-stamp-red" : "text-muted"}>{canReviewTasks ? "Chờ kiểm tra" : "Chờ xác nhận"}: <strong>{pendingReviewCount}</strong></span>
-            <span className={isAdmin && unassigned.length > 0 ? "text-stamp-red" : "text-muted"}>{isAdmin ? "Chưa được giao việc" : "Việc của tôi / công khai"}: <strong>{isAdmin ? unassigned.length : filtered.length}</strong></span>
+            <span className="text-muted">{filterEmployeeLabel}: <strong className="text-ink">{rows.length + supportRows.length}</strong> việc{supportRows.length > 0 ? ` (${supportRows.length} yêu cầu hỗ trợ)` : ""}</span>
+            {isAdmin && archivedCount > 0 && <span className="text-muted" title="Nhiệm vụ admin đã gỡ khỏi danh sách — bản ghi và lịch sử vẫn lưu trong hệ thống để đối chiếu hiệu suất">Đã gỡ (lưu lịch sử): <strong className="text-ink">{archivedCount}</strong></span>}
+            <span className="text-muted">Đã hoàn tất (đã duyệt): <strong className="text-ledger-green">{doneCount}</strong></span>
+            <span className={pendingReviewCount > 0 ? "text-stamp-red" : "text-muted"}>Chờ duyệt hoàn tất: <strong>{pendingReviewCount}</strong></span>
+            <span className={pendingSupportCount > 0 ? "text-gold" : "text-muted"}>Nhiệm vụ hỗ trợ chờ xác nhận: <strong>{pendingSupportCount}</strong></span>
+            <span className={isAdmin && unassigned.length > 0 ? "text-stamp-red" : "text-muted"}>{isAdmin ? "Chưa được giao việc trong khoảng này" : "Khoảng đang xem"}: <strong>{isAdmin ? unassigned.length : `${rangeFrom} → ${rangeTo}`}</strong></span>
           </div>
         </div>
       </div>
+        </>
+        );
+      })()}
+
+      {supportConfirmTarget && (
+        <SupportAssignmentConfirmOverlay
+          supportCase={supportConfirmTarget}
+          dataLoader={dataLoader}
+          setCases={setSupportCases}
+          onClose={() => setSupportConfirmTarget(null)}
+          onResult={(message) => setNotice(message)}
+        />
+      )}
+
+      {supportReportTarget && (
+        <SupportCompletionReportOverlay
+          supportCase={supportReportTarget}
+          setCases={setSupportCases}
+          dataLoader={dataLoader}
+          onClose={() => setSupportReportTarget(null)}
+          onResult={(message) => setNotice(message)}
+          onError={(message) => setError(message)}
+        />
+      )}
+
+      {reportTarget && (
+        <SupportOverlay
+          title="Hoàn tất công việc"
+          subtitle={`${reportTarget.description || "Công việc được giao"} · ngày ${reportTarget.date || "—"}`}
+          onClose={() => { setReportTarget(null); setReportError(""); }}
+          footer={(
+            <>
+              <button type="button" onClick={() => { setReportTarget(null); setReportError(""); }} className="rounded-lg border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-light hover:border-ink/25">Hủy</button>
+              <button type="button" onClick={submitTaskReport} className="inline-flex items-center gap-2 rounded-lg bg-[#2f69ff] px-4 py-2.5 text-sm font-bold text-white hover:brightness-110"><Send size={14} /> Gửi hoàn tất cho người giao</button>
+            </>
+          )}
+        >
+          <SupportField label="Kết quả đã làm được" hint="Nội dung này được gửi kèm để người giao việc kiểm tra trước khi duyệt.">
+            <textarea value={reportDraft} onChange={(event) => setReportDraft(event.target.value)} rows={5} placeholder="VD: đã liên hệ 25 khách, chốt 3 đơn, gửi báo giá cho 5 khách còn lại..." className={`${SUPPORT_INPUT_CLASS} resize-none`} />
+          </SupportField>
+          <div className="mt-4 flex items-start gap-2 rounded-lg border border-gold/40 bg-gold/10 px-3 py-2.5 text-[11px] leading-relaxed text-charcoal">
+            <AlertTriangle size={13} className="mt-0.5 shrink-0 text-gold" />
+            <span>Công việc <strong className="text-ink">chưa được tính là hoàn tất</strong> khi bạn bấm gửi. Yêu cầu sẽ chuyển tới <strong className="text-ink">{taskReviewerLabel(reportTarget)}</strong> (người giao việc) và chỉ hoàn tất khi người đó bấm duyệt.</span>
+          </div>
+          {reportError && <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} /> {reportError}</p>}
+        </SupportOverlay>
+      )}
+
+      {historyTarget && (
+        <SupportOverlay
+          title="Lịch sử công việc"
+          subtitle={`${nameOf(historyTarget.employeeId)} · ${historyTarget.description || "—"}`}
+          size="lg"
+          onClose={() => setHistoryTarget(null)}
+        >
+          <div className="mb-4 rounded-xl border border-paper-line bg-paper/40 px-4 py-2">
+            <SupportDetailRow label="Ngày thực hiện" value={historyTarget.date} />
+            <SupportDetailRow label="Người giao" value={historyTarget.createdByName || historyTarget.createdByEmail} />
+            <SupportDetailRow label="Xác nhận nhận việc" value={historyTarget.acceptedAt} />
+            <SupportDetailRow label="User gửi hoàn tất" value={fmtContactTime(historyTarget.completionSubmittedAt)} />
+            <SupportDetailRow label="Kết quả user báo cáo" value={historyTarget.completionReport} />
+            <SupportDetailRow label="Người giao duyệt hoàn tất" value={historyTarget.completionReviewedAt ? `${historyTarget.completionReviewedByName || "—"} · ${fmtContactTime(historyTarget.completionReviewedAt)}` : ""} />
+          </div>
+          {(historyTarget.history || []).length === 0 ? (
+            <p className="py-6 text-center text-xs text-muted">Công việc này được tạo trước khi hệ thống ghi nhật ký nên chưa có dòng lịch sử nào.</p>
+          ) : (
+            <ol className="space-y-3">
+              {(historyTarget.history || []).slice().reverse().map((entry) => (
+                <li key={entry.id} className="rounded-lg border border-paper-line bg-white px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-sm font-semibold text-ink">{TASK_HISTORY_LABELS[entry.action] || entry.action}</span>
+                    <span className="ktns-mono text-[11px] text-muted">{entry.at || "—"}</span>
+                  </div>
+                  <div className="mt-1 text-xs text-muted">Người thực hiện: {entry.byName || entry.byEmail || "—"}</div>
+                  {entry.note && <p className="mt-2 whitespace-pre-wrap text-xs text-charcoal">{entry.note}</p>}
+                </li>
+              ))}
+            </ol>
+          )}
+        </SupportOverlay>
+      )}
+
+      {showRangePicker && (
+        <SupportOverlay
+          title="Chọn khoảng thời gian"
+          subtitle="Áp dụng cho danh sách công việc và file Excel xuất ra."
+          size="sm"
+          onClose={() => { setShowRangePicker(false); setRangeError(""); }}
+          footer={(
+            <>
+              <button type="button" onClick={() => { setShowRangePicker(false); setRangeError(""); }} className="rounded-lg border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-light hover:border-ink/25">Hủy</button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (rangeDraftFrom > rangeDraftTo) { setRangeError("Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc."); return; }
+                  setRangeFrom(rangeDraftFrom);
+                  setRangeTo(rangeDraftTo);
+                  setRangeTouched(true);
+                  setShowRangePicker(false);
+                  setRangeError("");
+                }}
+                className="rounded-lg bg-ink px-4 py-2.5 text-sm font-semibold text-white hover:bg-ink-light"
+              >Áp dụng</button>
+            </>
+          )}
+        >
+          <div className="grid grid-cols-2 gap-2">
+            {[
+              { id: "month", label: `Kỳ ${reportMonth}/${reportYear}`, from: monthRange.from, to: monthRange.to },
+              { id: "30", label: "30 ngày gần nhất", from: shiftDateStr(GIAOVIEC_TODAY, -29), to: GIAOVIEC_TODAY },
+              { id: "7", label: "7 ngày gần nhất", from: shiftDateStr(GIAOVIEC_TODAY, -6), to: GIAOVIEC_TODAY },
+              { id: "today", label: "Hôm nay", from: GIAOVIEC_TODAY, to: GIAOVIEC_TODAY },
+            ].map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => { setRangeDraftFrom(preset.from); setRangeDraftTo(preset.to); }}
+                className={`rounded-lg border px-3 py-2.5 text-xs font-semibold transition-colors ${rangeDraftFrom === preset.from && rangeDraftTo === preset.to ? "border-gold bg-gold/10 text-ink" : "border-paper-line bg-white text-ink-light hover:border-ink/20"}`}
+              >{preset.label}</button>
+            ))}
+          </div>
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <SupportField label="Từ ngày">
+              <input type="date" value={rangeDraftFrom} onChange={(event) => setRangeDraftFrom(event.target.value)} className={`${SUPPORT_INPUT_CLASS} w-full`} />
+            </SupportField>
+            <SupportField label="Đến ngày">
+              <input type="date" value={rangeDraftTo} onChange={(event) => setRangeDraftTo(event.target.value)} className={`${SUPPORT_INPUT_CLASS} w-full`} />
+            </SupportField>
+          </div>
+          {rangeError && <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} /> {rangeError}</p>}
+        </SupportOverlay>
+      )}
+
+      {showDataAdmin && isAdmin && (
+        <SupportOverlay
+          title="Quản trị dữ liệu công việc"
+          subtitle="Thống kê theo tháng và dọn bớt dữ liệu cũ cho nhẹ cơ sở dữ liệu."
+          size="lg"
+          onClose={() => { setShowDataAdmin(false); setCleanupError(""); }}
+          footer={(
+            <>
+              <button type="button" onClick={() => exportTasksExcel(tasks, employees, orders, marketingLogs, { from: "toan-bo", to: TODAY_STR })} className="rounded-lg border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-light hover:border-ink/25">Xuất toàn bộ trước khi dọn</button>
+              <button type="button" onClick={runTaskCleanup} className="rounded-lg bg-stamp-red px-4 py-2.5 text-sm font-bold text-white hover:brightness-110">Dọn {cleanupPreview > 0 ? `${cleanupPreview} công việc` : "dữ liệu"}</button>
+            </>
+          )}
+        >
+          <div className="overflow-x-auto rounded-xl border border-paper-line">
+            <table className="w-full text-sm">
+              <thead><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-4 py-2">Tháng</th><th className="px-4 py-2 text-right">Tổng việc</th><th className="px-4 py-2 text-right">Đã hoàn tất</th><th className="px-4 py-2 text-right">Chưa xong</th><th className="px-4 py-2 text-right">Chọn dọn</th></tr></thead>
+              <tbody>
+                {monthlyTaskStats.length === 0 && <tr><td colSpan={5} className="px-4 py-6 text-center text-xs text-muted">Chưa có công việc nào trong cơ sở dữ liệu.</td></tr>}
+                {monthlyTaskStats.map((stat) => (
+                  <tr key={stat.month} className={`border-t border-paper-line text-xs ${cleanupMonth === stat.month ? "bg-gold/10" : ""}`}>
+                    <td className="px-4 py-2 ktns-mono font-semibold text-ink">{stat.month}</td>
+                    <td className="px-4 py-2 text-right ktns-mono">{stat.total}</td>
+                    <td className="px-4 py-2 text-right ktns-mono text-ledger-green">{stat.approved}</td>
+                    <td className="px-4 py-2 text-right ktns-mono text-gold">{stat.open}</td>
+                    <td className="px-4 py-2 text-right">
+                      <button type="button" onClick={() => { setCleanupMonth(stat.month); setCleanupError(""); }} className={`rounded-md border px-2.5 py-1 text-[11px] font-semibold ${cleanupMonth === stat.month ? "border-gold bg-gold/15 text-ink" : "border-paper-line text-ink-light hover:border-[#3C50E0]/60"}`}>Chọn</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="mt-5 grid gap-4 sm:grid-cols-2">
+            <SupportField label="Tháng cần dọn">
+              <input value={cleanupMonth} onChange={(event) => setCleanupMonth(event.target.value.trim())} placeholder="YYYY-MM" className={`${SUPPORT_INPUT_CLASS} ktns-mono`} />
+            </SupportField>
+            <SupportField label="Phạm vi dọn">
+              <select value={cleanupScope} onChange={(event) => setCleanupScope(event.target.value)} className={SUPPORT_INPUT_CLASS}>
+                <option value="approved">Chỉ việc đã duyệt hoàn tất</option>
+                <option value="all">Toàn bộ việc trong tháng</option>
+              </select>
+            </SupportField>
+          </div>
+          <div className="mt-4 flex items-start gap-2 rounded-lg border border-stamp-red/30 bg-stamp-red/5 px-3 py-2.5 text-[11px] leading-relaxed text-charcoal">
+            <AlertTriangle size={13} className="mt-0.5 shrink-0 text-stamp-red" />
+            <span>Sẽ xóa <strong className="text-stamp-red">{cleanupPreview}</strong> công việc cùng lịch sử của chúng. Thao tác không hoàn tác được — hãy xuất Excel trước.</span>
+          </div>
+          {cleanupError && <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} /> {cleanupError}</p>}
+        </SupportOverlay>
+      )}
     </div>
   );
 }
 
 
 // ---------- Trung tâm Quản lý doanh thu & Thu chi ----------
-const FINANCE_HUB_VIEWS = [
-  { id: "overview", label: "Tổng hợp doanh thu", icon: LayoutDashboard },
-  { id: "sales", label: "Doanh thu bán hàng", icon: ShoppingCart },
-  { id: "income", label: "Thu", icon: TrendingUp },
-  { id: "expense", label: "Chi", icon: TrendingDown },
-  { id: "staff", label: "Chi phí nhân sự", icon: Users },
-  { id: "meal", label: "Phụ cấp ăn trưa", icon: Banknote },
-  { id: "insurance", label: "BHXH / BHYT", icon: ShieldCheck },
-];
 
 function financeDateParts(dateValue) {
   const matched = String(dateValue || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
@@ -10677,42 +13531,12 @@ function buildMarketingIncomeRows(logs = []) {
     }));
 }
 
-function buildMarketingExpenseRows(logs = []) {
-  return logs
-    .filter((log) => (Number(log.adSpend) || 0) > 0)
-    .map((log, index) => ({
-      id: `marketing-expense-${log.id ?? `${log.date}-${log.employeeId}-${index}`}`,
-      date: log.date,
-      kind: "chi",
-      category: "marketing_ads",
-      employeeId: log.employeeId || null,
-      desc: log.note ? `Chi phí Marketing · ${log.note}` : "Chi phí Marketing / quảng cáo hằng ngày",
-      amount: Number(log.adSpend) || 0,
-      paymentMethod: "chuyen_khoan",
-      source: "marketing_daily",
-      createdAt: log.createdAt || `${log.date || TODAY_STR}T00:00:00`,
-    }));
-}
-
-
 function financeTxBelongsToEmployee(transaction, employeeId) {
   if (!transaction || employeeId === null || employeeId === undefined) return false;
   const target = Number(employeeId);
   return [transaction.employeeId, transaction.assignedEmployeeId, transaction.sourceEmployeeId]
     .some((value) => Number(value) === target)
     || (transaction.source === "bangluong" && Number(transaction.sourceOrderId) === target);
-}
-
-function FinanceHubMetric({ label, value, note, icon: Icon, tone = "blue" }) {
-  const toneClass = tone === "green" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-    : tone === "red" ? "bg-red-500/10 text-red-400 border-red-500/20"
-      : tone === "gold" ? "bg-amber-500/10 text-amber-300 border-amber-500/20"
-        : "bg-blue-500/10 text-blue-300 border-blue-500/20";
-  return (
-    <div className="rounded-xl border border-[#29364f] bg-[#141c2a] p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3"><div><div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8290a8]">{label}</div><div className="mt-2 text-xl font-bold text-white ktns-mono">{value}</div>{note && <div className="mt-1 text-[11px] text-[#8fa0bc]">{note}</div>}</div><span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border ${toneClass}`}><Icon size={17} /></span></div>
-    </div>
-  );
 }
 
 function FinanceScrollableTable({ children, minWidth = 980, className = "" }) {
@@ -10805,36 +13629,34 @@ function FinanceScrollableTable({ children, minWidth = 980, className = "" }) {
   );
 }
 
-function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFinancialSummary, transactions, setTransactions, orders, setOrders, leads, setLeads, employees, payrollRows, marketingLogs, reportYear, reportMonth, authUser, currentEmployee, revenueByEmployee, inventory, setInventory, distPartners, distOrders, setDistOrders, pages, setSupportCases, customers, setCustomers, moveStock, debts, setDebts, company, dataLoader }) {
-  const [activeView, setActiveView] = useState("overview");
+function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFinancialSummary, transactions, setTransactions, orders, setOrders, leads, setLeads, employees, payrollRows, kpiTiers, marketingLogs, reportYear, reportMonth, authUser, currentEmployee, revenueByEmployee, inventory, setInventory, distPartners, distOrders, setDistOrders, pages, setSupportCases, customers, setCustomers, moveStock, debts, setDebts, company, unlockedMonths, ordersOnly = false, onOpenReceivables, recordFocus, onRecordFocusConsumed, onReturnToOps, orderPrefill, onOrderPrefillConsumed, dataLoader }) {
   const isFullAccess = isAdminRole(authUser?.role) || isAccountantRole(authUser?.role);
   const canManageSalesOrders = isFullAccess || ["sale", "ky_thuat"].includes(currentEmployee?.roleType);
   const ownEmployeeId = currentEmployee?.id ? Number(currentEmployee.id) : null;
   const [employeeFilter, setEmployeeFilter] = useState(() => isFullAccess ? "all" : String(ownEmployeeId || ""));
+  const [financeTab, setFinanceTab] = useState("orders");
+  const [financeBoard, setFinanceBoard] = useState("thu");
+  const [periodYear, setPeriodYear] = useState(Number(reportYear));
+  const [periodMonth, setPeriodMonth] = useState(Number(reportMonth));
   const [showEntryForm, setShowEntryForm] = useState(false);
-  const [showFinanceInsights, setShowFinanceInsights] = useState(false);
+  const [showLedgerBook, setShowLedgerBook] = useState(false);
+  const [ledgerBookKind, setLedgerBookKind] = useState("chi");
   const [editingEntryId, setEditingEntryId] = useState(null);
   const initialLedgerMonth = `${Number(reportYear)}-${String(Number(reportMonth)).padStart(2, "0")}`;
   const initialLedgerDate = Number(reportYear) === TODAY.getFullYear() && Number(reportMonth) === TODAY.getMonth() + 1 ? TODAY_STR : `${initialLedgerMonth}-01`;
-  const [ledgerPeriodMode, setLedgerPeriodMode] = useState("month");
+  const [ledgerPeriodMode] = useState("month");
   const [ledgerDate, setLedgerDate] = useState(initialLedgerDate);
   const [ledgerMonth, setLedgerMonth] = useState(initialLedgerMonth);
   const [ledgerQuarter, setLedgerQuarter] = useState(String(quarterOf(Number(reportMonth))));
   const [ledgerYear, setLedgerYear] = useState(Number(reportYear));
   const [entryForm, setEntryForm] = useState({ date: TODAY_STR, kind: "chi", category: "chi_phi_nhan_su", employeeId: "", desc: "", amount: "", paymentMethod: "chuyen_khoan", invoiceType: "Chưa xác định" });
-  const lazyTableData = useLazyTableData(activeView, {
-    overview: ["transactions", "orders", "marketingLogs", "payrollPayments"],
-    sales: ["orders", "customers", "inventory", "stockMovements", "transactions", "distributionPartners", "distributionOrders", "debts"],
-    income: ["transactions", "marketingLogs"], expense: ["transactions", "marketingLogs"], staff: ["transactions", "orders", "marketingLogs"], meal: ["transactions", "orders", "marketingLogs"], insurance: ["transactions", "orders", "marketingLogs"],
+  const lazyTableData = useLazyTableData("hub", {
+    hub: ["transactions", "orders", "marketingLogs", "payrollPayments", "customers", "inventory", "stockMovements", "distributionPartners", "distributionOrders", "debts"],
   }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
 
   useEffect(() => {
     if (!isFullAccess && ownEmployeeId) setEmployeeFilter(String(ownEmployeeId));
   }, [isFullAccess, ownEmployeeId]);
-
-  useEffect(() => {
-    setShowFinanceInsights(false);
-  }, [activeView]);
 
   useEffect(() => {
     const nextMonth = `${Number(reportYear)}-${String(Number(reportMonth)).padStart(2, "0")}`;
@@ -10844,10 +13666,16 @@ function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFin
     setLedgerDate(Number(reportYear) === TODAY.getFullYear() && Number(reportMonth) === TODAY.getMonth() + 1 ? TODAY_STR : `${nextMonth}-01`);
   }, [reportYear, reportMonth]);
 
+  useEffect(() => {
+    setPeriodYear(Number(reportYear));
+    setPeriodMonth(Number(reportMonth));
+  }, [reportYear, reportMonth]);
+
+  // Toàn bộ số liệu thu/chi của màn hình này chạy theo tháng-năm đang chọn tại đây.
   const isInPeriod = useCallback((dateValue) => {
     const date = new Date(dateValue);
-    return !Number.isNaN(date.getTime()) && date.getFullYear() === Number(reportYear) && date.getMonth() + 1 === Number(reportMonth);
-  }, [reportYear, reportMonth]);
+    return !Number.isNaN(date.getTime()) && date.getFullYear() === Number(periodYear) && date.getMonth() + 1 === Number(periodMonth);
+  }, [periodYear, periodMonth]);
 
   const isInLedgerPeriod = useCallback((dateValue) => {
     const parts = financeDateParts(dateValue);
@@ -10869,6 +13697,16 @@ function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFin
     return `quý ${ledgerQuarter}/${ledgerYear}`;
   }, [ledgerPeriodMode, ledgerDate, ledgerMonth, ledgerQuarter, ledgerYear]);
 
+  // Nam co the chon: lay tu du lieu thuc te cong nam hien tai.
+  const financeYearOptions = useMemo(() => {
+    const years = new Set([Number(reportYear), TODAY.getFullYear(), Number(periodYear)]);
+    [...(transactions || []), ...(orders || []), ...(marketingLogs || [])].forEach((item) => {
+      const year = new Date(item?.date).getFullYear();
+      if (Number.isFinite(year) && year > 2000) years.add(year);
+    });
+    return Array.from(years).sort((left, right) => right - left);
+  }, [transactions, orders, marketingLogs, reportYear, periodYear]);
+
   const scopedEmployeeId = employeeFilter === "all" ? null : Number(employeeFilter);
   const canSeeEmployee = useCallback((employeeId) => {
     if (!isFullAccess) return Number(employeeId) === Number(ownEmployeeId);
@@ -10889,23 +13727,24 @@ function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFin
     if (isFullAccess) return scopedEmployeeId === null || financeTxBelongsToEmployee(transaction, scopedEmployeeId);
     return financeTxBelongsToEmployee(transaction, ownEmployeeId);
   }), [transactions, isInPeriod, isFullAccess, scopedEmployeeId, ownEmployeeId]);
-  const visiblePayrollRows = useMemo(() => (payrollRows || []).filter((row) => canSeeEmployee(row.id)), [payrollRows, canSeeEmployee]);
+  // Xem tháng khác kỳ báo cáo thì chi phí nhân sự được tính lại cho đúng tháng đó.
+  const periodPayrollRows = useMemo(() => {
+    if (Number(periodYear) === Number(reportYear) && Number(periodMonth) === Number(reportMonth)) return payrollRows || [];
+    return (employees || [])
+      .filter((employee) => isEmployeeActiveInMonth(employee, periodYear, periodMonth))
+      .map((employee) => ({ ...employee, ...computePayroll(employee, periodYear, periodMonth, kpiTiers || DEFAULT_KPI_TIERS) }));
+  }, [payrollRows, employees, kpiTiers, periodYear, periodMonth, reportYear, reportMonth]);
+  const visiblePayrollRows = useMemo(() => periodPayrollRows.filter((row) => canSeeEmployee(row.id)), [periodPayrollRows, canSeeEmployee]);
 
-  const marketingIncomeRows = useMemo(() => buildMarketingIncomeRows(periodMarketing), [periodMarketing]);
   const incomeRows = useMemo(() => periodTransactions.filter((item) => item.kind === "thu"), [periodTransactions]);
   const transactionExpenseRows = useMemo(() => periodTransactions.filter((item) => item.kind === "chi"), [periodTransactions]);
   const operatingExpenseRows = useMemo(() => transactionExpenseRows.filter((item) => !["bangluong", "payroll", "payroll_payment"].includes(String(item.sourceModule || item.source || "").toLowerCase())), [transactionExpenseRows]);
-  const marketingExpenseRows = useMemo(() => buildMarketingExpenseRows(periodMarketing), [periodMarketing]); // Chỉ dùng cho phân tích Marketing, không tự ghi vào sổ Chi.
-
   const scopedTransactions = useMemo(() => (transactions || []).filter((transaction) => {
     if (isFullAccess) return scopedEmployeeId === null || financeTxBelongsToEmployee(transaction, scopedEmployeeId);
     return financeTxBelongsToEmployee(transaction, ownEmployeeId);
   }), [transactions, isFullAccess, scopedEmployeeId, ownEmployeeId]);
   const scopedMarketingLogs = useMemo(() => (marketingLogs || []).filter((log) => canSeeEmployee(log.employeeId)), [marketingLogs, canSeeEmployee]);
   const ledgerPeriodTransactions = useMemo(() => scopedTransactions.filter((transaction) => isInLedgerPeriod(transaction.date)), [scopedTransactions, isInLedgerPeriod]);
-  const ledgerPeriodMarketing = useMemo(() => scopedMarketingLogs.filter((log) => isInLedgerPeriod(log.date)), [scopedMarketingLogs, isInLedgerPeriod]);
-  const ledgerMarketingIncomeRows = useMemo(() => buildMarketingIncomeRows(ledgerPeriodMarketing), [ledgerPeriodMarketing]);
-  const ledgerMarketingExpenseRows = useMemo(() => buildMarketingExpenseRows(ledgerPeriodMarketing), [ledgerPeriodMarketing]);
   const ledgerRows = useMemo(() => ledgerPeriodTransactions.filter((item) => item.kind === "thu" || item.kind === "chi")
     .sort((left, right) => {
       const dateCompare = String(right.date || "").localeCompare(String(left.date || ""));
@@ -10914,101 +13753,203 @@ function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFin
     }), [ledgerPeriodTransactions]);
   const ledgerIncomeRows = useMemo(() => ledgerRows.filter((item) => item.kind === "thu"), [ledgerRows]);
   const ledgerExpenseRows = useMemo(() => ledgerRows.filter((item) => item.kind === "chi"), [ledgerRows]);
-  const activeLedgerRows = activeView === "income" ? ledgerIncomeRows : ledgerExpenseRows;
-  const totalLedgerIncome = ledgerIncomeRows.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-  const totalLedgerExpense = ledgerExpenseRows.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-  const ledgerMarketingTotal = ledgerExpenseRows.filter((item) => item.source === "marketing_daily" || item.category === "marketing_ads").reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-  const ledgerPayrollTotal = ledgerExpenseRows.filter((item) => ["bangluong", "payroll", "payroll_payment"].includes(String(item.sourceModule || item.source || "").toLowerCase()) || item.category === "luong_thuong" || String(item.category || "").toLocaleLowerCase("vi-VN").includes("lương")).reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
   const scopedRevenueLedger = useMemo(() => computeRevenueLedger({
     transactions: periodTransactions,
     orders: periodOrders,
     marketingLogs: periodMarketing,
     distributionOrders: isFullAccess && scopedEmployeeId === null ? (distOrders || []) : [],
-  }, reportYear, reportMonth), [periodTransactions, periodOrders, periodMarketing, distOrders, isFullAccess, scopedEmployeeId, reportYear, reportMonth]);
+  }, periodYear, periodMonth), [periodTransactions, periodOrders, periodMarketing, distOrders, isFullAccess, scopedEmployeeId, periodYear, periodMonth]);
   // Gộp chi phí theo mục đích chi (danh mục/nguồn tự sinh) — song song với breakdown nguồn thu ở trên,
   // đã tự động lọc đúng phạm vi (toàn công ty hoặc 1 nhân viên) vì dùng periodTransactions đã scoped sẵn.
-  const scopedExpenseBreakdown = useMemo(
-    () => computeExpenseBreakdown(periodTransactions, reportYear, reportMonth),
-    [periodTransactions, reportYear, reportMonth]
-  );
-  const useCompanyFinancialSummary = Boolean(financialSummary && isFullAccess && scopedEmployeeId === null);
-  const totalSalesRevenue = useCompanyFinancialSummary ? Number(financialSummary.revenue_breakdown?.sales) || 0 : scopedRevenueLedger.salesRevenue;
-  const totalIncome = useCompanyFinancialSummary ? Number(financialSummary.recognized_revenue) || 0 : scopedRevenueLedger.totalRevenue;
-  const totalCollectedIncome = useCompanyFinancialSummary ? Number(financialSummary.cash_received) || 0 : scopedRevenueLedger.totalCollected;
-  const totalOperatingExpense = useCompanyFinancialSummary ? Number(financialSummary.operating_cash_spent) || 0 : scopedRevenueLedger.manualOperatingExpense;
-  const totalMarketingExpense = useCompanyFinancialSummary ? 0 : scopedRevenueLedger.marketingSpend;
-  const totalReceivableForHub = useCompanyFinancialSummary ? Number(financialSummary.accounts_receivable) || 0 : scopedRevenueLedger.totalReceivable;
-  const totalStaffCost = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.employerTotalCost) || 0), 0);
-  const totalMeal = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.mealAllowance) || 0), 0);
-  const totalEmployerInsurance = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.employerInsurance) || 0), 0);
-  const totalEmployeeInsurance = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.employeeInsurance) || 0), 0);
-  const operatingProfit = useCompanyFinancialSummary ? Number(financialSummary.operating_profit) || 0 : totalIncome - totalOperatingExpense - totalMarketingExpense - totalStaffCost;
 
-  const employeeFinanceRows = useMemo(() => visibleEmployees.map((employee) => {
-    const row = visiblePayrollRows.find((item) => Number(item.id) === Number(employee.id)) || {};
-    const salesRevenue = periodOrders.filter((order) => Number(order.saleEmployeeId || order.employeeId) === Number(employee.id)).reduce((sum, order) => sum + (Number(order.amount) || 0), 0);
-    const marketingRevenue = periodMarketing.filter((log) => Number(log.employeeId) === Number(employee.id)).reduce((sum, log) => sum + (Number(log.revenue) || 0), 0);
-    const marketingSpend = periodMarketing.filter((log) => Number(log.employeeId) === Number(employee.id)).reduce((sum, log) => sum + (Number(log.adSpend) || 0), 0);
-    const directExpense = operatingExpenseRows.filter((tx) => financeTxBelongsToEmployee(tx, employee.id)).reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
-    const assignedRevenue = employee.roleType === "ads" ? marketingRevenue : salesRevenue;
-    const staffCost = Number(row.employerTotalCost) || 0;
-    return { employee, payroll: row, salesRevenue, marketingRevenue, assignedRevenue, marketingSpend, directExpense, staffCost, totalExpense: staffCost + directExpense + marketingSpend };
-  }), [visibleEmployees, visiblePayrollRows, periodOrders, periodMarketing, operatingExpenseRows]);
 
-  const overviewTableTotals = useMemo(() => employeeFinanceRows.reduce((total, row) => ({
-    assignedRevenue: total.assignedRevenue + (Number(row.assignedRevenue) || 0),
-    directExpense: total.directExpense + (Number(row.directExpense) || 0),
-    marketingSpend: total.marketingSpend + (Number(row.marketingSpend) || 0),
-    net: total.net + (Number(row.payroll?.net) || 0),
-    mealAllowance: total.mealAllowance + (Number(row.payroll?.mealAllowance) || 0),
-    employerInsurance: total.employerInsurance + (Number(row.payroll?.employerInsurance) || 0),
-    totalExpense: total.totalExpense + (Number(row.totalExpense) || 0),
-  }), { assignedRevenue: 0, directExpense: 0, marketingSpend: 0, net: 0, mealAllowance: 0, employerInsurance: 0, totalExpense: 0 }), [employeeFinanceRows]);
 
-  const payrollTableTotals = useMemo(() => visiblePayrollRows.reduce((total, row) => {
-    const bonus = (Number(row.kpiBonus) || 0) + (Number(row.commission) || 0) + (Number(row.compBonus) || 0)
-      + (Number(row.techUpsale) || 0) + (Number(row.otherBonus) || 0) + (Number(row.attendanceBonus) || 0)
-      + (Number(row.kpiMilestoneBonus) || 0);
-    const allowance = (Number(row.mealAllowance) || 0) + (Number(row.seniorityAllowance) || 0);
-    return {
-      salaryByDays: total.salaryByDays + (Number(row.salaryByDays) || 0),
-      bonus: total.bonus + bonus,
-      allowance: total.allowance + allowance,
-      employeeInsurance: total.employeeInsurance + (Number(row.employeeInsurance) || 0),
-      thueTNCN: total.thueTNCN + (Number(row.thueTNCN) || 0),
-      net: total.net + (Number(row.net) || 0),
-      employerInsurance: total.employerInsurance + (Number(row.employerInsurance) || 0),
-      employerTotalCost: total.employerTotalCost + (Number(row.employerTotalCost) || 0),
+  // ---------- MỘT bảng NGUỒN THU: hàng = nhân viên, cột = từng nguồn thu ----------
+  const revenueSourceRows = useMemo(() => {
+    const isDirectIncome = (tx) => !["crm", "congno_payment", "payment_ledger", "marketing_daily"].includes(
+      String(tx.sourceModule || tx.source || "").toLowerCase(),
+    );
+    const rows = visibleEmployees.map((employee) => {
+      const sales = periodOrders
+        .filter((order) => Number(order.saleEmployeeId || order.employeeId) === Number(employee.id))
+        .reduce((sum, order) => sum + recognizedOrderAmount(order), 0);
+      const marketing = periodMarketing
+        .filter((log) => Number(log.employeeId) === Number(employee.id))
+        .reduce((sum, log) => sum + (Number(log.revenue) || 0), 0);
+      const other = incomeRows
+        .filter((tx) => financeTxBelongsToEmployee(tx, employee.id) && isDirectIncome(tx))
+        .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+      return {
+        id: employee.id,
+        name: employee.name,
+        roleLabel: ROLE_META[employee.roleType]?.label || employee.position || "Nhân viên",
+        sales, marketing, distribution: 0, other,
+        // "Marketing tự khai" là số ƯỚC LƯỢNG của cùng những đơn Sale đã chốt (phễu Marketing →
+        // Sale) — chỉ hiển thị tham khảo, KHÔNG cộng vào tổng thu kẻo doanh thu bị nhân đôi.
+        total: sales + other,
+      };
+    });
+    const assigned = rows.reduce((total, row) => ({
+      sales: total.sales + row.sales,
+      marketing: total.marketing + row.marketing,
+      other: total.other + row.other,
+    }), { sales: 0, marketing: 0, other: 0 });
+    // Phần thu không gắn với nhân sự nào (phân phối, thu khác của công ty) vẫn phải xuất hiện
+    // trong bảng để tổng nguồn thu khớp với sổ doanh thu.
+    const companyRow = {
+      id: "__company__",
+      name: "Công ty · chưa gán nhân viên",
+      roleLabel: "Nguồn thu chung",
+      sales: Math.max(0, (scopedRevenueLedger.salesRevenue || 0) - assigned.sales),
+      marketing: Math.max(0, (scopedRevenueLedger.marketingRevenue || 0) - assigned.marketing),
+      distribution: scopedRevenueLedger.distributionRevenue || 0,
+      other: Math.max(0, (scopedRevenueLedger.otherIncome || 0) - assigned.other),
     };
-  }, { salaryByDays: 0, bonus: 0, allowance: 0, employeeInsurance: 0, thueTNCN: 0, net: 0, employerInsurance: 0, employerTotalCost: 0 }), [visiblePayrollRows]);
+    companyRow.total = companyRow.sales + companyRow.distribution + companyRow.other;
+    const result = [...rows];
+    if (companyRow.total > 0) result.push(companyRow);
+    return result.sort((left, right) => right.total - left.total);
+  }, [visibleEmployees, periodOrders, periodMarketing, incomeRows, scopedRevenueLedger]);
 
-  const mealTableTotals = useMemo(() => visiblePayrollRows.reduce((total, row) => ({
-    configuredMealAllowance: total.configuredMealAllowance + (Number(row.configuredMealAllowance) || 0),
-    mealAllowancePerDay: total.mealAllowancePerDay + (Number(row.mealAllowancePerDay) || 0),
-    mealAllowance: total.mealAllowance + (Number(row.mealAllowance) || 0),
-    mealAllowanceDeducted: total.mealAllowanceDeducted + (Number(row.mealAllowanceDeducted) || 0),
-  }), { configuredMealAllowance: 0, mealAllowancePerDay: 0, mealAllowance: 0, mealAllowanceDeducted: 0 }), [visiblePayrollRows]);
+  const revenueSourceTotals = useMemo(() => revenueSourceRows.reduce((total, row) => ({
+    sales: total.sales + row.sales,
+    marketing: total.marketing + row.marketing,
+    distribution: total.distribution + row.distribution,
+    other: total.other + row.other,
+    total: total.total + row.total,
+  }), { sales: 0, marketing: 0, distribution: 0, other: 0, total: 0 }), [revenueSourceRows]);
 
-  const insuranceTableTotals = useMemo(() => visiblePayrollRows.reduce((total, row) => ({
-    bhxhNV: total.bhxhNV + (Number(row.bhxhNV) || 0),
-    bhytNV: total.bhytNV + (Number(row.bhytNV) || 0),
-    bhtnNV: total.bhtnNV + (Number(row.bhtnNV) || 0),
-    bhxhDN: total.bhxhDN + (Number(row.bhxhDN) || 0),
-    bhytDN: total.bhytDN + (Number(row.bhytDN) || 0),
-    bhtnDN: total.bhtnDN + (Number(row.bhtnDN) || 0),
-    bhtnldBnnDN: total.bhtnldBnnDN + (Number(row.bhtnldBnnDN) || 0),
-    combined: total.combined + (Number(row.employeeInsurance) || 0) + (Number(row.employerInsurance) || 0),
-  }), { bhxhNV: 0, bhytNV: 0, bhtnNV: 0, bhxhDN: 0, bhytDN: 0, bhtnDN: 0, bhtnldBnnDN: 0, combined: 0 }), [visiblePayrollRows]);
+  // ---------- VAT đầu ra + GIÁ VỐN của các đơn trong kỳ (chuẩn kế toán) ----------
+  // Lợi nhuận dồn tích = doanh thu CHƯA VAT − giá vốn − chi phí; VAT đầu ra là khoản
+  // phải nộp hộ nhà nước, không phải doanh thu của công ty.
+  const orderVatPortion = useCallback((order) => {
+    if (Array.isArray(order?.items) && order.items.length) {
+      return order.items.reduce((sum, it) => {
+        const rate = Number(it.vatRate) || 0;
+        const line = Number(it.lineTotal) || Math.max(0, (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0) - (Number(it.discount) || 0));
+        return sum + (rate > 0 ? line - line / (1 + rate / 100) : 0);
+      }, 0);
+    }
+    const product = order?.productId ? (inventory || []).find((p) => String(p.id) === String(order.productId)) : null;
+    const rate = Number(order?.vatRate ?? product?.vatRate) || 0;
+    const amount = recognizedOrderAmount(order);
+    return rate > 0 ? amount - amount / (1 + rate / 100) : 0;
+  }, [inventory]);
+  const orderCogs = useCallback((order) => {
+    const lines = Array.isArray(order?.items) && order.items.length
+      ? order.items.filter((it) => it.productId != null).map((it) => ({ pid: it.productId, qty: Number(it.quantity) || 0 }))
+      : (order?.productId ? [{ pid: order.productId, qty: Number(order.quantity) || 1 }] : []);
+    return lines.reduce((sum, line) => {
+      const product = (inventory || []).find((p) => String(p.id) === String(line.pid));
+      return sum + (product ? (Number(product.costPrice) || 0) * line.qty : 0);
+    }, 0);
+  }, [inventory]);
+  const salesVatOutput = useMemo(
+    () => periodOrders.reduce((sum, order) => (isOrderCancelled(order) ? sum : sum + orderVatPortion(order)), 0),
+    [periodOrders, orderVatPortion],
+  );
+  const salesCogs = useMemo(
+    () => periodOrders.reduce((sum, order) => (isOrderCancelled(order) ? sum : sum + orderCogs(order)), 0),
+    [periodOrders, orderCogs],
+  );
 
+  // ---------- MỘT bảng NGUỒN CHI: toàn bộ chi phí công ty bỏ ra trong kỳ ----------
+  const expenseSourceRows = useMemo(() => {
+    const staffGross = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.grossIncome) || 0), 0);
+    const staffSalary = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.salaryByDays) || 0), 0);
+    const staffBonus = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.commission) || 0) + (Number(row.kpiBonus) || 0)
+      + (Number(row.kpiMilestoneBonus) || 0) + (Number(row.compBonus) || 0) + (Number(row.techUpsale) || 0) + (Number(row.otherBonus) || 0), 0);
+    const staffAllowance = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.mealAllowance) || 0)
+      + (Number(row.seniorityAllowance) || 0) + (Number(row.attendanceBonus) || 0) + (Number(row.customAllowanceTotal) || 0), 0);
+    const employerInsurance = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.employerInsurance) || 0), 0);
+    const marketingSpend = periodMarketing.reduce((sum, log) => sum + (Number(log.adSpend) || 0), 0);
+    // Khoản chi quảng cáo ĐÃ ghi ở sổ Thu Chi hiện thành dòng riêng bên dưới (txRows) —
+    // dòng hệ thống chỉ hiện PHẦN CHƯA GHI SỔ để tổng chi không tính marketing hai lần.
+    const marketingTxSpent = operatingExpenseRows
+      .filter((tx) => !tx.reversalOf && !tx.reversedByEntryId
+        && (String(tx.category || "").trim() === "marketing_ads"
+          || String(tx.sourceModule || tx.source || "").toLowerCase() === "marketing_daily"))
+      .reduce((sum, tx) => sum + (Number(tx.amount) || 0), 0);
+    const marketingSpendUnrecorded = Math.max(0, marketingSpend - marketingTxSpent);
+
+    // Các dòng HỆ THỐNG tự tính — "Chi phí nhân sự" LUÔN có mặt (kể cả 0đ): gồm toàn bộ lương,
+    // thưởng, phụ cấp tính từ hồ sơ/hợp đồng khai báo của từng nhân viên trong kỳ.
+    const systemRows = [
+      {
+        key: "cogs",
+        label: "Giá vốn hàng bán (TK 632)",
+        amount: salesCogs,
+        system: true,
+        note: "Σ số lượng xuất kho × giá nhập của từng dòng đơn bán trong kỳ — khớp bút toán 632/156 ở Sổ cái",
+      },
+      {
+        key: "staff_income",
+        label: "Chi phí nhân sự — lương, thưởng, phụ cấp (tạm tính)",
+        amount: staffGross,
+        system: true,
+        note: `${visiblePayrollRows.length} nhân sự · lương ${fmtVND(staffSalary)} · thưởng ${fmtVND(staffBonus)} · phụ cấp ${fmtVND(staffAllowance)} — TẠM TÍNH từ hồ sơ/hợp đồng; báo cáo chính thức dùng bảng lương đã chốt`,
+      },
+      {
+        key: "staff_insurance",
+        label: "Bảo hiểm doanh nghiệp đóng",
+        amount: employerInsurance,
+        system: true,
+        note: "BHXH 17% · BHYT 3% · BHTN 1% · TNLĐ-BNN 0,5% trên lương đóng bảo hiểm",
+      },
+      {
+        key: "marketing_spend",
+        label: "Chi phí Marketing / quảng cáo (chưa ghi sổ)",
+        amount: marketingSpendUnrecorded,
+        system: true,
+        note: `Nhật ký Marketing khai ${fmtVND(marketingSpend)}${marketingTxSpent > 0 ? ` · đã ghi sổ Thu Chi ${fmtVND(marketingTxSpent)} (hiện ở dòng riêng bên dưới)` : ""} — chỉ cộng phần chưa ghi sổ để không tính hai lần`,
+      },
+    ].filter((row) => row.amount > 0 || ["staff_income", "staff_insurance"].includes(row.key));
+    // (Giá vốn chỉ hiện khi kỳ có đơn bán hàng kho — dịch vụ thuần không có 632.)
+
+    // Mỗi bút toán chi trong sổ là MỘT dòng riêng — khoản ghi tay sửa/xóa được ngay tại bảng.
+    const txRows = operatingExpenseRows
+      // Cap but toan da huy (goc + but toan do) da triet tieu ve 0 — khong hien tren bang chi.
+      .filter((tx) => !tx.reversalOf && !tx.reversedByEntryId)
+      .map((tx) => ({
+        key: `tx-${tx.id}`,
+        label: tx.desc || financeCategoryLabel("chi", String(tx.category || "").trim() || "khac"),
+        amount: Number(tx.amount) || 0,
+        tx,
+        note: `${financeCategoryLabel("chi", String(tx.category || "").trim() || "khac")} · ${formatDateVN(tx.date)}${tx.employeeName ? ` · ${tx.employeeName}` : ""}`,
+      }))
+      .filter((row) => row.amount > 0)
+      .sort((left, right) => right.amount - left.amount);
+    return [...systemRows, ...txRows];
+  }, [visiblePayrollRows, periodMarketing, operatingExpenseRows, salesCogs]);
+
+  const revenueGrandTotal = revenueSourceTotals.total;
+  // Doanh thu CHƯA VAT — phần VAT đầu ra là tiền nộp hộ nhà nước, không tính lợi nhuận.
+  const revenueExVatTotal = Math.max(0, revenueGrandTotal - salesVatOutput);
+  const expenseGrandTotal = expenseSourceRows.reduce((sum, row) => sum + row.amount, 0);
+  // Lợi nhuận dồn tích = doanh thu chưa VAT − (giá vốn + chi phí) — khớp Sổ cái 511/632.
+  const netProfit = revenueExVatTotal - expenseGrandTotal;
+
+
+
+
+  const [invoiceView, setInvoiceView] = useState(null); // giao dich dang xem hoa don
+  const handleEntryInvoiceFile = (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setEntryForm((prev) => ({ ...prev, attachmentData: reader.result, attachmentName: file.name, attachmentType: file.type }));
+    reader.readAsDataURL(file);
+    event.target.value = "";
+  };
   const startAddEntry = (kind) => {
     if (!isFullAccess) return;
     const category = FINANCE_ENTRY_CATEGORIES[kind][0][0];
     setEditingEntryId(null);
-    setEntryForm({ date: TODAY_STR, kind, category, employeeId: scopedEmployeeId ? String(scopedEmployeeId) : "", desc: "", amount: "", paymentMethod: "chuyen_khoan", invoiceType: "Chưa xác định" });
+    setEntryForm({ date: TODAY_STR, kind, category, employeeId: scopedEmployeeId ? String(scopedEmployeeId) : "", desc: "", amount: "", paymentMethod: "chuyen_khoan", invoiceType: "Chưa xác định", invoiceNo: "", attachmentData: "", attachmentName: "", attachmentType: "" });
     setShowEntryForm(true);
   };
   const startEditManualEntry = (item) => {
-    if (!isFullAccess || item.source !== "manual_finance_hub") return;
+    if (!isFullAccess || item.source !== "manual_finance_hub" || item.reversalOf || item.reversedByEntryId) return;
     setEditingEntryId(item.id);
     setEntryForm({
       date: item.date || TODAY_STR,
@@ -11019,6 +13960,10 @@ function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFin
       amount: String(item.amount || 0),
       paymentMethod: item.paymentMethod || "chuyen_khoan",
       invoiceType: item.invoiceType || "Chưa xác định",
+      invoiceNo: item.invoiceNo || "",
+      attachmentData: item.attachmentData || "",
+      attachmentName: item.attachmentName || "",
+      attachmentType: item.attachmentType || "",
     });
     setShowEntryForm(true);
   };
@@ -11029,11 +13974,20 @@ function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFin
       noticeOverlay("Vui lòng nhập ngày, nội dung và số tiền lớn hơn 0.", { title: "Chưa đủ thông tin" });
       return;
     }
+    if (entryPeriodLocked(entryForm.date)) {
+      noticeOverlay(`Kỳ kế toán chứa ngày ${formatDateVN(entryForm.date)} đã KHÓA SỔ (quá ${LOCK_WINDOW_DAYS} ngày). Ghi vào kỳ hiện tại hoặc mở khóa tháng bằng mật khẩu Giám đốc tại Chấm công.`, { title: "Kỳ đã khóa sổ" });
+      return;
+    }
     const employee = (employees || []).find((item) => Number(item.id) === Number(entryForm.employeeId));
     const nextFields = {
       date: entryForm.date, kind: entryForm.kind, category: entryForm.category,
       desc: entryForm.desc.trim(), amount, employeeId: employee?.id || null, employeeName: employee?.name || "",
-      paymentMethod: entryForm.paymentMethod, invoiceType: entryForm.invoiceType, invoiceNo: "", vatRate: 0,
+      paymentMethod: entryForm.paymentMethod,
+      // Co so hoa don hoac file dinh kem -> giao dich duoc coi la DA co hoa don;
+      // nguoc lai giu "Chưa xác định" de he thong canh bao "thiếu hóa đơn".
+      invoiceType: (entryForm.attachmentData || String(entryForm.invoiceNo || "").trim()) ? "Hóa đơn điện tử" : "Chưa xác định",
+      invoiceNo: String(entryForm.invoiceNo || "").trim(), vatRate: 0,
+      attachmentData: entryForm.attachmentData || "", attachmentName: entryForm.attachmentName || "", attachmentType: entryForm.attachmentType || "",
       source: "manual_finance_hub", updatedAt: new Date().toISOString(), updatedBy: authUser?.email || "",
     };
     setTransactions((previous) => editingEntryId
@@ -11043,49 +13997,96 @@ function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFin
     setShowEntryForm(false);
   };
 
+  // Khóa sổ: bút toán rơi vào tháng đã quá hạn LOCK_WINDOW_DAYS (chưa được giám đốc mở lại)
+  // thì không được ghi thêm/hủy — đúng nguyên tắc khóa kỳ kế toán.
+  const entryPeriodLocked = (dateStr) => {
+    const parts = calendarDateParts(dateStr);
+    if (!parts) return false;
+    return isPeriodLocked(parts.year, parts.month, unlockedMonths);
+  };
+  // KHÔNG XÓA chứng từ — hủy bằng BÚT TOÁN ĐỎ (cùng sổ, số tiền âm, ghi vết ai hủy lúc nào).
+  // Mọi tổng thu/chi/VAT/lợi nhuận tự triệt tiêu theo cặp, dấu vết kiểm toán giữ nguyên.
   const removeManualEntry = async (id) => {
     if (!isFullAccess) return;
-    const accepted = await confirmOverlay("Xóa khoản ghi sổ này? Dữ liệu đã xóa không thể khôi phục.", { title: "Xóa khoản thu/chi", confirmLabel: "Xóa", tone: "danger" });
-    if (accepted) setTransactions((previous) => previous.filter((item) => item.id !== id));
+    const target = (transactions || []).find((item) => item.id === id);
+    if (!target) return;
+    if (target.reversalOf || target.reversedByEntryId) {
+      noticeOverlay("Bút toán này thuộc cặp đã hủy — không thể thao tác tiếp. Cần ghi lại thì tạo khoản mới.", { title: "Đã hủy trước đó" });
+      return;
+    }
+    if (entryPeriodLocked(target.date)) {
+      noticeOverlay(`Kỳ kế toán chứa ngày ${formatDateVN(target.date)} đã KHÓA SỔ (quá ${LOCK_WINDOW_DAYS} ngày). Cần điều chỉnh thì mở khóa tháng bằng mật khẩu Giám đốc tại Chấm công, hoặc ghi bút toán điều chỉnh vào kỳ hiện tại.`, { title: "Kỳ đã khóa sổ" });
+      return;
+    }
+    const accepted = await confirmOverlay(
+      `Hủy khoản ghi sổ "${target.desc || ""}"?\n\nHệ thống KHÔNG xóa dữ liệu — sẽ tạo BÚT TOÁN ĐỎ ngược dấu cùng sổ để triệt tiêu số liệu và giữ dấu vết kiểm toán.`,
+      { title: "Hủy bút toán (tạo bút toán đỏ)", confirmLabel: "Hủy & tạo bút toán đỏ", tone: "danger" },
+    );
+    if (!accepted) return;
+    const stamp = new Date().toISOString();
+    const reversalId = `rev-${id}`;
+    setTransactions((previous) => previous
+      .map((item) => (item.id === id ? { ...item, reversedByEntryId: reversalId, reversedAt: stamp, reversedBy: authUser?.email || "" } : item))
+      .concat([{
+        id: reversalId,
+        date: TODAY_STR,
+        kind: target.kind,
+        category: target.category || "khac",
+        desc: `BÚT TOÁN ĐỎ — hủy: ${target.desc || ""}`,
+        amount: -(Number(target.amount) || 0),
+        employeeId: target.employeeId || null,
+        employeeName: target.employeeName || "",
+        paymentMethod: target.paymentMethod || "chuyen_khoan",
+        invoiceType: target.invoiceType || "Chưa xác định",
+        invoiceNo: target.invoiceNo || "",
+        vatRate: Number(target.vatRate) || 0,
+        reversalOf: id,
+        source: "manual_finance_hub",
+        updatedAt: stamp,
+        updatedBy: authUser?.email || "",
+      }]));
   };
 
+  // Xuat dung hai bang dang hien thi: Nguon thu va Nguon chi.
   const exportCurrentFinanceView = () => {
-    let sheetName = "Tong hop";
-    let rows = [];
-    if (activeView === "overview") {
-      sheetName = "Tong hop nhan vien";
-      rows = employeeFinanceRows.map(({ employee, payroll, assignedRevenue, directExpense, marketingSpend, totalExpense }) => ({
-        "Nhân viên": employee.name, "Vị trí": ROLE_META[employee.roleType]?.label || employee.position || "Nhân viên",
-        "Doanh thu phụ trách": Math.round(assignedRevenue || 0), "Chi trực tiếp": Math.round(directExpense || 0),
-        "Chi quảng cáo": Math.round(marketingSpend || 0), "Lương thực lĩnh": Math.round(payroll.net || 0),
-        "Phụ cấp ăn trưa": Math.round(payroll.mealAllowance || 0), "Bảo hiểm DN": Math.round(payroll.employerInsurance || 0),
-        "Tổng chi phí": Math.round(totalExpense || 0),
-      }));
-    } else if (activeView === "sales") {
-      sheetName = "Doanh thu ban hang";
-      rows = periodOrders.map((order) => ({ "Ngày": formatDateVN(order.date), "Khách hàng": order.customerName || "", "SĐT": order.phone || "", "Email": order.email || "", "Sản phẩm": order.productName || "", "Hóa đơn": order.invoiceNo || "", "Doanh thu": Math.round(Number(order.amount) || 0) }));
-    } else if (activeView === "income" || activeView === "expense") {
-      const kind = activeView === "income" ? "thu" : "chi";
-      sheetName = kind === "thu" ? "Bang Thu" : "Bang Chi";
-      rows = activeLedgerRows.map((item) => ({ "Ngày": formatDateVN(item.date), "Nhân viên": (employees || []).find((employee) => Number(employee.id) === Number(item.employeeId))?.name || item.employeeName || "Toàn công ty", [kind === "thu" ? "Nhóm thu" : "Nhóm chi"]: FINANCE_ENTRY_CATEGORIES[kind].find(([id]) => id === item.category)?.[1] || item.category || "Khác", "Nội dung": item.desc || "", "Nguồn dữ liệu": item.source === "marketing_daily" ? "Marketing hằng ngày" : item.source === "bangluong" ? "Chi trả lương" : item.source === "crm" ? "Doanh thu CRM" : item.source === "manual_finance_hub" ? "Ghi sổ thủ công" : "Dữ liệu hệ thống", "Phương thức": item.paymentMethod === "tien_mat" ? "Tiền mặt" : "Chuyển khoản", "Số tiền": Math.round(Number(item.amount) || 0) }));
-    } else if (activeView === "staff") {
-      sheetName = "Chi phi nhan su";
-      rows = visiblePayrollRows.map((row) => ({ "Nhân viên": row.name, "Ngày công": row.actualDays, "Ngày công chuẩn": row.standardDays, "Lương theo công": Math.round(row.salaryByDays || 0), "Gross": Math.round(row.grossIncome || 0), "BH nhân viên": Math.round(row.employeeInsurance || 0), "Thuế TNCN": Math.round(row.thueTNCN || 0), "Thực lĩnh": Math.round(row.net || 0), "BH doanh nghiệp": Math.round(row.employerInsurance || 0), "Tổng chi phí DN": Math.round(row.employerTotalCost || 0) }));
-    } else if (activeView === "meal") {
-      sheetName = "Phu cap an trua";
-      rows = visiblePayrollRows.map((row) => ({ "Nhân viên": row.name, "Ngày công duyệt": row.actualDays, "Ngày công chuẩn": row.standardDays, "Mức phụ cấp tháng": Math.round(row.configuredMealAllowance || 0), "Mức mỗi ngày": Math.round(row.mealAllowancePerDay || 0), "Thực nhận": Math.round(row.mealAllowance || 0), "Bị trừ do nghỉ": Math.round(row.mealAllowanceDeducted || 0) }));
-    } else if (activeView === "insurance") {
-      sheetName = "BHXH BHYT";
-      rows = visiblePayrollRows.map((row) => ({ "Nhân viên": row.name, "Hợp đồng": row.contractLabel, "BHXH NV": Math.round(row.bhxhNV || 0), "BHYT NV": Math.round(row.bhytNV || 0), "BHTN NV": Math.round(row.bhtnNV || 0), "BHXH DN": Math.round(row.bhxhDN || 0), "BHYT DN": Math.round(row.bhytDN || 0), "BHTN DN": Math.round(row.bhtnDN || 0), "TNLĐ-BNN": Math.round(row.bhtnldBnnDN || 0), "Tổng bảo hiểm": Math.round((row.employeeInsurance || 0) + (row.employerInsurance || 0)) }));
-    }
     const workbook = XLSX.utils.book_new();
-    const worksheet = XLSX.utils.json_to_sheet(rows.length ? rows : [{ "Thông báo": "Chưa có dữ liệu trong kỳ đang xem" }]);
-    worksheet["!cols"] = Object.keys(rows[0] || { "Thông báo": "" }).map(() => ({ wch: 22 }));
-    XLSX.utils.book_append_sheet(workbook, worksheet, sheetName.slice(0, 31));
-    const periodFileLabel = activeView === "income" || activeView === "expense"
-      ? ledgerPeriodLabel.replace(/\s+/g, "_").replace(/\//g, "-")
-      : `${reportYear}_${String(reportMonth).padStart(2, "0")}`;
-    XLSX.writeFile(workbook, `DOMIX_${sheetName.replace(/\s+/g, "_")}_${periodFileLabel}.xlsx`);
+
+    const revenueSheet = revenueSourceRows.map((row) => ({
+      "Nhân viên": row.name,
+      "Vị trí": row.roleLabel,
+      "Bán hàng": Math.round(row.sales || 0),
+      "Marketing": Math.round(row.marketing || 0),
+      "Phân phối": Math.round(row.distribution || 0),
+      "Thu khác": Math.round(row.other || 0),
+      "Tổng thu": Math.round(row.total || 0),
+    }));
+    revenueSheet.push({
+      "Nhân viên": "TỔNG CỘNG", "Vị trí": "",
+      "Bán hàng": Math.round(revenueSourceTotals.sales),
+      "Marketing": Math.round(revenueSourceTotals.marketing),
+      "Phân phối": Math.round(revenueSourceTotals.distribution),
+      "Thu khác": Math.round(revenueSourceTotals.other),
+      "Tổng thu": Math.round(revenueSourceTotals.total),
+    });
+    const revenueWorksheet = XLSX.utils.json_to_sheet(revenueSheet);
+    revenueWorksheet["!cols"] = [{ wch: 24 }, { wch: 20 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 18 }];
+    XLSX.utils.book_append_sheet(workbook, revenueWorksheet, "Nguon thu");
+
+    const expenseSheet = expenseSourceRows.map((row) => ({
+      "Khoản chi": row.label,
+      "Diễn giải": row.note,
+      "Số tiền": Math.round(row.amount || 0),
+      "Tỷ trọng": expenseGrandTotal > 0 ? `${((row.amount / expenseGrandTotal) * 100).toFixed(1)}%` : "",
+    }));
+    expenseSheet.push({ "Khoản chi": "TỔNG CHI PHÍ", "Diễn giải": "", "Số tiền": Math.round(expenseGrandTotal), "Tỷ trọng": "100%" });
+    expenseSheet.push({ "Khoản chi": "", "Diễn giải": "", "Số tiền": "", "Tỷ trọng": "" });
+    expenseSheet.push({ "Khoản chi": "TỔNG THU", "Diễn giải": "", "Số tiền": Math.round(revenueGrandTotal), "Tỷ trọng": "" });
+    expenseSheet.push({ "Khoản chi": "LỢI NHUẬN (thu − chi)", "Diễn giải": "", "Số tiền": Math.round(netProfit), "Tỷ trọng": "" });
+    const expenseWorksheet = XLSX.utils.json_to_sheet(expenseSheet);
+    expenseWorksheet["!cols"] = [{ wch: 40 }, { wch: 52 }, { wch: 18 }, { wch: 12 }];
+    XLSX.utils.book_append_sheet(workbook, expenseWorksheet, "Nguon chi");
+
+    XLSX.writeFile(workbook, `DOMIX_Thu_Chi_Loi_nhuan_${periodYear}_${String(periodMonth).padStart(2, "0")}.xlsx`);
   };
 
   const renderTxTable = (rows, kind) => {
@@ -11094,15 +14095,15 @@ function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFin
       <FinanceScrollableTable minWidth={1160}>
         <table className="domix-finance-table w-full text-xs">
           <thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]">
-            <tr><th className="px-4 py-3">STT</th><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Nhân viên</th><th className="px-4 py-3">{kind === "thu" ? "Nhóm thu" : "Nhóm chi"}</th><th className="px-4 py-3">Nội dung</th><th className="px-4 py-3">Nguồn</th><th className="px-4 py-3">Thanh toán</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3 text-right">Thao tác</th></tr>
+            <tr><th className="px-4 py-3">STT</th><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Nhân viên</th><th className="px-4 py-3">{kind === "thu" ? "Nhóm thu" : "Nhóm chi"}</th><th className="px-4 py-3">Nội dung</th><th className="px-4 py-3">Nguồn</th><th className="px-4 py-3">Thanh toán</th><th className="px-4 py-3">Hóa đơn</th><th className="px-4 py-3 text-right">Số tiền</th><th className="px-4 py-3 text-right">Thao tác</th></tr>
           </thead>
-          <tbody>{rows.length === 0 ? <tr><td colSpan={9} className="px-4 py-10 text-center text-[#7f8da5]">Chưa có khoản {kind === "thu" ? "thu" : "chi"} nào trong {ledgerPeriodLabel}.</td></tr> : rows.map((item, index) => {
+          <tbody>{rows.length === 0 ? <tr><td colSpan={10} className="px-4 py-10 text-center text-[#7f8da5]">Chưa có khoản {kind === "thu" ? "thu" : "chi"} nào trong {ledgerPeriodLabel}.</td></tr> : rows.map((item, index) => {
             const employee = (employees || []).find((entry) => Number(entry.id) === Number(item.employeeId));
             const categoryLabel = FINANCE_ENTRY_CATEGORIES[kind].find(([id]) => id === item.category)?.[1] || item.category || "Khác";
             const sourceLabel = item.source === "marketing_daily" ? "Marketing hằng ngày" : item.source === "bangluong" ? "Chi trả lương" : item.source === "crm" ? "Doanh thu CRM" : item.source === "manual_finance_hub" ? "Ghi sổ thủ công" : "Dữ liệu hệ thống";
-            return <tr key={item.id} className="border-t border-[#3A4152] hover:bg-white/[0.03]"><td className="px-4 py-3 text-[#77869d]">{index + 1}</td><td className="px-4 py-3 ktns-mono text-[#b9c6d9]">{formatDateVN(item.date)}</td><td className="px-4 py-3 text-[#dbe4f1]">{employee?.name || item.employeeName || "Toàn công ty"}</td><td className="px-4 py-3"><span className="rounded-full border border-[#34435c] bg-[#1d2839] px-2 py-1 text-[10px] text-[#aebbd0]">{categoryLabel}</span></td><td className="max-w-[380px] px-4 py-3 text-[#dbe4f1]">{item.desc}</td><td className="px-4 py-3 text-[#93a1b8]">{sourceLabel}</td><td className="px-4 py-3 text-[#93a1b8]">{item.paymentMethod === "tien_mat" ? "Tiền mặt" : "Chuyển khoản"}</td><td className={`px-4 py-3 text-right font-bold ktns-mono ${kind === "thu" ? "text-emerald-400" : "text-red-300"}`}>{kind === "thu" ? "+" : "−"}{fmtVND(item.amount)}</td><td className="px-4 py-3 text-right">{isFullAccess && item.source === "manual_finance_hub" ? <div className="flex flex-wrap justify-end gap-1.5"><button type="button" onClick={() => startEditManualEntry(item)} className="inline-flex items-center gap-1 rounded-md border border-[#40516b] px-2 py-1.5 text-[11px] font-semibold text-[#c1cee0] hover:bg-white/[0.05]" title="Sửa khoản thu/chi" aria-label={`Sửa ${kind === "thu" ? "khoản thu" : "khoản chi"} ${item.desc || ""}`}><Pencil size={12} /> Sửa</button><button type="button" onClick={() => removeManualEntry(item.id)} className="inline-flex items-center gap-1 rounded-md border border-red-500/30 px-2 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10" title="Xóa khoản thu/chi" aria-label={`Xóa ${kind === "thu" ? "khoản thu" : "khoản chi"} ${item.desc || ""}`}><Trash2 size={12} /> Xóa</button></div> : <span className="inline-flex items-center gap-1 rounded-md border border-[#34435c] px-2 py-1 text-[10px] text-[#7f8da5]" title="Bút toán này được đồng bộ tự động. Hãy sửa hoặc xóa tại nghiệp vụ nguồn để các bảng liên quan cập nhật đồng thời."><Link2 size={11} /> Sửa tại nguồn</span>}</td></tr>;
+            return <tr key={item.id} className="border-t border-[#3A4152] hover:bg-white/[0.03]"><td className="px-4 py-3 text-[#77869d]">{index + 1}</td><td className="px-4 py-3 ktns-mono text-[#b9c6d9]">{formatDateVN(item.date)}</td><td className="px-4 py-3 text-[#dbe4f1]">{employee?.name || item.employeeName || "Toàn công ty"}</td><td className="px-4 py-3"><span className="rounded-full border border-[#34435c] bg-[#1d2839] px-2 py-1 text-[10px] text-[#aebbd0]">{categoryLabel}</span></td><td className="max-w-[380px] px-4 py-3 text-[#dbe4f1]">{item.desc}{item.reversedByEntryId && <span className="ml-2 rounded border border-red-500/50 bg-red-500/10 px-1.5 py-0.5 text-[9px] font-bold text-red-300" title={`Đã hủy lúc ${item.reversedAt || "—"} bởi ${item.reversedBy || "—"}`}>ĐÃ HỦY</span>}{item.reversalOf && <span className="ml-2 rounded border border-[#8a6b23] bg-[#3a2f14] px-1.5 py-0.5 text-[9px] font-bold text-[#ffd489]" title="Bút toán đỏ triệt tiêu bút toán gốc — dấu vết kiểm toán">BÚT TOÁN ĐỎ</span>}</td><td className="px-4 py-3 text-[#93a1b8]">{sourceLabel}</td><td className="px-4 py-3 text-[#93a1b8]">{item.paymentMethod === "tien_mat" ? "Tiền mặt" : "Chuyển khoản"}</td><td className="px-4 py-3">{(item.attachmentData || item.invoiceNo || (item.invoiceType && item.invoiceType !== "Chưa xác định")) ? <button type="button" onClick={() => setInvoiceView(item)} className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 px-2 py-1 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-500/10" title="Xem hóa đơn/chứng từ"><Paperclip size={11} /> Xem HĐ</button> : <span className="inline-flex items-center gap-1 rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1 text-[10px] font-semibold text-red-300" title="Giao dịch chưa có hóa đơn/chứng từ"><AlertTriangle size={11} /> Thiếu HĐ</span>}</td><td className={`px-4 py-3 text-right font-bold ktns-mono ${kind === "thu" ? "text-emerald-400" : "text-red-300"}`}>{Number(item.amount) < 0 ? "" : kind === "thu" ? "+" : "−"}{fmtVND(item.amount)}</td><td className="px-4 py-3 text-right">{(item.reversalOf || item.reversedByEntryId) ? <span className="inline-flex items-center gap-1 rounded-md border border-[#34435c] px-2 py-1 text-[10px] text-[#7f8da5]" title="Cặp bút toán đã hủy — giữ nguyên làm dấu vết kiểm toán, không sửa/xóa được">Lưu vết kiểm toán</span> : isFullAccess && item.source === "manual_finance_hub" ? <div className="flex flex-wrap justify-end gap-1.5"><button type="button" onClick={() => startEditManualEntry(item)} className="inline-flex items-center gap-1 rounded-md border border-[#40516b] px-2 py-1.5 text-[11px] font-semibold text-[#c1cee0] hover:bg-white/[0.05]" title="Sửa khoản thu/chi" aria-label={`Sửa ${kind === "thu" ? "khoản thu" : "khoản chi"} ${item.desc || ""}`}><Pencil size={12} /> Sửa</button><button type="button" onClick={() => removeManualEntry(item.id)} className="inline-flex items-center gap-1 rounded-md border border-red-500/30 px-2 py-1.5 text-[11px] font-semibold text-red-300 hover:bg-red-500/10" title="Hủy bằng bút toán đỏ — không xóa dữ liệu, giữ dấu vết kiểm toán" aria-label={`Hủy ${kind === "thu" ? "khoản thu" : "khoản chi"} ${item.desc || ""}`}><RotateCcw size={12} /> Hủy</button></div> : <span className="inline-flex items-center gap-1 rounded-md border border-[#34435c] px-2 py-1 text-[10px] text-[#7f8da5]" title="Bút toán này được đồng bộ tự động. Hãy sửa hoặc xóa tại nghiệp vụ nguồn để các bảng liên quan cập nhật đồng thời."><Link2 size={11} /> Sửa tại nguồn</span>}</td></tr>;
           })}</tbody>
-          <tfoot className="finance-sticky-footer"><tr><td colSpan={7} className="px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-[#d7e1ef]">Tổng {rows.length} khoản trong {ledgerPeriodLabel}</td><td className={`px-4 py-3 text-right text-sm font-bold ktns-mono ${kind === "thu" ? "text-emerald-300" : "text-red-300"}`}>{fmtVND(amountTotal)}</td><td className="px-4 py-3" /></tr></tfoot>
+          <tfoot className="finance-sticky-footer"><tr><td colSpan={8} className="px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-[#d7e1ef]">Tổng {rows.length} khoản trong {ledgerPeriodLabel}</td><td className={`px-4 py-3 text-right text-sm font-bold ktns-mono ${kind === "thu" ? "text-emerald-300" : "text-red-300"}`}>{fmtVND(amountTotal)}</td><td className="px-4 py-3" /></tr></tfoot>
         </table>
       </FinanceScrollableTable>
     );
@@ -11112,63 +14113,335 @@ function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFin
 
   return (
     <div className="domix-finance-hub relative flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
-      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-xl border border-[#29364f] bg-[#111823] px-3 py-2.5 shadow-sm">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <h2 className="truncate text-base font-bold text-white">{FINANCE_HUB_VIEWS.find((view) => view.id === activeView)?.label || "Quản lý doanh thu & Thu chi"}</h2>
-            <span className="rounded-full border border-[#31405a] bg-[#182131] px-2 py-0.5 text-[10px] font-semibold text-[#93a5c1]">{String(reportMonth).padStart(2, "0")}/{reportYear}</span>
+      {/* MỘT THANH CÔNG CỤ DUY NHẤT — bảng là trung tâm, không dựng khối báo cáo phía trên.
+          Tab · kỳ · phạm vi · xuất Excel gói gọn một hàng; chỉ số nằm ở dòng chip mỏng bên dưới
+          (bấm được để mở bảng chứng minh, giải thích qua tooltip). */}
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-[#29364f] bg-[#111823] px-2.5 py-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => setFinanceTab("orders")}
+            className={`inline-flex min-h-[32px] items-center gap-1.5 rounded-md border px-3 text-xs font-bold transition ${financeTab === "orders" ? "border-[#6c98ff] bg-[#315fae] text-white" : "border-[#29364f] bg-[#141c2a] text-[#aebbd0] hover:border-[#46689f] hover:text-white"}`}
+          >
+            <ShoppingCart size={13} /> Đơn hàng
+            <span className="ktns-mono text-[10px] font-bold">{periodOrders.length}</span>
+          </button>
+          {!ordersOnly && (
+            <button
+              type="button"
+              onClick={() => setFinanceTab("money")}
+              className={`inline-flex min-h-[32px] items-center gap-1.5 rounded-md border px-3 text-xs font-bold transition ${financeTab === "money" ? "border-[#6c98ff] bg-[#315fae] text-white" : "border-[#29364f] bg-[#141c2a] text-[#aebbd0] hover:border-[#46689f] hover:text-white"}`}
+            >
+              <PieChart size={13} /> Thu · Chi · Lợi nhuận
+            </button>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          <select value={periodMonth} onChange={(event) => setPeriodMonth(Number(event.target.value))} className="min-h-[32px] rounded-md border border-[#34435c] bg-[#182131] px-2 text-xs font-semibold text-white outline-none focus:border-[#5f8df8]" aria-label="Chọn tháng">
+            {Array.from({ length: 12 }, (_, index) => index + 1).map((month) => (
+              <option key={month} value={month}>Tháng {String(month).padStart(2, "0")}</option>
+            ))}
+          </select>
+          <select value={periodYear} onChange={(event) => setPeriodYear(Number(event.target.value))} className="min-h-[32px] rounded-md border border-[#34435c] bg-[#182131] px-2 text-xs font-semibold text-white outline-none focus:border-[#5f8df8]" aria-label="Chọn năm">
+            {financeYearOptions.map((year) => <option key={year} value={year}>Năm {year}</option>)}
+          </select>
+          {(Number(periodYear) !== Number(reportYear) || Number(periodMonth) !== Number(reportMonth)) && (
+            <button type="button" onClick={() => { setPeriodYear(Number(reportYear)); setPeriodMonth(Number(reportMonth)); }} className="min-h-[32px] rounded-md border border-[#34435c] bg-[#182131] px-2.5 text-xs font-semibold text-[#aebbd0] hover:text-white">
+              Về kỳ {String(reportMonth).padStart(2, "0")}/{reportYear}
+            </button>
+          )}
+          {isFullAccess ? <select value={employeeFilter} onChange={(event) => setEmployeeFilter(event.target.value)} className="min-h-[32px] max-w-[180px] rounded-md border border-[#34435c] bg-[#182131] px-2 text-xs text-white outline-none focus:border-[#5f8df8]" aria-label="Phạm vi nhân sự"><option value="all">Toàn công ty</option>{(employees || []).filter((employee) => employee.status !== "inactive").map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select> : <div className="flex min-h-[32px] items-center rounded-md border border-[#34435c] bg-[#182131] px-2.5 text-xs font-semibold text-[#c9d4e5]">{currentEmployee?.name || authUser?.email}</div>}
+          <button type="button" onClick={exportCurrentFinanceView} className="inline-flex min-h-[32px] items-center gap-1.5 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20" title="Xuất Excel bảng đang xem"><FileSpreadsheet size={13} /> Excel</button>
+        </div>
+      </div>
+
+      <div className="ktns-menu-rail flex shrink-0 items-center gap-2 overflow-x-auto px-0.5">
+        {[
+          { label: "Đơn đã bán", value: `${periodOrders.length} · ${fmtVND(scopedRevenueLedger.salesRevenue || 0)}`, tone: "text-white", tip: "Số đơn và giá trị hàng/dịch vụ đã bán trong kỳ — bấm để mở bảng đơn hàng.", onClick: () => setFinanceTab("orders") },
+          { label: "Tổng giá trị đơn (gồm VAT)", value: fmtVND(revenueGrandTotal), tone: "text-emerald-300", tip: `Doanh thu kế toán chưa VAT: ${fmtVND(revenueExVatTotal)} — KHÁC với thực thu về quỹ. Bấm để mở bảng nguồn thu.`, onClick: () => setFinanceTab("money") },
+          { label: "Đã thu", value: fmtVND(scopedRevenueLedger.totalCollected || 0), tone: "text-emerald-300", tip: "Tiền đã thật sự về quỹ trong kỳ — bấm để mở bảng thu chi.", onClick: () => setFinanceTab("money") },
+          { label: "Còn phải thu", value: fmtVND(scopedRevenueLedger.totalReceivable || 0), tone: (scopedRevenueLedger.totalReceivable || 0) > 0 ? "text-red-300" : "text-[#8fa4c8]", tip: "Khách còn nợ theo công nợ phải thu — bấm để mở tab Công nợ.", onClick: onOpenReceivables || (() => setFinanceTab("money")) },
+        ].map((card, index) => (
+          <React.Fragment key={card.label}>
+            {index > 0 && <span className="h-3.5 w-px shrink-0 bg-white/10" />}
+            <button type="button" onClick={card.onClick} title={card.tip} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded px-1 py-0.5 text-xs transition hover:bg-white/10">
+              <span className="text-[#8fa4c8] underline decoration-dotted underline-offset-2">{card.label}</span>
+              <strong className={`ktns-mono ${card.tone}`}>{card.value}</strong>
+            </button>
+          </React.Fragment>
+        ))}
+      </div>
+
+      {/* TAB ĐƠN HÀNG — mặc định: người dùng vào đây để xem hôm nay/tháng này bán được gì. */}
+      {financeTab === "orders" && (
+        <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[#29364f] bg-[#0f151f] p-1.5">
+          {canManageSalesOrders ? (
+            <DoanhThuCRM orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={employees} currentEmployee={currentEmployee} canManageAllSales={isFullAccess} revenueByEmployee={revenueByEmployee} setTransactions={setTransactions} transactions={transactions} inventory={inventory} setInventory={setInventory} distPartners={distPartners} distOrders={distOrders} setDistOrders={setDistOrders} reportYear={periodYear} reportMonth={periodMonth} pages={pages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} authUser={authUser} debts={debts} setDebts={setDebts} recordFocus={recordFocus} onRecordFocusConsumed={onRecordFocusConsumed} onReturnToOps={onReturnToOps} orderPrefill={orderPrefill} onOrderPrefillConsumed={onOrderPrefillConsumed} refreshFinancialSummary={refreshFinancialSummary} dataLoader={dataLoader} />
+          ) : (
+            <div className="flex h-full min-h-0 flex-col">
+              <FinanceScrollableTable minWidth={880}>
+                <table className="domix-finance-table w-full text-xs">
+                  <thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]">
+                    <tr><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Khách hàng</th><th className="px-4 py-3">Sản phẩm</th><th className="px-4 py-3 text-right">Số tiền</th></tr>
+                  </thead>
+                  <tbody>
+                    {periodOrders.length === 0 ? (
+                      <tr><td colSpan={4} className="px-4 py-10 text-center text-[#7f8da5]">Chưa có đơn nào trong tháng {String(periodMonth).padStart(2, "0")}/{periodYear}.</td></tr>
+                    ) : periodOrders.slice().reverse().map((order) => (
+                      <tr key={order.id} className="border-t border-[#3A4152]">
+                        <td className="px-4 py-3 ktns-mono text-[#b9c6d9]">{formatDateVN(order.date)}</td>
+                        <td className="px-4 py-3 font-semibold text-white">{order.customerName}<div className="text-[10px] font-normal text-[#77869d]">{order.phone || order.email || ""}</div></td>
+                        <td className="px-4 py-3 text-[#b9c6d9]">{order.productName || "—"}</td>
+                        <td className="px-4 py-3 text-right font-bold text-emerald-400 ktns-mono">{fmtVND(order.amount)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </FinanceScrollableTable>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* TAB DÒNG TIỀN — nguồn thu, nguồn chi và lợi nhuận của tháng đang xem. */}
+      {financeTab === "money" && (
+      <>
+      {/* Chỉ tiêu DỒN TÍCH — tên gọi thống nhất với Sổ cái/Báo cáo, KHÔNG lẫn với dòng tiền:
+          Doanh thu CHƯA VAT (đơn bán + nguồn khác) − giá vốn − chi phí (gồm lương PHẢI TRẢ) = Lợi nhuận.
+          Thực thu/thực chi (tiền về-ra quỹ) hiển thị riêng ở dải số liệu và Tổng quan. */}
+      <section className={`shrink-0 rounded-xl border p-4 ${netProfit >= 0 ? "border-emerald-500/35 bg-emerald-500/[0.07]" : "border-red-500/35 bg-red-500/[0.07]"}`}>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8290a8]">Doanh thu chưa VAT (TK 511)</div>
+            <div className="mt-1 text-xl font-bold ktns-mono text-emerald-300">{fmtVND(revenueExVatTotal)}</div>
+            <div className="mt-0.5 text-[10px] text-[#8fa0bc]">gồm VAT là {fmtVND(revenueGrandTotal)} · VAT đầu ra phải nộp {fmtVND(salesVatOutput)} — khác THỰC THU về quỹ</div>
           </div>
-          <p className="mt-0.5 text-[11px] text-[#7f8da5]">Bảng dữ liệu là khu vực làm việc chính · tiêu đề và hàng tổng luôn cố định khi cuộn.</p>
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8290a8]">Giá vốn + chi phí (dồn tích)</div>
+            <div className="mt-1 text-xl font-bold ktns-mono text-red-300">− {fmtVND(expenseGrandTotal)}</div>
+            <div className="mt-0.5 text-[10px] text-[#8fa0bc]">giá vốn {fmtVND(salesCogs)} · chi phí khác {fmtVND(expenseGrandTotal - salesCogs)} (gồm lương PHẢI TRẢ trong kỳ)</div>
+          </div>
+          <div>
+            <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-[#8290a8]">Lợi nhuận (dồn tích) tháng {String(periodMonth).padStart(2, "0")}/{periodYear}</div>
+            <div className={`mt-1 text-2xl font-bold ktns-mono ${netProfit >= 0 ? "text-emerald-300" : "text-red-300"}`}>{fmtVND(netProfit)}</div>
+            <div className="mt-0.5 text-[10px] text-[#8fa0bc]">= doanh thu chưa VAT − giá vốn − chi phí (không phải thu − chi tiền mặt)</div>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          {isFullAccess ? <select value={employeeFilter} onChange={(event) => setEmployeeFilter(event.target.value)} className="min-h-[38px] min-w-[190px] rounded-lg border border-[#34435c] bg-[#182131] px-3 text-xs text-white outline-none focus:border-[#5f8df8]"><option value="all">Toàn công ty</option>{(employees || []).filter((employee) => employee.status !== "inactive").map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {ROLE_META[employee.roleType]?.label || employee.position || "Nhân viên"}</option>)}</select> : <div className="flex min-h-[38px] items-center rounded-lg border border-[#34435c] bg-[#182131] px-3 text-xs font-semibold text-[#c9d4e5]">{currentEmployee?.name || authUser?.email}</div>}
-          <button type="button" onClick={() => setShowFinanceInsights(true)} aria-expanded={showFinanceInsights} className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border border-[#40577a] bg-[#1a2639] px-3 text-xs font-semibold text-[#c8d6eb] transition hover:border-[#5f8df8] hover:bg-[#22324b] hover:text-white"><BarChart3 size={14} /> Tùy biến & tổng quan</button>
-          <button type="button" onClick={exportCurrentFinanceView} className="inline-flex min-h-[38px] items-center gap-1.5 rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20"><FileSpreadsheet size={14} /> Xuất Excel</button>
-        </div>
+        <p className="mt-3 border-t border-white/10 pt-3 text-[11px] leading-5 text-[#8fa0bc]">
+          Chi phí nhân sự tính theo thu nhập phát sinh trong kỳ (lương, thưởng, phụ cấp) cộng bảo hiểm doanh nghiệp đóng; các bút toán chi trả lương trong sổ Thu Chi đã được loại để không tính hai lần. Đối chiếu số liệu chuẩn kế toán tại <strong className="text-white">Tài chính &amp; Kế toán → Sổ cái</strong>.
+        </p>
+      </section>
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setFinanceBoard("thu")}
+          className={`inline-flex min-h-[36px] items-center gap-2 rounded-lg border px-3.5 text-xs font-bold transition ${financeBoard === "thu" ? "border-emerald-400/60 bg-emerald-500/20 text-emerald-200" : "border-[#29364f] bg-[#141c2a] text-[#aebbd0] hover:border-emerald-400/40 hover:text-white"}`}
+        >
+          <TrendingUp size={14} /> Nguồn thu
+          <span className="ktns-mono text-[11px] font-semibold text-emerald-300">{fmtVND(revenueGrandTotal)}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setFinanceBoard("chi")}
+          className={`inline-flex min-h-[36px] items-center gap-2 rounded-lg border px-3.5 text-xs font-bold transition ${financeBoard === "chi" ? "border-red-400/60 bg-red-500/20 text-red-200" : "border-[#29364f] bg-[#141c2a] text-[#aebbd0] hover:border-red-400/40 hover:text-white"}`}
+        >
+          <TrendingDown size={14} /> Nguồn chi
+          <span className="ktns-mono text-[11px] font-semibold text-red-300">{fmtVND(expenseGrandTotal)}</span>
+        </button>
+        <span className="mx-1 hidden h-6 w-px bg-[#29364f] sm:block" />
+        {isFullAccess && (
+          <>
+            <button type="button" onClick={() => startAddEntry("thu")} className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-3 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20">
+              <Plus size={14} /> Ghi khoản thu
+            </button>
+            <button type="button" onClick={() => startAddEntry("chi")} className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-red-500/40 bg-red-500/10 px-3 text-xs font-semibold text-red-300 hover:bg-red-500/20">
+              <Plus size={14} /> Ghi khoản chi
+            </button>
+          </>
+        )}
+        <button type="button" onClick={() => setShowLedgerBook(true)} className="inline-flex min-h-[36px] items-center gap-1.5 rounded-lg border border-[#34435c] bg-[#182131] px-3 text-xs font-semibold text-[#aebbd0] hover:text-white">
+          <FileText size={14} /> Sổ bút toán thu chi
+        </button>
       </div>
 
-      <div className="shrink-0 overflow-x-auto pb-0.5">
-        <div className="flex min-w-max gap-1.5">{FINANCE_HUB_VIEWS.map((view) => { const Icon = view.icon; const active = activeView === view.id; return <button key={view.id} type="button" onClick={() => setActiveView(view.id)} className={`flex min-h-[38px] items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${active ? "border-[#6c98ff] bg-[#315fae] text-white shadow" : "border-[#29364f] bg-[#141c2a] text-[#aebbd0] hover:border-[#46689f] hover:text-white"}`}><Icon size={13} />{view.label}</button>; })}</div>
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-0.5">
+        {/* BẢNG 1 — NGUỒN THU: hàng là nhân viên, cột là từng nguồn thu */}
+        {financeBoard === "thu" && (
+        <section className="rounded-xl border border-[#29364f] bg-[#0f151f]">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#29364f] px-4 py-2.5">
+            <div className="flex items-center gap-2 text-sm font-bold text-white"><TrendingUp size={15} className="text-emerald-400" /> Nguồn thu · tháng {String(periodMonth).padStart(2, "0")}/{periodYear}</div>
+            <div className="text-xs text-[#8fa0bc]">Tổng thu: <strong className="ktns-mono text-emerald-300">{fmtVND(revenueGrandTotal)}</strong></div>
+          </div>
+          <FinanceScrollableTable minWidth={980}>
+            <table className="domix-finance-table w-full text-xs">
+              <thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]">
+                <tr>
+                  <th className="px-4 py-3">Nhân viên</th>
+                  <th className="px-4 py-3 text-right">Bán hàng</th>
+                  <th className="px-4 py-3 text-right" title="Doanh thu Marketing TỰ KHAI trong nhật ký — số ước lượng của chính các đơn Sale chốt, chỉ để tham khảo, KHÔNG cộng vào Tổng thu">Marketing (tự khai)*</th>
+                  <th className="px-4 py-3 text-right">Phân phối</th>
+                  <th className="px-4 py-3 text-right">Thu khác</th>
+                  <th className="px-4 py-3 text-right">Tổng thu</th>
+                </tr>
+              </thead>
+              <tbody>
+                {revenueSourceRows.length === 0 ? (
+                  <tr><td colSpan={6} className="px-4 py-10 text-center text-[#7f8da5]">Chưa ghi nhận nguồn thu nào trong kỳ.</td></tr>
+                ) : revenueSourceRows.map((row) => (
+                  <tr key={row.id} className="border-t border-[#3A4152] hover:bg-white/[0.03]">
+                    <td className="px-4 py-3 font-semibold text-white">{row.name}<div className="text-[10px] font-normal text-[#77869d]">{row.roleLabel}</div></td>
+                    <td className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{row.sales > 0 ? fmtVND(row.sales) : "—"}</td>
+                    <td className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{row.marketing > 0 ? fmtVND(row.marketing) : "—"}</td>
+                    <td className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{row.distribution > 0 ? fmtVND(row.distribution) : "—"}</td>
+                    <td className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{row.other > 0 ? fmtVND(row.other) : "—"}</td>
+                    <td className="px-4 py-3 text-right font-bold ktns-mono text-emerald-400">{fmtVND(row.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="finance-sticky-footer">
+                <tr>
+                  <td className="px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-[#d7e1ef]">Tổng cộng</td>
+                  <td className="px-4 py-3 text-right font-bold ktns-mono">{fmtVND(revenueSourceTotals.sales)}</td>
+                  <td className="px-4 py-3 text-right font-bold ktns-mono">{fmtVND(revenueSourceTotals.marketing)}</td>
+                  <td className="px-4 py-3 text-right font-bold ktns-mono">{fmtVND(revenueSourceTotals.distribution)}</td>
+                  <td className="px-4 py-3 text-right font-bold ktns-mono">{fmtVND(revenueSourceTotals.other)}</td>
+                  <td className="px-4 py-3 text-right text-sm font-bold text-emerald-300 ktns-mono">{fmtVND(revenueSourceTotals.total)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </FinanceScrollableTable>
+          <p className="border-t border-[#29364f] px-4 py-2.5 text-[11px] text-[#8fa0bc]">* "Marketing (tự khai)" là doanh thu Marketing tự ước lượng trong nhật ký — cùng các đơn Sale đã chốt ở cột Bán hàng nên KHÔNG cộng vào Tổng thu (tránh nhân đôi doanh thu).</p>
+        </section>
+
+        )}
+
+        {/* BẢNG 2 — NGUỒN CHI: toàn bộ chi phí công ty bỏ ra */}
+        {financeBoard === "chi" && (
+        <section className="rounded-xl border border-[#29364f] bg-[#0f151f]">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#29364f] px-4 py-2.5">
+            <div className="flex items-center gap-2 text-sm font-bold text-white"><TrendingDown size={15} className="text-red-400" /> Nguồn chi · tháng {String(periodMonth).padStart(2, "0")}/{periodYear}</div>
+            <div className="flex items-center gap-2">
+              {isFullAccess && (
+                <button type="button" onClick={() => startAddEntry("chi")} className="inline-flex items-center gap-1.5 rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-300 hover:bg-red-500/20">
+                  <Plus size={13} /> Thêm nguồn chi
+                </button>
+              )}
+              <div className="text-xs text-[#8fa0bc]">Tổng chi: <strong className="ktns-mono text-red-300">{fmtVND(expenseGrandTotal)}</strong></div>
+            </div>
+          </div>
+          <FinanceScrollableTable minWidth={960}>
+            <table className="domix-finance-table w-full text-xs">
+              <thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]">
+                <tr>
+                  <th className="px-4 py-3">Khoản chi</th>
+                  <th className="px-4 py-3">Diễn giải</th>
+                  <th className="px-4 py-3 text-right">Số tiền</th>
+                  <th className="px-4 py-3 text-right">Tỷ trọng</th>
+                  <th className="px-4 py-3 text-right">Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {expenseSourceRows.length === 0 ? (
+                  <tr><td colSpan={5} className="px-4 py-10 text-center text-[#7f8da5]">Chưa phát sinh chi phí nào trong kỳ.</td></tr>
+                ) : expenseSourceRows.map((row) => (
+                  <tr key={row.key} className="border-t border-[#3A4152] hover:bg-white/[0.03]">
+                    <td className="px-4 py-3 font-semibold text-white">{row.label}</td>
+                    <td className="px-4 py-3 text-[10px] text-[#8fa0bc]">{row.note}</td>
+                    <td className="px-4 py-3 text-right font-bold ktns-mono text-red-300">{fmtVND(row.amount)}</td>
+                    <td className="px-4 py-3 text-right ktns-mono text-[#8fa0bc]">{expenseGrandTotal > 0 ? `${((row.amount / expenseGrandTotal) * 100).toFixed(1)}%` : "—"}</td>
+                    <td className="px-4 py-3 text-right">
+                      {row.system ? (
+                        <span className="rounded-full border border-[#34435c] bg-[#182131] px-2 py-0.5 text-[10px] font-semibold text-[#8fa0bc]" title="Khoản tự tính từ dữ liệu hệ thống (hồ sơ nhân viên, marketing) — không sửa tay">Tự động</span>
+                      ) : (
+                        <div className="flex flex-wrap items-center justify-end gap-1.5">
+                          {(row.tx?.attachmentData || row.tx?.invoiceNo || (row.tx?.invoiceType && row.tx.invoiceType !== "Chưa xác định")) ? (
+                            <button type="button" onClick={() => setInvoiceView(row.tx)} className="inline-flex items-center gap-1 rounded-md border border-emerald-500/40 px-2 py-1 text-[10px] font-semibold text-emerald-300 hover:bg-emerald-500/10" title="Xem hóa đơn/chứng từ của khoản chi này"><Paperclip size={11} /> Hóa đơn</button>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded-md border border-red-500/40 bg-red-500/10 px-2 py-1 text-[10px] font-semibold text-red-300" title="Khoản chi chưa có hóa đơn/chứng từ — bấm Sửa để bổ sung"><AlertTriangle size={11} /> Thiếu HĐ</span>
+                          )}
+                          {row.tx?.source === "manual_finance_hub" && isFullAccess ? (
+                            <>
+                              <button type="button" onClick={() => startEditManualEntry(row.tx)} className="inline-flex items-center gap-1 rounded-md border border-[#34435c] px-2 py-1 text-[10px] font-semibold text-[#aebbd0] hover:text-white" title="Sửa khoản chi này"><Pencil size={11} /> Sửa</button>
+                              <button type="button" onClick={() => removeManualEntry(row.tx.id)} className="inline-flex items-center gap-1 rounded-md border border-red-500/40 px-2 py-1 text-[10px] font-semibold text-red-300 hover:bg-red-500/10" title="Hủy bằng bút toán đỏ — không xóa dữ liệu, giữ dấu vết kiểm toán"><RotateCcw size={11} /> Hủy</button>
+                            </>
+                          ) : (
+                            <span className="text-[10px] text-[#77869d]" title="Bút toán do module khác ghi — sửa tại nghiệp vụ nguồn">Sổ Thu Chi</span>
+                          )}
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="finance-sticky-footer">
+                <tr>
+                  <td colSpan={2} className="px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-[#d7e1ef]">Tổng chi phí</td>
+                  <td className="px-4 py-3 text-right text-sm font-bold text-red-300 ktns-mono">{fmtVND(expenseGrandTotal)}</td>
+                  <td className="px-4 py-3 text-right font-bold ktns-mono text-[#8fa0bc]">100%</td>
+                  <td className="px-4 py-3"></td>
+                </tr>
+              </tfoot>
+            </table>
+          </FinanceScrollableTable>
+        </section>
+
+        )}
+
       </div>
+      </>
+      )}
 
-      {activeView === "overview" && <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
-        <div className="flex shrink-0 items-center justify-between gap-3 rounded-lg border border-[#29364f] bg-[#111823] px-3 py-2 text-xs"><div><strong className="text-white">Bảng tổng hợp theo nhân sự</strong><span className="ml-2 text-[#7f8da5]">{employeeFinanceRows.length} người đang hiển thị</span></div><span className="hidden text-[#7f8da5] md:block">Cuộn riêng trong bảng · hàng tổng cố định phía dưới</span></div>
-        <FinanceScrollableTable minWidth={1240}>
-          <table className="domix-finance-table w-full text-xs">
-            <thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]"><tr><th className="px-4 py-3">Nhân viên</th><th className="px-4 py-3">Vị trí</th><th className="px-4 py-3 text-right">Doanh thu phụ trách</th><th className="px-4 py-3 text-right">Chi trực tiếp</th><th className="px-4 py-3 text-right">Chi quảng cáo</th><th className="px-4 py-3 text-right">Lương thực lĩnh</th><th className="px-4 py-3 text-right">Phụ cấp ăn trưa</th><th className="px-4 py-3 text-right">BH doanh nghiệp</th><th className="px-4 py-3 text-right">Tổng chi phí</th></tr></thead>
-            <tbody>{employeeFinanceRows.length === 0 ? <tr><td colSpan={9} className="px-4 py-10 text-center text-[#7f8da5]">Chưa có nhân sự đang hoạt động trong kỳ này. Kiểm tra trạng thái nhân sự và người phụ trách trên đơn CRM/Marketing.</td></tr> : employeeFinanceRows.map(({ employee, payroll, assignedRevenue, directExpense, marketingSpend, totalExpense }) => <tr key={employee.id} className="border-t border-[#3A4152] hover:bg-white/[0.03]"><td className="px-4 py-3 font-semibold text-white">{employee.name}<div className="mt-0.5 text-[10px] font-normal text-[#77869d]">{employee.email || ""}</div></td><td className="px-4 py-3 text-[#aebbd0]">{ROLE_META[employee.roleType]?.label || employee.position || "Nhân viên"}</td><td className="px-4 py-3 text-right font-bold text-emerald-400 ktns-mono">{fmtVND(assignedRevenue)}</td><td className="px-4 py-3 text-right text-red-300 ktns-mono">{fmtVND(directExpense)}</td><td className="px-4 py-3 text-right text-red-300 ktns-mono">{fmtVND(marketingSpend)}</td><td className="px-4 py-3 text-right text-[#dbe4f1] ktns-mono">{fmtVND(payroll.net)}</td><td className="px-4 py-3 text-right text-amber-300 ktns-mono">{fmtVND(payroll.mealAllowance)}</td><td className="px-4 py-3 text-right text-[#9fb9e7] ktns-mono">{fmtVND(payroll.employerInsurance)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(totalExpense)}</td></tr>)}</tbody>
-            <tfoot className="finance-sticky-footer"><tr><td colSpan={2} className="px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-[#d7e1ef]">Tổng cộng</td><td className="px-4 py-3 text-right font-bold text-emerald-300 ktns-mono">{fmtVND(overviewTableTotals.assignedRevenue)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(overviewTableTotals.directExpense)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(overviewTableTotals.marketingSpend)}</td><td className="px-4 py-3 text-right font-bold text-white ktns-mono">{fmtVND(overviewTableTotals.net)}</td><td className="px-4 py-3 text-right font-bold text-amber-300 ktns-mono">{fmtVND(overviewTableTotals.mealAllowance)}</td><td className="px-4 py-3 text-right font-bold text-[#a9c6f8] ktns-mono">{fmtVND(overviewTableTotals.employerInsurance)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(overviewTableTotals.totalExpense)}</td></tr></tfoot>
-          </table>
-        </FinanceScrollableTable>
-      </div>}
-
-      {activeView === "sales" && <div className="min-h-0 flex-1 overflow-hidden rounded-xl border border-[#29364f] bg-[#0f151f] p-2">{canManageSalesOrders ? <DoanhThuCRM orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={employees} currentEmployee={currentEmployee} canManageAllSales={isFullAccess} revenueByEmployee={revenueByEmployee} setTransactions={setTransactions} transactions={transactions} inventory={inventory} setInventory={setInventory} distPartners={distPartners} distOrders={distOrders} setDistOrders={setDistOrders} reportYear={reportYear} reportMonth={reportMonth} pages={pages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} authUser={authUser} debts={debts} setDebts={setDebts} dataLoader={dataLoader} /> : <div className="flex h-full min-h-0 flex-col gap-2"><div className="shrink-0 rounded-lg border border-[#29364f] bg-[#111823] px-3 py-2 text-xs text-[#aebbd0]">Doanh thu được ghi nhận trong kỳ: <strong className="text-emerald-300">{fmtVND(periodOrders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0))}</strong></div><FinanceScrollableTable minWidth={1050}><table className="domix-finance-table w-full text-xs"><thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]"><tr><th className="px-4 py-3">STT</th><th className="px-4 py-3">Ngày</th><th className="px-4 py-3">Khách hàng</th><th className="px-4 py-3">Sản phẩm</th><th className="px-4 py-3">Hóa đơn</th><th className="px-4 py-3 text-right">Doanh thu</th></tr></thead><tbody>{periodOrders.length === 0 ? <tr><td colSpan={6} className="px-4 py-10 text-center text-[#7f8da5]">Bạn chưa có doanh thu được ghi nhận trong kỳ.</td></tr> : periodOrders.map((order, index) => <tr key={order.id} className="border-t border-[#3A4152]"><td className="px-4 py-3 text-[#77869d]">{index + 1}</td><td className="px-4 py-3 ktns-mono text-[#b9c6d9]">{formatDateVN(order.date)}</td><td className="px-4 py-3 font-semibold text-white">{order.customerName}<div className="text-[10px] font-normal text-[#77869d]">{order.phone || order.email || ""}</div></td><td className="px-4 py-3 text-[#b9c6d9]">{order.productName || "—"}</td><td className="px-4 py-3 text-[#aebbd0]">{order.invoiceStatus === "issued" ? `Đã xuất ${order.invoiceNo || ""}` : "Chưa xuất"}</td><td className="px-4 py-3 text-right font-bold text-emerald-400 ktns-mono">{fmtVND(order.amount)}</td></tr>)}</tbody><tfoot className="finance-sticky-footer"><tr><td colSpan={5} className="px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-[#d7e1ef]">Tổng {periodOrders.length} đơn</td><td className="px-4 py-3 text-right text-sm font-bold text-emerald-300 ktns-mono">{fmtVND(periodOrders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0))}</td></tr></tfoot></table></FinanceScrollableTable></div>}</div>}
-
-      {(activeView === "income" || activeView === "expense") && <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-[#29364f] bg-[#111823] px-3 py-2">
-          <div className="flex flex-wrap items-center gap-1.5">{[["day", "Ngày"], ["month", "Tháng"], ["quarter", "Quý"]].map(([id, label]) => <button key={id} type="button" onClick={() => setLedgerPeriodMode(id)} className={`min-h-[34px] rounded-lg border px-3 text-xs font-semibold ${ledgerPeriodMode === id ? "border-[#5f8df8] bg-[#2f5ba6] text-white" : "border-[#34435c] bg-[#182131] text-[#aebbd0]"}`}>{label}</button>)}{ledgerPeriodMode === "day" && <input type="date" value={ledgerDate} onChange={(event) => setLedgerDate(event.target.value)} className="min-h-[34px] rounded-lg border border-[#34435c] bg-[#182131] px-3 text-xs text-white" />}{ledgerPeriodMode === "month" && <input type="month" value={ledgerMonth} onChange={(event) => setLedgerMonth(event.target.value)} className="min-h-[34px] rounded-lg border border-[#34435c] bg-[#182131] px-3 text-xs text-white" />}{ledgerPeriodMode === "quarter" && <><select value={ledgerQuarter} onChange={(event) => setLedgerQuarter(event.target.value)} className="min-h-[34px] rounded-lg border border-[#34435c] bg-[#182131] px-3 text-xs text-white"><option value="1">Quý 1</option><option value="2">Quý 2</option><option value="3">Quý 3</option><option value="4">Quý 4</option></select><input type="number" min="2020" max="2100" value={ledgerYear} onChange={(event) => setLedgerYear(Number(event.target.value) || TODAY.getFullYear())} className="min-h-[34px] w-24 rounded-lg border border-[#34435c] bg-[#182131] px-3 text-xs text-white" /></>}<span className="flex min-h-[34px] items-center rounded-lg border border-[#34435c] bg-[#0f151f] px-3 text-xs font-semibold text-[#c9d4e5]">{ledgerPeriodLabel}</span></div>
-          {isFullAccess && <button type="button" onClick={() => startAddEntry(activeView === "income" ? "thu" : "chi")} className={`inline-flex min-h-[36px] items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-white ${activeView === "income" ? "bg-emerald-600 hover:bg-emerald-500" : "bg-red-600 hover:bg-red-500"}`}><Plus size={14} /> Ghi {activeView === "income" ? "khoản thu" : "khoản chi"}</button>}
+      {showLedgerBook && (
+        <div className="fixed inset-0 z-[170] flex bg-black/60 p-3 backdrop-blur-sm lg:left-60 lg:p-5" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowLedgerBook(false); }}>
+          <div className="flex min-h-0 w-full flex-col overflow-hidden rounded-2xl border border-[#34435c] bg-[#0f1622] shadow-2xl">
+            <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[#29364f] px-5 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-base font-bold text-white">Sổ bút toán thu chi</h3>
+                <div className="flex gap-1">
+                  <button type="button" onClick={() => setLedgerBookKind("thu")} className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${ledgerBookKind === "thu" ? "bg-emerald-600 text-white" : "border border-[#34435c] text-[#aebbd0]"}`}>Thu ({ledgerIncomeRows.length})</button>
+                  <button type="button" onClick={() => setLedgerBookKind("chi")} className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${ledgerBookKind === "chi" ? "bg-red-600 text-white" : "border border-[#34435c] text-[#aebbd0]"}`}>Chi ({ledgerExpenseRows.length})</button>
+                </div>
+              </div>
+              <button type="button" onClick={() => setShowLedgerBook(false)} aria-label="Đóng" className="rounded-lg border border-[#34435c] p-2 text-[#aebbd0] hover:bg-white/5 hover:text-white"><X size={16} /></button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-hidden p-3">
+              {renderTxTable(ledgerBookKind === "thu" ? ledgerIncomeRows : ledgerExpenseRows, ledgerBookKind)}
+            </div>
+          </div>
         </div>
-        {renderTxTable(activeLedgerRows, activeView === "income" ? "thu" : "chi")}
-      </div>}
+      )}
 
-      {activeView === "staff" && <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden"><div className="shrink-0 rounded-lg border border-[#29364f] bg-[#111823] px-3 py-2 text-xs text-[#aebbd0]"><strong className="text-white">Bảng chi phí nhân sự</strong><span className="ml-2">{visiblePayrollRows.length} nhân viên · tổng chi phí doanh nghiệp {fmtVND(payrollTableTotals.employerTotalCost)}</span></div><FinanceScrollableTable minWidth={1320}><table className="domix-finance-table w-full text-xs"><thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]"><tr><th className="px-4 py-3">Nhân viên</th><th className="px-4 py-3 text-right">Ngày công</th><th className="px-4 py-3 text-right">Lương theo công</th><th className="px-4 py-3 text-right">Thưởng/hoa hồng</th><th className="px-4 py-3 text-right">Phụ cấp</th><th className="px-4 py-3 text-right">BH nhân viên</th><th className="px-4 py-3 text-right">Thuế TNCN</th><th className="px-4 py-3 text-right">Thực lĩnh</th><th className="px-4 py-3 text-right">BH doanh nghiệp</th><th className="px-4 py-3 text-right">Tổng chi phí DN</th></tr></thead><tbody>{visiblePayrollRows.map((row) => <tr key={row.id} className="border-t border-[#3A4152]"><td className="px-4 py-3 font-semibold text-white">{row.name}<div className="text-[10px] font-normal text-[#77869d]">{row.contractLabel}</div></td><td className="px-4 py-3 text-right ktns-mono text-[#b9c6d9]">{row.actualDays}/{row.standardDays}</td><td className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{fmtVND(row.salaryByDays)}</td><td className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{fmtVND((row.kpiBonus || 0) + (row.commission || 0) + (row.compBonus || 0) + (row.techUpsale || 0) + (row.otherBonus || 0) + (row.attendanceBonus || 0) + (row.kpiMilestoneBonus || 0))}</td><td className="px-4 py-3 text-right ktns-mono text-amber-300">{fmtVND((row.mealAllowance || 0) + (row.seniorityAllowance || 0))}</td><td className="px-4 py-3 text-right ktns-mono text-red-300">{fmtVND(row.employeeInsurance)}</td><td className="px-4 py-3 text-right ktns-mono text-red-300">{fmtVND(row.thueTNCN)}</td><td className="px-4 py-3 text-right font-bold ktns-mono text-emerald-400">{fmtVND(row.net)}</td><td className="px-4 py-3 text-right ktns-mono text-[#9fb9e7]">{fmtVND(row.employerInsurance)}</td><td className="px-4 py-3 text-right font-bold ktns-mono text-red-300">{fmtVND(row.employerTotalCost)}</td></tr>)}</tbody><tfoot className="finance-sticky-footer"><tr><td colSpan={2} className="px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-[#d7e1ef]">Tổng cộng</td><td className="px-4 py-3 text-right font-bold ktns-mono">{fmtVND(payrollTableTotals.salaryByDays)}</td><td className="px-4 py-3 text-right font-bold ktns-mono">{fmtVND(payrollTableTotals.bonus)}</td><td className="px-4 py-3 text-right font-bold text-amber-300 ktns-mono">{fmtVND(payrollTableTotals.allowance)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(payrollTableTotals.employeeInsurance)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(payrollTableTotals.thueTNCN)}</td><td className="px-4 py-3 text-right font-bold text-emerald-300 ktns-mono">{fmtVND(payrollTableTotals.net)}</td><td className="px-4 py-3 text-right font-bold text-[#a9c6f8] ktns-mono">{fmtVND(payrollTableTotals.employerInsurance)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(payrollTableTotals.employerTotalCost)}</td></tr></tfoot></table></FinanceScrollableTable></div>}
 
-      {activeView === "meal" && <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden"><div className="shrink-0 rounded-lg border border-[#29364f] bg-[#111823] px-3 py-2 text-xs text-[#aebbd0]"><strong className="text-white">Bảng phụ cấp ăn trưa</strong><span className="ml-2">Tổng thực nhận {fmtVND(mealTableTotals.mealAllowance)}</span></div><FinanceScrollableTable minWidth={980}><table className="domix-finance-table w-full text-xs"><thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]"><tr><th className="px-4 py-3">Nhân viên</th><th className="px-4 py-3 text-right">Ngày công duyệt</th><th className="px-4 py-3 text-right">Mức tháng</th><th className="px-4 py-3 text-right">Mức/ngày</th><th className="px-4 py-3 text-right">Thực nhận</th><th className="px-4 py-3 text-right">Bị trừ</th></tr></thead><tbody>{visiblePayrollRows.map((row) => <tr key={row.id} className="border-t border-[#3A4152]"><td className="px-4 py-3 font-semibold text-white">{row.name}</td><td className="px-4 py-3 text-right ktns-mono text-[#b9c6d9]">{row.actualDays}/{row.standardDays}</td><td className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{fmtVND(row.configuredMealAllowance)}</td><td className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{fmtVND(row.mealAllowancePerDay)}</td><td className="px-4 py-3 text-right font-bold ktns-mono text-emerald-400">{fmtVND(row.mealAllowance)}</td><td className="px-4 py-3 text-right font-bold ktns-mono text-red-300">{fmtVND(row.mealAllowanceDeducted)}</td></tr>)}</tbody><tfoot className="finance-sticky-footer"><tr><td colSpan={2} className="px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-[#d7e1ef]">Tổng cộng</td><td className="px-4 py-3 text-right font-bold ktns-mono">{fmtVND(mealTableTotals.configuredMealAllowance)}</td><td className="px-4 py-3 text-right font-bold ktns-mono">{fmtVND(mealTableTotals.mealAllowancePerDay)}</td><td className="px-4 py-3 text-right font-bold text-emerald-300 ktns-mono">{fmtVND(mealTableTotals.mealAllowance)}</td><td className="px-4 py-3 text-right font-bold text-red-300 ktns-mono">{fmtVND(mealTableTotals.mealAllowanceDeducted)}</td></tr></tfoot></table></FinanceScrollableTable></div>}
-
-      {activeView === "insurance" && <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden"><div className="shrink-0 rounded-lg border border-[#29364f] bg-[#111823] px-3 py-2 text-xs text-[#aebbd0]"><strong className="text-white">Bảng BHXH / BHYT</strong><span className="ml-2">Tổng bảo hiểm {fmtVND(insuranceTableTotals.combined)}</span></div><FinanceScrollableTable minWidth={1280}><table className="domix-finance-table w-full text-xs"><thead className="sticky top-0 z-10 bg-[#1a2332] text-left uppercase text-[#93a1b8]"><tr><th className="px-4 py-3">Nhân viên</th><th className="px-4 py-3">Hợp đồng</th><th className="px-4 py-3 text-right">BHXH NV</th><th className="px-4 py-3 text-right">BHYT NV</th><th className="px-4 py-3 text-right">BHTN NV</th><th className="px-4 py-3 text-right">BHXH DN</th><th className="px-4 py-3 text-right">BHYT DN</th><th className="px-4 py-3 text-right">BHTN DN</th><th className="px-4 py-3 text-right">TNLĐ-BNN</th><th className="px-4 py-3 text-right">Tổng cộng</th></tr></thead><tbody>{visiblePayrollRows.map((row) => <tr key={row.id} className="border-t border-[#3A4152]"><td className="px-4 py-3 font-semibold text-white">{row.name}</td><td className="px-4 py-3 text-[#aebbd0]">{row.contractLabel}</td>{[row.bhxhNV, row.bhytNV, row.bhtnNV, row.bhxhDN, row.bhytDN, row.bhtnDN, row.bhtnldBnnDN].map((value, index) => <td key={index} className="px-4 py-3 text-right ktns-mono text-[#dbe4f1]">{fmtVND(value)}</td>)}<td className="px-4 py-3 text-right font-bold ktns-mono text-amber-300">{fmtVND((row.employeeInsurance || 0) + (row.employerInsurance || 0))}</td></tr>)}</tbody><tfoot className="finance-sticky-footer"><tr><td colSpan={2} className="px-4 py-3 text-xs font-bold uppercase tracking-[0.08em] text-[#d7e1ef]">Tổng cộng</td>{[insuranceTableTotals.bhxhNV, insuranceTableTotals.bhytNV, insuranceTableTotals.bhtnNV, insuranceTableTotals.bhxhDN, insuranceTableTotals.bhytDN, insuranceTableTotals.bhtnDN, insuranceTableTotals.bhtnldBnnDN].map((value, index) => <td key={index} className="px-4 py-3 text-right font-bold ktns-mono">{fmtVND(value)}</td>)}<td className="px-4 py-3 text-right font-bold text-amber-300 ktns-mono">{fmtVND(insuranceTableTotals.combined)}</td></tr></tfoot></table></FinanceScrollableTable></div>}
-
-      {showFinanceInsights && <div className="absolute inset-0 z-40 flex justify-end bg-[#050912]/70 backdrop-blur-sm" onClick={() => setShowFinanceInsights(false)}><aside className="flex h-full w-full max-w-5xl flex-col border-l border-[#34435c] bg-[#0f1622] shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex shrink-0 items-start justify-between gap-3 border-b border-[#29364f] px-5 py-4"><div><h3 className="text-lg font-bold text-white">Tùy biến & tổng quan · {FINANCE_HUB_VIEWS.find((view) => view.id === activeView)?.label}</h3><p className="mt-1 text-xs text-[#8795aa]">Khu vực phụ trợ được tách khỏi bảng để không chiếm không gian làm việc chính.</p></div><button type="button" onClick={() => setShowFinanceInsights(false)} aria-label="Đóng tổng quan" className="rounded-lg border border-[#34435c] p-2 text-[#aebbd0] hover:bg-white/5 hover:text-white"><X size={16} /></button></div><div className="min-h-0 flex-1 overflow-y-auto p-5">
-        {activeView === "overview" && <div className="space-y-4"><div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5"><FinanceHubMetric label="Doanh thu bán hàng ghi nhận" value={fmtVND(totalSalesRevenue)} note={`${periodOrders.length} đơn hợp lệ trong kỳ`} icon={ShoppingCart} tone="green" /><FinanceHubMetric label="Tổng doanh thu ghi nhận" value={fmtVND(totalIncome)} note={`Thu thực tế ${fmtVND(totalCollectedIncome)} · Còn phải thu ${fmtVND(totalReceivableForHub)}`} icon={TrendingUp} tone="green" /><FinanceHubMetric label="Chi phí vận hành" value={fmtVND(totalOperatingExpense + totalMarketingExpense)} note={`${operatingExpenseRows.length} khoản khác + ${marketingExpenseRows.length} khoản Marketing`} icon={TrendingDown} tone="red" /><FinanceHubMetric label="Chi phí nhân sự" value={fmtVND(totalStaffCost)} note="Gross + bảo hiểm doanh nghiệp" icon={Users} tone="gold" /><FinanceHubMetric label="Lợi nhuận tạm tính" value={fmtVND(operatingProfit)} note="Doanh thu − vận hành − Marketing − nhân sự" icon={Wallet} tone={operatingProfit >= 0 ? "blue" : "red"} /></div><div className="rounded-xl border border-[#2c3b53] bg-[#111a28] px-4 py-3 text-xs leading-5 text-[#aebbd0]"><strong className="text-white">Cách tính:</strong> Giá trị đơn hợp lệ được ghi nhận vào doanh thu ngay khi bán; tiền khách đã trả đi vào bảng Thu; phần chưa trả đi vào Công nợ. Đơn phân phối liên kết CRM chỉ phục vụ quyết toán đối tác và không được cộng doanh thu lần thứ hai.</div><div className="grid grid-cols-1 gap-3 lg:grid-cols-2"><div className="rounded-xl border border-[#2c3b53] bg-[#111a28] p-4"><h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#93a1b8]">Nguồn thu — thu từ đâu</h4><div className="flex flex-col gap-1.5 text-xs">{[["Bán hàng (CRM)", scopedRevenueLedger.salesRevenue], ["Hợp tác phân phối", scopedRevenueLedger.distributionRevenue], ["Marketing", scopedRevenueLedger.marketingRevenue], ["Thu khác", scopedRevenueLedger.otherIncome]].map(([label, value]) => <div key={label} className="flex items-center justify-between border-b border-[#212c3f] py-1.5 last:border-0"><span className="text-[#aebbd0]">{label}</span><span className="ktns-mono font-semibold text-emerald-400">{fmtVND(value)}</span></div>)}</div></div><div className="rounded-xl border border-[#2c3b53] bg-[#111a28] p-4"><h4 className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#93a1b8]">Mục đích chi — chi vào việc gì</h4>{scopedExpenseBreakdown.length === 0 ? <p className="text-xs text-[#7f8da5]">Chưa có khoản chi nào trong kỳ.</p> : <div className="flex flex-col gap-1.5 text-xs">{scopedExpenseBreakdown.map((item) => <div key={item.category} className="flex items-center justify-between border-b border-[#212c3f] py-1.5 last:border-0"><span className="text-[#aebbd0]">{item.label}</span><span className="ktns-mono font-semibold text-red-300">{fmtVND(item.amount)}</span></div>)}</div>}</div></div></div>}
-        {activeView === "sales" && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"><FinanceHubMetric label="Doanh thu bán hàng" value={fmtVND(totalSalesRevenue)} note={`${periodOrders.length} đơn trong kỳ`} icon={ShoppingCart} tone="green" /><FinanceHubMetric label="Trung bình / đơn" value={fmtVND(periodOrders.length ? totalSalesRevenue / periodOrders.length : 0)} icon={Calculator} /><FinanceHubMetric label="Chưa xuất hóa đơn" value={`${periodOrders.filter((order) => order.invoiceStatus !== "issued").length} đơn`} icon={AlertTriangle} tone="red" /><FinanceHubMetric label="Còn phải thu" value={fmtVND(totalReceivableForHub)} icon={Wallet} tone="gold" /></div>}
-        {activeView === "income" && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"><FinanceHubMetric label={`Tổng thu ${ledgerPeriodLabel}`} value={fmtVND(totalLedgerIncome)} icon={TrendingUp} tone="green" /><FinanceHubMetric label="Thu Marketing" value={fmtVND(ledgerMarketingIncomeRows.reduce((sum, item) => sum + (Number(item.amount) || 0), 0))} icon={Megaphone} /><FinanceHubMetric label="Số bút toán" value={`${ledgerIncomeRows.length}`} icon={FileText} /></div>}
-        {activeView === "expense" && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"><FinanceHubMetric label={`Tổng chi ${ledgerPeriodLabel}`} value={fmtVND(totalLedgerExpense)} icon={TrendingDown} tone="red" /><FinanceHubMetric label="Chi Marketing" value={fmtVND(ledgerMarketingTotal)} icon={Megaphone} tone="gold" /><FinanceHubMetric label="Chi lương" value={fmtVND(ledgerPayrollTotal)} icon={Users} /><FinanceHubMetric label="Số bút toán" value={`${ledgerExpenseRows.length}`} icon={FileText} /></div>}
-        {activeView === "staff" && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"><FinanceHubMetric label="Lương thực lĩnh" value={fmtVND(payrollTableTotals.net)} icon={Banknote} tone="green" /><FinanceHubMetric label="Gross thu nhập" value={fmtVND(visiblePayrollRows.reduce((sum, row) => sum + (Number(row.grossIncome) || 0), 0))} icon={Wallet} /><FinanceHubMetric label="BH doanh nghiệp" value={fmtVND(payrollTableTotals.employerInsurance)} icon={ShieldCheck} tone="gold" /><FinanceHubMetric label="Tổng chi phí DN" value={fmtVND(payrollTableTotals.employerTotalCost)} icon={Users} tone="red" /></div>}
-        {activeView === "meal" && <div className="grid grid-cols-1 gap-3 sm:grid-cols-3"><FinanceHubMetric label="Phụ cấp cấu hình" value={fmtVND(mealTableTotals.configuredMealAllowance)} icon={Banknote} /><FinanceHubMetric label="Phụ cấp thực nhận" value={fmtVND(mealTableTotals.mealAllowance)} icon={CheckCircle2} tone="green" /><FinanceHubMetric label="Bị trừ do nghỉ" value={fmtVND(mealTableTotals.mealAllowanceDeducted)} icon={TrendingDown} tone="red" /></div>}
-        {activeView === "insurance" && <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"><FinanceHubMetric label="BH nhân viên đóng" value={fmtVND(totalEmployeeInsurance)} icon={UserCheck} tone="red" /><FinanceHubMetric label="BH doanh nghiệp đóng" value={fmtVND(totalEmployerInsurance)} icon={Building2} tone="gold" /><FinanceHubMetric label="Tổng BHYT" value={fmtVND(insuranceTableTotals.bhytNV + insuranceTableTotals.bhytDN)} icon={ShieldCheck} /><FinanceHubMetric label="Tổng BHXH" value={fmtVND(insuranceTableTotals.bhxhNV + insuranceTableTotals.bhxhDN)} icon={Landmark} tone="green" /></div>}
-      </div></aside></div>}
-
-      {showEntryForm && <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm lg:left-60 lg:p-5" onClick={() => setShowEntryForm(false)}><div className="w-full max-w-2xl rounded-2xl border border-[#34435c] bg-[#141c2a] p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-center justify-between"><div><h3 className="text-lg font-bold text-white">{editingEntryId ? "Sửa" : "Ghi"} khoản {entryForm.kind === "thu" ? "thu" : "chi"}</h3><p className="text-[11px] text-[#8795aa]">Khoản này được đưa vào đúng bảng Thu hoặc Chi và dùng cho báo cáo ngày, tháng, quý.</p></div><button type="button" onClick={() => setShowEntryForm(false)} className="rounded-lg border border-[#34435c] p-2 text-[#aebbd0] hover:text-white"><X size={16} /></button></div><div className="mt-5 grid grid-cols-2 gap-4"><label className="text-xs text-[#93a1b8]">Ngày<input type="date" value={entryForm.date} onChange={(event) => setEntryForm({ ...entryForm, date: event.target.value })} className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white" /></label><label className="text-xs text-[#93a1b8]">Nhóm {entryForm.kind === "thu" ? "thu" : "chi"}<select value={entryForm.category} onChange={(event) => setEntryForm({ ...entryForm, category: event.target.value })} className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white">{FINANCE_ENTRY_CATEGORIES[entryForm.kind].map(([id,label]) => <option key={id} value={id}>{label}</option>)}</select></label><label className="col-span-2 text-xs text-[#93a1b8]">Nhân viên liên quan<select value={entryForm.employeeId} onChange={(event) => setEntryForm({ ...entryForm, employeeId: event.target.value })} className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white"><option value="">Khoản chung toàn công ty</option>{(employees || []).filter((employee) => employee.status !== "inactive").map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label><label className="col-span-2 text-xs text-[#93a1b8]">Nội dung<input value={entryForm.desc} onChange={(event) => setEntryForm({ ...entryForm, desc: event.target.value })} placeholder="Ví dụ: Chi phụ cấp ăn trưa tháng 7" className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white" /></label><label className="text-xs text-[#93a1b8]">Số tiền<MoneyInput value={entryForm.amount} onChange={(value) => setEntryForm({ ...entryForm, amount: value })} /></label><label className="text-xs text-[#93a1b8]">Phương thức<select value={entryForm.paymentMethod} onChange={(event) => setEntryForm({ ...entryForm, paymentMethod: event.target.value })} className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white"><option value="chuyen_khoan">Chuyển khoản</option><option value="tien_mat">Tiền mặt</option></select></label></div><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setShowEntryForm(false)} className="rounded-lg border border-[#34435c] px-4 py-2 text-sm text-[#b7c2d3]">Hủy</button><button type="button" onClick={saveEntry} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500">{editingEntryId ? "Cập nhật" : "Lưu khoản này"}</button></div></div></div>}
+      {invoiceView && (
+        <div className="fixed inset-0 z-[190] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onClick={() => setInvoiceView(null)}>
+          <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-[#34435c] bg-[#141c2a] shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 border-b border-[#2a3750] px-5 py-4">
+              <div className="min-w-0">
+                <h3 className="truncate text-base font-bold text-white">Hóa đơn / chứng từ — {invoiceView.desc || "Khoản thu chi"}</h3>
+                <p className="mt-1 text-[11px] text-[#8795aa]">{formatDateVN(invoiceView.date)} · {invoiceView.kind === "thu" ? "Khoản thu" : "Khoản chi"} · <span className="ktns-mono">{fmtVND(invoiceView.amount || 0)}</span></p>
+              </div>
+              <button type="button" onClick={() => setInvoiceView(null)} className="shrink-0 rounded-lg border border-[#34435c] p-2 text-[#aebbd0] hover:text-white" aria-label="Đóng xem hóa đơn"><X size={15} /></button>
+            </div>
+            <div className="grid shrink-0 grid-cols-2 gap-3 px-5 py-3 text-xs sm:grid-cols-3">
+              <div><div className="text-[10px] uppercase text-[#7f8da5]">Loại hóa đơn</div><div className="mt-0.5 font-semibold text-white">{invoiceView.invoiceType || "—"}</div></div>
+              <div><div className="text-[10px] uppercase text-[#7f8da5]">Số hóa đơn</div><div className="mt-0.5 ktns-mono font-semibold text-white">{invoiceView.invoiceNo || "—"}</div></div>
+              <div><div className="text-[10px] uppercase text-[#7f8da5]">VAT</div><div className="mt-0.5 ktns-mono font-semibold text-white">{Number(invoiceView.vatRate) > 0 ? `${invoiceView.vatRate}%` : "—"}</div></div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto border-t border-[#2a3750] bg-black/20 p-4">
+              {invoiceView.attachmentData ? (
+                String(invoiceView.attachmentType || "").startsWith("image/") ? (
+                  <img src={invoiceView.attachmentData} alt={invoiceView.attachmentName || "Hóa đơn"} className="mx-auto max-w-full rounded-lg" />
+                ) : (
+                  <a href={invoiceView.attachmentData} download={invoiceView.attachmentName || "hoa-don"} className="inline-flex items-center gap-2 text-sm text-[#8db6ff] underline"><Paperclip size={14} /> Tải file {invoiceView.attachmentName || "chứng từ"}</a>
+                )
+              ) : (
+                <p className="py-8 text-center text-xs text-[#8795aa]">Chưa có file đính kèm — chỉ có thông tin số/loại hóa đơn. Bấm Sửa khoản này để đính kèm bản chụp hóa đơn.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+      {showEntryForm && <div className="fixed inset-0 z-[180] flex items-center justify-center bg-black/55 p-4 backdrop-blur-sm lg:left-60 lg:p-5" onClick={() => setShowEntryForm(false)}><div className="w-full max-w-2xl rounded-2xl border border-[#34435c] bg-[#141c2a] p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-center justify-between"><div><h3 className="text-lg font-bold text-white">{editingEntryId ? "Sửa" : "Ghi"} khoản {entryForm.kind === "thu" ? "thu" : "chi"}</h3><p className="text-[11px] text-[#8795aa]">Khoản này được đưa vào đúng bảng Thu hoặc Chi và dùng cho báo cáo ngày, tháng, quý.</p></div><button type="button" onClick={() => setShowEntryForm(false)} className="rounded-lg border border-[#34435c] p-2 text-[#aebbd0] hover:text-white"><X size={16} /></button></div><div className="mt-5 grid grid-cols-2 gap-4"><label className="text-xs text-[#93a1b8]">Ngày<input type="date" value={entryForm.date} onChange={(event) => setEntryForm({ ...entryForm, date: event.target.value })} className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white" /></label>{entryForm.kind === "thu" ? <label className="text-xs text-[#93a1b8]">Nhóm thu<select value={entryForm.category} onChange={(event) => setEntryForm({ ...entryForm, category: event.target.value })} className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white">{FINANCE_ENTRY_CATEGORIES.thu.map(([id,label]) => <option key={id} value={id}>{label}</option>)}</select></label> : <label className="text-xs text-[#93a1b8]">Số hóa đơn<input value={entryForm.invoiceNo || ""} onChange={(event) => setEntryForm({ ...entryForm, invoiceNo: event.target.value })} placeholder="VD: 00001234" className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white ktns-mono" /></label>}<label className="col-span-2 text-xs text-[#93a1b8]">Nhân viên liên quan<select value={entryForm.employeeId} onChange={(event) => setEntryForm({ ...entryForm, employeeId: event.target.value })} className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white"><option value="">Khoản chung toàn công ty</option>{(employees || []).filter((employee) => employee.status !== "inactive").map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}</select></label><label className="col-span-2 text-xs text-[#93a1b8]">Nội dung<input value={entryForm.desc} onChange={(event) => setEntryForm({ ...entryForm, desc: event.target.value })} placeholder="Ví dụ: Chi phụ cấp ăn trưa tháng 7" className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white" /></label><label className="text-xs text-[#93a1b8]">Số tiền<MoneyInput value={entryForm.amount} onChange={(value) => setEntryForm({ ...entryForm, amount: value })} /></label><label className="text-xs text-[#93a1b8]">Phương thức<select value={entryForm.paymentMethod} onChange={(event) => setEntryForm({ ...entryForm, paymentMethod: event.target.value })} className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white"><option value="chuyen_khoan">Chuyển khoản</option><option value="tien_mat">Tiền mặt</option></select></label>{entryForm.kind === "thu" && <label className="text-xs text-[#93a1b8]">Số hóa đơn<input value={entryForm.invoiceNo || ""} onChange={(event) => setEntryForm({ ...entryForm, invoiceNo: event.target.value })} placeholder="VD: 00001234" className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2.5 text-sm text-white ktns-mono" /></label>}<label className={`text-xs text-[#93a1b8] ${entryForm.kind === "thu" ? "" : "col-span-2"}`}>Hóa đơn / chứng từ đính kèm<input type="file" accept="image/*,.pdf" onChange={handleEntryInvoiceFile} className="mt-1 w-full rounded-lg border border-[#34435c] bg-[#0f151f] px-3 py-2 text-xs text-[#aebbd0]" />{entryForm.attachmentData ? <span className="mt-1 flex items-center gap-2 text-[10px] text-emerald-300"><Paperclip size={10} /> {entryForm.attachmentName || "Đã đính kèm"}<button type="button" onClick={() => setEntryForm((prev) => ({ ...prev, attachmentData: "", attachmentName: "", attachmentType: "" }))} className="text-red-300 underline">gỡ</button></span> : <span className="mt-1 block text-[10px] text-[#8795aa]">Chưa đính kèm — khoản không có số/file hóa đơn sẽ bị đánh dấu <strong className="text-red-300">thiếu hóa đơn</strong>.</span>}</label></div><div className="mt-5 flex justify-end gap-2"><button type="button" onClick={() => setShowEntryForm(false)} className="rounded-lg border border-[#34435c] px-4 py-2 text-sm text-[#b7c2d3]">Hủy</button><button type="button" onClick={saveEntry} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500">{editingEntryId ? "Cập nhật" : "Lưu khoản này"}</button></div></div></div>}
     </div>
   );
 }
@@ -11498,7 +14771,54 @@ function nextSequentialInvoiceNo(orders = []) {
   return `HD${String(maxNumber + 1).padStart(width, "0")}`;
 }
 
-function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmployee, canManageAllSales, revenueByEmployee, setTransactions, inventory, distPartners, distOrders, setDistOrders, reportYear, reportMonth, pages, setSupportCases, customers, setCustomers, moveStock, authUser, setDebts, dataLoader }) {
+// Đơn đã hủy — cùng bộ token với backend (_is_cancelled / _order_cancelled).
+function isOrderCancelled(order) {
+  return ["cancelled", "canceled", "deleted", "huy", "da_huy", "đã hủy"].includes(String(order?.status || "").trim().toLowerCase());
+}
+
+// Bốn trạng thái ĐỘC LẬP của một đơn (expand-and-contract): đọc trường mới do migration
+// ghi; thiếu thì suy tối thiểu từ legacy CHỈ để hiển thị — completed không suy ra paid/issued.
+function orderLifecycle(order) {
+  const cancelled = isOrderCancelled(order);
+  return {
+    order: cancelled ? "cancelled" : (order.orderStatus || "confirmed"),
+    inventory: order.inventoryStatus2
+      || (order.productId ? (order.inventoryStatus === "pending_stock" ? "not_reserved" : "fully_issued") : "not_reserved"),
+    payment: order.paymentStatus || "unpaid",
+    invoice: order.invoiceStatus === "issued" || order.invoiceNo ? "issued" : "not_issued",
+  };
+}
+
+// Nhãn ĐẦY ĐỦ (dùng cho tooltip) + nhãn NGẮN (hiển thị 1 dòng, không làm hàng bảng cao lên).
+const ORDER_LIFECYCLE_LABELS = {
+  order: { draft: ["NHÁP", "Nháp", "muted"], pending_confirmation: ["CHỜ XN", "Chờ xác nhận", "gold"], confirmed: ["XN", "Đã xác nhận", "blue"], processing: ["XỬ LÝ", "Đang xử lý", "blue"], completed: ["XONG", "Hoàn thành", "green"], cancelled: ["HỦY", "Đã hủy", "red"] },
+  inventory: { not_reserved: ["KHO —", "Chưa giữ hàng", "muted"], reserved: ["KHO GIỮ", "Đã giữ hàng", "gold"], partially_issued: ["KHO ½", "Xuất kho một phần", "gold"], fully_issued: ["KHO ✓", "Đã xuất kho đủ", "green"], returned: ["KHO ↩", "Đã hoàn kho", "red"] },
+  payment: { unpaid: ["THU —", "Chưa thu tiền", "red"], partially_paid: ["THU ½", "Đã thu một phần", "gold"], paid: ["THU ✓", "Đã thu đủ", "green"], partially_refunded: ["HOÀN ½", "Hoàn tiền một phần", "gold"], fully_refunded: ["HOÀN ✓", "Đã hoàn tiền", "red"] },
+  invoice: { not_issued: ["HĐ —", "Chưa xuất hóa đơn", "red"], pending_issue: ["HĐ …", "Chờ xuất hóa đơn", "gold"], issued: ["HĐ ✓", "Đã xuất hóa đơn", "green"], adjusted: ["HĐ ĐC", "Hóa đơn điều chỉnh", "gold"], cancelled: ["HĐ HỦY", "Hóa đơn đã hủy", "red"] },
+};
+
+function OrderLifecycleBadges({ order }) {
+  const lifecycle = orderLifecycle(order);
+  const tone = {
+    muted: "border-paper-line bg-paper text-muted",
+    gold: "border-gold/40 bg-gold/10 text-gold",
+    blue: "border-[#3C50E0]/35 bg-[#3C50E0]/10 text-[#3C50E0]",
+    green: "border-ledger-green/40 bg-ledger-green/10 text-ledger-green",
+    red: "border-stamp-red/40 bg-stamp-red/10 text-stamp-red",
+  };
+  const cell = (kind, prefix) => {
+    const [short, full, color] = ORDER_LIFECYCLE_LABELS[kind][lifecycle[kind]] || [lifecycle[kind], lifecycle[kind], "muted"];
+    return <span className={`whitespace-nowrap rounded border px-1 py-px text-[9px] font-bold leading-3 ${tone[color]}`} title={`${prefix}: ${full}`}>{short}</span>;
+  };
+  // MỘT dòng ngang duy nhất — chi tiết nằm trong tooltip từng badge.
+  return (
+    <div className="flex flex-nowrap items-center gap-0.5">
+      {cell("order", "Đơn")}{cell("inventory", "Kho")}{cell("payment", "Thanh toán")}{cell("invoice", "Hóa đơn")}
+    </div>
+  );
+}
+
+function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmployee, canManageAllSales, revenueByEmployee, setTransactions, inventory, distPartners, distOrders, setDistOrders, reportYear, reportMonth, pages, setSupportCases, customers, setCustomers, moveStock, authUser, setDebts, recordFocus, onRecordFocusConsumed, onReturnToOps, orderPrefill, onOrderPrefillConsumed, refreshFinancialSummary, dataLoader }) {
   const [activeTableView, setActiveTableView] = useState("orders");
   const importT7InputRef = useRef(null);
   const importWorkbookRef = useRef(null);
@@ -11564,12 +14884,19 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
   // Sale chốt đơn VÀ Kỹ thuật upsale thành công đều đẩy qua đây để kế toán xuất hoá đơn —
   // loại giao dịch tự suy ra từ vị trí người được chọn, không cần chọn tay 2 lần.
   const dealEmployees = employees.filter((e) => (e.roleType === "sale" || e.roleType === "ky_thuat") && (canManageAllSales || String(e.id) === String(currentEmployee?.id)));
-  const [form, setForm] = useState({
+  // Đơn NHIỀU DÒNG: mỗi dòng là 1 sản phẩm kho hoặc dịch vụ tự nhập; tổng tiền
+  // là số dẫn xuất (backend tính lại), không còn ô "Số tiền" nhập tay.
+  const newOrderItemRow = () => ({ productId: "", description: "", uom: "", quantity: "1", unitPrice: "", discount: "", vatRate: "" });
+  const emptyOrderForm = () => ({
     date: TODAY_STR, customerName: "", phone: "", email: "", customerTaxCode: "", note: "",
-    saleEmployeeId: dealEmployees[0]?.id || currentEmployee?.id || "", dealType: "sale", receivedAt: "", amount: "",
-    productId: "", quantity: "1", issuedKeyCode: "", pageId: "",
-    invoiceStatus: "pending", invoiceNo: "", invoiceDate: "", paidNow: true,
+    saleEmployeeId: dealEmployees[0]?.id || currentEmployee?.id || "", dealType: "sale", receivedAt: "",
+    items: [newOrderItemRow()], issuedKeyCode: "", pageId: "",
+    // MẶC ĐỊNH AN TOÀN: CHƯA THU — người dùng phải chủ động chọn "Đã thu đủ"/"Thu một phần"
+    // thì hệ thống mới ghi nhận tiền về; tránh ghi nhận tiền khống.
+    paymentMode: "chua_thu", receivedAmount: "", paymentMethod: "bank",
+    invoiceStatus: "pending", invoiceNo: "", invoiceDate: "",
   });
+  const [form, setForm] = useState(emptyOrderForm);
 
   const readCrmExcelFile = async (event) => {
     const file = event.target.files?.[0];
@@ -11852,16 +15179,28 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
     }
   };
 
-  const selectProduct = (productId) => {
-    const p = (inventory || []).find((i) => i.id === Number(productId));
+  const updateOrderItem = (idx, patch) => {
     setOrderFormError("");
-    setForm((f) => ({ ...f, productId, amount: p ? String(p.sellPrice * Number(f.quantity || 1)) : f.amount }));
+    setForm((f) => ({ ...f, items: (f.items || []).map((it, i) => (i === idx ? { ...it, ...patch } : it)) }));
   };
-  const updateQty = (qty) => {
-    const p = (inventory || []).find((i) => i.id === Number(form.productId));
-    setOrderFormError("");
-    setForm((f) => ({ ...f, quantity: qty, amount: p ? String(p.sellPrice * Number(qty || 1)) : f.amount }));
+  // Chọn sản phẩm kho → khóa tên/ĐVT/đơn giá/VAT theo hồ sơ kho; chọn "Dịch vụ" → tự nhập.
+  const selectOrderItemProduct = (idx, productId) => {
+    const p = productId ? (inventory || []).find((i) => String(i.id) === String(productId)) : null;
+    updateOrderItem(idx, {
+      productId,
+      description: p ? (p.name || "") : "",
+      uom: p ? (p.unit || "") : "",
+      unitPrice: p ? String(p.sellPrice ?? "") : "",
+      vatRate: p ? String(p.vatRate ?? 0) : "",
+    });
   };
+  const addOrderItemRow = () => setForm((f) => ({ ...f, items: [...(f.items || []), newOrderItemRow()] }));
+  const removeOrderItemRow = (idx) => setForm((f) => ({
+    ...f,
+    items: (f.items || []).length > 1 ? f.items.filter((_, i) => i !== idx) : f.items,
+  }));
+  const orderItemLineTotal = (it) => Math.max(0, (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0) - (Number(it.discount) || 0));
+  const orderItemsTotal = (form.items || []).reduce((sum, it) => sum + orderItemLineTotal(it), 0);
 
   // Tìm/tạo hồ sơ khách hàng theo ưu tiên SĐT → email → tên (mục VIII).
   const findOrCreateCustomer = (rec) => {
@@ -11891,21 +15230,60 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
       setOrderFormError('Vui lòng chọn người phụ trách đơn — nếu không qua Sale/Kỹ thuật nào, chọn mục "Khách tự đặt / không qua Sale".');
       return;
     }
-    const amount = Number(form.amount) || 0;
+    // Chỉ giữ dòng có nội dung (chọn sản phẩm hoặc gõ tên dịch vụ) — dòng trống bị bỏ qua.
+    const filledRows = (form.items || []).filter((it) => it.productId || (it.description || "").trim());
+    if (filledRows.length === 0) {
+      setOrderFormError("Đơn hàng phải có ít nhất một dòng: chọn sản phẩm từ kho hoặc nhập tên dịch vụ.");
+      return;
+    }
+    const items = [];
+    for (let i = 0; i < filledRows.length; i += 1) {
+      const it = filledRows[i];
+      const rowNo = i + 1;
+      const qty = Number(it.quantity);
+      if (it.quantity === "" || !Number.isFinite(qty) || !(qty > 0)) {
+        setOrderFormError(`Dòng ${rowNo}: số lượng phải lớn hơn 0.`);
+        return;
+      }
+      const unitPrice = Number(it.unitPrice);
+      if (it.unitPrice === "" || !Number.isFinite(unitPrice) || !(unitPrice > 0)) {
+        setOrderFormError(`Dòng ${rowNo}: đơn giá phải lớn hơn 0.`);
+        return;
+      }
+      if (it.productId && !(inventory || []).some((p) => String(p.id) === String(it.productId))) {
+        setOrderFormError(`Dòng ${rowNo}: sản phẩm đã chọn không còn trong kho. Hãy chọn lại.`);
+        return;
+      }
+      items.push({
+        productId: it.productId ? Number(it.productId) : null,
+        description: (it.description || "").trim(),
+        uom: (it.uom || "").trim(),
+        quantity: qty,
+        unitPrice,
+        discount: Math.max(0, Number(it.discount) || 0),
+        vatRate: Math.max(0, Number(it.vatRate) || 0),
+      });
+    }
+    // Tổng hiển thị để người dùng đối chiếu — BACKEND tính lại và là số cuối cùng.
+    const amount = items.reduce((sum, it) => sum + Math.max(0, it.quantity * it.unitPrice - it.discount), 0);
     if (!(amount > 0)) {
-      setOrderFormError("Số tiền đơn hàng phải lớn hơn 0.");
+      setOrderFormError("Tổng tiền đơn hàng phải lớn hơn 0.");
       return;
     }
-    const quantity = Number(form.quantity) || 1;
-    if (!(quantity > 0)) {
-      setOrderFormError("Số lượng bán phải lớn hơn 0.");
-      return;
+    if (form.paymentMode === "mot_phan") {
+      const received = Number(form.receivedAmount) || 0;
+      if (!(received > 0)) {
+        setOrderFormError("Thu một phần: nhập số tiền khách đã chuyển (lớn hơn 0).");
+        return;
+      }
+      if (received >= amount) {
+        setOrderFormError("Số tiền thu một phần phải NHỎ HƠN tổng đơn — nếu khách đã chuyển đủ, chọn \"Đã thu đủ\".");
+        return;
+      }
     }
-    const product = form.productId ? (inventory || []).find((i) => i.id === Number(form.productId)) : null;
-    if (form.productId && !product) {
-      setOrderFormError("Sản phẩm đã chọn không còn tồn tại trong kho. Hãy chọn lại sản phẩm.");
-      return;
-    }
+    const firstStockItem = items.find((it) => it.productId != null) || null;
+    const product = firstStockItem ? (inventory || []).find((p) => p.id === firstStockItem.productId) : null;
+    const quantity = firstStockItem ? firstStockItem.quantity : items.reduce((s, it) => s + it.quantity, 0);
     const emp = employees.find((e) => e.id === Number(form.saleEmployeeId));
     const dealType = emp?.roleType === "ky_thuat" ? "upsale" : "sale";
     const orderId = Date.now();
@@ -11923,13 +15301,15 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
     };
     const customerId = existingCustomer?.id || newCustomer.id;
     const companyCollects = !owningPartner || (owningPartner.cashCollector || "partner") === "company";
-    const paidNow = form.paidNow !== false;
+    // Chỉ ghi nhận ĐÃ THU ĐỦ khi người dùng chủ động chọn — mặc định luôn là CHƯA THU.
+    const paidNow = form.paymentMode === "du";
     const durationInfo = crmImportDuration(product ? `${product.name || ""} ${product.durationMonths || 0} tháng` : "", product);
     const expiryDate = crmAddDurationToIsoDate(form.date, durationInfo);
     const availability = crmInventoryAvailability(product, quantity);
+    const { items: _formItems, paymentMode: _pm, receivedAmount: _ra, paymentMethod: _pmm, ...formRest } = form;
     const order = {
-      ...form, id: orderId, customerId, saleEmployeeId: Number(form.saleEmployeeId) || null, dealType,
-      productId: form.productId ? Number(form.productId) : null, productName: product?.name || "",
+      ...formRest, id: orderId, customerId, saleEmployeeId: Number(form.saleEmployeeId) || null, dealType,
+      items, productId: firstStockItem?.productId ?? null, productName: product?.name || "",
       serviceStartDate: form.date, durationMonths: durationInfo.months, durationDays: durationInfo.days,
       durationLabel: durationInfo.label, expiryDate,
       quantity, amount, pageId: form.pageId ? Number(form.pageId) : null, contactLog: [], auditLog: [],
@@ -11960,13 +15340,40 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
       } else if (result?.order) {
         setOrders((prev) => [...prev, result.order]);
       }
-      setOrderSaveMessage(
-        result?.inventoryStatus === "pending_stock"
-          ? `Đã lưu đơn #${result.orderId}. Sản phẩm đang thiếu ${availability.shortage} ${product?.unit || "đơn vị"}; đơn ở trạng thái chờ bổ sung kho và chưa trừ tồn.`
-          : `Đã lưu đơn #${result.orderId} và đồng bộ doanh thu, kho, công nợ/Thu Chi.`,
-      );
-      setForm({ date: TODAY_STR, customerName: "", phone: "", email: "", customerTaxCode: "", note: "", saleEmployeeId: dealEmployees[0]?.id || currentEmployee?.id || "", dealType: "sale", receivedAt: "", amount: "", productId: "", quantity: "1", issuedKeyCode: "", pageId: "", invoiceStatus: "pending", invoiceNo: "", invoiceDate: "", paidNow: true });
+      let saveMessage = result?.inventoryStatus === "pending_stock"
+        ? `Đã lưu đơn #${result.orderId}. Kho đang thiếu hàng; đơn ở trạng thái chờ bổ sung kho và chưa trừ tồn.`
+        : `Đã lưu đơn #${result.orderId} và đồng bộ doanh thu, kho, công nợ/Thu Chi.`;
+      // THU MỘT PHẦN: đơn lưu xong ở trạng thái CHƯA THU + công nợ tự sinh — ghi ngay
+      // một lần thanh toán qua API công nợ (per-payment, idempotent) với số khách đã chuyển.
+      if (form.paymentMode === "mot_phan") {
+        const savedOrderId = result?.orderId ?? orderId;
+        const debtForOrder = (result?.data?.debts || []).find((d) =>
+          String(d?.sourceModule || "").toLowerCase() === "crm"
+          && [d?.sourceId, d?.sourceCrmOrderId, d?.orderId].some((v) => v != null && String(v) === String(savedOrderId)));
+        if (debtForOrder) {
+          try {
+            const payResult = await createDebtPayment(debtForOrder.id, {
+              amount: Number(form.receivedAmount) || 0,
+              date: form.date,
+              paymentMethod: form.paymentMethod || "bank",
+              note: `Thu một phần khi tạo đơn #${savedOrderId}`,
+              idempotencyKey: `order-${savedOrderId}-initial-partial`,
+            });
+            if (payResult?.data && dataLoader?.applyAppData) dataLoader.applyAppData(payResult.data, { markPersisted: true });
+            saveMessage += ` Đã ghi nhận thu một phần ${fmtVND(Number(form.receivedAmount) || 0)}; phần còn lại theo dõi ở Công nợ.`;
+          } catch (payError) {
+            saveMessage += ` LƯU Ý: chưa ghi được khoản thu một phần (${payError.message || "lỗi ghi thanh toán"}) — hãy ghi nhận thủ công ở tab Công nợ.`;
+          }
+        } else {
+          saveMessage += " LƯU Ý: chưa tìm thấy công nợ của đơn để ghi khoản thu một phần — hãy ghi nhận ở tab Công nợ.";
+        }
+      }
+      setOrderSaveMessage(saveMessage);
+      setForm(emptyOrderForm());
       setShowForm(false);
+      // Tổng quan/dashboard đọc FinancialSummary từ backend — làm tươi ngay để doanh thu,
+      // công nợ hiển thị tức thì, không bắt người dùng tải lại trang.
+      refreshFinancialSummary?.();
     } catch (error) {
       setOrderFormError(error.message || "Không lưu được đơn hàng.");
     } finally {
@@ -11974,9 +15381,21 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
     }
   };
   const prefillOrderFromCustomer = (o) => {
-    setForm({ date: TODAY_STR, customerName: o.customerName, phone: o.phone, email: o.email, note: "", saleEmployeeId: o.saleEmployeeId || dealEmployees[0]?.id || currentEmployee?.id || "", dealType: "sale", receivedAt: "", amount: "", invoiceStatus: "pending", invoiceNo: "", invoiceDate: "" });
+    setForm({
+      ...emptyOrderForm(),
+      customerName: o.customerName, phone: o.phone, email: o.email,
+      saleEmployeeId: o.saleEmployeeId || dealEmployees[0]?.id || currentEmployee?.id || "",
+    });
     setShowForm(true);
   };
+  // "Tạo đơn mới" từ drawer Khách hàng (tab khác) — mở form với thông tin khách điền sẵn.
+  useEffect(() => {
+    if (!orderPrefill) return;
+    setActiveTableView("orders");
+    prefillOrderFromCustomer(orderPrefill);
+    onOrderPrefillConsumed?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderPrefill]);
   const supportAssignees = useMemo(
     () => (employees || [])
       .filter((employee) => employee.status !== "inactive" && SUPPORT_ASSIGNABLE_ROLE_TYPES.has(employee.roleType))
@@ -11994,12 +15413,15 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
 
   const openSupportRequest = (order) => {
     const firstAvailable = supportAssignees.find((employee) => employee.email) || supportAssignees[0];
+    const orderItems = Array.isArray(order?.items) ? order.items : [];
     setSupportError("");
     setSupportRequest({
       order,
       supportType: "kich_hoat",
       supportChannel: "phone",
       employeeId: firstAvailable ? String(firstAvailable.id) : "",
+      // Đơn 1 dòng: khóa luôn order_item_id; đơn nhiều dòng: bắt chọn đúng dòng cần hỗ trợ.
+      orderItemId: orderItems.length === 1 ? String(orderItems[0].id || "") : "",
       issue: "",
       details: "",
     });
@@ -12021,6 +15443,12 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
       setSupportError("Hãy nhập nội dung cần hỗ trợ để người nhận có đủ thông tin xử lý.");
       return;
     }
+    const orderItems = Array.isArray(order.items) ? order.items : [];
+    if (orderItems.length > 0 && !supportRequest.orderItemId) {
+      setSupportError("Hãy chọn đúng DÒNG SẢN PHẨM của đơn cần hỗ trợ (order_item_id).");
+      return;
+    }
+    const selectedLine = orderItems.find((line) => String(line.id) === String(supportRequest.orderItemId)) || null;
 
     const product = inventory.find((item) => item.id === order.productId);
     const durationInfo = crmOrderDurationInfo(order, inventory);
@@ -12043,7 +15471,11 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
         customerName: order.customerName || "",
         customerPhone: order.phone || "",
         customerEmail: order.email || "",
-        productName,
+        // Liên kết bằng ID: khách + đơn + đúng dòng sản phẩm của chính đơn này.
+        customerId: order.customerId ?? undefined,
+        orderItemId: supportRequest.orderItemId || undefined,
+        productId: selectedLine?.productId ?? order.productId ?? undefined,
+        productName: selectedLine?.description || productName,
         durationLabel,
         orderDate: order.date || "",
       });
@@ -12056,8 +15488,8 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
       setSentToSupport((prev) => ({ ...prev, [order.id]: employee.name }));
       setSupportFeedback(
         result?.emailSent === false
-          ? `Đã giao ca cho ${employee.name} và đang chờ xác nhận. Tin nhắn DOMIX đã gửi; email lỗi: ${result?.emailError || "chưa cấu hình SMTP"}.`
-          : `Đã giao ca cho ${employee.name}. Tin nhắn và email đã gửi; đang chờ đúng tài khoản này xác nhận.`,
+          ? `Đã giao yêu cầu cho ${employee.name} và đang chờ xác nhận. Tin nhắn DOMIX đã gửi; email lỗi: ${result?.emailError || "chưa cấu hình SMTP"}.`
+          : `Đã giao yêu cầu cho ${employee.name}. Tin nhắn và email đã gửi; đang chờ đúng tài khoản này xác nhận.`,
       );
       setSupportRequest(null);
     } catch (error) {
@@ -12070,26 +15502,30 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
   const [invoiceError, setInvoiceError] = useState({});
   const [activeInvoiceId, setActiveInvoiceId] = useState(null);
   const [viewingAttachment, setViewingAttachment] = useState(null);
+  const invoiceBaselineRef = useRef({});
   const startInvoiceEdit = (o, e) => {
     e?.stopPropagation();
     setInvoiceError((p) => ({ ...p, [o.id]: "" }));
-    setInvoiceEdit((p) => ({ ...p, [o.id]: {
+    const draft = {
       invoiceNo: o.invoiceNo || nextSequentialInvoiceNo(orders),
       invoiceDate: o.invoiceDate || nowStamp(),
       invoiceType: o.invoiceType || "Hóa đơn GTGT (VAT)",
       vatRate: o.vatRate ?? 8,
       attachmentData: o.invoiceAttachmentData || "", attachmentName: o.invoiceAttachmentName || "", attachmentType: o.invoiceAttachmentType || "",
-    } }));
+    };
+    // Mốc dữ liệu lúc mở form — số HĐ tự đề xuất KHÔNG bị tính là "đã nhập".
+    invoiceBaselineRef.current[o.id] = JSON.stringify(draft);
+    setInvoiceEdit((p) => ({ ...p, [o.id]: draft }));
     setActiveInvoiceId(o.id);
   };
-  // Trước khi xoá bản nháp, kiểm tra xem người dùng đã NHẬP GÌ CHƯA (số hoá đơn, đính kèm) —
-  // nếu có mà bấm Huỷ/bấm ra ngoài, phải hỏi lại chứ không âm thầm xoá mất công đã nhập.
+  // Chỉ cảnh báo khi người dùng THỰC SỰ sửa khác lúc mở form — prefill không tính.
   const cancelInvoiceEdit = async (id, skipConfirm = false) => {
     const draft = invoiceEdit[id];
-    const hasUnsavedInput = draft && (draft.invoiceNo || draft.attachmentData);
-    if (!skipConfirm && hasUnsavedInput && !(await confirmOverlay("Bạn đã nhập thông tin hoá đơn nhưng chưa bấm Lưu — đóng lại sẽ MẤT hết thông tin vừa nhập. Vẫn muốn đóng?", { title: "Thông tin hóa đơn chưa lưu", confirmLabel: "Đóng form", tone: "danger" }))) {
+    const dirty = draft && JSON.stringify(draft) !== invoiceBaselineRef.current[id];
+    if (!skipConfirm && dirty && !(await confirmOverlay("Bạn đã nhập thông tin hoá đơn nhưng chưa bấm Lưu — đóng lại sẽ MẤT hết thông tin vừa nhập. Vẫn muốn đóng?", { title: "Thông tin hóa đơn chưa lưu", confirmLabel: "Đóng form", tone: "danger" }))) {
       return;
     }
+    delete invoiceBaselineRef.current[id];
     setInvoiceEdit((p) => { const n = { ...p }; delete n[id]; return n; });
     setActiveInvoiceId(null);
   };
@@ -12104,33 +15540,41 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
     const draft = invoiceEdit[id];
     if (!draft?.invoiceNo) return;
     if (!draft.attachmentData) { setInvoiceError((p) => ({ ...p, [id]: "Bắt buộc đính kèm ảnh/file hóa đơn trước khi lưu — tránh đánh dấu đã xuất mà không có chứng từ thật." })); return; }
-    const order = orders.find((o) => o.id === id);
-    // Xuất hóa đơn CRM → tự động tạo giao dịch Thu tương ứng bên Thu Chi, dựa thẳng vào
-    // thông tin khách hàng đã có trong đơn — kế toán không cần nhập lại từ đầu.
-    const linkedTxId = order?.linkedTxId || Date.now() + 1;
-    setTransactions((prev) => {
-      const withoutOld = prev.filter((t) => t.id !== order?.linkedTxId);
-      return [...withoutOld, {
-        id: linkedTxId, date: order.date, kind: "thu", category: order.dealType === "upsale" ? "Upsale Kỹ thuật (CRM)" : "Bán hàng (CRM)",
-        desc: `${order.customerName} — ${nameOf(order.saleEmployeeId)}`, amount: order.amount,
-        invoiceType: draft.invoiceType, invoiceNo: draft.invoiceNo, vatRate: VAT_INVOICE_TYPES.includes(draft.invoiceType) ? draft.vatRate : 0, status: "approved",
-        attachmentData: draft.attachmentData, attachmentName: draft.attachmentName, attachmentType: draft.attachmentType,
-        source: "crm", sourceOrderId: id,
-      }];
-    });
+    // NGHIỆP VỤ: xuất hóa đơn KHÔNG đồng nghĩa thu tiền — tuyệt đối không tự tạo
+    // giao dịch Thu ở đây. Tiền chỉ được ghi khi khách thanh toán thật (khi tạo đơn
+    // chọn "Đã thu"/"Thu một phần", hoặc ghi nhận từng lần trả ở tab Công nợ).
     setOrders((prev) => prev.map((o) => (o.id === id ? {
       ...o, invoiceStatus: "issued", invoiceNo: draft.invoiceNo, invoiceDate: draft.invoiceDate, invoiceType: draft.invoiceType, vatRate: draft.vatRate,
       invoiceAttachmentData: draft.attachmentData, invoiceAttachmentName: draft.attachmentName, invoiceAttachmentType: draft.attachmentType,
-      linkedTxId,
     } : o)));
     cancelInvoiceEdit(id, true);
   };
   const revertToPending = (id) => {
-    const order = orders.find((o) => o.id === id);
-    if (order?.linkedTxId) setTransactions((prev) => prev.filter((t) => t.id !== order.linkedTxId));
-    setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, invoiceStatus: "pending", invoiceNo: "", invoiceDate: "", invoiceAttachmentData: "", invoiceAttachmentName: "", linkedTxId: null } : o)));
+    // Chỉ gỡ TRẠNG THÁI HÓA ĐƠN — không đụng vào giao dịch Thu Chi (tiền đã thu là
+    // sự thật độc lập với việc hóa đơn có được phát hành hay chưa).
+    setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, invoiceStatus: "pending", invoiceNo: "", invoiceDate: "", invoiceAttachmentData: "", invoiceAttachmentName: "" } : o)));
     cancelInvoiceEdit(id, true);
   };
+  // Đơn "sạch" (chưa xuất kho, chưa ghi thu, chưa có công nợ thanh toán) mới được xóa thật;
+  // mọi đơn đã phát sinh nghiệp vụ chỉ được HỦY: kho tự hoàn tồn, sổ cái tự tạo bút toán đảo.
+  const orderIsDeletable = (o) => !o?.productId && !o?.linkedTxId
+    && !["paid", "partially_paid"].includes(String(o?.paymentStatus || ""))
+    && String(o?.invoiceStatus2 || o?.invoiceStatusLedger || "") !== "issued" && !o?.invoiceNo;
+
+  const cancelOrder = async (id) => {
+    const order = orders.find((o) => o.id === id);
+    if (!order || isOrderCancelled(order)) return;
+    const accepted = await confirmOverlay(
+      `Hủy đơn của "${order.customerName || ""}" (${fmtVND(Number(order.amount) || 0)})?\n\nĐơn được GIỮ LẠI ở trạng thái ĐÃ HỦY: kho tự hoàn tồn, sổ cái tự tạo bút toán đảo doanh thu/giá vốn, công nợ chưa thu tự đóng. Không xóa dữ liệu.`,
+      { title: "Hủy đơn hàng", confirmLabel: "Hủy đơn", tone: "danger" },
+    );
+    if (!accepted) return;
+    const stamp = new Date().toISOString();
+    setOrders((prev) => prev.map((o) => (o.id === id
+      ? { ...o, status: "cancelled", orderStatus: "cancelled", cancelledAt: stamp, cancelledBy: authUser?.email || "" }
+      : o)));
+  };
+
   const removeOrder = async (id) => {
     const order = orders.find((o) => o.id === id);
     const linkedDist = (distOrders || []).find((d) => d.sourceCrmOrderId === id);
@@ -12139,6 +15583,13 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
       await noticeOverlay("Đơn này đã thuộc hồ sơ quyết toán với đối tác. Hủy hồ sơ quyết toán ở tab Hợp tác phân phối trước, rồi mới xóa được đơn.", { title: "Không thể xóa đơn" });
       return;
     }
+    // Delete Policy: đơn đã phát sinh kho/tiền/hóa đơn không được xóa — chuyển sang HỦY.
+    if (!orderIsDeletable(order)) {
+      await cancelOrder(id);
+      return;
+    }
+    const accepted = await confirmOverlay("Xóa đơn nháp chưa phát sinh kho/tiền này?", { title: "Xóa đơn nháp", confirmLabel: "Xóa", tone: "danger" });
+    if (!accepted) return;
     if (order?.linkedTxId) setTransactions((prev) => prev.filter((t) => t.id !== order.linkedTxId));
     // Hoàn tồn đúng MỘT lần qua movement cancel_reverse — chống hoàn 2 lần, không tạo tồn âm (CA 8).
     if (order?.productId && moveStock) {
@@ -12158,6 +15609,26 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [editingOrder, setEditingOrder] = useState(null);
   const [editOrderErr, setEditOrderErr] = useState("");
+  // ---------- Gán Page Marketing hàng loạt cho các đơn CŨ chưa gắn nguồn ----------
+  // Không tự suy đoán Page theo ngày/số tiền — người dùng chọn tay từng đơn (hoặc một Page cho tất cả).
+  const [bulkPageAssign, setBulkPageAssign] = useState(null);
+  const openBulkPageAssign = () => {
+    const drafts = {};
+    (orders || []).filter((o) => !o.pageId && !isOrderCancelled(o)).forEach((o) => { drafts[o.id] = ""; });
+    setBulkPageAssign({ drafts });
+  };
+  const applyBulkPageAssign = () => {
+    const drafts = bulkPageAssign?.drafts || {};
+    const chosenCount = Object.values(drafts).filter(Boolean).length;
+    if (chosenCount === 0) { setBulkPageAssign(null); return; }
+    setOrders((prev) => prev.map((o) => {
+      const value = drafts[o.id];
+      if (!value) return o;
+      const audit = diffAudit(o, { ...o, pageId: Number(value) }, ["pageId"], authUser?.email || "");
+      return { ...o, pageId: Number(value), auditLog: [...(o.auditLog || []), ...audit] };
+    }));
+    setBulkPageAssign(null);
+  };
   const CUSTOMER_EDIT_FIELDS = ["customerName", "phone", "secondaryPhone", "email", "zalo", "companyName", "taxCode", "invoiceAddress", "address", "source", "note"];
 
   const startEditCustomer = (order) => {
@@ -12201,14 +15672,15 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
       setEditOrderErr("Đơn đã thanh toán và đã ghi Thu — không tự sửa số tiền của giao dịch đã ghi. Xóa đơn và tạo lại đúng số, hoặc tạo giao dịch điều chỉnh/hoàn tiền ở Thu Chi.");
       return;
     }
-    const ORDER_EDIT_FIELDS = ["date", "customerName", "saleEmployeeId", "amount", "note", "issuedKeyCode", "receivedAt"];
-    const audit = diffAudit(old, { ...editingOrder, amount: newAmount }, ORDER_EDIT_FIELDS, authUser?.email || "");
+    const ORDER_EDIT_FIELDS = ["date", "customerName", "saleEmployeeId", "amount", "note", "issuedKeyCode", "receivedAt", "pageId"];
+    const newPageId = editingOrder.pageId ? Number(editingOrder.pageId) : null;
+    const audit = diffAudit(old, { ...editingOrder, amount: newAmount, pageId: newPageId }, ORDER_EDIT_FIELDS, authUser?.email || "");
     const durationInfo = crmOrderDurationInfo(editingOrder, inventory);
     const expiryDate = crmAddDurationToIsoDate(editingOrder.date, durationInfo);
     setOrders((prev) => prev.map((x) => (x.id === editingOrder.id ? {
       ...x, date: editingOrder.date, serviceStartDate: editingOrder.date, customerName: editingOrder.customerName,
       saleEmployeeId: editingOrder.saleEmployeeId === "none" ? null : (Number(editingOrder.saleEmployeeId) || x.saleEmployeeId),
-      amount: newAmount, note: editingOrder.note, issuedKeyCode: editingOrder.issuedKeyCode, receivedAt: editingOrder.receivedAt,
+      amount: newAmount, note: editingOrder.note, issuedKeyCode: editingOrder.issuedKeyCode, receivedAt: editingOrder.receivedAt, pageId: newPageId,
       durationMonths: durationInfo.months, durationDays: durationInfo.days, durationLabel: durationInfo.label, expiryDate,
       auditLog: [...(x.auditLog || []), ...audit],
     } : x)));
@@ -12235,6 +15707,43 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
     return emp ? { label: emp.name, warn: false } : { label: "⚠ Nhân viên đã xóa", warn: true };
   };
   const toggleExpand = (id) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
+
+  // Cảnh báo "chưa lưu" chỉ khi NGƯỜI DÙNG thực sự thay đổi — dữ liệu hệ thống tự điền
+  // (prefill từ khách/đơn) được chụp làm mốc ngay lúc mở form, không tính là chỉnh sửa.
+  const orderFormBaselineRef = useRef("");
+  useEffect(() => {
+    if (showForm) orderFormBaselineRef.current = JSON.stringify(form);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showForm]);
+
+  // Chi tiết đơn (nhật ký chăm sóc + hành động) mở bằng OVERLAY POPUP — không chen inline
+  // vào bảng; đóng popup là bảng giữ nguyên tìm kiếm, bộ lọc và vị trí cuộn.
+  const [detailOrderId, setDetailOrderId] = useState(null);
+  // Mở ĐÚNG bản ghi từ Trung tâm vận hành: chỉ mở DRAWER của đơn đó (drawer tra theo ID,
+  // không phụ thuộc bộ lọc) — tuyệt đối KHÔNG đổi kỳ/tìm kiếm của bảng phía sau; đóng
+  // drawer là bảng vẫn nguyên phạm vi người dùng đang xem.
+  const [focusOrderId, setFocusOrderId] = useState(null);
+  // Nhớ nơi xuất phát (Trung tâm vận hành) — đóng drawer sẽ quay lại đúng đó, giữ bộ lọc.
+  const drawerReturnToRef = useRef(null);
+  useEffect(() => {
+    if (!recordFocus || recordFocus.type !== "order") return;
+    const orderId = recordFocus.id;
+    drawerReturnToRef.current = recordFocus.returnTo || null;
+    setActiveTableView("orders");
+    setDetailOrderId(orderId);
+    setFocusOrderId(orderId);
+    onRecordFocusConsumed?.();
+    const timer = setTimeout(() => setFocusOrderId(null), 6000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recordFocus]);
+  const closeOrderDrawer = () => {
+    setDetailOrderId(null);
+    if (drawerReturnToRef.current === "dieuhanh") {
+      drawerReturnToRef.current = null;
+      onReturnToOps?.();
+    }
+  };
 
   const addContact = (orderId) => {
     const draft = contactDraft[orderId];
@@ -12420,7 +15929,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
           <div className="flex items-center gap-2">
             <input type="date" value={callReportDate} onChange={(e) => setCallReportDate(e.target.value)} className="border border-paper-line rounded px-2.5 py-1.5 text-xs ktns-mono" />
             <button onClick={() => { setLeadForm((f) => ({ ...f, date: callReportDate, saleEmployeeId: f.saleEmployeeId || saleEmployees[0]?.id || "" })); setShowLeadForm(true); }} className="text-xs bg-ink text-white px-2.5 py-1.5 rounded-md hover:bg-ink-light flex items-center gap-1"><Plus size={12} /> Thêm khách cần gọi</button>
-            <button onClick={() => exportDailyCallReportExcel(dailyContacts, dailyBySale, callReportDate, nameOf)} className="text-xs bg-ledger-green text-white px-2.5 py-1.5 rounded-md hover:opacity-90 flex items-center gap-1"><FileSpreadsheet size={12} /> Xuất Excel</button>
+            <button onClick={() => exportDailyCallReportExcel(dailyContacts, dailyBySale, callReportDate, nameOf)} className="text-xs border border-ledger-green/40 bg-ledger-green/10 text-ledger-green px-2.5 py-1.5 rounded-md hover:bg-ledger-green/20 flex items-center gap-1"><FileSpreadsheet size={12} /> Xuất Excel</button>
           </div>
         </div>
 
@@ -12587,7 +16096,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                 <tr className={`border-t border-paper-line cursor-pointer hover:bg-paper/40 ${isOverdue ? "ktns-warn-row" : ""}`} onClick={() => setExpandedLead((p) => ({ ...p, [l.id]: !p[l.id] }))}>
                   <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedLeadIds.includes(l.id)} onChange={() => toggleLeadSelect(l.id)} /></td>
                   <td className="px-4 py-2 ktns-mono text-xs text-muted">{idx + 1}</td>
-                  <td className="px-4 py-2 ktns-mono text-xs text-muted">{l.date}</td>
+                  <td className="px-4 py-2 ktns-mono text-xs text-muted">{formatDateVN(l.date)}</td>
                   <td className="px-4 py-2 font-medium">{l.customerName}</td>
                   <td className="px-4 py-2 ktns-mono text-xs">{l.phone}</td>
                   <td className="px-4 py-2 text-xs">{LEAD_SOURCES[l.source]}</td>
@@ -12626,7 +16135,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                       <div className="flex flex-col gap-1 mb-2">
                         {(l.contactLog || []).slice().reverse().map((c, i) => (
                           <div key={i} className="flex items-center gap-2 text-xs">
-                            <span className="ktns-mono text-muted w-36 shrink-0">{c.date}</span>
+                            <span className="ktns-mono text-muted w-36 shrink-0">{fmtContactTime(c.date)}</span>
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-ink-light text-white">{CONTACT_TYPES[c.type]?.label || c.type}</span>
                             <span className="text-charcoal">{c.note}</span>
                           </div>
@@ -12664,27 +16173,10 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
             <button onClick={() => setLeadShowCount(10)} className="text-[11px] text-muted underline hover:text-ink">Thu gọn lại còn 10 người</button>
           </div>
         )}
-        <p className="px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Khách ở đây CHƯA tính vào doanh thu/hoá đơn — khi Sale chốt được đơn thật, bấm "Đã mua → Tạo đơn hàng" để chuyển hẳn xuống bảng đơn hàng CRM bên dưới. Mặc định chỉ hiện 10 người gần hẹn nhất, bấm "Xem thêm" để hiện dần, không tự hiện hết một lúc.</p>
+        <p className="px-4 py-1.5 text-[11px] text-muted border-t border-paper-line" title='Mặc định hiện 10 người gần hẹn nhất; bấm "Xem thêm" để hiện dần.'>* Khách tiềm năng chưa tính doanh thu — chốt đơn thì bấm "Đã mua → Tạo đơn hàng".</p>
       </div>
 
-      <div style={{ display: activeTableView === "orders" ? "flex" : "none" }} className="shrink-0 justify-between items-center gap-3">
-        <div>
-          <p className="text-sm text-muted">{orders.length} đơn hàng đã ghi nhận trong CRM.</p>
-          <p className="mt-0.5 text-[11px] text-muted">Đọc file Excel theo mẫu doanh thu. Nếu file có nhiều sheet, hệ thống sẽ hiển thị danh sách để chọn sheet cần nhập.</p>
-        </div>
-        <div className="flex flex-wrap justify-end gap-2">
-          <input ref={importT7InputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={readCrmExcelFile} />
-          <button disabled={importT7Reading} onClick={() => importT7InputRef.current?.click()} className="flex items-center gap-1.5 text-sm border border-[#4f7ee8] text-[#7fa5ff] bg-[#13213a] px-3.5 py-2 rounded-md hover:bg-[#192b4a] disabled:opacity-50" title="Chọn file Excel và chọn sheet cần nhập">
-            {importT7Reading ? <Loader2 size={15} className="animate-spin" /> : <FileUp size={15} />} {importT7Reading ? "Đang xử lý..." : "Đọc file Excel"}
-          </button>
-          <button onClick={() => exportOrdersExcel(orders, employees, inventory)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90">
-            <FileSpreadsheet size={15} /> Xuất Excel chi tiết hoá đơn
-          </button>
-          <button onClick={() => setShowForm(true)} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light">
-            <Plus size={15} /> Thêm đơn hàng
-          </button>
-        </div>
-      </div>
+      <input ref={importT7InputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={readCrmExcelFile} />
 
       {activeTableView === "orders" && importT7Error && (
         <div className="shrink-0 rounded-lg border border-stamp-red/40 bg-stamp-red/10 px-3 py-2 text-xs text-stamp-red flex items-center justify-between gap-3">
@@ -12794,7 +16286,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
           <button
             className="absolute top-3 right-3 text-muted hover:text-ink"
             onClick={async () => {
-              const hasInput = form.customerName || form.phone || form.amount;
+              const hasInput = JSON.stringify(form) !== orderFormBaselineRef.current;
               if (hasInput && !(await confirmOverlay("Bạn đã nhập thông tin đơn hàng nhưng chưa bấm Lưu — đóng lại sẽ MẤT hết thông tin vừa nhập. Vẫn muốn đóng?", { title: "Đơn hàng chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return;
               setShowForm(false);
             }}
@@ -12815,55 +16307,131 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
               </select>
               {(() => { const emp = employees.find((e) => e.id === Number(form.saleEmployeeId)); return emp?.roleType === "ky_thuat" ? <span className="text-[10px] text-gold mt-0.5">→ Ghi nhận là Upsale kỹ thuật</span> : <span className="text-[10px] text-ink-light mt-0.5">→ Ghi nhận là Bán hàng Sale</span>; })()}
             </label>
-            <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Sản phẩm (tuỳ chọn — lấy từ Kho hàng)
-              <select value={form.productId} onChange={(e) => selectProduct(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-sm">
-                <option value="">— Không gắn sản phẩm cụ thể (dịch vụ/khác) —</option>
-                {(inventory || []).map((p) => (<option key={p.id} value={p.id}>{p.name}{p.durationMonths > 0 ? ` (${p.durationMonths} tháng)` : ""} — tồn {p.stock} {p.unit} — {fmtVND(p.sellPrice)} (đã gồm VAT {p.vatRate || 0}%)</option>))}
-              </select>
-            </label>
             <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Nguồn từ Page nào (tuỳ chọn — để biết Marketing chạy page nào ra đơn này)
               <select value={form.pageId} onChange={(e) => setForm({ ...form, pageId: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
                 <option value="">— Không rõ nguồn / khách quen —</option>
                 {(pages || []).map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
               </select>
             </label>
-            {form.productId && (
-              <label className="text-xs text-muted flex flex-col gap-1">Số lượng<input type="number" min="1" value={form.quantity} onChange={(e) => updateQty(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-            )}
-            <label className="text-xs text-muted flex flex-col gap-1">Số tiền (đ)<MoneyInput value={form.amount} onChange={(v) => setForm({ ...form, amount: v })} /></label>
-            <label className="text-xs text-muted flex flex-col gap-1">Ngày nhận tiền<input value={form.receivedAt} onChange={(e) => setForm({ ...form, receivedAt: e.target.value })} placeholder="2026-07-08 10:00" className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-            <label className="flex items-center gap-2 text-xs text-muted col-span-2 mt-4">
-              <input type="checkbox" checked={form.paidNow !== false} onChange={(e) => setForm({ ...form, paidNow: e.target.checked })} />
-              <span>Khách <strong className="text-ink">ĐÃ chuyển tiền thật</strong> — bỏ tick nếu bán chịu: đơn vẫn lưu, KHÔNG ghi Thu, tự tạo "Phải thu khách hàng" bên Công nợ; khi khách trả (được phép trả từng phần) ghi nhận ở tab Công nợ.</span>
-            </label>
-            {(() => {
-              const p = form.productId ? (inventory || []).find((i) => i.id === Number(form.productId)) : null;
-              return p && p.durationMonths > 0 ? (
-                <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Mã key đã cấp cho khách<input value={form.issuedKeyCode} onChange={(e) => setForm({ ...form, issuedKeyCode: e.target.value })} placeholder="VD: ABCD-1234-EFGH" className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
-              ) : null;
-            })()}
           </div>
-          {form.productId && (() => {
-            const p = (inventory || []).find((i) => i.id === Number(form.productId));
-            const qty = Number(form.quantity) || 1;
-            const availability = crmInventoryAvailability(p, qty);
-            if (!p) return <p className="mt-2 flex items-center gap-1.5 text-xs text-stamp-red"><AlertTriangle size={12} /> Sản phẩm không còn tồn tại trong kho.</p>;
-            return (
-              <div className={`mt-3 rounded-lg border px-3 py-2 text-xs ${availability.canFulfill ? "border-ledger-green/30 bg-ledger-green/5 text-ink-light" : "border-gold/40 bg-gold/10 text-ink"}`}>
-                <div className="flex items-center gap-1.5 font-semibold"><Package size={13} /> Tồn hiện tại: {p.stock} {p.unit || "đơn vị"}</div>
-                <div className="mt-1">{availability.canFulfill
-                  ? `Sau khi lưu đơn, kho sẽ tự trừ ${qty} và còn ${availability.available - qty} ${p.unit || "đơn vị"}. Hủy hoặc xóa đơn sẽ hoàn tồn đúng một lần.`
-                  : `Kho đang thiếu ${availability.shortage} ${p.unit || "đơn vị"}. Đơn vẫn được lưu vào doanh thu ở trạng thái chờ bổ sung kho; hệ thống chưa trừ tồn và không cho sổ kho âm.`}</div>
+
+          {/* DÒNG SẢN PHẨM/DỊCH VỤ — tổng tiền là số dẫn xuất từ các dòng, backend tính lại và là số cuối cùng. */}
+          <div className="mt-4">
+            <div className="mb-1.5 flex items-center justify-between">
+              <span className="text-xs font-semibold text-ink">Sản phẩm / dịch vụ</span>
+              <button type="button" onClick={addOrderItemRow} className="rounded border border-paper-line px-2 py-1 text-xs font-semibold text-ink transition hover:bg-paper">+ Thêm dòng</button>
+            </div>
+            <div className="overflow-x-auto rounded-lg border border-paper-line">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="bg-paper text-[11px] text-muted">
+                    <th className="min-w-[210px] px-2 py-1.5 text-left font-medium">Sản phẩm / dịch vụ</th>
+                    <th className="w-[70px] px-2 py-1.5 text-left font-medium">ĐVT</th>
+                    <th className="w-[64px] px-2 py-1.5 text-right font-medium">SL</th>
+                    <th className="w-[110px] px-2 py-1.5 text-right font-medium">Đơn giá</th>
+                    <th className="w-[100px] px-2 py-1.5 text-right font-medium">Giảm giá</th>
+                    <th className="w-[60px] px-2 py-1.5 text-right font-medium">VAT %</th>
+                    <th className="w-[110px] px-2 py-1.5 text-right font-medium">Thành tiền</th>
+                    <th className="w-[36px]"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(form.items || []).map((it, idx) => {
+                    const p = it.productId ? (inventory || []).find((x) => String(x.id) === String(it.productId)) : null;
+                    const rowQty = Number(it.quantity) || 0;
+                    const rowShort = p ? Math.max(0, rowQty - Math.max(0, Number(p.stock) || 0)) : 0;
+                    return (
+                      <tr key={idx} className="border-t border-paper-line align-top">
+                        <td className="px-2 py-1.5">
+                          <select value={it.productId} onChange={(e) => selectOrderItemProduct(idx, e.target.value)} className="w-full rounded border border-paper-line px-2 py-1 text-xs">
+                            <option value="">— Dịch vụ / khác (tự nhập tên) —</option>
+                            {(inventory || []).map((prod) => (<option key={prod.id} value={prod.id}>{prod.name}{prod.durationMonths > 0 ? ` (${prod.durationMonths} tháng)` : ""} — tồn {prod.stock} {prod.unit}</option>))}
+                          </select>
+                          {it.productId ? (
+                            <div className={`mt-1 text-[10px] ${rowShort > 0 ? "font-semibold text-gold" : "text-ink-light"}`}>
+                              Tồn khả dụng: {p ? `${p.stock} ${p.unit || ""}` : "—"}{rowShort > 0 ? ` · thiếu ${rowShort} — đơn sẽ chờ bổ sung kho` : ""}
+                            </div>
+                          ) : (
+                            <input value={it.description} onChange={(e) => updateOrderItem(idx, { description: e.target.value })} placeholder="Tên dịch vụ (không quản kho)" className="mt-1 w-full rounded border border-paper-line px-2 py-1 text-xs" />
+                          )}
+                        </td>
+                        <td className="px-2 py-1.5"><input value={it.uom} onChange={(e) => updateOrderItem(idx, { uom: e.target.value })} placeholder="cái" className="w-full rounded border border-paper-line px-1.5 py-1 text-xs" /></td>
+                        <td className="px-2 py-1.5"><input type="number" min="1" value={it.quantity} onChange={(e) => updateOrderItem(idx, { quantity: e.target.value })} className="ktns-mono w-full rounded border border-paper-line px-1.5 py-1 text-right text-xs" /></td>
+                        <td className="px-2 py-1.5"><MoneyInput value={it.unitPrice} onChange={(v) => updateOrderItem(idx, { unitPrice: v })} className="ktns-mono w-full rounded border border-paper-line px-1.5 py-1 text-right text-xs" /></td>
+                        <td className="px-2 py-1.5"><MoneyInput value={it.discount} onChange={(v) => updateOrderItem(idx, { discount: v })} className="ktns-mono w-full rounded border border-paper-line px-1.5 py-1 text-right text-xs" /></td>
+                        <td className="px-2 py-1.5"><input type="number" min="0" value={it.vatRate} onChange={(e) => updateOrderItem(idx, { vatRate: e.target.value })} className="ktns-mono w-full rounded border border-paper-line px-1.5 py-1 text-right text-xs" /></td>
+                        <td className="ktns-mono px-2 py-1.5 text-right font-semibold text-ink">{fmtVND(orderItemLineTotal(it))}</td>
+                        <td className="px-1 py-1.5 text-center">
+                          <button type="button" onClick={() => removeOrderItemRow(idx)} disabled={(form.items || []).length <= 1} title="Xóa dòng" className="rounded p-1 text-muted transition hover:bg-stamp-red/10 hover:text-stamp-red disabled:cursor-not-allowed disabled:opacity-30"><X size={13} /></button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-paper-line bg-paper">
+                    <td colSpan={6} className="px-2 py-1.5 text-right text-[11px] text-muted">Tổng cộng (máy chủ tính lại khi lưu)</td>
+                    <td className="ktns-mono px-2 py-1.5 text-right text-sm font-bold text-ink">{fmtVND(orderItemsTotal)}</td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+          {/* THANH TOÁN — mặc định CHƯA THU; chỉ ghi Thu khi chủ động chọn. */}
+          <div className="mt-4 rounded-lg border border-paper-line p-3">
+            <span className="text-xs font-semibold text-ink">Thanh toán</span>
+            <div className="mt-2 flex flex-wrap gap-4 text-xs text-muted">
+              {[
+                ["chua_thu", "Chưa thu", "Tự tạo \"Phải thu khách hàng\" bên Công nợ"],
+                ["mot_phan", "Thu một phần", "Ghi số đã nhận, phần còn lại theo dõi ở Công nợ"],
+                ["du", "Đã thu đủ", "Chỉ chọn khi tiền ĐÃ về tài khoản/quỹ"],
+              ].map(([value, label, hint]) => (
+                <label key={value} className="flex items-center gap-1.5" title={hint}>
+                  <input type="radio" name="orderPaymentMode" value={value} checked={form.paymentMode === value} onChange={() => setForm({ ...form, paymentMode: value })} />
+                  <span className={form.paymentMode === value ? "font-semibold text-ink" : ""}>{label}</span>
+                </label>
+              ))}
+            </div>
+            {form.paymentMode !== "chua_thu" && (
+              <div className="mt-3 grid grid-cols-3 gap-3">
+                {form.paymentMode === "mot_phan" && (
+                  <label className="flex flex-col gap-1 text-xs text-muted">Số tiền đã nhận (đ)
+                    <MoneyInput value={form.receivedAmount} onChange={(v) => setForm({ ...form, receivedAmount: v })} className="ktns-mono w-full rounded border border-paper-line px-2 py-1.5 text-right text-sm" />
+                  </label>
+                )}
+                <label className="flex flex-col gap-1 text-xs text-muted">Ngày nhận tiền
+                  <input value={form.receivedAt} onChange={(e) => setForm({ ...form, receivedAt: e.target.value })} placeholder="2026-07-08 10:00" className="ktns-mono rounded border border-paper-line px-2 py-1.5 text-sm" />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-muted">Phương thức
+                  <select value={form.paymentMethod} onChange={(e) => setForm({ ...form, paymentMethod: e.target.value })} className="rounded border border-paper-line px-2 py-1.5 text-sm">
+                    <option value="bank">Chuyển khoản</option>
+                    <option value="cash">Tiền mặt</option>
+                  </select>
+                </label>
               </div>
-            );
+            )}
+          </div>
+
+          {(() => {
+            const firstDurationProduct = (form.items || [])
+              .map((it) => (it.productId ? (inventory || []).find((x) => String(x.id) === String(it.productId)) : null))
+              .find((p) => p && p.durationMonths > 0);
+            return firstDurationProduct ? (
+              <label className="mt-3 flex max-w-[380px] flex-col gap-1 text-xs text-muted">Mã key đã cấp cho khách
+                <input value={form.issuedKeyCode} onChange={(e) => setForm({ ...form, issuedKeyCode: e.target.value })} placeholder="VD: ABCD-1234-EFGH" className="ktns-mono rounded border border-paper-line px-2 py-1.5 text-sm" />
+              </label>
+            ) : null;
           })()}
           {orderFormError && <p role="alert" className="mt-3 flex items-start gap-1.5 rounded-lg border border-stamp-red/35 bg-stamp-red/5 px-3 py-2 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} className="mt-0.5 shrink-0" /> {orderFormError}</p>}
           <button type="button" onClick={addOrder} className="mt-4 min-h-[40px] rounded-md bg-ledger-green px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45" disabled={orderSubmitting}>{orderSubmitting ? "Đang lưu..." : "Lưu đơn hàng"}</button>
         </div>
       )}
 
-      <div className="shrink-0 bg-white rounded-lg border border-paper-line p-3 flex items-center gap-2 flex-wrap">
-        <div className="relative flex-1 min-w-[220px]">
+      {/* MỘT hàng công cụ của bảng: tìm kiếm + kỳ + đếm + toàn bộ nút nghiệp vụ — bảng chiếm phần còn lại. */}
+      <div style={{ display: activeTableView === "orders" ? "flex" : "none" }} className="shrink-0 bg-white rounded-lg border border-paper-line px-2.5 py-1.5 items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
           <input
             value={orderSearch}
@@ -12875,7 +16443,22 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
         {!orderSearchQ && (
           <RangeModePicker rangeMode={rangeMode} setRangeMode={setRangeMode} rangeFrom={rangeFrom} setRangeFrom={setRangeFrom} rangeTo={rangeTo} setRangeTo={setRangeTo} reportMonth={reportMonth} reportYear={reportYear} show={showRangePicker} setShow={setShowRangePicker} />
         )}
-        <span className="text-[11px] text-muted">{visibleOrders.length}/{orders.length} đơn hàng{orderSearchQ ? " khớp tìm kiếm (mọi tháng)" : ""}</span>
+        <span className="text-[11px] text-muted">{visibleOrders.length}/{orders.length} đơn{orderSearchQ ? " · khớp mọi tháng" : ""}</span>
+        <span className="hidden h-5 w-px bg-paper-line sm:block" />
+        <button disabled={importT7Reading} onClick={() => importT7InputRef.current?.click()} className="flex items-center gap-1 text-xs border border-[#4f7ee8]/50 text-[#3C50E0] px-2.5 py-1.5 rounded-md hover:bg-[#3C50E0]/5 disabled:opacity-50" title="Đọc file Excel theo mẫu doanh thu — file nhiều sheet sẽ hiện danh sách chọn sheet">
+          {importT7Reading ? <Loader2 size={13} className="animate-spin" /> : <FileUp size={13} />} {importT7Reading ? "Đang xử lý..." : "Đọc Excel"}
+        </button>
+        <button onClick={() => exportOrdersExcel(orders, employees, inventory)} className="flex items-center gap-1 text-xs border border-ledger-green/40 bg-ledger-green/10 text-ledger-green px-2.5 py-1.5 rounded-md hover:opacity-90" title="Xuất Excel chi tiết hoá đơn">
+          <FileSpreadsheet size={13} /> Xuất Excel
+        </button>
+        {(orders || []).some((o) => !o.pageId && !isOrderCancelled(o)) && (
+          <button onClick={openBulkPageAssign} className="flex items-center gap-1 text-xs border border-gold/40 bg-gold/10 text-[#92610A] px-2.5 py-1.5 rounded-md hover:bg-gold/20" title="Gán Page Marketing nguồn cho các đơn chưa gắn — doanh thu theo Page mới tính đúng">
+            <Megaphone size={13} /> Gán Page ({(orders || []).filter((o) => !o.pageId && !isOrderCancelled(o)).length} đơn chưa gắn)
+          </button>
+        )}
+        <button onClick={() => setShowForm(true)} className="flex items-center gap-1 text-xs bg-ink text-white px-3 py-1.5 rounded-md hover:bg-ink-light">
+          <Plus size={13} /> Thêm đơn hàng
+        </button>
       </div>
 
       <div style={{ display: activeTableView === "orders" ? "flex" : "none" }} className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
@@ -12893,6 +16476,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
               <th className="px-3 py-2.5">Người phụ trách</th>
               <th className="px-3 py-2.5">Loại</th>
               <th className="px-3 py-2.5 text-right">Số tiền</th>
+              <th className="px-3 py-2.5">Trạng thái</th>
               <th className="px-3 py-2.5">Tình trạng hoá đơn</th>
               <th className="px-3 py-2.5">Chăm sóc KH</th>
               <th className="px-3 py-2.5"></th>
@@ -12907,90 +16491,73 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
               const expiryDate = o.expiryDate || crmAddDurationToIsoDate(o.serviceStartDate || o.date, durationInfo);
               return (
                 <React.Fragment key={o.id}>
-                  <tr className={`border-t border-paper-line cursor-pointer hover:bg-paper/50 ${pending ? "ktns-warn-row" : ""}`} onClick={() => toggleExpand(o.id)}>
-                    <td className="px-3 py-2 ktns-mono text-xs text-muted">{idx + 1}</td>
-                    <td className="px-3 py-2 ktns-mono text-xs text-muted">{o.date}</td>
-                    <td className="px-3 py-2">
-                      <div className="font-medium">{o.customerName}</div>
-                      <div className="text-[11px] text-muted">{o.note}</div>
+                  <tr data-order-row={o.id} className={`border-t border-paper-line cursor-pointer hover:bg-paper/50 ${String(focusOrderId) === String(o.id) ? "ring-2 ring-inset ring-[#3C50E0] bg-[#3C50E0]/10" : ""} ${isOrderCancelled(o) ? "opacity-55" : pending ? "ktns-warn-row" : ""}`} onClick={() => setDetailOrderId(o.id)}>
+                    <td className="px-3 py-1.5 ktns-mono text-xs text-muted">{idx + 1}</td>
+                    <td className="px-3 py-1.5 ktns-mono text-xs text-muted whitespace-nowrap">{formatDateVN(o.date)}</td>
+                    <td className="px-3 py-1.5 min-w-[150px] max-w-[210px]">
+                      <div className="truncate font-medium" title={o.customerName}>{o.customerName}</div>
+                      {o.note ? <div className="truncate text-[11px] text-muted" title={o.note}>{o.note}</div> : null}
                     </td>
-                    <td className="px-3 py-2 text-xs min-w-[250px]">
-                      {(o.importedProductName || o.productName) ? <>{o.importedProductName || o.productName} <span className="text-muted">x{o.quantity || 1}</span></> : <span className="text-muted">—</span>}
+                    <td className="px-3 py-1.5 text-xs min-w-[200px] max-w-[260px]">
+                      {(o.importedProductName || o.productName)
+                        ? <div className="truncate" title={`${o.importedProductName || o.productName} x${o.quantity || 1}`}>{o.importedProductName || o.productName} <span className="text-muted">x{o.quantity || 1}</span></div>
+                        : <span className="text-muted">—</span>}
                       {(distOrders || []).some((d) => d.sourceCrmOrderId === o.id) && (
                         <div className="text-[9px] text-gold flex items-center gap-0.5 mt-0.5"><Link2 size={9} /> Đã nối Hợp tác phân phối</div>
                       )}
-                      {o.inventoryStatus === "pending_stock" && <div className="mt-1 flex items-center gap-1 text-[9px] font-semibold text-gold"><AlertTriangle size={9} /> Chờ bổ sung kho · thiếu {o.inventoryShortage || o.quantity || 1}</div>}
+                      {o.inventoryStatus === "pending_stock" && <div className="mt-0.5 flex items-center gap-1 text-[9px] font-semibold text-gold"><AlertTriangle size={9} /> Chờ bổ sung kho · thiếu {o.inventoryShortage || o.quantity || 1}</div>}
                     </td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap"><span className="rounded bg-[#315fae]/10 px-2 py-1 font-semibold text-[#315fae]">{durationInfo.label || "—"}</span></td>
-                    <td className="px-3 py-2 text-xs whitespace-nowrap"><div className="ktns-mono font-semibold text-ledger-green">{expiryDate || "—"}</div><div className="mt-0.5 text-[10px] text-muted">Từ {o.serviceStartDate || o.date || "—"}</div></td>
-                    <td className="px-3 py-2 text-xs text-muted">
-                      <div className="ktns-mono">{o.phone}</div>
-                      <div>{o.email}</div>
+                    <td className="px-3 py-1.5 text-xs whitespace-nowrap"><span className="rounded bg-[#315fae]/10 px-2 py-1 font-semibold text-[#315fae]">{durationInfo.label || "—"}</span></td>
+                    <td className="px-3 py-1.5 text-xs whitespace-nowrap"><span className="ktns-mono font-semibold text-ledger-green" title={`Bắt đầu từ ${formatDateVN(o.serviceStartDate || o.date) || "—"}`}>{expiryDate ? formatDateVN(expiryDate) : "—"}</span></td>
+                    <td className="px-3 py-1.5 text-xs text-muted min-w-[110px] max-w-[160px]">
+                      <div className="ktns-mono whitespace-nowrap">{o.phone || "—"}</div>
+                      {o.email ? <div className="truncate" title={o.email}>{o.email}</div> : null}
                     </td>
-                    <td className={`px-3 py-2 text-xs ${saleAssigneeDisplay(o.saleEmployeeId).warn ? "text-stamp-red font-medium" : ""}`}>{saleAssigneeDisplay(o.saleEmployeeId).label}</td>
-                    <td className="px-3 py-2">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${o.dealType === "upsale" ? "bg-gold" : "bg-ink-light"}`} style={{ color: "white" }}>{o.dealType === "upsale" ? "Upsale KT" : "Sale"}</span>
+                    <td className={`px-3 py-1.5 text-xs whitespace-nowrap min-w-[120px] ${saleAssigneeDisplay(o.saleEmployeeId).warn ? "text-stamp-red font-medium" : ""}`}>{saleAssigneeDisplay(o.saleEmployeeId).label}</td>
+                    <td className="px-3 py-1.5">
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap ${o.dealType === "upsale" ? "bg-gold" : "bg-ink-light"}`} style={{ color: "white" }}>{o.dealType === "upsale" ? "Upsale KT" : "Sale"}</span>
                     </td>
-                    <td className="px-3 py-2 text-right ktns-mono font-medium text-ledger-green">{fmtVND(o.amount)}</td>
-                    <td className="px-3 py-2 min-w-[150px]" onClick={(e) => e.stopPropagation()}>
-                      <button onClick={(e) => startInvoiceEdit(o, e)}>
+                    <td className="px-3 py-1.5 text-right ktns-mono font-medium text-ledger-green whitespace-nowrap">{fmtVND(o.amount)}</td>
+                    <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}><OrderLifecycleBadges order={o} /></td>
+                    <td className="px-3 py-1.5 min-w-[130px]" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={(e) => startInvoiceEdit(o, e)} title={o.invoiceStatus === "issued" ? `Hoá đơn ${o.invoiceNo || ""}` : "Bấm để xuất hoá đơn"}>
                         {o.invoiceStatus === "issued" ? <StampBadge text="ĐÃ XUẤT" gold /> : <StampBadge text="CHƯA XUẤT HĐ" />}
                       </button>
-                      {o.invoiceStatus === "issued" ? (
-                        <div className="text-[10px] text-muted ktns-mono mt-1 flex items-center gap-1.5">
+                      {o.invoiceStatus === "issued" && (
+                        <div className="text-[10px] text-muted ktns-mono mt-0.5 flex items-center gap-1.5">
                           {o.invoiceNo}
                           {o.invoiceAttachmentData && <button onClick={(e) => { e.stopPropagation(); setViewingAttachment(o); }} className="text-ink-light underline flex items-center gap-0.5"><Paperclip size={9} /> xem</button>}
                         </div>
-                      ) : (
-                        <div className="text-[10px] text-ink-light mt-1">Bấm để xuất hoá đơn</div>
                       )}
                     </td>
-                    <td className="px-3 py-2 text-xs" onClick={(e) => e.stopPropagation()}>
-                      {lastContact ? (
-                        <span className="text-muted">{CONTACT_TYPES[lastContact.type]?.label} · <span className="ktns-mono">{lastContact.date}</span></span>
-                      ) : (
-                        <span className="text-stamp-red">Chưa liên hệ</span>
-                      )}
-                      <div className="mt-1 flex flex-col items-start gap-1">
-                        {sentToSupport[o.id] && <span className="text-[10px] text-ledger-green flex items-center gap-1"><CheckCircle2 size={10} /> Đã giao cho {sentToSupport[o.id]}</span>}
-                        <button onClick={() => openSupportRequest(o)} className="text-[10px] text-gold underline flex items-center gap-1"><Headphones size={10} /> {sentToSupport[o.id] ? "Gửi yêu cầu khác" : "Gửi hỗ trợ"}</button>
+                    <td className="whitespace-nowrap px-3 py-1.5 text-xs" onClick={(e) => e.stopPropagation()}>
+                      {/* MỘT dòng ngắn duy nhất: kênh gần nhất + giờ dễ đọc; trạng thái hỗ trợ là
+                          badge nhỏ kèm tooltip — chi tiết và thao tác nằm trong drawer của dòng. */}
+                      <div className="flex items-center gap-1.5">
+                        {lastContact
+                          ? <span className="text-muted">{CONTACT_TYPES[lastContact.type]?.label || "Hỗ trợ"} · <span className="ktns-mono">{fmtContactTime(lastContact.date)}</span></span>
+                          : <span className="text-stamp-red">Chưa liên hệ</span>}
+                        {o.supportStatus === "cho_xac_nhan" && <span className="rounded border border-gold/40 bg-gold/10 px-1 py-px text-[9px] font-bold text-gold" title="Hỗ trợ: chờ kỹ thuật xác nhận">HT…</span>}
+                        {o.supportStatus === "dang_ho_tro" && <span className="rounded border border-gold/40 bg-gold/10 px-1 py-px text-[9px] font-bold text-gold" title="Đang hỗ trợ">HT</span>}
+                        {o.supportStatus === "cho_duyet_hoan_tat" && <span className="rounded border border-gold/40 bg-gold/10 px-1 py-px text-[9px] font-bold text-gold" title="Hỗ trợ: chờ duyệt hoàn tất">HT?</span>}
+                        {o.supportStatus === "hoan_tat" && <span className="rounded border border-ledger-green/40 bg-ledger-green/10 px-1 py-px text-[9px] font-bold text-ledger-green" title="Hỗ trợ đã hoàn tất">HT✓</span>}
                       </div>
                     </td>
-                    <td className="px-3 py-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                      <button onClick={() => startEditOrder(o)} className="text-muted hover:text-ink mr-2" title="Sửa đơn hàng"><Pencil size={13} /></button>
-                      <button onClick={() => removeOrder(o.id)} className="text-muted hover:text-stamp-red"><Trash2 size={14} /></button>
+                    <td className="px-3 py-1.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      {isOrderCancelled(o) ? (
+                        <span className="text-[9px] font-semibold text-muted" title="Đơn đã hủy — giữ lại làm dấu vết, kho và sổ cái đã tự đảo">Lưu vết</span>
+                      ) : (
+                        <>
+                          <button onClick={() => startEditOrder(o)} className="text-muted hover:text-ink mr-2" title="Sửa đơn hàng"><Pencil size={13} /></button>
+                          {orderIsDeletable(o) ? (
+                            <button onClick={() => removeOrder(o.id)} className="text-muted hover:text-stamp-red" title="Xóa đơn nháp (chưa phát sinh kho/tiền/hóa đơn)"><Trash2 size={14} /></button>
+                          ) : (
+                            <button onClick={() => cancelOrder(o.id)} className="text-muted hover:text-stamp-red" title="Hủy đơn — kho tự hoàn tồn, sổ cái tự tạo bút toán đảo (không xóa dữ liệu)"><RotateCcw size={14} /></button>
+                          )}
+                        </>
+                      )}
                     </td>
                   </tr>
-                  {expanded[o.id] && (
-                    <tr className="border-t border-paper-line bg-paper/40">
-                      <td colSpan={13} className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <div className="text-[11px] font-semibold text-ink uppercase flex items-center gap-1.5"><Phone size={12} /> Nhật ký liên hệ đa kênh — {o.customerName} ({o.phone})</div>
-                          <div className="flex items-center gap-2 relative">
-                            <button onClick={() => prefillOrderFromCustomer(o)} className="text-[10px] bg-ledger-green text-white px-2.5 py-1 rounded flex items-center gap-1 hover:opacity-90"><Plus size={10} /> Tạo đơn mới cho khách này</button>
-                            <button onClick={() => openSupportRequest(o)} className="text-[10px] bg-gold text-white px-2.5 py-1 rounded flex items-center gap-1 hover:opacity-90"><Headphones size={10} /> {sentToSupport[o.id] ? "Gửi yêu cầu hỗ trợ khác" : "Gửi hỗ trợ khách hàng"}</button>
-                          </div>
-                        </div>
-                        {log.length === 0 && <div className="text-xs text-muted mb-2">Chưa có lượt liên hệ nào được ghi nhận.</div>}
-                        <div className="flex flex-col gap-1 mb-2">
-                          {log.slice().reverse().map((c, i) => (
-                            <div key={i} className="flex items-center gap-2 text-xs">
-                              <span className="ktns-mono text-muted w-36 shrink-0">{c.date}</span>
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${["call", "message"].includes(c.type) ? "bg-ink-light" : "bg-gold"}`} style={{ color: "white" }}>{CONTACT_TYPES[c.type]?.label}</span>
-                              <span className="text-charcoal">{c.note}</span>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="flex gap-2 items-center">
-                          <select value={contactDraft[o.id]?.type || "call"} onChange={(e) => setContactDraft((p) => ({ ...p, [o.id]: { ...p[o.id], type: e.target.value } }))} className="border border-paper-line rounded px-2 py-1.5 text-xs">
-                            {Object.entries(CONTACT_TYPES).map(([id, m]) => (<option key={id} value={id}>{m.label}</option>))}
-                          </select>
-                          <input value={contactDraft[o.id]?.note || ""} onChange={(e) => setContactDraft((p) => ({ ...p, [o.id]: { ...p[o.id], note: e.target.value } }))} placeholder="Ghi chú nội dung liên hệ..." className="flex-1 border border-paper-line rounded px-2 py-1.5 text-xs" />
-                          <button onClick={() => addContact(o.id)} className="text-xs bg-ink text-white px-3 py-1.5 rounded-md hover:bg-ink-light flex items-center gap-1"><Plus size={12} /> Ghi nhận</button>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
                 </React.Fragment>
               );
             })}
@@ -13014,7 +16581,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
         const durationInfo = crmOrderDurationInfo(order, inventory);
         const durationLabel = durationInfo.label || "Không xác định";
         return (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-[#050912]/75 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget && !supportSubmitting) setSupportRequest(null); }}>
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-ink/55 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !supportSubmitting) setSupportRequest(null); }}>
             <div className="flex max-h-[92vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[#33435d] bg-[#101827] shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
               <div className="flex items-start justify-between gap-4 border-b border-[#29364b] px-5 py-4">
                 <div>
@@ -13051,6 +16618,17 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                     </label>
                   </div>
 
+                  {Array.isArray(supportRequest.order?.items) && supportRequest.order.items.length > 1 && (
+                    <label className="flex flex-col gap-1.5 text-xs font-semibold text-[#b8c4d8]">Dòng sản phẩm cần hỗ trợ <span className="text-red-400">*</span>
+                      <select value={supportRequest.orderItemId} onChange={(event) => setSupportRequest((current) => ({ ...current, orderItemId: event.target.value }))} className="rounded-lg border border-[#34435c] bg-[#182131] px-3 py-2.5 text-sm text-white outline-none focus:border-[#5d8de4]">
+                        <option value="">— Chọn dòng sản phẩm của đơn —</option>
+                        {supportRequest.order.items.map((line) => (
+                          <option key={line.id} value={line.id}>{line.description}{line.quantity ? ` ×${line.quantity}` : ""}</option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
+
                   <label className="flex flex-col gap-1.5 text-xs font-semibold text-[#b8c4d8]">Vấn đề cần hỗ trợ <span className="text-red-400">*</span>
                     <input value={supportRequest.issue} onChange={(event) => setSupportRequest((current) => ({ ...current, issue: event.target.value }))} placeholder="Ví dụ: Khách không đăng nhập được vào tài khoản đã cấp" className="rounded-lg border border-[#34435c] bg-[#182131] px-3 py-2.5 text-sm text-white outline-none placeholder:text-[#66758e] focus:border-[#5d8de4]" />
                   </label>
@@ -13059,36 +16637,30 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                   </label>
                 </div>
 
-                <div className="flex min-h-[360px] flex-col overflow-hidden rounded-xl border border-[#2c3a50] bg-[#151f2f]">
+                <div className="flex min-h-[300px] flex-col overflow-hidden rounded-xl border border-[#2c3a50] bg-[#151f2f]">
                   <div className="border-b border-[#2c3a50] px-4 py-3">
                     <div className="text-sm font-bold text-white">Chọn nhân sự tiếp nhận</div>
                     <div className="mt-1 text-[11px] text-[#8392aa]">Chỉ gồm tài khoản Kỹ thuật, IT và Chăm sóc khách hàng đang hoạt động.</div>
                   </div>
-                  <div className="min-h-0 flex-1 overflow-auto">
-                    <table className="w-full min-w-[620px] text-xs">
-                      <thead className="sticky top-0 z-10 bg-[#1c2637] text-left uppercase text-[#91a0b8]">
-                        <tr><th className="w-12 px-3 py-2.5">Chọn</th><th className="px-3 py-2.5">Nhân sự</th><th className="px-3 py-2.5">Vị trí</th><th className="px-3 py-2.5">Phòng ban</th><th className="px-3 py-2.5">Email nhận</th></tr>
-                      </thead>
-                      <tbody>
-                        {supportAssignees.length === 0 ? (
-                          <tr><td colSpan={5} className="px-4 py-10 text-center text-[#75849b]">Chưa có nhân sự thuộc các nhóm được phép tiếp nhận hỗ trợ.</td></tr>
-                        ) : supportAssignees.map((employee) => {
-                          const selected = String(employee.id) === String(supportRequest.employeeId);
-                          return (
-                            <tr key={employee.id} onClick={() => setSupportRequest((current) => ({ ...current, employeeId: String(employee.id) }))} className={`cursor-pointer border-t border-[#3A4152] transition-colors ${selected ? "bg-[#284d88]/45" : "hover:bg-white/[0.035]"}`}>
-                              <td className="px-3 py-3"><input type="radio" name="supportEmployee" checked={selected} onChange={() => setSupportRequest((current) => ({ ...current, employeeId: String(employee.id) }))} className="h-4 w-4 accent-[#5d8de4]" /></td>
-                              <td className="px-3 py-3"><div className="font-semibold text-white">{employee.name}</div><div className="mt-0.5 text-[10px] text-[#72819a]">{employee.phone || "Chưa có SĐT"}</div></td>
-                              <td className="px-3 py-3 text-[#b9c6d9]">{ROLE_META[employee.roleType]?.label || employee.position || "Nhân viên"}</td>
-                              <td className="px-3 py-3 text-[#94a3ba]">{employee.dept || "—"}</td>
-                              <td className="px-3 py-3"><span className={employee.email ? "text-emerald-300" : "text-amber-300"}>{employee.email || "Tra theo tài khoản liên kết"}</span></td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                  {/* Danh sách RADIO CARD dọc — không dùng bảng rộng gây cuộn ngang trong modal;
+                      nội dung dài (email) tự cắt bằng ellipsis, đầy đủ trong tooltip. */}
+                  <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-3">
+                    {supportAssignees.length === 0 && <div className="px-2 py-8 text-center text-xs text-[#75849b]">Chưa có nhân sự thuộc các nhóm được phép tiếp nhận hỗ trợ.</div>}
+                    {supportAssignees.map((employee) => {
+                      const selected = String(employee.id) === String(supportRequest.employeeId);
+                      return (
+                        <button type="button" key={employee.id} onClick={() => setSupportRequest((current) => ({ ...current, employeeId: String(employee.id) }))} className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left transition ${selected ? "border-[#6c98ff] bg-[#284d88]/45" : "border-[#2c3a50] hover:border-[#46689f] hover:bg-white/[0.03]"}`}>
+                          <input type="radio" name="supportEmployee" checked={selected} readOnly className="h-4 w-4 shrink-0 accent-[#5d8de4]" />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-semibold text-white">{employee.name} <span className="ml-1 text-[10px] font-normal text-[#8fa0bc]">{ROLE_META[employee.roleType]?.label || employee.position || "Nhân viên"}</span></span>
+                            <span className={`block truncate text-[10px] ${employee.email ? "text-emerald-300" : "text-amber-300"}`} title={employee.email || "Tra theo tài khoản liên kết"}>{employee.email || "Tra theo tài khoản liên kết"}</span>
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                   {selectedEmployee && (
-                    <div className="border-t border-[#2c3a50] bg-[#121b29] px-4 py-3 text-xs text-[#aebbd0]">Đang giao cho <strong className="text-white">{selectedEmployee.name}</strong> · {ROLE_META[selectedEmployee.roleType]?.label || selectedEmployee.position || "Nhân viên"}</div>
+                    <div className="border-t border-[#2c3a50] bg-[#121b29] px-4 py-2.5 text-xs text-[#aebbd0]">Đang giao cho <strong className="text-white">{selectedEmployee.name}</strong> · {ROLE_META[selectedEmployee.roleType]?.label || selectedEmployee.position || "Nhân viên"}</div>
                   )}
                 </div>
               </div>
@@ -13146,7 +16718,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
               )}
               {invoiceError[activeInvoiceId] && <p className="text-xs text-stamp-red mt-2 flex items-center gap-1"><AlertTriangle size={12} /> {invoiceError[activeInvoiceId]}</p>}
               <div className="flex gap-2 mt-4 flex-wrap">
-                <button onClick={() => saveInvoiceEdit(activeInvoiceId)} className="bg-ledger-green text-white text-sm px-3 py-1.5 rounded-md hover:opacity-90">Lưu &amp; ghi Thu Chi</button>
+                <button onClick={() => saveInvoiceEdit(activeInvoiceId)} className="bg-ledger-green text-white text-sm px-3 py-1.5 rounded-md hover:opacity-90">Lưu hóa đơn</button>
                 <button onClick={() => cancelInvoiceEdit(activeInvoiceId)} className="border border-paper-line text-sm px-3 py-1.5 rounded-md text-muted">Huỷ</button>
                 {o.invoiceStatus === "issued" && <button onClick={() => revertToPending(activeInvoiceId)} className="text-sm text-stamp-red px-2 py-1.5">Bỏ đã xuất</button>}
               </div>
@@ -13159,7 +16731,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                   <FileText size={12} /> Mở email nháp gửi khách ({o.email})
                 </a>
               )}
-              <p className="text-[10px] text-muted mt-3">Lưu sẽ tự tạo giao dịch Thu tương ứng bên tab Thu Chi (đúng khách hàng, số tiền, hoá đơn, VAT) — không cần nhập lại. Email nháp mở qua ứng dụng mail mặc định của máy — cần tự đính kèm ảnh hoá đơn rồi mới gửi, trình duyệt không cho web tự động gửi/đính kèm thay bạn.</p>
+              <p className="text-[10px] text-muted mt-3">Phát hành hóa đơn CHỈ cập nhật trạng thái hóa đơn của đơn hàng — KHÔNG ghi nhận tiền. Tiền chỉ được ghi khi khách thanh toán thật (chọn Đã thu/Thu một phần lúc tạo đơn, hoặc ghi nhận từng lần trả ở tab Công nợ). Email nháp mở qua ứng dụng mail mặc định của máy — cần tự đính kèm ảnh hoá đơn rồi mới gửi.</p>
             </div>
           </div>
         );
@@ -13181,7 +16753,88 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
         </div>
       )}
 
-      <p className="text-xs text-muted">* Bấm vào dòng để mở nhật ký chăm sóc khách hàng. Bấm vào badge "Tình trạng hoá đơn" để xuất hoá đơn — bắt buộc đính kèm chứng từ, tự động ghi nhận sang Thu Chi.</p>
+
+      {/* CHI TIẾT ĐƠN — DRAWER cạnh phải: bảng phía sau giữ nguyên vị trí cuộn, tháng và
+          bộ lọc; thông tin trình bày theo KHỐI nhiều dòng, không dồn vào một dòng dài. */}
+      {detailOrderId && (() => {
+        const o = orders.find((item) => String(item.id) === String(detailOrderId));
+        if (!o) return null;
+        const log = o.contactLog || [];
+        const lastLog = log[log.length - 1];
+        const breakdown = o.amountBreakdown || {};
+        const collected = Number(breakdown.collected);
+        const remaining = Number(breakdown.remaining);
+        const saleName = (employees || []).find((e) => Number(e.id) === Number(o.saleEmployeeId))?.name || "Chưa gán";
+        const infoRow = (label, value) => (
+          <div className="flex items-start justify-between gap-3 border-b border-paper-line py-1.5 text-xs">
+            <span className="shrink-0 text-muted">{label}</span>
+            <span className="min-w-0 text-right font-medium text-ink">{value}</span>
+          </div>
+        );
+        return (
+          <div className="fixed inset-0 z-[120] flex justify-end bg-ink/40" onClick={closeOrderDrawer}>
+            <div className="flex h-full w-full max-w-[580px] flex-col overflow-hidden bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+              <div className="shrink-0 border-b border-paper-line px-5 py-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="text-[10px] font-bold uppercase tracking-wide text-muted">Đơn hàng · <span className="ktns-mono">#{String(o.id).slice(-6)}</span></div>
+                    <h3 className="mt-0.5 ktns-serif text-xl font-bold text-ink">{o.customerName || "—"}</h3>
+                  </div>
+                  <button type="button" onClick={closeOrderDrawer} className="shrink-0 rounded-full border border-paper-line p-2 text-muted hover:text-ink" aria-label="Đóng chi tiết đơn"><X size={15} /></button>
+                </div>
+                <div className="mt-2"><OrderLifecycleBadges order={o} /></div>
+              </div>
+              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+                <div className="rounded-lg border border-paper-line px-3 py-1.5">
+                  {infoRow("Ngày bán", <span className="ktns-mono">{formatDateVN(o.date)}</span>)}
+                  {infoRow("Số điện thoại", <span className="ktns-mono">{o.phone || "—"}</span>)}
+                  {o.email ? infoRow("Email", o.email) : null}
+                  {infoRow("Sale phụ trách", saleName)}
+                  {infoRow("Sản phẩm", (o.productName || o.importedProductName) ? `${o.productName || o.importedProductName} ×${o.quantity || 1}` : "Dịch vụ")}
+                  {infoRow("Tổng tiền", <span className="ktns-mono font-bold text-ledger-green">{fmtVND(o.amount)}</span>)}
+                  {Number.isFinite(collected) && infoRow("Đã thu", <span className="ktns-mono">{fmtVND(collected)}</span>)}
+                  {Number.isFinite(remaining) && infoRow("Còn phải thu", <span className={`ktns-mono font-bold ${remaining > 0 ? "text-stamp-red" : "text-muted"}`}>{fmtVND(remaining)}</span>)}
+                  {infoRow("Hóa đơn", o.invoiceNo ? <span className="ktns-mono">{o.invoiceNo}</span> : <span className="text-stamp-red">Chưa xuất</span>)}
+                </div>
+
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <button onClick={() => { setDetailOrderId(null); prefillOrderFromCustomer(o); }} className="inline-flex items-center gap-1 rounded-md bg-ledger-green px-2.5 py-1.5 text-[11px] font-semibold text-white hover:opacity-90"><Plus size={11} /> Tạo đơn mới cho khách</button>
+                  <button onClick={() => { setDetailOrderId(null); openSupportRequest(o); }} className="inline-flex items-center gap-1 rounded-md bg-gold px-2.5 py-1.5 text-[11px] font-semibold text-white hover:opacity-90"><Headphones size={11} /> {sentToSupport[o.id] ? "Gửi hỗ trợ khác" : "Tạo yêu cầu hỗ trợ"}</button>
+                </div>
+
+                <div className="mt-5">
+                  <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase text-ink"><Phone size={12} /> Lịch sử chăm sóc ({log.length})</div>
+                  {log.length === 0 && <div className="mb-2 text-xs text-muted">Chưa có lượt liên hệ nào được ghi nhận.</div>}
+                  {/* Timeline dọc: kênh + thời gian dễ đọc + nội dung — không hiển thị chuỗi ISO. */}
+                  <div className="mb-3 flex flex-col">
+                    {log.slice().reverse().map((c, i) => (
+                      <div key={i} className="relative border-l-2 border-paper-line pb-3 pl-4 last:pb-0">
+                        <span className="absolute -left-[5px] top-1 h-2 w-2 rounded-full bg-[#3C50E0]" />
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
+                          <span className={`rounded px-1.5 py-0.5 text-[10px] font-medium text-white ${["call", "message"].includes(c.type) ? "bg-ink-light" : "bg-gold"}`}>{CONTACT_TYPES[c.type]?.label || "Hỗ trợ"}</span>
+                          <span className="ktns-mono text-muted">{fmtContactTime(c.date)}</span>
+                        </div>
+                        <div className="mt-1 text-xs leading-5 text-charcoal">{c.note}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="rounded-lg border border-paper-line bg-paper/40 p-2.5">
+                    <div className="mb-1.5 text-[10px] font-bold uppercase text-muted">Ghi nhận liên hệ mới</div>
+                    <div className="flex items-center gap-2">
+                      <select value={contactDraft[o.id]?.type || "call"} onChange={(e) => setContactDraft((p) => ({ ...p, [o.id]: { ...p[o.id], type: e.target.value } }))} className="border border-paper-line rounded px-2 py-1.5 text-xs bg-white">
+                        {Object.entries(CONTACT_TYPES).map(([id, m]) => (<option key={id} value={id}>{m.label}</option>))}
+                      </select>
+                      <input value={contactDraft[o.id]?.note || ""} onChange={(e) => setContactDraft((p) => ({ ...p, [o.id]: { ...p[o.id], note: e.target.value } }))} placeholder="Nội dung ghi chú..." className="flex-1 border border-paper-line rounded px-2 py-1.5 text-xs bg-white" />
+                      <button onClick={() => addContact(o.id)} disabled={!(contactDraft[o.id]?.note || "").trim()} className="text-xs bg-ink text-white px-3 py-1.5 rounded-md hover:bg-ink-light flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed"><Plus size={12} /> Lưu liên hệ</button>
+                    </div>
+                  </div>
+                  {lastLog && <div className="mt-2 text-[10px] text-muted">Lần gần nhất: {CONTACT_TYPES[lastLog.type]?.label || "Hỗ trợ"} · {fmtContactTime(lastLog.date)}</div>}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ---------- Overlay SỬA ĐƠN HÀNG (mục VIII) ---------- */}
       {editingOrder && (
@@ -13204,6 +16857,12 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
               <label className="text-xs text-muted flex flex-col gap-1">Tổng thanh toán (đ)<MoneyInput value={editingOrder.amount} onChange={(v) => setEditingOrder({ ...editingOrder, amount: v })} /></label>
               <label className="text-xs text-muted flex flex-col gap-1">Mã key đã cấp<input value={editingOrder.issuedKeyCode || ""} onChange={(e) => setEditingOrder({ ...editingOrder, issuedKeyCode: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
               <label className="text-xs text-muted flex flex-col gap-1">Ngày nhận tiền<input value={editingOrder.receivedAt || ""} onChange={(e) => setEditingOrder({ ...editingOrder, receivedAt: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
+              <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Nguồn từ Page nào (tuỳ chọn — để doanh thu Page tính đúng cả đơn cũ)
+                <select value={editingOrder.pageId ?? ""} onChange={(e) => setEditingOrder({ ...editingOrder, pageId: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
+                  <option value="">— Không rõ nguồn / khách quen —</option>
+                  {(pages || []).map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                </select>
+              </label>
               <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Ghi chú<input value={editingOrder.note || ""} onChange={(e) => setEditingOrder({ ...editingOrder, note: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
             </div>
             {editOrderErr && <p className="text-xs text-stamp-red mt-2 bg-stamp-red/10 border border-stamp-red/20 rounded px-3 py-2">{editOrderErr}</p>}
@@ -13219,8 +16878,55 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
             )}
             <div className="flex gap-2 mt-4 items-center">
               <button onClick={saveOrderEdit} className="bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">Lưu thay đổi</button>
-              <button onClick={() => { setEditingOrder(null); startEditCustomer(editingOrder); }} className="border border-paper-line text-sm px-4 py-2 rounded-md text-ink hover:border-gold">Sửa hồ sơ khách hàng</button>
+              <button onClick={() => { setEditingOrder(null); startEditCustomer(editingOrder); }} className="border border-paper-line text-sm px-4 py-2 rounded-md text-ink hover:border-[#3C50E0]/60">Sửa hồ sơ khách hàng</button>
               <button onClick={() => setEditingOrder(null)} className="border border-paper-line text-sm px-4 py-2 rounded-md text-muted ml-auto">Đóng</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ---------- Overlay GÁN PAGE MARKETING HÀNG LOẠT cho đơn cũ ---------- */}
+      {bulkPageAssign && (
+        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-2xl shadow-xl max-h-[88vh] flex flex-col" onClick={(ev) => ev.stopPropagation()}>
+            <div className="shrink-0 px-5 pt-5">
+              <h3 className="ktns-serif font-semibold text-ink mb-1">Gán Page Marketing cho đơn chưa gắn nguồn</h3>
+              <p className="text-xs text-muted mb-3">Chọn đúng Page đã chạy quảng cáo ra từng đơn — doanh thu CRM theo Page sẽ tự cập nhật ngay sau khi lưu. Đơn không chọn Page sẽ giữ nguyên. Mọi thay đổi đều ghi lịch sử sửa đổi trên đơn.</p>
+              {(pages || []).length > 0 && (
+                <label className="mb-3 flex flex-wrap items-center gap-2 text-xs text-muted">Áp dụng nhanh một Page cho tất cả:
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (!value) return;
+                      setBulkPageAssign((current) => ({ ...current, drafts: Object.fromEntries(Object.keys(current.drafts).map((id) => [id, value])) }));
+                    }}
+                    className="border border-paper-line rounded px-2 py-1.5 text-sm"
+                  >
+                    <option value="">— Chọn Page —</option>
+                    {(pages || []).map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                  </select>
+                </label>
+              )}
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto border-t border-paper-line">
+              {Object.keys(bulkPageAssign.drafts).length === 0 && <div className="px-5 py-8 text-center text-xs text-muted">Mọi đơn đều đã gắn Page.</div>}
+              {(orders || []).filter((o) => Object.prototype.hasOwnProperty.call(bulkPageAssign.drafts, o.id)).map((o) => (
+                <div key={o.id} className="flex flex-wrap items-center gap-2 border-b border-paper-line px-5 py-2 text-xs">
+                  <span className="ktns-mono text-muted">#{String(o.id).slice(-6)}</span>
+                  <span className="ktns-mono text-muted">{formatDateVN(o.date)}</span>
+                  <span className="min-w-0 flex-1 truncate font-medium text-ink">{o.customerName}</span>
+                  <span className="ktns-mono">{fmtVND(o.amount)}</span>
+                  <select value={bulkPageAssign.drafts[o.id]} onChange={(e) => setBulkPageAssign((current) => ({ ...current, drafts: { ...current.drafts, [o.id]: e.target.value } }))} className="border border-paper-line rounded px-2 py-1.5 text-xs">
+                    <option value="">— Không gắn —</option>
+                    {(pages || []).map((p) => (<option key={p.id} value={p.id}>{p.name}</option>))}
+                  </select>
+                </div>
+              ))}
+            </div>
+            <div className="shrink-0 flex items-center gap-2 px-5 py-4">
+              <button onClick={applyBulkPageAssign} className="bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">Lưu Page đã chọn ({Object.values(bulkPageAssign.drafts).filter(Boolean).length} đơn)</button>
+              <button onClick={() => setBulkPageAssign(null)} className="border border-paper-line text-sm px-4 py-2 rounded-md text-muted ml-auto">Đóng</button>
             </div>
           </div>
         </div>
@@ -13316,8 +17022,12 @@ function exportMarketingExcel(logs, employees) {
   XLSX.writeFile(wb, `DOMIX_Marketing_hang_ngay_${TODAY_STR}.xlsx`);
 }
 
-function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportYear, reportMonth, pages, setPages, orders, inventory, authUser, currentEmployee, positionAccess, leads, setLeads, dataLoader }) {
+function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee, reportYear, reportMonth, pages, setPages, orders, inventory, authUser, currentEmployee, positionAccess, leads, setLeads, dataLoader }) {
   const [activeTableView, setActiveTableView] = useState("daily");
+  // Bản ghi đã LƯU TRỮ (archived — ví dụ bản trùng do lần lưu lỗi ngày) bị loại khỏi mọi
+  // bảng/thống kê nhưng vẫn nằm nguyên trong DB làm dấu vết; setLogs vẫn thao tác trên danh
+  // sách đầy đủ nên không mất bản ghi nào khi lưu.
+  const logs = useMemo(() => (allLogs || []).filter((log) => !log.archived), [allLogs]);
   const canManageMarketing = normalizeAccountRole(authUser?.role) !== "user";
   const canWriteMarketingDaily = canManageMarketing || Boolean(positionAccess?.marketingWrite && currentEmployee?.id);
   const canEditMarketingLog = (log) => canManageMarketing || (canWriteMarketingDaily && Number(log?.employeeId) === Number(currentEmployee?.id));
@@ -13524,6 +17234,12 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
   };
   const addLog = () => {
     if (!canWriteMarketingDaily) return;
+    // Ngày thống kê BẮT BUỘC và phải đúng dạng YYYY-MM-DD (giữ nguyên chuỗi, không qua
+    // new Date().toISOString() để khỏi lệch ngày theo UTC). Backend chặn thêm một lớp nữa.
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(form.date || ""))) {
+      setLogFormError("Vui lòng chọn NGÀY cho bản ghi Marketing — bản ghi không có ngày sẽ không thuộc tháng nào.");
+      return;
+    }
     if (!form.customersReached) {
       setLogFormError("Vui lòng nhập số khách tiếp cận.");
       return;
@@ -13610,11 +17326,78 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
       />
       </div>
 
-      <div style={{ display: activeTableView === "daily" ? "grid" : "none" }} className="shrink-0 grid-cols-2 gap-2.5 xl:grid-cols-4">
-        <KpiCard icon={Megaphone} label="Số nhân viên Marketing" value={mktEmployees.length} />
-        <KpiCard icon={ShoppingCart} label="Số ngày đã ghi nhận" value={logs.length} />
-        <KpiCard icon={UserCheck} label="Khách tiếp cận hôm nay" value={totalCustomersToday} tone="up" />
-        <KpiCard icon={TrendingUp} label="ROAS trung bình cao nhất" value={leaderboard[0] ? `${leaderboard[0].roas.toFixed(2)}x` : "—"} tone="up" sub={leaderboard[0]?.emp.name} />
+      {/* Bộ lọc kỳ/ngày + thao tác đặt TRÊN bảng — bảng dài cuộn bên dưới, không phải kéo xuống đáy trang để đổi ngày. */}
+      <div className="shrink-0 rounded-xl border border-paper-line bg-white p-3 shadow-sm">
+        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <RangeModePicker rangeMode={rangeMode} setRangeMode={setRangeMode} rangeFrom={rangeFrom} setRangeFrom={setRangeFrom} rangeTo={rangeTo} setRangeTo={setRangeTo} reportMonth={reportMonth} reportYear={reportYear} show={showRangePicker} setShow={setShowRangePicker} />
+            {activeTableView === "daily" && <>
+              <select value={dailyEmployeeFilter} onChange={(event) => setDailyEmployeeFilter(event.target.value)} className="h-9 min-w-[155px] rounded-lg border border-paper-line bg-white px-2.5 text-xs text-ink">
+                <option value="all">Tất cả nhân viên</option>
+                {mktEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
+              </select>
+              <select value={dailyPageFilter} onChange={(event) => setDailyPageFilter(event.target.value)} className="h-9 min-w-[150px] rounded-lg border border-paper-line bg-white px-2.5 text-xs text-ink">
+                <option value="all">Tất cả Page</option>
+                <option value="unassigned">Chưa gán Page</option>
+                {(pages || []).map((page) => <option key={page.id} value={page.id}>{page.name}</option>)}
+              </select>
+              <label className="relative min-w-[220px] flex-1 xl:max-w-[360px]">
+                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
+                <input value={dailySearch} onChange={(event) => setDailySearch(event.target.value)} placeholder="Tìm nhân viên, Page, ghi chú..." className="h-9 w-full rounded-lg border border-paper-line bg-white pl-9 pr-3 text-xs text-ink outline-none transition focus:border-[#4f7ee8]" />
+              </label>
+              <span className="whitespace-nowrap text-[11px] text-muted">{dailyTableLogs.length}/{visibleLogs.length} dòng</span>
+            </>}
+            {activeTableView !== "daily" && <span className="text-xs text-muted">{visibleLogs.length}/{logs.length} lượt ghi nhận trong kỳ.</span>}
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            <button onClick={() => exportMarketingExcel(visibleLogs, employees)} className="flex h-9 items-center gap-1.5 rounded-lg border border-ledger-green/40 bg-ledger-green/10 px-3.5 text-xs font-semibold text-ledger-green transition hover:bg-ledger-green/20">
+              <FileSpreadsheet size={14} /> Xuất Excel
+            </button>
+            {activeTableView === "daily" && canWriteLead && (
+              <button onClick={() => { setLeadFormError(""); setLeadForm(blankLeadForm); setShowLeadForm(true); }} className="flex h-9 items-center gap-1.5 rounded-lg border border-gold bg-gold/10 px-3.5 text-xs font-semibold text-ink transition hover:bg-gold/20">
+                <Phone size={14} /> {isSelfAssignedSale ? "Thêm SĐT khách tôi tư vấn" : "Thêm khách cần gọi (SĐT)"}{pendingMarketingLeads > 0 ? ` · ${pendingMarketingLeads}` : ""}
+              </button>
+            )}
+            {canWriteMarketingDaily && <button onClick={() => { setEditingLogId(null); setForm((current) => ({ ...current, date: TODAY_STR, employeeId: defaultMarketingEmployeeId })); setShowForm(true); }} className="flex h-9 items-center gap-1.5 rounded-lg bg-ink px-3.5 text-xs font-semibold text-white transition hover:bg-ink-light">
+              <Plus size={14} /> Ghi nhận ngày mới
+            </button>}
+          </div>
+        </div>
+      </div>
+
+      {/* Bản ghi có NGÀY BẤT THƯỜNG (sai định dạng/nằm ngoài mọi kỳ) bị mọi bộ lọc tháng che
+          mất — liệt kê thẳng ra đây kèm nút Sửa để không còn "bản ghi ma" lệch thống kê. */}
+      {activeTableView === "daily" && (() => {
+        const badDateLogs = (logs || []).filter((log) => {
+          const parts = financeDateParts(log.date);
+          return !parts || parts.year < 2000 || parts.year > 2100;
+        });
+        if (badDateLogs.length === 0) return null;
+        return (
+          <div className="shrink-0 rounded-lg border border-stamp-red/40 bg-stamp-red/5 px-3 py-2.5">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} /> {badDateLogs.length} bản ghi có ngày bất thường — không thuộc tháng nào nên bị ẩn khỏi bảng và làm lệch thống kê:</div>
+            <div className="mt-1.5 flex flex-col gap-1">
+              {badDateLogs.map((log) => (
+                <div key={log.id} className="flex flex-wrap items-center gap-2 text-[11px] text-charcoal">
+                  <span className="ktns-mono rounded bg-white px-1.5 py-0.5 border border-stamp-red/30">{String(log.date || "(trống)")}</span>
+                  <span>{nameOf(log.employeeId)}</span>
+                  {Number(log.adSpend) > 0 && <span className="ktns-mono">chi {fmtVND(Number(log.adSpend))}</span>}
+                  {Number(log.revenue) > 0 && <span className="ktns-mono">thu {fmtVND(Number(log.revenue))}</span>}
+                  {log.note && <span className="text-muted">· {log.note}</span>}
+                  {canEditMarketingLog(log) && <button type="button" onClick={() => startEditLog(log)} className="inline-flex items-center gap-1 rounded-md border border-stamp-red/40 px-2 py-0.5 text-[11px] font-semibold text-stamp-red hover:bg-stamp-red/10"><Pencil size={11} /> Sửa ngày</button>}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+      <div style={{ display: activeTableView === "daily" ? undefined : "none" }} className="shrink-0">
+        <InlineStats items={[
+          { label: "Nhân viên Marketing", value: mktEmployees.length },
+          { label: "Ngày đã ghi nhận", value: logs.length },
+          { label: "Khách tiếp cận hôm nay", value: totalCustomersToday, className: totalCustomersToday > 0 ? "text-ledger-green" : "text-ink" },
+          { label: "ROAS cao nhất", value: leaderboard[0] ? `${leaderboard[0].roas.toFixed(2)}x` : "—", className: "text-ledger-green", sub: leaderboard[0]?.emp.name },
+        ]} />
       </div>
 
       <div style={{ display: activeTableView === "pages" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
@@ -13773,55 +17556,17 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
         </table>
       </div>
 
-      <div className="shrink-0 rounded-xl border border-paper-line bg-white p-3 shadow-sm">
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-            <RangeModePicker rangeMode={rangeMode} setRangeMode={setRangeMode} rangeFrom={rangeFrom} setRangeFrom={setRangeFrom} rangeTo={rangeTo} setRangeTo={setRangeTo} reportMonth={reportMonth} reportYear={reportYear} show={showRangePicker} setShow={setShowRangePicker} />
-            {activeTableView === "daily" && <>
-              <select value={dailyEmployeeFilter} onChange={(event) => setDailyEmployeeFilter(event.target.value)} className="h-9 min-w-[155px] rounded-lg border border-paper-line bg-white px-2.5 text-xs text-ink">
-                <option value="all">Tất cả nhân viên</option>
-                {mktEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
-              </select>
-              <select value={dailyPageFilter} onChange={(event) => setDailyPageFilter(event.target.value)} className="h-9 min-w-[150px] rounded-lg border border-paper-line bg-white px-2.5 text-xs text-ink">
-                <option value="all">Tất cả Page</option>
-                <option value="unassigned">Chưa gán Page</option>
-                {(pages || []).map((page) => <option key={page.id} value={page.id}>{page.name}</option>)}
-              </select>
-              <label className="relative min-w-[220px] flex-1 xl:max-w-[360px]">
-                <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" />
-                <input value={dailySearch} onChange={(event) => setDailySearch(event.target.value)} placeholder="Tìm nhân viên, Page, ghi chú..." className="h-9 w-full rounded-lg border border-paper-line bg-white pl-9 pr-3 text-xs text-ink outline-none transition focus:border-[#4f7ee8]" />
-              </label>
-              <span className="whitespace-nowrap text-[11px] text-muted">{dailyTableLogs.length}/{visibleLogs.length} dòng</span>
-            </>}
-            {activeTableView !== "daily" && <span className="text-xs text-muted">{visibleLogs.length}/{logs.length} lượt ghi nhận trong kỳ.</span>}
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <button onClick={() => exportMarketingExcel(visibleLogs, employees)} className="flex h-9 items-center gap-1.5 rounded-lg bg-ledger-green px-3.5 text-xs font-semibold text-white transition hover:opacity-90">
-              <FileSpreadsheet size={14} /> Xuất Excel
-            </button>
-            {activeTableView === "daily" && canWriteLead && (
-              <button onClick={() => { setLeadFormError(""); setLeadForm(blankLeadForm); setShowLeadForm(true); }} className="flex h-9 items-center gap-1.5 rounded-lg border border-gold bg-gold/10 px-3.5 text-xs font-semibold text-ink transition hover:bg-gold/20">
-                <Phone size={14} /> {isSelfAssignedSale ? "Thêm SĐT khách tôi tư vấn" : "Thêm khách cần gọi (SĐT)"}{pendingMarketingLeads > 0 ? ` · ${pendingMarketingLeads}` : ""}
-              </button>
-            )}
-            {canWriteMarketingDaily && <button onClick={() => { setEditingLogId(null); setForm((current) => ({ ...current, date: TODAY_STR, employeeId: defaultMarketingEmployeeId })); setShowForm(true); }} className="flex h-9 items-center gap-1.5 rounded-lg bg-ink px-3.5 text-xs font-semibold text-white transition hover:bg-ink-light">
-              <Plus size={14} /> Ghi nhận ngày mới
-            </button>}
-          </div>
-        </div>
-      </div>
-
       {showLeadForm && (
         <div className="domix-inline-form-modal shrink-0 rounded-xl border border-gold/40 bg-white p-4 shadow-sm sm:p-5 relative">
           <button className="absolute top-3 right-3 text-muted hover:text-ink" onClick={async () => { if (leadForm.phone && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setShowLeadForm(false); setLeadFormError(""); }}><X size={16} /></button>
           <h3 className="ktns-serif mb-1 flex items-center gap-2 pr-8 font-semibold text-ink"><Phone size={16} /> {isSelfAssignedSale ? "Thêm khách tôi trực tiếp tư vấn" : "Ghi nhận khách cần gọi từ Marketing"}</h3>
           <p className="mb-4 max-w-3xl text-xs leading-5 text-muted">{isSelfAssignedSale ? `Khách được tự động gắn cho ${currentEmployee?.name || "tài khoản Sale hiện tại"}. Bạn có thể cập nhật nội dung tư vấn ngay trong danh sách bên dưới.` : "Nhập số điện thoại và chọn đúng Sale phụ trách. Khách sẽ xuất hiện trong CRM và khu vực chăm sóc của Sale được giao."}</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label className="flex flex-col gap-1 text-xs text-muted">Ngày<input type="date" value={leadForm.date} onChange={(e) => setLeadForm({ ...leadForm, date: e.target.value })} className="h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-gold" /></label>
-            <label className="flex flex-col gap-1 text-xs text-muted">Số điện thoại *<input value={leadForm.phone} onChange={(e) => setLeadForm({ ...leadForm, phone: e.target.value })} placeholder="09xxxxxxxx" inputMode="tel" className="ktns-mono h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-gold" /></label>
-            <label className="flex flex-col gap-1 text-xs text-muted">Tên khách (nếu có)<input value={leadForm.customerName} onChange={(e) => setLeadForm({ ...leadForm, customerName: e.target.value })} className="h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-gold" /></label>
+            <label className="flex flex-col gap-1 text-xs text-muted">Ngày<input type="date" value={leadForm.date} onChange={(e) => setLeadForm({ ...leadForm, date: e.target.value })} className="h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-[#3C50E0]" /></label>
+            <label className="flex flex-col gap-1 text-xs text-muted">Số điện thoại *<input value={leadForm.phone} onChange={(e) => setLeadForm({ ...leadForm, phone: e.target.value })} placeholder="09xxxxxxxx" inputMode="tel" className="ktns-mono h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-[#3C50E0]" /></label>
+            <label className="flex flex-col gap-1 text-xs text-muted">Tên khách (nếu có)<input value={leadForm.customerName} onChange={(e) => setLeadForm({ ...leadForm, customerName: e.target.value })} className="h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-[#3C50E0]" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Nguồn
-              <select value={leadForm.source} onChange={(e) => setLeadForm({ ...leadForm, source: e.target.value })} className="h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-gold">
+              <select value={leadForm.source} onChange={(e) => setLeadForm({ ...leadForm, source: e.target.value })} className="h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-[#3C50E0]">
                 {Object.entries(LEAD_SOURCES).map(([id, label]) => (<option key={id} value={id}>{label}</option>))}
               </select>
             </label>
@@ -13829,13 +17574,13 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
               {isSelfAssignedSale ? (
                 <div className="flex h-10 items-center gap-2 rounded-lg border border-ledger-green/30 bg-ledger-green/5 px-3 text-sm font-semibold text-ink"><UserCheck size={15} className="text-ledger-green" /><span className="truncate">{currentEmployee?.name || "Sale hiện tại"}</span><span className="ml-auto shrink-0 text-[10px] font-medium text-ledger-green">Tự động nhận</span></div>
               ) : (
-                <select value={leadForm.saleEmployeeId} onChange={(e) => setLeadForm({ ...leadForm, saleEmployeeId: e.target.value })} className="h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-gold">
+                <select value={leadForm.saleEmployeeId} onChange={(e) => setLeadForm({ ...leadForm, saleEmployeeId: e.target.value })} className="h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-[#3C50E0]">
                   <option value="">— Chọn Sale —</option>
                   {saleEmpAll.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
                 </select>
               )}
             </label>
-            <label className="flex flex-col gap-1 text-xs text-muted sm:col-span-2">Nội dung tư vấn ban đầu<input value={leadForm.note} onChange={(e) => setLeadForm({ ...leadForm, note: e.target.value })} placeholder="VD: khách quan tâm gói 2 tháng, hẹn gọi lại chiều nay..." className="h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-gold" /></label>
+            <label className="flex flex-col gap-1 text-xs text-muted sm:col-span-2">Nội dung tư vấn ban đầu<input value={leadForm.note} onChange={(e) => setLeadForm({ ...leadForm, note: e.target.value })} placeholder="VD: khách quan tâm gói 2 tháng, hẹn gọi lại chiều nay..." className="h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-[#3C50E0]" /></label>
           </div>
           {leadFormError && <p className="mt-2 text-xs text-stamp-red flex items-center gap-1"><AlertTriangle size={12} /> {leadFormError}</p>}
           <div className="mt-4 flex flex-wrap gap-2">
@@ -13899,11 +17644,11 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
                   {isOpen && (
                     <div className="border-t border-paper-line bg-paper/45 px-4 py-3">
                       <div className="grid gap-2 lg:grid-cols-[150px_minmax(240px,1fr)_180px_auto]">
-                        <select value={draft.type} onChange={(event) => setLeadConsultDraft((previous) => ({ ...previous, [lead.id]: { ...draft, type: event.target.value } }))} className="h-10 rounded-lg border border-paper-line bg-white px-3 text-xs outline-none transition focus:border-gold">
+                        <select value={draft.type} onChange={(event) => setLeadConsultDraft((previous) => ({ ...previous, [lead.id]: { ...draft, type: event.target.value } }))} className="h-10 rounded-lg border border-paper-line bg-white px-3 text-xs outline-none transition focus:border-[#3C50E0]">
                           {Object.entries(CONTACT_TYPES).map(([id, meta]) => <option key={id} value={id}>{meta.label}</option>)}
                         </select>
-                        <input value={draft.note} onChange={(event) => setLeadConsultDraft((previous) => ({ ...previous, [lead.id]: { ...draft, note: event.target.value } }))} placeholder="Nội dung đã tư vấn, nhu cầu và phản hồi của khách..." className="h-10 rounded-lg border border-paper-line bg-white px-3 text-xs outline-none transition focus:border-gold" />
-                        <input type="date" value={draft.nextFollowUpDate} onChange={(event) => setLeadConsultDraft((previous) => ({ ...previous, [lead.id]: { ...draft, nextFollowUpDate: event.target.value } }))} className="ktns-mono h-10 rounded-lg border border-paper-line bg-white px-3 text-xs outline-none transition focus:border-gold" title="Ngày hẹn gọi lại" />
+                        <input value={draft.note} onChange={(event) => setLeadConsultDraft((previous) => ({ ...previous, [lead.id]: { ...draft, note: event.target.value } }))} placeholder="Nội dung đã tư vấn, nhu cầu và phản hồi của khách..." className="h-10 rounded-lg border border-paper-line bg-white px-3 text-xs outline-none transition focus:border-[#3C50E0]" />
+                        <input type="date" value={draft.nextFollowUpDate} onChange={(event) => setLeadConsultDraft((previous) => ({ ...previous, [lead.id]: { ...draft, nextFollowUpDate: event.target.value } }))} className="ktns-mono h-10 rounded-lg border border-paper-line bg-white px-3 text-xs outline-none transition focus:border-[#3C50E0]" title="Ngày hẹn gọi lại" />
                         <button type="button" onClick={() => saveLeadConsultation(lead.id)} className="inline-flex h-10 items-center justify-center gap-1.5 rounded-lg bg-ledger-green px-4 text-xs font-semibold text-white transition hover:opacity-90"><Check size={14} /> Lưu tư vấn</button>
                       </div>
                       {leadConsultError && <p className="mt-2 flex items-center gap-1 text-xs text-stamp-red"><AlertTriangle size={12} /> {leadConsultError}</p>}
@@ -14035,7 +17780,7 @@ function MarketingDaily({ logs, setLogs, employees, marketingByEmployee, reportY
 }
 
 // ---------- Chấm công ----------
-function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employeesSyncing = false, employeeSyncError = "", attendanceRequests = [], setAttendanceRequests, unlockedMonths, setUnlockedMonths, company, lang = "vi" }) {
+function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employeesSyncing = false, employeeSyncError = "", attendanceRequests = [], setAttendanceRequests, unlockedMonths, setUnlockedMonths, company, lang = "vi", dataLoader }) {
   const ui = (vi, en) => lang === "en" ? en : vi;
   const attendanceLabel = (code) => lang === "en" ? (ATTENDANCE_CODE_LABELS_EN[code] || code) : (ATTENDANCE_CODES[code]?.label || code);
   const attendanceMonthLabel = (year, month) => lang === "en"
@@ -14051,6 +17796,16 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
   const [selectedDay, setSelectedDay] = useState(null);
   const [selectedCode, setSelectedCode] = useState("X");
   const [showDayModal, setShowDayModal] = useState(false);
+  // 3 tab: Hôm nay (vào/ra ca) · Bảng công tháng (lịch) · Yêu cầu điều chỉnh (duyệt).
+  const [attendanceView, setAttendanceView] = useState("today");
+  // CẬP NHẬT REALTIME: attendanceRequests đã có vòng poll toàn cục 5s ở App; ở đây
+  // chỉ cần làm tươi HỒ SƠ NHÂN VIÊN (chứa bảng công đã duyệt) để lịch tự cập nhật.
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      refreshEmployees?.({ force: true });
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [refreshEmployees]);
   const [showUnlockModal, setShowUnlockModal] = useState(false);
   const [unlockPassword, setUnlockPassword] = useState("");
   const [unlockError, setUnlockError] = useState("");
@@ -14068,10 +17823,20 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
   useEffect(() => {
     const currentId = Number(selectedEmployeeId);
     if (visibleEmployees.some((employee) => Number(employee.id) === currentId)) return;
-    setSelectedEmployeeId(visibleEmployees[0]?.id || "");
-  }, [selectedEmployeeId, visibleEmployees]);
+    // KHÔNG tự chọn một nhân viên bất kỳ (từng mặc định nhảy vào "demo"). Ưu tiên hồ sơ
+    // của tài khoản đang đăng nhập; quản lý chưa chọn ai thì để trống và tự chọn tay.
+    if (currentEmployee && visibleEmployees.some((employee) => Number(employee.id) === Number(currentEmployee.id))) {
+      setSelectedEmployeeId(currentEmployee.id);
+      return;
+    }
+    if (!canReviewAttendance) setSelectedEmployeeId(visibleEmployees[0]?.id || "");
+    else if (selectedEmployeeId !== "") setSelectedEmployeeId("");
+  }, [selectedEmployeeId, visibleEmployees, currentEmployee, canReviewAttendance]);
 
-  const selectedEmployee = visibleEmployees.find((employee) => Number(employee.id) === Number(selectedEmployeeId)) || visibleEmployees[0] || null;
+  // Không rơi về nhân viên đầu danh sách — quản lý chưa chọn thì lịch để trống, có gợi ý chọn.
+  const selectedEmployee = visibleEmployees.find((employee) => Number(employee.id) === Number(selectedEmployeeId))
+    || (!canReviewAttendance ? visibleEmployees[0] : null)
+    || null;
   const dateTextFor = (day) => `${viewYear}-${String(viewMonth).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
   const requestFor = (employeeId, day) => {
     const dateText = dateTextFor(day);
@@ -14309,24 +18074,81 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
   const selectedPendingCount = selectedEmployeeRequests.filter((request) => request.status === "pending").length;
   const selectedApprovedCount = selectedEmployeeRequests.filter((request) => request.status === "approved").length;
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <KpiCard icon={CalendarCheck} label={canReviewAttendance ? ui("Ngày công đã duyệt", "Approved workdays") : ui("Ngày công của tôi", "My workdays")} value={approvedDaysTotal.toFixed(1)} tone="up" />
-        <KpiCard icon={Clock} label={ui("Chờ duyệt", "Pending approval")} value={canReviewAttendance ? pendingRequests.length : selectedPendingCount} tone={pendingRequests.length > 0 ? "down" : "up"} />
-        <KpiCard icon={AlertTriangle} label={ui("Ngày nghỉ đã ghi nhận", "Recorded absences")} value={absenceDaysTotal} tone={absenceDaysTotal > 0 ? "down" : "up"} />
-        <KpiCard icon={CheckCircle2} label={ui("Yêu cầu đã xử lý", "Processed requests")} value={canReviewAttendance ? approvedRequests.length + rejectedRequests.length : selectedApprovedCount} tone="up" />
-      </div>
+  // ---------- CHẤM CÔNG HÔM NAY: Vào ca / Ra ca một chạm cho NGƯỜI ĐANG ĐĂNG NHẬP ----------
+  // Vào ca dùng đúng luồng gửi-duyệt hiện có (submitOwnAttendance); Ra ca ghi checkOutAt vào
+  // attendanceTimes/yêu cầu đang chờ — tương thích hoàn toàn với bảng công cũ.
+  const todayKey = monthKey(ATT_YEAR, ATT_MONTH);
+  const myTodayCode = currentEmployee?.attendance?.[todayKey]?.[todayDay] || currentEmployee?.attendance?.[todayKey]?.[String(todayDay)];
+  const myTodayRequest = currentEmployee ? [...(attendanceRequests || [])].reverse().find((request) => Number(request.employeeId) === Number(currentEmployee.id) && request.date === `${todayKey}-${String(todayDay).padStart(2, "0")}`) : null;
+  const myTodayTime = currentEmployee?.attendanceTimes?.[todayKey]?.[todayDay] || currentEmployee?.attendanceTimes?.[todayKey]?.[String(todayDay)] || null;
+  const myCheckInAt = myTodayTime?.checkInAt || myTodayRequest?.checkInAt || null;
+  const myCheckOutAt = myTodayTime?.checkOutAt || myTodayRequest?.checkOutAt || null;
+  const myCheckedIn = Boolean(myTodayCode || (myTodayRequest && myTodayRequest.status !== "rejected"));
+  const checkInToday = () => {
+    if (canReviewAttendance) {
+      // Sếp/Kế toán chấm thẳng cho chính mình (nếu có hồ sơ) — không cần tự duyệt.
+      if (currentEmployee) setApprovedAttendance(currentEmployee.id, todayDay, "X", { source: "self_checkin" });
+      return;
+    }
+    submitOwnAttendance(todayDay, "X");
+  };
+  const checkOutToday = () => {
+    if (!currentEmployee || !myCheckedIn || myCheckOutAt) return;
+    const nowIso = new Date().toISOString();
+    if (myTodayCode) {
+      setEmployees((previous) => previous.map((employee) => {
+        if (Number(employee.id) !== Number(currentEmployee.id)) return employee;
+        const monthTimes = { ...(employee.attendanceTimes?.[todayKey] || {}) };
+        monthTimes[todayDay] = { ...(monthTimes[todayDay] || monthTimes[String(todayDay)] || {}), checkOutAt: nowIso };
+        return { ...employee, attendanceTimes: { ...(employee.attendanceTimes || {}), [todayKey]: monthTimes } };
+      }));
+    } else if (myTodayRequest) {
+      setAttendanceRequests((previous) => (previous || []).map((item) => Number(item.id) === Number(myTodayRequest.id) ? { ...item, checkOutAt: nowIso } : item));
+    }
+    noticeOverlay(ui(`Đã ghi giờ ra ca lúc ${formatTime(nowIso)}.`, `Checked out at ${formatTime(nowIso)}.`), { title: ui("Ra ca", "Check-out") });
+  };
 
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-paper-line bg-white px-4 py-3">
+  return (
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+      {/* 3 khu làm việc tách bạch: thao tác trong ngày / bảng công cả tháng / duyệt điều chỉnh. */}
+      <div className="shrink-0">
+        <SectionViewSwitcher value={attendanceView} onChange={setAttendanceView} options={[
+          { id: "today", label: ui("Hôm nay", "Today"), icon: Clock },
+          { id: "month", label: ui("Bảng công tháng", "Monthly timesheet"), icon: CalendarCheck },
+          { id: "requests", label: ui("Yêu cầu điều chỉnh", "Adjustment requests"), icon: ClipboardList, count: canReviewAttendance ? pendingRequests.length : selectedPendingCount },
+        ]} />
+      </div>
+      {attendanceView === "today" && currentEmployee && (
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-paper-line bg-white px-3 py-2">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+            <span className="font-bold text-ink">{ui("Hôm nay", "Today")} · {formatDateVN(TODAY_STR)}</span>
+            <span className="text-muted">{currentEmployee.name}</span>
+            <span>{myTodayCode
+              ? <span className="rounded-full border border-ledger-green/40 bg-ledger-green/10 px-2 py-0.5 text-[10px] font-bold text-ledger-green">{ui("ĐÃ CHẤM CÔNG", "RECORDED")}</span>
+              : myTodayRequest?.status === "pending"
+                ? <span className="rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[10px] font-bold text-gold">{ui("CHỜ DUYỆT", "PENDING")}</span>
+                : <span className="rounded-full border border-stamp-red/40 bg-stamp-red/10 px-2 py-0.5 text-[10px] font-bold text-stamp-red">{ui("CHƯA VÀO CA", "NOT CHECKED IN")}</span>}
+            </span>
+            <span className="ktns-mono text-muted">{ui("Vào", "In")}: <strong className="text-ink">{formatTime(myCheckInAt)}</strong></span>
+            <span className="ktns-mono text-muted">{ui("Ra", "Out")}: <strong className="text-ink">{formatTime(myCheckOutAt)}</strong></span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={checkInToday} disabled={myCheckedIn} className="rounded-md bg-ledger-green px-3 py-1.5 text-xs font-bold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40" title={myCheckedIn ? ui("Hôm nay đã vào ca/đã gửi chấm công", "Already checked in today") : ui("Ghi giờ vào ca hôm nay", "Check in for today")}>{ui("Vào ca", "Check in")}</button>
+            <button type="button" onClick={checkOutToday} disabled={!myCheckedIn || Boolean(myCheckOutAt)} className="rounded-md bg-ink px-3 py-1.5 text-xs font-bold text-white hover:bg-ink-light disabled:cursor-not-allowed disabled:opacity-40" title={!myCheckedIn ? ui("Chưa vào ca hôm nay", "Not checked in yet") : myCheckOutAt ? ui("Đã ghi giờ ra", "Already checked out") : ui("Ghi giờ ra ca", "Check out")}>{ui("Ra ca", "Check out")}</button>
+          </div>
+        </div>
+      )}
+      {attendanceView === "today" && <InlineStats items={[
+        { label: canReviewAttendance ? ui("Ngày công đã duyệt", "Approved workdays") : ui("Ngày công của tôi", "My workdays"), value: approvedDaysTotal.toFixed(1), className: "text-ledger-green" },
+        { label: ui("Chờ duyệt", "Pending"), value: canReviewAttendance ? pendingRequests.length : selectedPendingCount, className: (canReviewAttendance ? pendingRequests.length : selectedPendingCount) > 0 ? "text-gold" : "text-ink" },
+        { label: ui("Ngày nghỉ", "Absences"), value: absenceDaysTotal, className: absenceDaysTotal > 0 ? "text-stamp-red" : "text-ink" },
+        { label: ui("Yêu cầu đã xử lý", "Processed"), value: canReviewAttendance ? approvedRequests.length + rejectedRequests.length : selectedApprovedCount },
+      ]} />}
+
+      {attendanceView === "month" && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-paper-line bg-white px-4 py-3">
         <div>
-          <div className="text-sm font-bold text-ink">{ui("Lịch chấm công", "Attendance calendar")} · {attendanceMonthLabel(viewYear, viewMonth)}</div>
-          <div className="mt-0.5 text-[11px] text-muted">
-            {ui("Bấm trực tiếp vào ngày cần chấm công, sau đó chọn loại công. Chỉ dữ liệu đã được Sếp/Kế toán duyệt mới tính vào lương.", "Select a date, then choose the attendance type. Only manager/accountant-approved entries count toward payroll.")}
-          </div>
-          <div className={`mt-1 text-[10px] ${employeeSyncError ? "text-stamp-red" : "text-ledger-green"}`}>
-            {employeeSyncError || ui(`Tự đồng bộ PostgreSQL · ${visibleEmployees.length} nhân sự trong kỳ đang xem`, `PostgreSQL auto-sync · ${visibleEmployees.length} employees in this period`)}
-          </div>
+          <div className="text-sm font-bold text-ink" title={ui("Bấm vào ngày để chấm công; chỉ dữ liệu đã được Sếp/Kế toán duyệt mới tính vào lương.", "Click a date to record attendance; only approved entries count toward payroll.")}>{ui("Lịch chấm công", "Attendance calendar")} · {attendanceMonthLabel(viewYear, viewMonth)}</div>
+          {employeeSyncError && <div className="mt-1 text-[10px] text-stamp-red">{employeeSyncError}</div>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {canReviewAttendance && (
@@ -14336,6 +18158,7 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
               className="min-w-[210px] rounded-lg border border-paper-line bg-white px-3 py-2 text-sm font-semibold text-ink"
             >
               {visibleEmployees.length === 0 && <option value="">{ui("Chưa có nhân sự trong kỳ này", "No employees in this period")}</option>}
+              {visibleEmployees.length > 0 && <option value="">{ui("— Chọn nhân viên để xem/chấm công —", "— Select an employee —")}</option>}
               {visibleEmployees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} · {employee.position || ROLE_META[employee.roleType]?.label || ui("Nhân viên", "Employee")}</option>)}
             </select>
           )}
@@ -14367,9 +18190,9 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
           </select>
           {canReviewAttendance && locked && <button onClick={openUnlockModal} className="inline-flex items-center gap-1.5 rounded-lg bg-stamp-red px-3 py-2 text-xs font-semibold text-white"><KeyRound size={14} /> {ui("Mở khóa kỳ", "Unlock period")}</button>}
         </div>
-      </div>
+      </div>}
 
-      {canReviewAttendance && pendingRequests.length > 0 && (
+      {["today", "requests"].includes(attendanceView) && canReviewAttendance && pendingRequests.length > 0 && (
         <section className="shrink-0 rounded-xl border border-gold/40 bg-gold/5 p-3">
           <div className="mb-2 flex items-center justify-between gap-2">
             <div className="text-xs font-bold uppercase tracking-wide text-gold">{ui("Chờ duyệt cuối ngày", "End-of-day approvals")} · {pendingRequests.length}</div>
@@ -14391,7 +18214,7 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
         </section>
       )}
 
-      <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_270px]">
+      {attendanceView === "month" && <div className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_270px]">
         <div className="min-h-0 overflow-auto rounded-xl border border-paper-line bg-white">
           <div className="grid min-w-[720px] grid-cols-7 border-b border-paper-line bg-ink text-center text-[11px] font-bold uppercase tracking-wide text-white">
             {(lang === "en" ? ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] : ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật']).map((label) => <div key={label} className="border-r border-white/10 px-2 py-2.5 last:border-r-0">{label}</div>)}
@@ -14456,9 +18279,9 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
                     ) : sunday ? (
                       <div className="text-xs font-semibold text-stamp-red">{ui("Nghỉ Chủ nhật", "Sunday off")}</div>
                     ) : isFuture ? (
-                      <div className="text-xs text-muted/60">{ui("Chưa tới ngày", "Future date")}</div>
+                      <div className="text-[11px] text-muted/40">·</div>
                     ) : canClick ? (
-                      <div className="text-xs font-semibold text-[#5f8df8] opacity-80 group-hover:opacity-100">{ui("Bấm để chọn kiểu chấm công", "Select attendance type")}</div>
+                      <div className="text-xs font-semibold text-[#5f8df8] opacity-60 group-hover:opacity-100">{ui("+ Chấm công", "+ Mark attendance")}</div>
                     ) : (
                       <div className="text-xs text-muted">{ui("Chưa chấm công", "No attendance recorded")}</div>
                     )}
@@ -14495,17 +18318,58 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
             </div>
           </div>
 
-          <div className="rounded-xl border border-[#315fae]/30 bg-[#132443] p-4 text-white">
-            <div className="text-xs font-bold uppercase tracking-wide text-[#a9c4ff]">{ui("Cách sử dụng", "How to use")}</div>
-            <div className="mt-2 space-y-1.5 text-[11px] leading-5 text-[#c8d8f4]">
-              <p>{ui("1. Chọn nhân viên và tháng cần xem.", "1. Select an employee and month.")}</p>
-              <p>{ui("2. Bấm vào ô ngày cần chấm công.", "2. Select the attendance date.")}</p>
-              <p>{ui("3. Chọn loại công rồi gửi hoặc duyệt.", "3. Choose a type, then submit or approve.")}</p>
-              <p>{ui("4. Chỉ ô đã duyệt mới được cộng vào bảng lương.", "4. Only approved entries count toward payroll.")}</p>
-            </div>
-          </div>
         </aside>
-      </div>
+      </div>}
+
+      {/* Tab YÊU CẦU ĐIỀU CHỈNH: toàn bộ yêu cầu chấm công (chờ duyệt + đã xử lý) một chỗ. */}
+      {attendanceView === "requests" && (
+        <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-paper-line bg-white">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 z-10">
+              <tr className="bg-paper text-left text-[10px] uppercase text-muted">
+                <th className="px-3 py-2">{ui("Nhân viên", "Employee")}</th>
+                <th className="px-3 py-2">{ui("Ngày", "Date")}</th>
+                <th className="px-3 py-2">{ui("Loại công", "Type")}</th>
+                <th className="px-3 py-2">{ui("Gửi lúc", "Submitted")}</th>
+                <th className="px-3 py-2">{ui("Trạng thái", "Status")}</th>
+                {canReviewAttendance && <th className="px-3 py-2 text-right">{ui("Thao tác", "Actions")}</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {(() => {
+                const myRequests = canReviewAttendance
+                  ? (attendanceRequests || [])
+                  : (attendanceRequests || []).filter((r) => Number(r.employeeId) === Number(currentEmployee?.id));
+                const sorted = myRequests.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")));
+                if (sorted.length === 0) return <tr><td colSpan={canReviewAttendance ? 6 : 5} className="px-4 py-8 text-center text-muted">{ui("Chưa có yêu cầu chấm công/điều chỉnh nào.", "No attendance requests yet.")}</td></tr>;
+                return sorted.map((request) => (
+                  <tr key={request.id} className={`border-t border-paper-line ${request.status === "pending" ? "ktns-warn-row" : ""}`}>
+                    <td className="px-3 py-2 font-medium text-ink">{request.employeeName || "—"}</td>
+                    <td className="px-3 py-2 ktns-mono text-muted">{request.date}</td>
+                    <td className="px-3 py-2">{attendanceLabel(request.code)}</td>
+                    <td className="px-3 py-2 ktns-mono text-muted">{formatTime(request.submittedAt || request.checkInAt)}</td>
+                    <td className="px-3 py-2">
+                      {request.status === "pending" && <span className="rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[9px] font-bold text-gold">{ui("CHỜ DUYỆT", "PENDING")}</span>}
+                      {request.status === "approved" && <span className="rounded-full border border-ledger-green/40 bg-ledger-green/10 px-2 py-0.5 text-[9px] font-bold text-ledger-green">{ui("ĐÃ DUYỆT", "APPROVED")}</span>}
+                      {request.status === "rejected" && <span className="rounded-full border border-stamp-red/40 bg-stamp-red/10 px-2 py-0.5 text-[9px] font-bold text-stamp-red">{ui("TỪ CHỐI", "REJECTED")}</span>}
+                    </td>
+                    {canReviewAttendance && (
+                      <td className="px-3 py-2 text-right">
+                        {request.status === "pending" && (
+                          <div className="inline-flex gap-1.5">
+                            <button onClick={() => approveRequest(request)} className="rounded-md bg-ledger-green px-2.5 py-1 text-[11px] font-semibold text-white hover:opacity-90">{ui("Duyệt", "Approve")}</button>
+                            <button onClick={() => rejectRequest(request)} className="rounded-md border border-stamp-red/50 px-2.5 py-1 text-[11px] font-semibold text-stamp-red hover:bg-stamp-red/5">{ui("Từ chối", "Reject")}</button>
+                          </div>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ));
+              })()}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {showDayModal && selectedEmployee && selectedDay && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/65 p-4" onMouseDown={(event) => event.target === event.currentTarget && setShowDayModal(false)}>
@@ -14574,14 +18438,363 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
   );
 }
 
+// ---------- Danh bạ khách hàng cho luồng Hỗ trợ: khách → đơn đã mua → công nợ → yêu cầu hỗ trợ ----------
+// CSKH tra một khách là thấy đủ ngữ cảnh (đơn, sản phẩm, thanh toán, sale phụ trách, lịch sử hỗ trợ)
+// — không phải mở nhiều module rồi tự tìm lại. Chỉ đọc: không sửa dữ liệu bán hàng/kế toán ở đây.
+function CustomerDirectory({ customers = [], orders = [], supportCases = [], employees = [], setTab, onCreateSupport, onCreateOrder, onCreateTask }) {
+  const [search, setSearch] = useState("");
+  // Chi tiết khách mở bằng OVERLAY POPUP — không chen inline vào bảng làm hàng phình cao.
+  const [detailRow, setDetailRow] = useState(null);
+  const employeeName = (id) => (employees || []).find((e) => Number(e.id) === Number(id))?.name || "—";
+
+  const rows = useMemo(() => {
+    const byCustomer = new Map();
+    (customers || []).forEach((c) => byCustomer.set(String(c.id), { customer: c, orders: [] }));
+    const phoneIndex = new Map();
+    byCustomer.forEach((entry, id) => { if (entry.customer.phone) phoneIndex.set(String(entry.customer.phone), id); });
+    (orders || []).forEach((o) => {
+      let key = o.customerId != null && byCustomer.has(String(o.customerId)) ? String(o.customerId) : null;
+      if (!key && o.phone && phoneIndex.has(String(o.phone))) key = phoneIndex.get(String(o.phone));
+      if (!key) {
+        // Đơn cũ chưa gắn hồ sơ — gom theo tên+SĐT để không mất khách nào khỏi danh bạ.
+        key = `legacy:${o.customerName || ""}:${o.phone || ""}`;
+        if (!byCustomer.has(key)) byCustomer.set(key, { customer: { id: key, customerName: o.customerName, phone: o.phone, email: o.email }, orders: [] });
+      }
+      byCustomer.get(key).orders.push(o);
+    });
+    return Array.from(byCustomer.values()).map(({ customer, orders: myOrders }) => {
+      const active = myOrders.filter((o) => !isOrderCancelled(o));
+      const total = active.reduce((s, o) => s + (Number(o.amount) || 0), 0);
+      const remaining = active.reduce((s, o) => s + (Number(o.amountBreakdown?.remaining) || 0), 0);
+      const lastOrder = active.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))[0];
+      const contacts = active.flatMap((o) => o.contactLog || []);
+      const lastContact = contacts.slice().sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")))[0];
+      const myCases = (supportCases || []).filter((c) =>
+        (customer.phone && String(c.phone) === String(customer.phone))
+        || (c.customerName && customer.customerName && String(c.customerName).trim() === String(customer.customerName).trim()));
+      return { customer, orders: active, total, remaining, lastOrder, lastContact, cases: myCases };
+    // Danh bạ là số liệu DẪN XUẤT từ đơn hàng: chỉ hiện khách có ít nhất một đơn
+    // (hoặc yêu cầu hỗ trợ gắn với đơn) — không liệt kê hồ sơ khách rời rạc không giao dịch.
+    }).filter((row) => row.orders.length > 0 || row.cases.length > 0)
+      .sort((a, b) => String(b.lastOrder?.date || "").localeCompare(String(a.lastOrder?.date || "")));
+  }, [customers, orders, supportCases]);
+
+  const text = search.trim().toLowerCase();
+  const visible = text
+    ? rows.filter((r) => `${r.customer.customerName || ""} ${r.lastOrder?.customerName || ""} ${r.customer.phone || ""} ${r.customer.email || ""} ${r.customer.id || ""}`.toLowerCase().includes(text))
+    : rows;
+
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-paper-line bg-white px-3 py-2">
+        <span className="text-sm font-bold text-ink">Khách hàng ({visible.length})</span>
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm theo tên, SĐT, email hoặc mã khách..." className="min-w-[260px] flex-1 max-w-md rounded-md border border-paper-line px-2.5 py-1.5 text-xs" aria-label="Tìm khách hàng" />
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-paper-line bg-white">
+        <table data-sticky-columns="true" className="w-full min-w-[980px] text-xs">
+          <thead className="sticky top-0 z-10 bg-[#F7F9FC] text-[10px] uppercase text-muted">
+            <tr className="border-b border-paper-line">
+              <th className="px-3 py-2 text-left">Khách hàng</th>
+              <th className="px-3 py-2 text-left">Liên hệ</th>
+              <th className="px-3 py-2 text-right">Đơn đã mua</th>
+              <th className="px-3 py-2 text-right">Tổng giá trị</th>
+              <th className="px-3 py-2 text-right">Còn phải thu</th>
+              <th className="px-3 py-2 text-left">Sale phụ trách</th>
+              <th className="px-3 py-2 text-left">Yêu cầu hỗ trợ</th>
+              <th className="px-3 py-2 text-left">Liên hệ gần nhất</th>
+              <th className="px-3 py-2 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.length === 0 && <tr><td colSpan={9} className="px-3 py-10 text-center text-muted">Không tìm thấy khách hàng phù hợp.</td></tr>}
+            {visible.map((row) => (
+              <tr key={row.customer.id} className="cursor-pointer border-t border-paper-line hover:bg-[#F0F5FF]" onClick={() => setDetailRow(row)}>
+                {/* Hồ sơ cũ có thể thiếu tên — lấy tên từ đơn gần nhất của chính khách đó
+                    (cùng ID/SĐT), không hiển thị "—" khi đơn hàng đã biết tên. */}
+                <td className="max-w-[180px] truncate px-3 py-2 font-semibold text-ink" title={row.customer.customerName || row.lastOrder?.customerName || ""}>{row.customer.customerName || row.lastOrder?.customerName || "—"}</td>
+                <td className="px-3 py-2 text-muted"><div className="ktns-mono">{row.customer.phone || "—"}</div><div className="text-[10px]">{row.customer.email || ""}</div></td>
+                <td className="px-3 py-2 text-right ktns-mono">{row.orders.length}</td>
+                <td className="px-3 py-2 text-right ktns-mono font-semibold text-ledger-green">{fmtVND(row.total)}</td>
+                <td className={`px-3 py-2 text-right ktns-mono font-semibold ${row.remaining > 0 ? "text-stamp-red" : "text-muted"}`}>{row.remaining > 0 ? fmtVND(row.remaining) : "0đ"}</td>
+                <td className="px-3 py-2">{employeeName(row.lastOrder?.saleEmployeeId)}</td>
+                <td className="px-3 py-2">{row.cases.length > 0 ? `${row.cases.length} ca` : "—"}</td>
+                <td className="px-3 py-2 ktns-mono text-muted">{row.lastContact?.date ? formatDateVN(String(row.lastContact.date).slice(0, 10)) : "—"}</td>
+                <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex justify-end gap-1.5">
+                    <button type="button" onClick={() => setDetailRow(row)} className="rounded-md border border-[#3C50E0]/35 p-1.5 text-[#3C50E0] hover:bg-[#3C50E0]/5" title="Xem chi tiết hồ sơ khách" aria-label={`Xem chi tiết khách ${row.customer.customerName || ""}`}><Eye size={13} /></button>
+                    {onCreateSupport && (
+                      <button
+                        type="button"
+                        onClick={() => onCreateSupport({
+                          customerName: row.customer.customerName || row.lastOrder?.customerName || "",
+                          phone: row.customer.phone || row.lastOrder?.phone || "",
+                          email: row.customer.email || row.lastOrder?.email || "",
+                          orderId: row.lastOrder?.id || "",
+                          productName: row.lastOrder?.productName || row.lastOrder?.importedProductName || "",
+                        })}
+                        className="rounded-md bg-ink px-2 py-1 text-[10px] font-semibold text-white"
+                        title="Mở form hỗ trợ với khách + đơn gần nhất đã điền sẵn"
+                      >Tạo hỗ trợ</button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* HỒ SƠ KHÁCH — DRAWER cạnh phải: không bung hàng phụ giữa danh sách, đóng lại là
+          bảng giữ nguyên tìm kiếm và vị trí cuộn. Thông tin trình bày theo khối nhiều dòng. */}
+      {detailRow && (
+        <div className="fixed inset-0 z-[120] flex justify-end bg-ink/40" onClick={() => setDetailRow(null)}>
+          <div className="flex h-full w-full max-w-[580px] flex-col overflow-hidden bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="shrink-0 border-b border-paper-line px-5 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold uppercase tracking-wide text-muted">Hồ sơ khách hàng</div>
+                  <h3 className="mt-0.5 ktns-serif text-xl font-bold text-ink">{detailRow.customer.customerName || detailRow.lastOrder?.customerName || "Khách hàng"}</h3>
+                </div>
+                <button type="button" onClick={() => setDetailRow(null)} className="shrink-0 rounded-full border border-paper-line p-2 text-muted hover:text-ink" aria-label="Đóng hồ sơ khách"><X size={15} /></button>
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              <div className="rounded-lg border border-paper-line px-3 py-1.5 text-xs">
+                <div className="flex items-start justify-between gap-3 border-b border-paper-line py-1.5"><span className="text-muted">Số điện thoại</span><span className="ktns-mono font-medium text-ink">{detailRow.customer.phone || "—"}</span></div>
+                {detailRow.customer.email && <div className="flex items-start justify-between gap-3 border-b border-paper-line py-1.5"><span className="text-muted">Email</span><span className="font-medium text-ink">{detailRow.customer.email}</span></div>}
+                <div className="flex items-start justify-between gap-3 border-b border-paper-line py-1.5"><span className="text-muted">Sale phụ trách</span><span className="font-medium text-ink">{employeeName(detailRow.lastOrder?.saleEmployeeId)}</span></div>
+                <div className="flex items-start justify-between gap-3 border-b border-paper-line py-1.5"><span className="text-muted">Tổng giá trị mua</span><span className="ktns-mono font-bold text-ledger-green">{fmtVND(detailRow.total)}</span></div>
+                <div className="flex items-start justify-between gap-3 py-1.5"><span className="text-muted">Còn phải thu</span><span className={`ktns-mono font-bold ${detailRow.remaining > 0 ? "text-stamp-red" : "text-muted"}`}>{fmtVND(detailRow.remaining)}</span></div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {onCreateOrder && (
+                  <button type="button" onClick={() => { const target = detailRow; setDetailRow(null); onCreateOrder({ customerName: target.customer.customerName || target.lastOrder?.customerName || "", phone: target.customer.phone || "", email: target.customer.email || "", saleEmployeeId: target.lastOrder?.saleEmployeeId || "" }); }} className="inline-flex items-center gap-1 rounded-md bg-ledger-green px-2.5 py-1.5 text-[11px] font-semibold text-white hover:opacity-90"><Plus size={11} /> Tạo đơn mới</button>
+                )}
+                {onCreateSupport && (
+                  <button type="button" onClick={() => { const target = detailRow; setDetailRow(null); onCreateSupport({ customerId: (typeof target.customer.id === "number" ? target.customer.id : target.lastOrder?.customerId) ?? undefined, customerName: target.customer.customerName || target.lastOrder?.customerName || "", phone: target.customer.phone || "", email: target.customer.email || "", orderId: target.lastOrder?.id || "", productName: target.lastOrder?.productName || target.lastOrder?.importedProductName || "" }); }} className="inline-flex items-center gap-1 rounded-md bg-ink px-2.5 py-1.5 text-[11px] font-semibold text-white hover:opacity-90"><Headphones size={11} /> Tạo yêu cầu hỗ trợ</button>
+                )}
+                {onCreateTask && (
+                  <button type="button" onClick={() => { const target = detailRow; const name = target.customer.customerName || target.lastOrder?.customerName || "khách hàng"; setDetailRow(null); onCreateTask({ description: `Chăm sóc khách ${name}${target.customer.phone ? ` (${target.customer.phone})` : ""}`, employeeId: target.lastOrder?.saleEmployeeId || "" }); }} className="inline-flex items-center gap-1 rounded-md border border-paper-line bg-white px-2.5 py-1.5 text-[11px] font-semibold text-ink hover:bg-paper"><ClipboardList size={11} /> Tạo nhiệm vụ</button>
+                )}
+              </div>
+
+              <div className="mt-5">
+                <div className="mb-1.5 text-[10px] font-bold uppercase text-muted">Đơn đã mua ({detailRow.orders.length})</div>
+                {detailRow.orders.length === 0 && <div className="text-xs text-muted">Chưa có đơn nào.</div>}
+                {detailRow.orders.map((o) => (
+                  <div key={o.id} className="border-b border-paper-line py-2 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 flex-1 truncate font-medium text-ink">{o.productName || o.importedProductName || "Dịch vụ"} ×{o.quantity || 1}</span>
+                      <span className="ktns-mono font-semibold text-ledger-green">{fmtVND(o.amount)}</span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <span className="ktns-mono text-muted">{formatDateVN(o.date)}</span>
+                      <OrderLifecycleBadges order={o} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-5">
+                <div className="mb-1.5 text-[10px] font-bold uppercase text-muted">Lịch sử hỗ trợ ({detailRow.cases.length})</div>
+                {detailRow.cases.length === 0 && <div className="text-xs text-muted">Chưa có yêu cầu hỗ trợ nào.</div>}
+                {detailRow.cases.map((c) => (
+                  <div key={c.id} className="border-b border-paper-line py-2 text-xs">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 flex-1 truncate text-charcoal">{c.issue || c.supportType || "—"}</span>
+                      <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[9px] font-bold ${c.status === "hoan_tat" ? "border-ledger-green/40 bg-ledger-green/10 text-ledger-green" : c.status === "da_huy" ? "border-stamp-red/40 bg-stamp-red/10 text-stamp-red" : "border-gold/40 bg-gold/10 text-gold"}`}>{c.status === "hoan_tat" ? "HOÀN TẤT" : c.status === "da_huy" ? "ĐÃ HỦY" : "ĐANG XỬ LÝ"}</span>
+                    </div>
+                    <div className="mt-1 flex items-center justify-between gap-2 text-[10px] text-muted">
+                      <span className="ktns-mono">{fmtContactTime(c.createdAt)}</span>
+                      <span>KT: {employeeName(c.employeeId)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------- Trung tâm vận hành: bảng CẦN XỬ LÝ HÔM NAY của quản lý ----------
+// Không phải dashboard ngắm biểu đồ: gom việc tồn đọng THẬT từ đơn hàng, công nợ, hỗ trợ,
+// giao việc, kho về một bảng — mỗi dòng thao tác được ngay (mở màn nguồn, giao việc).
+const OPS_PRIORITY_STYLE = {
+  "Cao": "border-stamp-red/40 bg-stamp-red/10 text-stamp-red",
+  "Trung bình": "border-gold/40 bg-gold/10 text-gold",
+  "Thấp": "border-paper-line bg-paper text-muted",
+};
+
+// NGUỒN SỰ THẬT DUY NHẤT cho "việc cần xử lý" — Tổng quan và Trung tâm vận hành cùng gọi
+// hàm này nên hai màn không bao giờ lệch số. Mỗi bản ghi nguồn chưa xử lý xuất hiện đúng
+// MỘT lần; bản ghi đã hoàn thành/đã hủy không được đếm.
+function buildOperationsRows({ orders = [], debts = [], supportCases = [], tasks = [], inventory = [], employees = [], attendanceRequests = [], transactions = [] }) {
+  const employeeName = (id) => (employees || []).find((e) => Number(e.id) === Number(id))?.name || "—";
+  const list = [];
+  (orders || []).forEach((o) => {
+      if (isOrderCancelled(o)) return;
+      const ref = `Đơn #${String(o.id).slice(-6)}`;
+      const owner = employeeName(o.saleEmployeeId);
+      const focus = { type: "order", id: o.id };
+      if (o.orderStatus === "pending_confirmation") {
+        list.push({ id: `ord-cf-${o.id}`, type: "Đơn hàng", content: `Chờ xác nhận đơn ${fmtVND(Number(o.amount) || 0)}`, subject: o.customerName || "—", ref, dept: "Kinh doanh", owner, priority: "Cao", due: o.date, status: "Chờ xác nhận", warn: "", target: "donhang", focus, assignee: o.saleEmployeeId });
+      }
+      const remaining = Number(o.amountBreakdown?.remaining);
+      const unpaid = Number.isFinite(remaining) ? remaining > 0 : (o.paymentStatus && o.paymentStatus !== "paid");
+      if (unpaid) {
+        list.push({ id: `ord-pay-${o.id}`, type: "Công nợ", content: `Đơn chưa thu đủ${Number.isFinite(remaining) && remaining > 0 ? ` — còn ${fmtVND(remaining)}` : ""}`, subject: o.customerName || "—", ref, dept: "Kinh doanh", owner, priority: "Cao", due: o.date, status: "Chưa thu đủ", warn: "", target: "donhang", focus, assignee: o.saleEmployeeId });
+      }
+      if (!(o.invoiceStatus === "issued" || o.invoiceNo)) {
+        list.push({ id: `ord-inv-${o.id}`, type: "Hóa đơn", content: `Chưa xuất hóa đơn cho đơn ${fmtVND(Number(o.amount) || 0)}`, subject: o.customerName || "—", ref, dept: "Kế toán", owner, priority: "Trung bình", due: o.date, status: "Chưa xuất HĐ", warn: "", target: "donhang", focus, assignee: null });
+      }
+      if (o.inventoryStatus === "pending_stock") {
+        list.push({ id: `ord-stk-${o.id}`, type: "Kho", content: `Đơn chờ bổ sung kho — thiếu ${o.inventoryShortage || o.quantity || 1} (chưa xuất kho được)`, subject: o.customerName || "—", ref, dept: "Kho", owner, priority: "Cao", due: o.date, status: "Chờ bổ sung kho", warn: "", target: "donhang", focus, assignee: o.saleEmployeeId });
+      }
+    });
+    // Chấm công chờ Sếp/Kế toán duyệt — nguồn nhân sự cũng phải hiện ở trung tâm vận hành.
+    (attendanceRequests || []).forEach((r) => {
+      if (r.status !== "pending") return;
+      list.push({ id: `att-${r.id}`, type: "Chấm công", content: `Yêu cầu chấm công ngày ${formatDateVN(r.date)} đang chờ duyệt`, subject: r.employeeName || "—", ref: `YC #${String(r.id).slice(-6)}`, dept: "Nhân sự", owner: r.employeeName || "—", priority: "Trung bình", due: r.date, status: "Chờ duyệt", warn: "", target: "chamcong", assignee: r.employeeId });
+    });
+    // Giao dịch Thu Chi ghi tay: tiền ĐÃ ghi sổ ngay khi lưu (DOMIX không có bước duyệt
+    // giao dịch — sai sót sửa bằng BÚT TOÁN ĐỎ). Mục này chỉ nhắc kế toán KIỂM TRA lại
+    // chứng từ mới ghi, không được gọi là "chờ duyệt" kẻo hiểu nhầm tiền chưa vào sổ.
+    (transactions || []).forEach((t) => {
+      if (t.status !== "pending") return;
+      list.push({ id: `tx-${t.id}`, type: "Tài chính", content: `${t.kind === "chi" ? "Khoản chi" : "Khoản thu"} mới ghi sổ — cần kiểm tra chứng từ — ${fmtVND(Math.abs(Number(t.amount) || 0))}${t.desc ? ` (${t.desc})` : ""}`, subject: t.partner || t.counterparty || "—", ref: `GD #${String(t.id).slice(-6)}`, dept: "Kế toán", owner: "—", priority: "Trung bình", due: t.date, status: "Đã ghi sổ", warn: "", target: "thuchi", assignee: null });
+    });
+    (supportCases || []).forEach((c) => {
+      const base = { subject: c.customerName || "—", ref: `YC #${String(c.id).slice(-6)}`, dept: "Hỗ trợ/Kỹ thuật", owner: employeeName(c.employeeId), target: "hotro", focus: { type: "support", id: c.id }, assignee: c.employeeId };
+      if (c.status === "cho_xac_nhan") list.push({ id: `sp-new-${c.id}`, type: "Hỗ trợ", content: `Yêu cầu hỗ trợ chờ kỹ thuật nhận: ${c.issue || c.supportType || ""}`, priority: "Cao", due: String(c.createdAt || "").slice(0, 10), status: "Chờ nhận", warn: "", ...base });
+      if (c.status === "dang_ho_tro") {
+        const started = String(c.createdAt || "").slice(0, 10);
+        const stale = started && started < new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
+        list.push({ id: `sp-run-${c.id}`, type: "Hỗ trợ", content: `Đang xử lý: ${c.issue || c.supportType || ""}`, priority: stale ? "Cao" : "Trung bình", due: started, status: "Đang xử lý", warn: stale ? "Quá 2 ngày chưa xong" : "", ...base });
+      }
+      if (c.status === "cho_duyet_hoan_tat") list.push({ id: `sp-rev-${c.id}`, type: "Hỗ trợ", content: `Kỹ thuật báo xong — chờ duyệt hoàn tất`, priority: "Cao", due: String(c.completedAt || c.createdAt || "").slice(0, 10), status: "Chờ duyệt", warn: "", ...base });
+    });
+    (tasks || []).forEach((t) => {
+      const owner = employeeName(t.employeeId);
+      const base = { subject: owner, ref: `Việc #${String(t.id).slice(-6)}`, dept: "Nhiệm vụ", owner, target: "giaoviec", focus: { type: "task", id: t.id }, assignee: t.employeeId };
+      if (t.completionStatus === "submitted") {
+        list.push({ id: `tk-rev-${t.id}`, type: "Giao việc", content: `Chờ nghiệm thu: ${t.description || ""}`, priority: "Cao", due: t.date, status: "Chờ duyệt", warn: "", ...base });
+      } else if (t.date && t.date < TODAY_STR && t.completionStatus !== "approved") {
+        list.push({ id: `tk-late-${t.id}`, type: "Giao việc", content: `Việc quá hạn: ${t.description || ""}`, priority: "Cao", due: t.date, status: "Quá hạn", warn: `Trễ từ ${formatDateVN(t.date)}`, ...base });
+      }
+    });
+    (debts || []).forEach((d) => {
+      if (d.type !== "thu") return;
+      const remaining = Math.max(0, (Number(d.amount) || 0) - (Number(d.paidAmount) || 0));
+      const overdueDays = daysOverdue(d);
+      if (remaining > 0 && overdueDays > 0) {
+        list.push({ id: `db-${d.id}`, type: "Công nợ", content: `Công nợ quá hạn — còn ${fmtVND(remaining)}`, subject: d.counterpartyName || d.partner || "—", ref: `Nợ #${String(d.id).slice(-6)}`, dept: "Kế toán", owner: "—", priority: "Cao", due: d.dueDate, status: "Quá hạn", warn: `Trễ ${overdueDays} ngày`, target: "congno", focus: { type: "debt", id: d.id }, assignee: null });
+      }
+    });
+    (inventory || []).forEach((p) => {
+      if (p.discontinued) return;
+      if (Number(p.stock) <= Number(p.minStock || 0)) {
+        list.push({ id: `iv-${p.id}`, type: "Kho", content: `Sắp hết hàng — tồn ${Number(p.stock) || 0}/${Number(p.minStock) || 0} tối thiểu`, subject: p.name || "—", ref: `SP #${String(p.id).slice(-6)}`, dept: "Kho", owner: "—", priority: "Trung bình", due: "", status: "Cần nhập thêm", warn: "", target: "kho", focus: { type: "product", id: p.id }, assignee: null });
+      }
+    });
+  const priorityRank = { "Cao": 0, "Trung bình": 1, "Thấp": 2 };
+  return list.sort((a, b) => (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9) || String(a.due || "").localeCompare(String(b.due || "")));
+}
+
+function OperationsCenter({ orders = [], debts = [], supportCases = [], tasks = [], inventory = [], employees = [], attendanceRequests = [], transactions = [], setTab, onAssignTask, onOpenRecord, typeFilter = "all", onTypeFilterChange, isManager }) {
+  const setTypeFilter = onTypeFilterChange || (() => {});
+  const employeeName = (id) => (employees || []).find((e) => Number(e.id) === Number(id))?.name || "—";
+
+  const rows = useMemo(
+    () => buildOperationsRows({ orders, debts, supportCases, tasks, inventory, employees, attendanceRequests, transactions }),
+    [orders, supportCases, tasks, debts, inventory, employees, attendanceRequests, transactions],
+  );
+
+  const types = ["all", ...Array.from(new Set(rows.map((r) => r.type)))];
+  const visible = typeFilter === "all" ? rows : rows.filter((r) => r.type === typeFilter);
+  const highCount = rows.filter((r) => r.priority === "Cao").length;
+
+  return (
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-hidden">
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-paper-line bg-white px-3 py-2">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-bold text-ink">Cần xử lý hôm nay</span>
+          <span className="rounded-full border border-stamp-red/40 bg-stamp-red/10 px-2 py-0.5 text-[10px] font-bold text-stamp-red">{highCount} ưu tiên cao</span>
+          <span className="text-[11px] text-muted">{rows.length} việc tồn đọng từ mọi phân hệ</span>
+        </div>
+        <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="rounded-md border border-paper-line px-2 py-1.5 text-xs" aria-label="Lọc theo loại công việc">
+          {types.map((tp) => <option key={tp} value={tp}>{tp === "all" ? "Tất cả loại việc" : tp}</option>)}
+        </select>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-paper-line bg-white">
+        <table data-sticky-columns="true" className="w-full min-w-[1080px] text-xs">
+          <thead className="sticky top-0 z-10 bg-[#F7F9FC] text-[10px] uppercase text-muted">
+            <tr className="border-b border-paper-line">
+              <th className="px-3 py-2 text-left">Loại</th>
+              <th className="px-3 py-2 text-left">Nội dung</th>
+              <th className="px-3 py-2 text-left">Đối tượng</th>
+              <th className="px-3 py-2 text-left">Liên quan</th>
+              <th className="px-3 py-2 text-left">Bộ phận</th>
+              <th className="px-3 py-2 text-left">Phụ trách</th>
+              <th className="px-3 py-2 text-left">Ưu tiên</th>
+              <th className="px-3 py-2 text-left">Hạn</th>
+              <th className="px-3 py-2 text-left">Trạng thái</th>
+              <th className="px-3 py-2 text-left">Cảnh báo</th>
+              <th className="px-3 py-2 text-right">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visible.length === 0 && <tr><td colSpan={11} className="px-3 py-10 text-center text-muted">Không còn việc tồn đọng — mọi phân hệ đang sạch.</td></tr>}
+            {visible.map((row) => (
+              <tr key={row.id} className="border-t border-paper-line align-top hover:bg-[#F0F5FF]">
+                <td className="whitespace-nowrap px-3 py-2 font-semibold text-ink">{row.type}</td>
+                <td className="max-w-[280px] px-3 py-2 text-charcoal">{row.content}</td>
+                <td className="max-w-[140px] px-3 py-2 font-medium text-ink">{row.subject}</td>
+                <td className="whitespace-nowrap px-3 py-2 ktns-mono text-[10px] text-muted">{row.ref}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-muted">{row.dept}</td>
+                <td className="whitespace-nowrap px-3 py-2">{row.owner}</td>
+                <td className="px-3 py-2"><span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${OPS_PRIORITY_STYLE[row.priority] || OPS_PRIORITY_STYLE["Thấp"]}`}>{row.priority.toUpperCase()}</span></td>
+                <td className="whitespace-nowrap px-3 py-2 ktns-mono text-muted">{row.due ? formatDateVN(row.due) : "—"}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-charcoal">{row.status}</td>
+                <td className="max-w-[130px] px-3 py-2 text-[10px] font-semibold text-stamp-red">{row.warn || ""}</td>
+                <td className="px-3 py-2 text-right">
+                  <div className="flex justify-end gap-1.5">
+                    <button type="button" onClick={() => (row.focus && onOpenRecord ? onOpenRecord(row.target, row.focus) : setTab(row.target))} className="rounded-md border border-[#3C50E0]/35 px-2 py-1 text-[10px] font-semibold text-[#3C50E0] hover:bg-[#3C50E0]/5" title={row.focus ? "Mở ĐÚNG bản ghi này (tự mở rộng và tô sáng)" : "Mở màn hình nguồn để xử lý"}>Mở</button>
+                    {isManager && onAssignTask && (
+                      <button type="button" onClick={() => onAssignTask({
+                        description: `[${row.type}] ${row.content} — ${row.subject} (${row.ref})`,
+                        employeeId: row.assignee || "",
+                        // Nhiệm vụ ghi lại NGUỒN bằng ID — mở lại được đúng bản ghi gốc.
+                        sourceType: row.focus?.type || row.target || "",
+                        sourceId: row.focus?.id ?? "",
+                        sourceTarget: row.target || "",
+                      })} className="rounded-md bg-ink px-2 py-1 text-[10px] font-semibold text-white" title="Tạo nhiệm vụ từ dòng này — nội dung, người phụ trách và bản ghi nguồn được gắn sẵn">Tạo nhiệm vụ</button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ---------- Hồ sơ nhân viên hợp nhất (mở từ Nhân sự/Hiệu suất/Giao việc) ----------
 const PROFILE_PERF_LABELS = { tot: "Tốt", trung_binh: "Trung bình", canh_bao: "Cảnh báo", chua_co_du_lieu: "Chưa đủ dữ liệu" };
 
 function EmployeeProfileModal({ employee, tasks = [], orders = [], marketingLogs = [], payrollRows = [], reportYear, reportMonth, financialSummary, onClose }) {
   if (!employee) return null;
-  const perf = performanceOf(employee, financialSummary);
+  // CÙNG một nguồn task cho cả badge hiệu suất lẫn ô "Nhiệm vụ": không để một màn hình
+  // vừa nói "chưa có task" vừa liệt kê task — enrich hồ sơ bằng số liệu Giao việc trong kỳ.
+  const taskStats = computeEmployeeTaskStats(employee.id, tasks, orders, marketingLogs, reportYear, reportMonth);
+  const enrichedEmployee = { ...employee, tasksAssigned: taskStats.total, tasksCompleted: taskStats.done, tasksOnTime: taskStats.done };
+  const perf = performanceOf(enrichedEmployee, financialSummary);
   const payroll = (payrollRows || []).find((row) => Number(row.id) === Number(employee.id));
-  const taskStats = computeEmployeeTaskStats(employee.id, tasks, orders, marketingLogs);
   const isInPeriod = (dateValue) => {
     const date = new Date(dateValue);
     return !Number.isNaN(date.getTime()) && date.getFullYear() === Number(reportYear) && date.getMonth() + 1 === Number(reportMonth);
@@ -14980,7 +19193,7 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
             {employeeListRefreshing ? "Đang cập nhật" : "Cập nhật"}
           </button>
           {periodInactive.length > 0 && (
-            <button onClick={() => setShowInactive((v) => !v)} className="text-xs border border-paper-line px-2.5 py-2 rounded-md text-ink-light hover:border-gold">
+            <button onClick={() => setShowInactive((v) => !v)} className="text-xs border border-paper-line px-2.5 py-2 rounded-md text-ink-light hover:border-[#3C50E0]/60">
               {showInactive ? "Ẩn người đã nghỉ" : `Hiện cả ${periodInactive.length} người đã nghỉ/chưa vào`}
             </button>
           )}
@@ -15338,15 +19551,18 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
                   </td>
                   <td className="px-4 py-3 text-right min-w-[245px]">
                     {isAdmin ? <div className="flex flex-wrap justify-end gap-2">
-                      <button onClick={() => startEdit(e)} className="rounded-md bg-ink px-3 py-1.5 text-xs font-semibold text-white">Sửa</button>
+                      {/* Thao tác lặp trên mọi dòng dùng kiểu outline — màu đặc chỉ dành cho CTA chính của trang. */}
+                      <button onClick={() => startEdit(e)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-3 py-1.5 text-xs font-semibold text-ink hover:border-[#3C50E0]/60"><Pencil size={12} /> Sửa</button>
                       <button onClick={() => (e.status === "active" ? startResign(e.id) : reactivate(e.id))} className="rounded-md border border-paper-line px-3 py-1.5 text-xs text-ink-light">
                         {e.status === "active" ? "Nghỉ việc" : "Kích hoạt"}
                       </button>
+                      {/* Nhân sự ĐANG LÀM không có nút xóa — phải qua "Nghỉ việc" trước (giữ dấu vết
+                          lương/chấm công); chỉ hồ sơ đã nghỉ mới xóa được (kèm xác nhận 2 bước sẵn có). */}
                       <button
                         onClick={() => requestDeleteEmployee(e)}
-                        disabled={String(e.email || "").trim().toLowerCase() === String(authUser?.email || "").trim().toLowerCase()}
+                        disabled={e.status === "active" || String(e.email || "").trim().toLowerCase() === String(authUser?.email || "").trim().toLowerCase()}
                         className="inline-flex items-center gap-1 rounded-md border border-stamp-red/30 bg-stamp-red/5 px-3 py-1.5 text-xs font-semibold text-stamp-red hover:bg-stamp-red/10 disabled:cursor-not-allowed disabled:opacity-40"
-                        title="Xóa hồ sơ nhân sự và tài khoản đăng nhập liên kết"
+                        title={e.status === "active" ? "Nhân sự đang làm việc — hãy dùng 'Nghỉ việc' trước, chỉ hồ sơ đã nghỉ mới được xóa" : "Xóa hồ sơ nhân sự và tài khoản đăng nhập liên kết (hồ sơ đã nghỉ)"}
                       >
                         <Trash2 size={13} /> Xóa
                       </button>
@@ -15485,7 +19701,9 @@ function HieuSuat({ employees, masterRanking, supportCases, financialSummary, da
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-2">
+    // min-w-0 + overflow-x-hidden: bảng rộng chỉ được cuộn TRONG khung bảng của nó,
+    // không được đẩy cả trang cuộn ngang làm xô lệch sidebar (lỗi ở chế độ tối).
+    <div className="flex h-full min-h-0 min-w-0 flex-col gap-2 overflow-x-hidden">
       <div className="shrink-0">
       <SectionViewSwitcher
         value={activeTableView}
@@ -15504,7 +19722,7 @@ function HieuSuat({ employees, masterRanking, supportCases, financialSummary, da
               <div className="text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><Gauge size={13} /> Xếp hạng tổng hợp — ai chăm, ai lười, ai cần cải thiện</div>
               <div className="text-[11px] text-muted mt-0.5">Gộp Chấm công + Doanh số CRM/Marketing + Giao việc + Hiệu suất thành 1 kết quả chuẩn/người, sắp điểm thấp lên đầu.</div>
             </div>
-            <button onClick={() => exportMasterRankingExcel(masterRanking)} className="text-xs bg-ledger-green text-white px-2.5 py-1.5 rounded-md hover:opacity-90 flex items-center gap-1 shrink-0"><FileSpreadsheet size={12} /> Xuất Excel</button>
+            <button onClick={() => exportMasterRankingExcel(masterRanking)} className="text-xs border border-ledger-green/40 bg-ledger-green/10 text-ledger-green px-2.5 py-1.5 rounded-md hover:bg-ledger-green/20 flex items-center gap-1 shrink-0"><FileSpreadsheet size={12} /> Xuất Excel</button>
           </div>
           <div className="shrink-0 px-4 pb-2 flex gap-2 flex-wrap">
             {Object.entries(PERFORMANCE_STATUS_META).map(([id, m]) => (
@@ -15548,7 +19766,6 @@ function HieuSuat({ employees, masterRanking, supportCases, financialSummary, da
             </tbody>
           </table>
           </div>
-          <p className="shrink-0 px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Phân loại Tốt / Cần cải thiện / Cảnh báo / Chưa đủ dữ liệu được lấy duy nhất từ FinancialSummaryService. Các điểm chuyên cần, thái độ và kết quả chỉ là chỉ số phân tích chi tiết, không tạo thêm một phân loại cạnh tranh.</p>
         </div>
       )}
 
@@ -15566,7 +19783,7 @@ function HieuSuat({ employees, masterRanking, supportCases, financialSummary, da
           {warnCount > 0 && <span className="text-stamp-red font-medium"> {warnCount} nhân viên đang ở mức cảnh báo, cần nhắc nhở.</span>}
           {warnCount === 0 && insufficientCount > 0 && <span className="text-muted font-medium"> {insufficientCount} nhân viên chưa đủ dữ liệu để phân loại; không tính là cảnh báo.</span>}
         </p>
-        <button onClick={() => exportPerformanceExcel(employees, financialSummary)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90 shrink-0">
+        <button onClick={() => exportPerformanceExcel(employees, financialSummary)} className="flex items-center gap-1.5 text-sm border border-ledger-green/40 bg-ledger-green/10 text-ledger-green px-3.5 py-2 rounded-md hover:opacity-90 shrink-0">
           <FileSpreadsheet size={15} /> Xuất Excel chi tiết
         </button>
       </div>
@@ -15623,12 +19840,12 @@ function HieuSuat({ employees, masterRanking, supportCases, financialSummary, da
         </div>
       </div>
 
-      <div style={{ display: activeTableView === "details" ? "grid" : "none" }} className="shrink-0 grid grid-cols-2 gap-4">
+      <div style={{ display: activeTableView === "details" ? "grid" : "none" }} className="shrink-0 grid min-w-0 grid-cols-1 gap-4 xl:grid-cols-2">
         {filtered.map((e) => {
           const perf = performanceOf(e, financialSummary);
           const RoleIcon = ROLE_META[e.roleType]?.icon || UserCog;
           return (
-            <div key={e.id} className="bg-white rounded-lg border border-paper-line p-4 flex flex-col gap-3">
+            <div key={e.id} className="min-w-0 overflow-hidden bg-white rounded-lg border border-paper-line p-4 flex flex-col gap-3">
               <div className="flex justify-between items-start">
                 <div>
                   <div className="font-semibold text-ink flex items-center gap-1.5"><RoleIcon size={13} className="text-ink-light" /> {e.name}</div>
@@ -15686,14 +19903,27 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
   const midMonthSectionRef = useRef(null);
   const scrollToPayrollSection = (ref) => ref.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   const [showKpiConfig, setShowKpiConfig] = useState(false);
+  const [payrollSearch, setPayrollSearch] = useState("");
+  const [kpiSearch, setKpiSearch] = useState("");
+  const [allowanceSearch, setAllowanceSearch] = useState("");
+  const [allowanceTarget, setAllowanceTarget] = useState(null);
+  const [allowanceDraft, setAllowanceDraft] = useState([]);
+  const [allowanceError, setAllowanceError] = useState("");
+  const [kpiEditTarget, setKpiEditTarget] = useState(null);
+  const [kpiEditForm, setKpiEditForm] = useState({ kpi: "", bonusTarget: "", otherBonus: "", note: "" });
+  const [kpiEditError, setKpiEditError] = useState("");
   const [showPayrollSummary, setShowPayrollSummary] = useState(true);
   const [salaryWorkspace, setSalaryWorkspace] = useState("center");
   const [payrollListMode, setPayrollListMode] = useState("monthly");
-  const activeSalaryDataView = salaryWorkspace === "center" ? "center" : payrollListMode;
+  const activeSalaryDataView = ["center", "kpi", "allowance"].includes(salaryWorkspace)
+    ? salaryWorkspace
+    : payrollListMode;
   const lazyTableData = useLazyTableData(activeSalaryDataView, {
     center: ["payrollApprovals", "payrollPayments", "kpiTiers", "transactions"],
     monthly: ["payrollApprovals", "payrollPayments", "kpiTiers", "transactions"],
     midmonth: ["midMonthRequests", "payrollPayments", "transactions"],
+    kpi: ["payrollApprovals", "payrollPayments", "kpiTiers", "orders", "marketingLogs"],
+    allowance: ["payrollApprovals", "payrollPayments"],
   }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   const [showSalaryRules, setShowSalaryRules] = useState(false);
   const addKpiTierRow = (role) => setKpiTiers((prev) => ({ ...prev, [role]: [...prev[role], { minRevenue: 0, pct: 0 }] }));
@@ -15703,6 +19933,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
   const toggleExpand = (id) => setExpanded((p) => ({ ...p, [id]: !p[id] }));
   // Drawer chi tiết MỘT nhân sự (mục XI) — overlay rộng thay cho việc kéo ngang bảng.
   const [detailRowId, setDetailRowId] = useState(null);
+  // Ô Phụ cấp/Thưởng trên bảng tổng quát chỉ hiện TỔNG TIỀN — bấm vào mở POPUP chi tiết từng khoản.
+  const [breakdownPopup, setBreakdownPopup] = useState(null); // { row, type: "allowance" | "bonus" }
   const detailRow = payrollRows.find((r) => r.id === detailRowId) || null;
 
   const periodKey = `${reportYear}-${reportMonth}`;
@@ -16539,7 +20771,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
           ...request,
           status: "tra_ve_nhan_vien",
           approval_status: "accounting_rejected",
-          payment_status: approval.payment_status || "unpaid",
+          payment_status: request.payment_status || "unpaid",
           returnedByBoss: false,
           returnReason: reason,
           returnedAt: actor.at,
@@ -16552,7 +20784,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
         ...request,
         status: "cho_ke_toan_duyet",
         approval_status: "director_rejected",
-        payment_status: approval.payment_status || "unpaid",
+        payment_status: request.payment_status || "unpaid",
         returnedByBoss: true,
         returnReason: reason,
         returnedAt: actor.at,
@@ -16577,7 +20809,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
           ...request,
           status: "cho_ke_toan_duyet",
           approval_status: "submitted",
-          payment_status: approval.payment_status || "unpaid",
+          payment_status: request.payment_status || "unpaid",
           returnedByBoss: false,
           returnReason: "",
           submittedAt: actor.at,
@@ -16884,18 +21116,283 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
     );
   };
 
-  const payrollOverviewRows = canViewAllPayroll
+  // Từng lần tạm ứng giữa tháng của một nhân sự trong kỳ — cần biết ứng ngày nào, bao nhiêu.
+  const midMonthEntriesOf = (employeeId) => (midMonthRequests || [])
+    .filter((item) => (
+      Number(item.employeeId) === Number(employeeId)
+      && item.paid
+      && new Date(item.date).getFullYear() === Number(reportYear)
+      && new Date(item.date).getMonth() + 1 === Number(reportMonth)
+    ))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+  // Bảng tổng hợp lương: gom đủ mọi khoản đã chi và đã ứng cho từng nhân sự trong kỳ —
+  // phụ cấp, hoa hồng/thưởng, bảo hiểm, thuế, tạm ứng, thực lĩnh, đã trả và hình thức trả.
+  const overviewSearchText = payrollSearch.trim().toLowerCase();
+  const payrollOverviewRows = (canViewAllPayroll
     ? payrollRows
-    : payrollRows.filter((row) => Number(row.id) === Number(currentEmployee?.id));
-  const overviewTotalRevenue = payrollOverviewRows.reduce((sum, row) => sum + (Number(row.revenueUsed) || 0), 0);
-  const overviewTotalNet = payrollOverviewRows.reduce((sum, row) => sum + (Number(row.net) || 0), 0);
-  const overviewTotalCompanyCost = payrollOverviewRows.reduce((sum, row) => sum + (Number(row.employerTotalCost) || 0), 0);
-  const overviewMealAllowance = payrollOverviewRows.reduce((sum, row) => sum + (Number(row.mealAllowance) || 0), 0);
+    : payrollRows.filter((row) => Number(row.id) === Number(currentEmployee?.id))
+  ).filter((row) => {
+    if (!overviewSearchText) return true;
+    return [row.name, row.email, row.position, ROLE_META[row.roleType]?.label]
+      .some((value) => String(value || "").toLowerCase().includes(overviewSearchText));
+  }).map((row) => {
+    const allowanceTotal = (Number(row.mealAllowance) || 0)
+      + (Number(row.seniorityAllowance) || 0)
+      + (Number(row.attendanceBonus) || 0)
+      + (Number(row.customAllowanceTotal) || 0);
+    const bonusTotal = (Number(row.commission) || 0)
+      + (Number(row.compBonus) || 0)
+      + (Number(row.techUpsale) || 0)
+      + (Number(row.kpiBonus) || 0)
+      + (Number(row.kpiMilestoneBonus) || 0)
+      + (Number(row.otherBonus) || 0);
+    const payment = paymentOf(row.id);
+    const midMonthEntries = midMonthEntriesOf(row.id);
+    const midMonthPaid = midMonthPaidOf(row.id);
+    const advanceTotal = (Number(row.advance) || 0) + midMonthPaid;
+    const paidAmount = Number(payment?.amount) || 0;
+    return {
+      ...row,
+      allowanceTotal,
+      bonusTotal,
+      midMonthEntries,
+      midMonthPaid,
+      advanceTotal,
+      paidAmount,
+      paidMethodLabel: payment ? (payment.paymentMethod === "tien_mat" ? "Tiền mặt" : "Chuyển khoản") : "",
+      paidDate: payment?.paidDate || "",
+      remainingAmount: Math.max(0, (Number(row.net) || 0) - paidAmount),
+      insuranceTotal: (Number(row.employeeInsurance) || 0) + (Number(row.employerInsurance) || 0),
+    };
+  });
+  const sumOverview = (field) => payrollOverviewRows.reduce((sum, row) => sum + (Number(row[field]) || 0), 0);
+  const overviewTotalRevenue = sumOverview("revenueUsed");
+  const overviewTotalNet = sumOverview("net");
+  const overviewTotalCompanyCost = sumOverview("employerTotalCost");
+  const overviewMealAllowance = sumOverview("mealAllowance");
+  const overviewTotalAllowance = sumOverview("allowanceTotal");
+  const overviewTotalBonus = sumOverview("bonusTotal");
+  const overviewTotalGross = sumOverview("grossIncome");
+  const overviewEmployeeInsurance = sumOverview("employeeInsurance");
+  const overviewEmployerInsurance = sumOverview("employerInsurance");
+  const overviewTotalTax = sumOverview("thueTNCN");
+  const overviewTotalAdvance = sumOverview("advanceTotal");
+  const overviewTotalPaid = sumOverview("paidAmount");
+  const overviewTotalRemaining = sumOverview("remainingAmount");
+  const overviewTotalSalaryByDays = sumOverview("salaryByDays");
+  const overviewTotalBaseSalary = sumOverview("baseSalary");
+
+  // ---------- Tab KPI & Thưởng: đánh giá hiệu suất và chốt thưởng cho từng nhân sự ----------
+  const kpiSearchText = kpiSearch.trim().toLowerCase();
+  const kpiRows = (canViewAllPayroll ? payrollRows : payrollRows.filter((row) => Number(row.id) === Number(currentEmployee?.id)))
+    .filter((row) => {
+      if (!kpiSearchText) return true;
+      return [row.name, row.email, row.position, ROLE_META[row.roleType]?.label]
+        .some((value) => String(value || "").toLowerCase().includes(kpiSearchText));
+    })
+    .map((row) => {
+      const target = Number(row.salesTarget) || 0;
+      const actual = Number(row.revenueUsed) || Number(row.salesActual) || 0;
+      const achievedPct = target > 0 ? (actual / target) * 100 : null;
+      const kpiScore = Number(row.kpi) || 0;
+      const kpiBonus = Number(row.kpiBonus) || 0;
+      const milestoneBonus = Number(row.kpiMilestoneBonus) || 0;
+      // Hoa hồng = mọi khoản thưởng theo doanh số trên CÙNG nguồn payrollRows với bảng lương:
+      // hoa hồng sale + thưởng doanh số + hoa hồng upsale kỹ thuật — trước đây thiếu upsale/compBonus
+      // khiến bảng lương có 523.600đ thưởng mà tab KPI & Thưởng lại hiện 0.
+      const commission = (Number(row.commission) || 0) + (Number(row.compBonus) || 0) + (Number(row.techUpsale) || 0);
+      const otherBonus = Number(row.otherBonus) || 0;
+      const totalBonus = kpiBonus + milestoneBonus + commission + otherBonus;
+      const evaluation = evaluatePerformance(row);
+      return {
+        ...row, target, actual, achievedPct, kpiScore, kpiBonus, milestoneBonus,
+        commission, otherBonus, totalBonus, evaluation,
+      };
+    })
+    .sort((left, right) => right.totalBonus - left.totalBonus);
+
+  const kpiTotals = kpiRows.reduce((total, row) => ({
+    kpiBonus: total.kpiBonus + row.kpiBonus,
+    milestoneBonus: total.milestoneBonus + row.milestoneBonus,
+    commission: total.commission + row.commission,
+    otherBonus: total.otherBonus + row.otherBonus,
+    totalBonus: total.totalBonus + row.totalBonus,
+  }), { kpiBonus: 0, milestoneBonus: 0, commission: 0, otherBonus: 0, totalBonus: 0 });
+
+  const canEditKpi = currentIsBoss || currentIsAccountant;
+  const openKpiEdit = (row) => {
+    if (!canEditKpi) return;
+    setKpiEditTarget(row);
+    setKpiEditForm({
+      kpi: String(row.kpi ?? ""),
+      bonusTarget: String(row.bonusTarget ?? ""),
+      otherBonus: String(row.otherBonus ?? ""),
+      // Cơ chế mới: vạch doanh thu riêng + % hoa hồng khi vượt vạch.
+      kpiRevenueThreshold: row.kpiRevenueThreshold ? String(row.kpiRevenueThreshold) : "",
+      kpiRevenuePct: row.kpiRevenuePct ? String(row.kpiRevenuePct) : "",
+      note: row.kpiNote || "",
+    });
+    setKpiEditError("");
+  };
+  const saveKpiEdit = () => {
+    if (!kpiEditTarget || !canEditKpi) return;
+    const isRevenueRole = ["sale", "ads"].includes(kpiEditTarget.roleType);
+    const kpiValue = Number(kpiEditForm.kpi) || 0;
+    if (!isRevenueRole && (!Number.isFinite(kpiValue) || kpiValue < 0 || kpiValue > 200)) {
+      setKpiEditError("Mức KPI phải là số từ 0 đến 200 (%).");
+      return;
+    }
+    const threshold = Number(kpiEditForm.kpiRevenueThreshold) || 0;
+    const pct = Number(kpiEditForm.kpiRevenuePct) || 0;
+    if (isRevenueRole && ((threshold > 0) !== (pct > 0))) {
+      setKpiEditError("Vạch doanh thu và % hoa hồng phải đi cùng nhau — điền cả hai hoặc để trống cả hai (dùng vạch chung).");
+      return;
+    }
+    if (pct < 0 || pct > 100) {
+      setKpiEditError("% hoa hồng phải từ 0 đến 100.");
+      return;
+    }
+    setEmployees((current) => current.map((employee) => employee.id === kpiEditTarget.id ? {
+      ...employee,
+      kpi: kpiValue,
+      bonusTarget: Number(kpiEditForm.bonusTarget) || 0,
+      otherBonus: Number(kpiEditForm.otherBonus) || 0,
+      // Vạch riêng > 0 sẽ ĐÈ vạch chung khi tính thưởng mốc doanh thu vào lương.
+      kpiRevenueThreshold: threshold,
+      kpiRevenuePct: pct,
+      kpiNote: kpiEditForm.note.trim(),
+      kpiReviewedAt: nowStamp(),
+      kpiReviewedByName: currentEmployee?.name || authUser?.email || "",
+    } : employee));
+    setKpiEditTarget(null);
+    setKpiEditError("");
+  };
+
+  // ---------- Bảo hiểm theo SỐ TIỀN CỐ ĐỊNH cho từng nhân viên ----------
+  const [insuranceTarget, setInsuranceTarget] = useState(null);
+  const [insuranceForm, setInsuranceForm] = useState({ fixed: false, employeeAmount: "", employerAmount: "" });
+  const [insuranceError, setInsuranceError] = useState("");
+  const openInsuranceEdit = (row) => {
+    if (!canEditKpi) return;
+    setInsuranceTarget(row);
+    setInsuranceForm({
+      fixed: Number(row.insuranceFixedMode) === 1,
+      employeeAmount: row.insuranceEmployeeAmount ? String(row.insuranceEmployeeAmount) : "",
+      employerAmount: row.insuranceEmployerAmount ? String(row.insuranceEmployerAmount) : "",
+    });
+    setInsuranceError("");
+  };
+  const saveInsurance = () => {
+    if (!insuranceTarget || !canEditKpi) return;
+    const employeeAmount = Math.max(0, Number(insuranceForm.employeeAmount) || 0);
+    const employerAmount = Math.max(0, Number(insuranceForm.employerAmount) || 0);
+    // Lưu là chuyển hẳn sang SỐ TIỀN CỐ ĐỊNH — popup chỉ khai 2 số NV/DN đóng.
+    setEmployees((current) => current.map((employee) => employee.id === insuranceTarget.id ? {
+      ...employee,
+      insuranceFixedMode: 1,
+      insuranceEmployeeAmount: employeeAmount,
+      insuranceEmployerAmount: employerAmount,
+    } : employee));
+    setInsuranceTarget(null);
+    setInsuranceError("");
+  };
+
+  // ---------- Tab Phụ cấp: nhiều khoản phụ cấp cho từng nhân sự ----------
+  const allowanceSearchText = allowanceSearch.trim().toLowerCase();
+  const allowanceRows = (canViewAllPayroll ? payrollRows : payrollRows.filter((row) => Number(row.id) === Number(currentEmployee?.id)))
+    .filter((row) => {
+      if (!allowanceSearchText) return true;
+      return [row.name, row.email, row.position, ROLE_META[row.roleType]?.label]
+        .some((value) => String(value || "").toLowerCase().includes(allowanceSearchText));
+    })
+    .map((row) => {
+      const custom = Array.isArray(row.customAllowances) ? row.customAllowances : [];
+      const fixedTotal = (Number(row.mealAllowance) || 0) + (Number(row.seniorityAllowance) || 0) + (Number(row.attendanceBonus) || 0);
+      return {
+        ...row,
+        custom,
+        fixedTotal,
+        customTotal: Number(row.customAllowanceTotal) || 0,
+        grandTotal: fixedTotal + (Number(row.customAllowanceTotal) || 0),
+        // Ăn trưa không còn khái niệm "trừ do nghỉ" (chỉ cộng ngày đủ công) — cột trừ chỉ còn
+        // phần phụ cấp khai báo thêm bị chia lại theo ngày công.
+        deducted: Number(row.customAllowanceDeducted) || 0,
+      };
+    })
+    .sort((left, right) => right.grandTotal - left.grandTotal);
+
+  const allowanceTotals = allowanceRows.reduce((total, row) => ({
+    fixed: total.fixed + row.fixedTotal,
+    custom: total.custom + row.customTotal,
+    grand: total.grand + row.grandTotal,
+    deducted: total.deducted + row.deducted,
+  }), { fixed: 0, custom: 0, grand: 0, deducted: 0 });
+
+  const canEditAllowance = currentIsBoss || currentIsAccountant;
+  const openAllowanceEditor = (row) => {
+    if (!canEditAllowance) return;
+    const source = Array.isArray(employees.find((item) => item.id === row.id)?.allowances)
+      ? employees.find((item) => item.id === row.id).allowances
+      : [];
+    setAllowanceTarget(row);
+    setAllowanceDraft(source.map((item, index) => ({
+      id: item.id ?? `allowance-${index}`,
+      type: item.type || "khac",
+      label: item.label || "",
+      amount: String(item.amount ?? ""),
+      prorate: item.prorate === undefined ? Boolean(ALLOWANCE_TYPES[item.type]?.prorate) : Boolean(item.prorate),
+      note: item.note || "",
+    })));
+    setAllowanceError("");
+  };
+  const addAllowanceRow = () => setAllowanceDraft((current) => [...current, {
+    id: `allowance-${Date.now()}-${current.length}`,
+    // Tên phụ cấp do kế toán TỰ ĐIỀN (không chọn từ danh sách); mặc định KHÔNG chia theo công.
+    type: "khac", label: "", amount: "", prorate: false, note: "",
+  }]);
+  const updateAllowanceRow = (id, patch) => setAllowanceDraft((current) => current.map((item) => item.id === id ? { ...item, ...patch } : item));
+  const removeAllowanceRow = (id) => setAllowanceDraft((current) => current.filter((item) => item.id !== id));
+  const saveAllowances = () => {
+    if (!allowanceTarget || !canEditAllowance) return;
+    const cleaned = [];
+    for (const item of allowanceDraft) {
+      const amount = Number(item.amount) || 0;
+      if (amount <= 0) { setAllowanceError("Mỗi khoản phụ cấp phải có số tiền lớn hơn 0."); return; }
+      cleaned.push({
+        id: item.id,
+        type: item.type,
+        label: item.label.trim() || allowanceTypeLabel(item.type),
+        amount,
+        prorate: Boolean(item.prorate),
+        note: item.note.trim(),
+      });
+    }
+    setEmployees((current) => current.map((employee) => employee.id === allowanceTarget.id ? {
+      ...employee,
+      allowances: cleaned,
+      allowanceUpdatedAt: nowStamp(),
+      allowanceUpdatedByName: currentEmployee?.name || authUser?.email || "",
+    } : employee));
+    setAllowanceTarget(null);
+    setAllowanceError("");
+  };
 
   const salaryWorkspaceOptions = [
-    { id: "center", label: "Trung tâm lương", icon: Gauge },
+    // Chuẩn tab: tab ĐẦU là bảng tổng quát, các tab sau mới là bảng chi tiết/nghiệp vụ.
+    { id: "center", label: "Bảng lương tổng quát", icon: Gauge },
+    { id: "detail", label: "Chi tiết quy đổi & khấu trừ", icon: FileSpreadsheet },
+    // Bảo hiểm: bảng riêng 2 cột NV đóng / DN đóng cho từng nhân viên — Sếp/Kế toán chỉnh được.
+    ...(canViewAllPayroll ? [{ id: "insurance", label: "Bảo hiểm", icon: ShieldCheck }] : []),
     { id: "proposals", label: `Đề xuất lương${monthlyPendingCount + midMonthPendingCount > 0 ? ` (${monthlyPendingCount + midMonthPendingCount})` : ""}`, icon: FileText },
+    // Tab đánh giá KPI dành cho Sếp và Kế toán — nhân viên xem KPI của mình trong phiếu lương.
+    ...(canViewAllPayroll ? [{ id: "kpi", label: "KPI & Thưởng", icon: Target }] : []),
+    ...(canViewAllPayroll ? [{ id: "allowance", label: "Phụ cấp", icon: Coins }] : []),
   ];
+
+  useEffect(() => {
+    if (["kpi", "allowance"].includes(salaryWorkspace) && !canViewAllPayroll) setSalaryWorkspace("center");
+  }, [salaryWorkspace, canViewAllPayroll]);
 
   if (!lazyTableData.ready) {
     return (
@@ -16910,8 +21407,459 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3">
+    <div className="domix-finance-hub flex h-full min-h-0 flex-col gap-3">
       <div className="shrink-0"><SectionViewSwitcher value={salaryWorkspace} onChange={setSalaryWorkspace} options={salaryWorkspaceOptions} /></div>
+
+      {/* TAB BẢO HIỂM — 2 cột phần NHÂN VIÊN đóng và phần DOANH NGHIỆP đóng cho mỗi nhân viên. */}
+      {salaryWorkspace === "insurance" && (
+      <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-[#315fae]/35 bg-[#0f1726] p-3 text-white shadow-sm">
+        <div className="mb-3 flex shrink-0 flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-bold"><ShieldCheck size={15} className="text-[#86efac]" /> Bảo hiểm · phần nhân viên và doanh nghiệp đóng</div>
+            <div className="mt-1 text-[11px] text-[#8fa4c8]">Khai số tiền CỐ ĐỊNH riêng từng nhân viên hoặc dùng % luật (NV 10,5% · DN 21,5%) · kỳ {reportMonth}/{reportYear}</div>
+          </div>
+          <span className="rounded-full border border-[#315fae]/40 bg-[#315fae]/15 px-2.5 py-1 text-[10px] font-semibold text-[#a9c4ff]">{payrollRows.length} nhân viên</span>
+        </div>
+        <InlineStats dark items={[
+          { label: "Tổng NV đóng kỳ này", value: fmtVND(payrollRows.reduce((s, r) => s + (Number(r.employeeInsurance) || 0), 0)), className: "text-[#fca5a5]" },
+          { label: "Tổng DN đóng kỳ này", value: fmtVND(payrollRows.reduce((s, r) => s + (Number(r.employerInsurance) || 0), 0)), className: "text-[#86efac]" },
+          { label: "Đang dùng mức cố định", value: `${payrollRows.filter((r) => r.insuranceFixed).length}/${payrollRows.length} người`, className: "text-white" },
+        ]} />
+        <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-white/10">
+          <table className="w-full min-w-[900px] text-xs">
+            <thead className="sticky top-0 z-10 bg-[#17243a] text-left text-[10px] uppercase text-[#9eb3d6]">
+              <tr>
+                <th className="px-3 py-2">Nhân viên</th>
+                <th className="px-3 py-2">Cơ chế</th>
+                <th className="px-3 py-2 text-right">Phần NHÂN VIÊN đóng (kỳ này)</th>
+                <th className="px-3 py-2 text-right">Phần DOANH NGHIỆP đóng (kỳ này)</th>
+                <th className="px-3 py-2 text-right">Tổng đóng</th>
+                <th className="px-3 py-2 text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payrollRows.map((row) => (
+                <tr key={row.id} className="border-t border-white/10 hover:bg-white/5">
+                  <td className="px-3 py-2.5">
+                    <div className="font-semibold text-white whitespace-nowrap">{row.name}</div>
+                    <div className="text-[10px] text-[#8fa4c8]">{row.position || ROLE_META[row.roleType]?.label || "Nhân viên"} · {row.contractLabel || "—"}</div>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    {row.insuranceFixed
+                      ? <span className="rounded-full border border-[#86efac]/40 bg-[#86efac]/10 px-2 py-0.5 text-[9px] font-bold text-[#86efac]" title={`Mức khai: NV ${fmtVND(Number(row.insuranceEmployeeAmount) || 0)}/tháng · DN ${fmtVND(Number(row.insuranceEmployerAmount) || 0)}/tháng`}>SỐ TIỀN CỐ ĐỊNH</span>
+                      : <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[9px] font-bold text-[#aebbd0]" title="NV 10,5% + DN 21,5% trên lương cơ bản">% THEO LUẬT</span>}
+                    {Number(row.actualDays || 0) < INSURANCE_MIN_WORKDAYS && <div className="mt-1 text-[9px] text-[#f4c76a]">&lt;14 ngày công — kỳ này chưa phát sinh</div>}
+                  </td>
+                  <td className="px-3 py-2.5 text-right ktns-mono text-[#fca5a5]">{(Number(row.employeeInsurance) || 0) > 0 ? `-${fmtVND(row.employeeInsurance)}` : "—"}</td>
+                  <td className="px-3 py-2.5 text-right ktns-mono text-[#86efac]">{(Number(row.employerInsurance) || 0) > 0 ? fmtVND(row.employerInsurance) : "—"}</td>
+                  <td className="px-3 py-2.5 text-right ktns-mono font-semibold text-white">{fmtVND((Number(row.employeeInsurance) || 0) + (Number(row.employerInsurance) || 0))}</td>
+                  <td className="px-3 py-2.5 text-right">
+                    {canEditKpi && (
+                      <button type="button" onClick={() => openInsuranceEdit(row)} className="inline-flex items-center gap-1 rounded-md border border-[#315fae]/40 bg-[#315fae]/10 px-2.5 py-1 text-[11px] font-semibold text-[#7ea4e8] hover:bg-[#315fae]/20"><Pencil size={11} /> Sửa bảo hiểm</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 shrink-0 text-[10px] text-[#8fa4c8]">Phần NV đóng trừ vào thực lĩnh (cột Khấu trừ ở Bảng lương và mục C của Đề xuất lương); phần DN đóng cộng vào tổng chi phí doanh nghiệp. Quy tắc ≥14 ngày công/tháng mới phát sinh bảo hiểm được giữ nguyên.</p>
+      </section>
+      )}
+
+      {salaryWorkspace === "allowance" && (
+      <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-[#315fae]/35 bg-[#0f1726] p-3 text-white shadow-sm">
+        <div className="mb-3 flex shrink-0 flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-bold"><Coins size={15} className="text-[#f4c76a]" /> Phụ cấp · ăn trưa, xăng xe, OT, sinh con…</div>
+            <div className="mt-1 text-[11px] text-[#8fa4c8]">{canEditAllowance ? "Sếp và Kế toán thêm, sửa, xóa từng khoản phụ cấp" : "Bạn chỉ xem phụ cấp của chính mình"} · kỳ {reportMonth}/{reportYear}</div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {canViewAllPayroll && (
+              <div className="relative">
+                <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#8fa4c8]" />
+                <input
+                  value={allowanceSearch}
+                  onChange={(event) => setAllowanceSearch(event.target.value)}
+                  placeholder="Tìm theo tên hoặc email..."
+                  className="w-[min(260px,60vw)] rounded-lg border border-white/15 bg-white/5 py-1.5 pl-8 pr-8 text-xs text-white outline-none placeholder:text-[#7d90b3] focus:border-[#5f8df8]"
+                  aria-label="Tìm nhân viên trong bảng phụ cấp"
+                />
+                {allowanceSearch && <button type="button" onClick={() => setAllowanceSearch("")} className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-[#8fa4c8] hover:text-white" aria-label="Xóa tìm kiếm"><X size={12} /></button>}
+              </div>
+            )}
+            <span className="rounded-full border border-[#315fae]/40 bg-[#315fae]/15 px-2.5 py-1 text-[10px] font-semibold text-[#a9c4ff]">{allowanceRows.length} nhân viên</span>
+          </div>
+        </div>
+
+        <InlineStats dark items={[
+          { label: "Phụ cấp cố định", value: fmtVND(allowanceTotals.fixed), className: "text-[#f4c76a]", sub: "ăn trưa · thâm niên · chuyên cần" },
+          { label: "Khai báo thêm", value: fmtVND(allowanceTotals.custom), className: "text-[#86efac]", sub: "xăng xe · OT · sinh con…" },
+          { label: "Tổng thực nhận", value: fmtVND(allowanceTotals.grand), className: "text-white" },
+          { label: "Trừ do nghỉ", value: fmtVND(allowanceTotals.deducted), className: "text-[#f6b6bd]" },
+        ]} />
+
+        <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-white/10">
+          <table className="min-w-[1180px] w-full text-xs">
+            <thead className="sticky top-0 z-10 bg-[#17243a] text-left text-[10px] uppercase text-[#9eb3d6]">
+              <tr>
+                <th className="px-3 py-2">Nhân viên</th>
+                <th className="px-3 py-2 text-right">Ngày công</th>
+                <th className="px-3 py-2">Phụ cấp cố định</th>
+                <th className="px-3 py-2">Phụ cấp khai báo thêm</th>
+                <th className="px-3 py-2 text-right">Bị trừ do nghỉ</th>
+                <th className="px-3 py-2 text-right">Tổng thực nhận</th>
+                <th className="px-3 py-2 text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allowanceRows.length === 0 && (
+                <tr><td colSpan={7} className="px-3 py-6 text-center text-[11px] text-[#8fa4c8]">Không tìm thấy nhân sự phù hợp trong kỳ này.</td></tr>
+              )}
+              {allowanceRows.map((row) => (
+                <tr key={row.id} className="border-t border-white/10 hover:bg-white/5">
+                  <td className="px-3 py-2">
+                    <div className="font-semibold text-white">{row.name}</div>
+                    <div className="text-[10px] text-[#8fa4c8]">{row.position || ROLE_META[row.roleType]?.label || "Nhân viên"}</div>
+                    {row.allowanceUpdatedAt && <div className="text-[9px] text-[#7d90b3]">Cập nhật {row.allowanceUpdatedAt}{row.allowanceUpdatedByName ? ` · ${row.allowanceUpdatedByName}` : ""}</div>}
+                  </td>
+                  <td className="px-3 py-2 text-right ktns-mono">{Number(row.actualDays || 0).toFixed(1)}/{row.standardDays}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-wrap gap-1">
+                      {row.mealAllowance > 0 && <span className="rounded-full border border-[#f4c76a]/30 bg-[#f4c76a]/10 px-2 py-0.5 text-[10px] text-[#f4c76a]">Ăn trưa {fmtVND(row.mealAllowance)}</span>}
+                      {row.seniorityAllowance > 0 && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-[#dbe4f1]">Thâm niên {fmtVND(row.seniorityAllowance)}</span>}
+                      {row.attendanceBonus > 0 && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-[#dbe4f1]">Chuyên cần {fmtVND(row.attendanceBonus)}</span>}
+                      {row.fixedTotal === 0 && <span className="text-[10px] text-[#8fa4c8]">—</span>}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-wrap gap-1">
+                      {row.custom.filter((item) => item.configured > 0).map((item) => (
+                        <span key={item.id} className="rounded-full border border-[#43c98a]/30 bg-[#43c98a]/10 px-2 py-0.5 text-[10px] text-[#86efac]" title={item.note || item.label}>
+                          {item.label} {fmtVND(item.amount)}{item.prorate ? " (theo công)" : ""}
+                        </span>
+                      ))}
+                      {row.custom.length === 0 && <span className="text-[10px] text-[#8fa4c8]">Chưa khai báo khoản nào</span>}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-right ktns-mono text-[#f6b6bd]">{row.grandTotal > 0 && row.deducted > 0 ? `-${fmtVND(row.deducted)}` : "—"}</td>
+                  <td className="px-3 py-2 text-right ktns-mono font-bold text-white">{fmtVND(row.grandTotal)}</td>
+                  <td className="px-3 py-2 text-right">
+                    {canEditAllowance
+                      ? <button type="button" onClick={() => openAllowanceEditor(row)} className="inline-flex items-center gap-1 rounded-md border border-[#315fae]/40 bg-[#315fae]/10 px-2.5 py-1 text-[11px] font-semibold text-[#7ea4e8] hover:bg-[#315fae]/20"><Pencil size={11} /> Sửa phụ cấp</button>
+                      : <span className="text-[10px] text-[#8fa4c8]">Chỉ Sếp/Kế toán sửa</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            {allowanceRows.length > 0 && (
+              <tfoot className="sticky bottom-0 bg-[#17243a] text-[11px] font-bold text-white">
+                <tr className="border-t-2 border-[#315fae]/50">
+                  <td className="px-3 py-2">TỔNG CỘNG · {allowanceRows.length} nhân sự</td>
+                  <td className="px-3 py-2"></td>
+                  <td className="px-3 py-2 ktns-mono text-[#f4c76a]">{fmtVND(allowanceTotals.fixed)}</td>
+                  <td className="px-3 py-2 ktns-mono text-[#86efac]">{fmtVND(allowanceTotals.custom)}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-[#f6b6bd]">-{fmtVND(allowanceTotals.deducted)}</td>
+                  <td className="px-3 py-2 text-right ktns-mono">{fmtVND(allowanceTotals.grand)}</td>
+                  <td className="px-3 py-2"></td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+        <div className="mt-2 shrink-0 text-[10px] text-[#8fa4c8]">
+          Khoản ghi <strong className="text-[#c6d7ff]">(theo công)</strong> được chia theo ngày công chuẩn — nghỉ ngày nào trừ đúng phần ngày đó, giống phụ cấp ăn trưa. Các khoản còn lại trả trọn tháng khi nhân sự có đi làm. Toàn bộ phụ cấp tự cộng vào tổng lương của kỳ.
+        </div>
+      </section>
+      )}
+
+      {allowanceTarget && (
+        <SupportOverlay
+          title={`Phụ cấp · ${allowanceTarget.name}`}
+          subtitle={`Kỳ ${reportMonth}/${reportYear} · ngày công ${Number(allowanceTarget.actualDays || 0).toFixed(1)}/${allowanceTarget.standardDays}`}
+          size="lg"
+          onClose={() => { setAllowanceTarget(null); setAllowanceError(""); }}
+          footer={(
+            <>
+              <button type="button" onClick={() => { setAllowanceTarget(null); setAllowanceError(""); }} className="rounded-lg border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-light hover:border-ink/25">Hủy</button>
+              <button type="button" onClick={saveAllowances} className="rounded-lg bg-ledger-green px-4 py-2.5 text-sm font-bold text-white hover:brightness-110">Lưu phụ cấp</button>
+            </>
+          )}
+        >
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-sm font-semibold text-ink">Các khoản phụ cấp khai báo thêm</h4>
+            <button type="button" onClick={addAllowanceRow} className="inline-flex items-center gap-1.5 rounded-lg border border-paper-line bg-white px-3 py-1.5 text-xs font-semibold text-ink hover:border-[#3C50E0]/60">
+              <Plus size={13} /> Thêm khoản
+            </button>
+          </div>
+
+          {allowanceDraft.length === 0 ? (
+            <p className="mt-3 rounded-lg border border-dashed border-paper-line bg-paper/40 px-4 py-6 text-center text-xs text-muted">
+              Chưa có khoản phụ cấp nào. Bấm “Thêm khoản” để khai báo xăng xe, OT, sinh con…
+            </p>
+          ) : (
+            <div className="mt-3 space-y-3">
+              {allowanceDraft.map((item) => (
+                <div key={item.id} className="rounded-xl border border-paper-line bg-white p-3">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <SupportField label="Tên phụ cấp (tự điền)">
+                      <input value={item.label} onChange={(event) => updateAllowanceRow(item.id, { label: event.target.value })} placeholder="VD: Xăng xe, Tăng ca, Điện thoại..." className={SUPPORT_INPUT_CLASS} />
+                    </SupportField>
+                    <SupportField label="Số tiền / tháng">
+                      <MoneyInput value={item.amount} onChange={(value) => updateAllowanceRow(item.id, { amount: value })} />
+                    </SupportField>
+                    <SupportField label="Ghi chú" full>
+                      <input value={item.note} onChange={(event) => updateAllowanceRow(item.id, { note: event.target.value })} placeholder="VD: hỗ trợ đi tỉnh tháng này" className={SUPPORT_INPUT_CLASS} />
+                    </SupportField>
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-paper-line pt-3">
+                    <label className="flex items-center gap-2 text-xs text-charcoal">
+                      <input type="checkbox" checked={item.prorate} onChange={(event) => updateAllowanceRow(item.id, { prorate: event.target.checked })} className="h-4 w-4 rounded border-paper-line" />
+                      Chia theo ngày công (nghỉ ngày nào trừ ngày đó)
+                    </label>
+                    <button type="button" onClick={() => removeAllowanceRow(item.id)} className="inline-flex items-center gap-1 rounded-md border border-stamp-red/30 px-2.5 py-1 text-[11px] font-semibold text-stamp-red hover:bg-stamp-red/5">
+                      <Trash2 size={12} /> Xóa khoản
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-4 flex items-start gap-2 rounded-lg border border-paper-line bg-paper/60 px-3 py-2.5 text-[11px] leading-relaxed text-muted">
+            <AlertTriangle size={13} className="mt-0.5 shrink-0 text-gold" />
+            <span>Tổng phụ cấp khai báo: <strong className="ktns-mono text-ink">{fmtVND(allowanceDraft.reduce((sum, item) => sum + (Number(item.amount) || 0), 0))}</strong>/tháng. Khoản chia theo ngày công sẽ giảm tương ứng nếu nhân sự nghỉ. Toàn bộ cộng vào tổng lương và chịu thuế theo quy định (riêng ăn trưa được miễn tới mức trần).</span>
+          </div>
+          {allowanceError && <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} /> {allowanceError}</p>}
+        </SupportOverlay>
+      )}
+
+
+      {salaryWorkspace === "kpi" && (
+      <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-[#315fae]/35 bg-[#0f1726] p-3 text-white shadow-sm">
+        <div className="mb-3 flex shrink-0 flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-bold"><Target size={15} className="text-[#f4c76a]" /> KPI &amp; Thưởng · đánh giá hiệu suất nhân viên</div>
+            <div className="mt-1 text-[11px] text-[#8fa4c8]">{canEditKpi ? "Chấm KPI và chốt thưởng cho từng nhân sự" : "Bạn chỉ xem KPI và thưởng của chính mình"} · kỳ {reportMonth}/{reportYear}</div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {canViewAllPayroll && (
+              <div className="relative">
+                <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[#8fa4c8]" />
+                <input
+                  value={kpiSearch}
+                  onChange={(event) => setKpiSearch(event.target.value)}
+                  placeholder="Tìm theo tên hoặc email..."
+                  className="w-[min(260px,60vw)] rounded-lg border border-white/15 bg-white/5 py-1.5 pl-8 pr-8 text-xs text-white outline-none placeholder:text-[#7d90b3] focus:border-[#5f8df8]"
+                  aria-label="Tìm nhân viên trong bảng KPI"
+                />
+                {kpiSearch && <button type="button" onClick={() => setKpiSearch("")} className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-[#8fa4c8] hover:text-white" aria-label="Xóa tìm kiếm"><X size={12} /></button>}
+              </div>
+            )}
+            {currentIsBoss && (
+              <button type="button" onClick={() => { setSalaryWorkspace("proposals"); setShowKpiConfig(true); }} className="inline-flex min-h-[34px] items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 text-xs font-semibold text-[#c6d7ff] hover:bg-white/10">
+                <Settings size={13} /> Cấu hình mốc thưởng
+              </button>
+            )}
+            <span className="rounded-full border border-[#315fae]/40 bg-[#315fae]/15 px-2.5 py-1 text-[10px] font-semibold text-[#a9c4ff]">{kpiRows.length} nhân viên</span>
+          </div>
+        </div>
+
+        <InlineStats dark items={[
+          { label: "Thưởng KPI", value: fmtVND(kpiTotals.kpiBonus), className: "text-[#f4c76a]" },
+          { label: "Thưởng mốc doanh số", value: fmtVND(kpiTotals.milestoneBonus), className: "text-[#86efac]" },
+          { label: "Hoa hồng", value: fmtVND(kpiTotals.commission), className: "text-[#a9c4ff]" },
+          { label: "Tổng thưởng kỳ", value: fmtVND(kpiTotals.totalBonus), className: "text-white", sub: `thưởng khác ${fmtVND(kpiTotals.otherBonus)}` },
+        ]} />
+
+        <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-white/10">
+          <table className="min-w-[1400px] w-full text-xs">
+            <thead className="sticky top-0 z-10 bg-[#17243a] text-left text-[10px] uppercase text-[#9eb3d6]">
+              <tr>
+                <th className="px-3 py-2">Nhân viên</th>
+                <th className="px-3 py-2 text-right">Chỉ tiêu</th>
+                <th className="px-3 py-2 text-right">Thực đạt</th>
+                <th className="px-3 py-2 text-right">% đạt</th>
+                <th className="px-3 py-2">Đánh giá hiệu suất</th>
+                <th className="px-3 py-2 text-right">Mức KPI</th>
+                <th className="px-3 py-2 text-right">Thưởng KPI</th>
+                <th className="px-3 py-2 text-right">Thưởng mốc</th>
+                <th className="px-3 py-2 text-right">Hoa hồng</th>
+                <th className="px-3 py-2 text-right">Thưởng khác</th>
+                <th className="px-3 py-2 text-right">Tổng thưởng</th>
+                <th className="px-3 py-2 text-right">Chấm KPI</th>
+              </tr>
+            </thead>
+            <tbody>
+              {kpiRows.length === 0 && (
+                <tr><td colSpan={12} className="px-3 py-6 text-center text-[11px] text-[#8fa4c8]">Không tìm thấy nhân sự phù hợp trong kỳ này.</td></tr>
+              )}
+              {kpiRows.map((row) => {
+                const status = row.evaluation?.status || "chua_co_du_lieu";
+                const statusMeta = {
+                  tot: { label: "Tốt", className: "border-emerald-400/40 bg-emerald-400/10 text-emerald-300" },
+                  trung_binh: { label: "Trung bình", className: "border-amber-400/40 bg-amber-400/10 text-amber-300" },
+                  canh_bao: { label: "Cảnh báo", className: "border-red-400/40 bg-red-400/10 text-red-300" },
+                  chua_co_du_lieu: { label: "Chưa đủ dữ liệu", className: "border-white/15 bg-white/5 text-[#8fa4c8]" },
+                }[status];
+                return (
+                  <tr key={row.id} className="border-t border-white/10 hover:bg-white/5">
+                    <td className="px-3 py-2">
+                      <div className="font-semibold text-white">{row.name}</div>
+                      <div className="text-[10px] text-[#8fa4c8]">{row.position || ROLE_META[row.roleType]?.label || "Nhân viên"}</div>
+                      {row.kpiReviewedAt && <div className="text-[9px] text-[#7d90b3]">Chấm lúc {fmtDateTimeVN(row.kpiReviewedAt)}{row.kpiReviewedByName ? ` · ${row.kpiReviewedByName}` : ""}</div>}
+                    </td>
+                    <td className="px-3 py-2 text-right ktns-mono">{row.target > 0 ? fmtVND(row.target) : "—"}</td>
+                    <td className="px-3 py-2 text-right ktns-mono text-[#86efac]">{row.actual > 0 ? fmtVND(row.actual) : "—"}</td>
+                    <td className={`px-3 py-2 text-right ktns-mono ${row.achievedPct === null ? "text-[#8fa4c8]" : row.achievedPct >= 100 ? "text-emerald-300" : row.achievedPct >= 70 ? "text-amber-300" : "text-red-300"}`}>{row.achievedPct === null ? "—" : `${row.achievedPct.toFixed(0)}%`}</td>
+                    <td className="px-3 py-2">
+                      <span className={`inline-block rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusMeta.className}`}>{statusMeta.label}</span>
+                      {row.evaluation?.reminders?.[0] && <div className="mt-1 max-w-[260px] text-[9px] leading-snug text-[#8fa4c8]">{row.evaluation.reminders[0]}</div>}
+                    </td>
+                    <td className="px-3 py-2 text-right ktns-mono font-semibold text-white">{row.kpiScore}%</td>
+                    <td className="px-3 py-2 text-right ktns-mono text-[#f4c76a]">{row.kpiBonus > 0 ? fmtVND(row.kpiBonus) : "—"}<div className="text-[9px] text-[#8fa4c8]">Mục tiêu {fmtVND(row.bonusTarget || 0)}</div></td>
+                    <td className="px-3 py-2 text-right ktns-mono text-[#86efac]">{row.milestoneBonus > 0 ? fmtVND(row.milestoneBonus) : "—"}{row.kpiMilestonePct > 0 && <div className="text-[9px] text-[#8fa4c8]">{row.kpiMilestonePct}% mốc</div>}</td>
+                    <td className="px-3 py-2 text-right ktns-mono text-[#a9c4ff]">{row.commission > 0 ? fmtVND(row.commission) : "—"}</td>
+                    <td className="px-3 py-2 text-right ktns-mono text-[#dbe4f1]">{row.otherBonus > 0 ? fmtVND(row.otherBonus) : "—"}</td>
+                    <td className="px-3 py-2 text-right ktns-mono font-bold text-white">{fmtVND(row.totalBonus)}</td>
+                    <td className="px-3 py-2 text-right">
+                      {canEditKpi
+                        ? <button type="button" onClick={() => openKpiEdit(row)} className="inline-flex items-center gap-1 rounded-md border border-[#315fae]/40 bg-[#315fae]/10 px-2.5 py-1 text-[11px] font-semibold text-[#7ea4e8] hover:bg-[#315fae]/20"><Pencil size={11} /> Chấm KPI</button>
+                        : <span className="text-[10px] text-[#8fa4c8]">Chỉ Sếp/Kế toán chấm</span>}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            {kpiRows.length > 0 && (
+              <tfoot className="sticky bottom-0 bg-[#17243a] text-[11px] font-bold text-white">
+                <tr className="border-t-2 border-[#315fae]/50">
+                  <td className="px-3 py-2">TỔNG CỘNG · {kpiRows.length} nhân sự</td>
+                  <td className="px-3 py-2"></td>
+                  <td className="px-3 py-2"></td>
+                  <td className="px-3 py-2"></td>
+                  <td className="px-3 py-2"></td>
+                  <td className="px-3 py-2"></td>
+                  <td className="px-3 py-2 text-right ktns-mono text-[#f4c76a]">{fmtVND(kpiTotals.kpiBonus)}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-[#86efac]">{fmtVND(kpiTotals.milestoneBonus)}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-[#a9c4ff]">{fmtVND(kpiTotals.commission)}</td>
+                  <td className="px-3 py-2 text-right ktns-mono">{fmtVND(kpiTotals.otherBonus)}</td>
+                  <td className="px-3 py-2 text-right ktns-mono">{fmtVND(kpiTotals.totalBonus)}</td>
+                  <td className="px-3 py-2"></td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+        <div className="mt-2 shrink-0 text-[10px] text-[#8fa4c8]">
+          <strong className="text-[#c6d7ff]">Thưởng KPI</strong> = mục tiêu thưởng × mức KPI được chấm (tối đa 120%). <strong className="text-[#c6d7ff]">Thưởng mốc</strong> và <strong className="text-[#c6d7ff]">hoa hồng</strong> tự tính theo doanh số/doanh thu thực tế, không sửa tay được. Toàn bộ khoản thưởng ở đây tự chảy vào bảng lương của kỳ.
+        </div>
+      </section>
+      )}
+
+      {kpiEditTarget && (
+        <SupportOverlay
+          title={`Chấm KPI · ${kpiEditTarget.name}`}
+          subtitle={`Kỳ ${reportMonth}/${reportYear} · ${kpiEditTarget.position || ROLE_META[kpiEditTarget.roleType]?.label || "Nhân viên"}`}
+          onClose={() => { setKpiEditTarget(null); setKpiEditError(""); }}
+          footer={(
+            <>
+              <button type="button" onClick={() => { setKpiEditTarget(null); setKpiEditError(""); }} className="rounded-lg border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-light hover:border-ink/25">Hủy</button>
+              <button type="button" onClick={saveKpiEdit} className="rounded-lg bg-ledger-green px-4 py-2.5 text-sm font-bold text-white hover:brightness-110">Lưu đánh giá</button>
+            </>
+          )}
+        >
+          <div className="mb-4 rounded-xl border border-paper-line bg-paper/40 px-4 py-2">
+            <SupportDetailRow label="Chỉ tiêu doanh số" value={kpiEditTarget.target > 0 ? fmtVND(kpiEditTarget.target) : "Chưa đặt"} />
+            <SupportDetailRow label="Thực đạt trong kỳ" value={kpiEditTarget.actual > 0 ? fmtVND(kpiEditTarget.actual) : "—"} />
+            <SupportDetailRow label="Tỷ lệ đạt" value={kpiEditTarget.achievedPct === null ? "—" : `${kpiEditTarget.achievedPct.toFixed(0)}%`} />
+            <SupportDetailRow label="Thưởng mốc doanh số (tự tính)" value={fmtVND(kpiEditTarget.milestoneBonus)} />
+            <SupportDetailRow label="Hoa hồng (tự tính)" value={fmtVND(kpiEditTarget.commission)} />
+          </div>
+          {["sale", "ads"].includes(kpiEditTarget.roleType) ? (() => {
+            // CƠ CHẾ MỚI cho vị trí doanh thu: vượt vạch → hưởng % trên TOÀN BỘ doanh thu tháng.
+            const threshold = Number(kpiEditForm.kpiRevenueThreshold) || 0;
+            const pct = Number(kpiEditForm.kpiRevenuePct) || 0;
+            const actual = Number(kpiEditTarget.actual) || 0;
+            const usingCustom = threshold > 0 && pct > 0;
+            const passed = usingCustom && actual >= threshold;
+            const preview = passed ? actual * (pct / 100) : 0;
+            return (
+              <>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <SupportField label="Vạch doanh thu riêng (đ)" hint="Doanh thu tháng VƯỢT vạch này mới được thưởng. Để trống → dùng vạch chung công ty.">
+                    <MoneyInput value={kpiEditForm.kpiRevenueThreshold} onChange={(value) => setKpiEditForm({ ...kpiEditForm, kpiRevenueThreshold: value })} />
+                  </SupportField>
+                  <SupportField label="% hoa hồng khi vượt vạch" hint="Hưởng % này trên TOÀN BỘ doanh thu tháng của nhân viên.">
+                    <input type="number" min="0" max="100" step="0.5" value={kpiEditForm.kpiRevenuePct} onChange={(event) => setKpiEditForm({ ...kpiEditForm, kpiRevenuePct: event.target.value })} className={SUPPORT_INPUT_CLASS} />
+                  </SupportField>
+                  <SupportField label="Thưởng khác (đ)" full hint="Thưởng nóng, thưởng dự án… cộng thẳng vào lương kỳ này.">
+                    <MoneyInput value={kpiEditForm.otherBonus} onChange={(value) => setKpiEditForm({ ...kpiEditForm, otherBonus: value })} />
+                  </SupportField>
+                  <SupportField label="Nhận xét đánh giá" full>
+                    <textarea value={kpiEditForm.note} onChange={(event) => setKpiEditForm({ ...kpiEditForm, note: event.target.value })} rows={3} placeholder="VD: vượt chỉ tiêu quý, chủ động chăm khách cũ..." className={`${SUPPORT_INPUT_CLASS} resize-none`} />
+                  </SupportField>
+                </div>
+                <div className={`mt-4 rounded-lg border px-3 py-2.5 text-[11px] leading-relaxed ${passed ? "border-ledger-green/40 bg-ledger-green/5 text-ink" : "border-paper-line bg-paper/60 text-muted"}`}>
+                  {usingCustom ? (
+                    passed
+                      ? <>Doanh thu tháng <strong className="ktns-mono">{fmtVND(actual)}</strong> ĐÃ VƯỢT vạch {fmtVND(threshold)} → thưởng dự tính <strong className="ktns-mono text-ledger-green">{fmtVND(preview)}</strong> ({pct}% × doanh thu tháng) — tự cộng vào Bảng lương kỳ {reportMonth}/{reportYear} ngay sau khi lưu.</>
+                      : <>Doanh thu tháng <strong className="ktns-mono">{fmtVND(actual)}</strong> chưa vượt vạch {fmtVND(threshold)} — chưa phát sinh thưởng; vượt vạch sẽ tự hưởng {pct}% doanh thu tháng vào Bảng lương.</>
+                  ) : (
+                    <>Chưa đặt vạch riêng — hệ thống dùng VẠCH CHUNG của công ty (Cấu hình mốc thưởng) để tự tính thưởng vào Bảng lương.</>
+                  )}
+                </div>
+              </>
+            );
+          })() : (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <SupportField label="Mức KPI được chấm (%)" hint="0 – 200. Phần vượt 120% không được tính thêm thưởng.">
+                  <input type="number" min="0" max="200" value={kpiEditForm.kpi} onChange={(event) => setKpiEditForm({ ...kpiEditForm, kpi: event.target.value })} className={SUPPORT_INPUT_CLASS} />
+                </SupportField>
+                <SupportField label="Mục tiêu thưởng (đ)" hint="Số tiền thưởng khi đạt KPI 100%.">
+                  <MoneyInput value={kpiEditForm.bonusTarget} onChange={(value) => setKpiEditForm({ ...kpiEditForm, bonusTarget: value })} />
+                </SupportField>
+                <SupportField label="Thưởng khác (đ)" full hint="Thưởng nóng, thưởng dự án… cộng thẳng vào lương kỳ này.">
+                  <MoneyInput value={kpiEditForm.otherBonus} onChange={(value) => setKpiEditForm({ ...kpiEditForm, otherBonus: value })} />
+                </SupportField>
+                <SupportField label="Nhận xét đánh giá" full>
+                  <textarea value={kpiEditForm.note} onChange={(event) => setKpiEditForm({ ...kpiEditForm, note: event.target.value })} rows={3} placeholder="VD: vượt chỉ tiêu quý, chủ động chăm khách cũ..." className={`${SUPPORT_INPUT_CLASS} resize-none`} />
+                </SupportField>
+              </div>
+              <div className="mt-4 rounded-lg border border-paper-line bg-paper/60 px-3 py-2.5 text-[11px] leading-relaxed text-muted">
+                Thưởng KPI dự tính: <strong className="ktns-mono text-ink">{fmtVND((Number(kpiEditForm.bonusTarget) || 0) * (Math.min(Number(kpiEditForm.kpi) || 0, 120) / 100))}</strong> — cộng vào lương kỳ {reportMonth}/{reportYear} ngay sau khi lưu.
+              </div>
+            </>
+          )}
+          {kpiEditError && <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} /> {kpiEditError}</p>}
+        </SupportOverlay>
+      )}
+
+      {insuranceTarget && (
+        <SupportOverlay
+          title={`Bảo hiểm · ${insuranceTarget.name}`}
+          subtitle={`Kỳ ${reportMonth}/${reportYear} · ${insuranceTarget.position || ROLE_META[insuranceTarget.roleType]?.label || "Nhân viên"}`}
+          onClose={() => { setInsuranceTarget(null); setInsuranceError(""); }}
+          footer={(
+            <>
+              <button type="button" onClick={() => { setInsuranceTarget(null); setInsuranceError(""); }} className="rounded-lg border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-light hover:border-ink/25">Hủy</button>
+              <button type="button" onClick={saveInsurance} className="rounded-lg bg-ledger-green px-4 py-2.5 text-sm font-bold text-white hover:brightness-110">Lưu bảo hiểm</button>
+            </>
+          )}
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SupportField label="Phần NHÂN VIÊN đóng (đ/tháng)" hint="Trừ vào lương thực lĩnh của nhân viên mỗi kỳ.">
+              <MoneyInput value={insuranceForm.employeeAmount} onChange={(value) => setInsuranceForm({ ...insuranceForm, employeeAmount: value })} />
+            </SupportField>
+            <SupportField label="Phần DOANH NGHIỆP đóng (đ/tháng)" hint="Chi phí công ty gánh — không trừ vào lương nhân viên.">
+              <MoneyInput value={insuranceForm.employerAmount} onChange={(value) => setInsuranceForm({ ...insuranceForm, employerAmount: value })} />
+            </SupportField>
+          </div>
+          {insuranceError && <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} /> {insuranceError}</p>}
+        </SupportOverlay>
+      )}
+
 
       {salaryWorkspace === "proposals" && (
       <div className="shrink-0 rounded-lg border border-paper-line bg-white px-3 py-2.5 shadow-sm">
@@ -16935,44 +21883,266 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
       )}
 
       {salaryWorkspace === "center" && (
-      <section className="shrink-0 rounded-xl border border-[#315fae]/35 bg-[#0f1726] p-3 text-white shadow-sm">
-        <div className="mb-3 flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <div className="flex items-center gap-2 text-sm font-bold"><Gauge size={15} className="text-[#6f9cff]" /> Trung tâm lương · doanh thu · chi phí nhân sự</div>
-            <div className="mt-1 text-[11px] text-[#8fa4c8]">{canViewAllPayroll ? "Sếp/Kế toán xem toàn bộ nhân viên" : "Bạn chỉ xem số liệu của chính mình"} · kỳ {reportMonth}/{reportYear}</div>
+      <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-paper-line bg-white p-3 shadow-sm">
+        <div className="mb-3 flex shrink-0 flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 text-sm font-bold text-ink"><Gauge size={15} className="text-[#3C50E0]" /> Bảng lương tổng quát · kỳ {reportMonth}/{reportYear}</div>
+            <div className="mt-1 text-[11px] text-muted">{canViewAllPayroll ? "Sếp/Kế toán xem toàn bộ nhân viên" : "Bạn chỉ xem số liệu của chính mình"} · bấm số Phụ cấp/Thưởng để xem chi tiết từng khoản, bấm "Phiếu lương" để xem đầy đủ. Cách quy đổi lương ngày, bảo hiểm, thuế nằm ở tab <strong className="text-ink">Chi tiết quy đổi &amp; khấu trừ</strong>.</div>
           </div>
-          <span className="rounded-full border border-[#315fae]/40 bg-[#315fae]/15 px-2.5 py-1 text-[10px] font-semibold text-[#a9c4ff]">{payrollOverviewRows.length} nhân viên</span>
+          <div className="flex flex-wrap items-center gap-2">
+            {canViewAllPayroll && (
+              <div className="relative">
+                <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
+                <input
+                  value={payrollSearch}
+                  onChange={(event) => setPayrollSearch(event.target.value)}
+                  placeholder="Tìm theo tên hoặc email nhân viên..."
+                  className="w-[min(280px,60vw)] rounded-lg border border-paper-line bg-white py-1.5 pl-8 pr-8 text-xs text-ink outline-none placeholder:text-muted focus:border-[#3C50E0]"
+                  aria-label="Tìm nhân viên trong bảng lương"
+                />
+                {payrollSearch && (
+                  <button type="button" onClick={() => setPayrollSearch("")} className="absolute right-1.5 top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-muted hover:text-ink" aria-label="Xóa tìm kiếm"><X size={12} /></button>
+                )}
+              </div>
+            )}
+            <span className="rounded-full border border-[#3C50E0]/30 bg-[#3C50E0]/10 px-2.5 py-1 text-[10px] font-semibold text-[#3C50E0]">{payrollOverviewRows.length} nhân viên</span>
+          </div>
         </div>
-        <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-          <div className="rounded-lg border border-white/10 bg-white/5 p-3"><div className="text-[10px] uppercase text-[#8fa4c8]">Tổng doanh thu cá nhân</div><div className="mt-1 text-lg font-bold ktns-mono text-[#86efac]">{fmtVND(overviewTotalRevenue)}</div></div>
-          <div className="rounded-lg border border-white/10 bg-white/5 p-3"><div className="text-[10px] uppercase text-[#8fa4c8]">Tổng thực lĩnh</div><div className="mt-1 text-lg font-bold ktns-mono text-[#a9c4ff]">{fmtVND(overviewTotalNet)}</div></div>
-          <div className="rounded-lg border border-white/10 bg-white/5 p-3"><div className="text-[10px] uppercase text-[#8fa4c8]">Chi phí doanh nghiệp</div><div className="mt-1 text-lg font-bold ktns-mono text-[#f6b6bd]">{fmtVND(overviewTotalCompanyCost)}</div></div>
-          <div className="rounded-lg border border-white/10 bg-white/5 p-3"><div className="text-[10px] uppercase text-[#8fa4c8]">Phụ cấp ăn trưa thực nhận</div><div className="mt-1 text-lg font-bold ktns-mono text-[#f4c76a]">{fmtVND(overviewMealAllowance)}</div></div>
-        </div>
-        <div className="mt-3 max-h-[260px] overflow-auto rounded-lg border border-white/10">
-          <table className="min-w-[980px] w-full text-xs">
-            <thead className="sticky top-0 z-10 bg-[#17243a] text-left text-[10px] uppercase text-[#9eb3d6]">
-              <tr><th className="px-3 py-2">Nhân viên</th><th className="px-3 py-2 text-right">Ngày công</th><th className="px-3 py-2 text-right">Doanh thu</th><th className="px-3 py-2 text-right">Lương theo công</th><th className="px-3 py-2 text-right">Ăn trưa</th><th className="px-3 py-2 text-right">Đã trừ do nghỉ</th><th className="px-3 py-2 text-right">Thực lĩnh</th><th className="px-3 py-2 text-right">Tổng chi DN</th></tr>
+        <InlineStats items={[
+          { label: "Tổng thu nhập (gross)", value: fmtVND(overviewTotalGross), className: "text-ledger-green" },
+          { label: "Thực lĩnh", value: fmtVND(overviewTotalNet), className: "text-[#3C50E0]", sub: `đã trả ${fmtVND(overviewTotalPaid)} · còn ${fmtVND(overviewTotalRemaining)}` },
+          { label: "Tạm ứng trong kỳ", value: overviewTotalAdvance > 0 ? `-${fmtVND(overviewTotalAdvance)}` : "0đ", className: overviewTotalAdvance > 0 ? "text-stamp-red" : "text-ink" },
+          { label: "Tổng chi phí DN", value: fmtVND(overviewTotalCompanyCost), className: "text-stamp-red", sub: "= gross + BH DN đóng" },
+        ]} />
+        <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-paper-line">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 z-10 bg-[#F7F9FC] text-[10px] uppercase text-muted">
+              <tr className="border-b border-paper-line">
+                <th className="px-3 py-2 text-left">Nhân sự</th>
+                <th className="px-3 py-2 text-right">Ngày công</th>
+                <th className="px-3 py-2 text-right">Lương theo công</th>
+                <th className="px-3 py-2 text-right">Phụ cấp</th>
+                <th className="px-3 py-2 text-right">Thưởng</th>
+                <th className="px-3 py-2 text-right">Tổng thu nhập</th>
+                <th className="px-3 py-2 text-right">Khấu trừ</th>
+                <th className="px-3 py-2 text-right">Thực lĩnh</th>
+                <th className="px-3 py-2 text-right">Thanh toán</th>
+                <th className="px-3 py-2 text-right">Hồ sơ</th>
+              </tr>
             </thead>
             <tbody>
-              {payrollOverviewRows.map((row) => (
-                <tr key={row.id} className="border-t border-white/10 hover:bg-white/5">
-                  <td className="px-3 py-2"><div className="font-semibold text-white">{row.name}</div><div className="text-[10px] text-[#8fa4c8]">{row.position || ROLE_META[row.roleType]?.label || "Nhân viên"}</div></td>
-                  <td className="px-3 py-2 text-right ktns-mono">{Number(row.actualDays || 0).toFixed(1)}/{row.standardDays}</td>
-                  <td className="px-3 py-2 text-right ktns-mono text-[#86efac]">{fmtVND(row.revenueUsed || 0)}</td>
-                  <td className="px-3 py-2 text-right ktns-mono">{fmtVND(row.salaryByDays || 0)}</td>
-                  <td className="px-3 py-2 text-right ktns-mono text-[#f4c76a]">{fmtVND(row.mealAllowance || 0)}<div className="text-[9px] text-[#8fa4c8]">{fmtVND(row.mealAllowancePerDay || 0)}/ngày</div></td>
-                  <td className="px-3 py-2 text-right ktns-mono text-[#f6b6bd]">-{fmtVND(row.mealAllowanceDeducted || 0)}</td>
-                  <td className="px-3 py-2 text-right ktns-mono font-bold text-[#a9c4ff]">{fmtVND(row.net || 0)}</td>
-                  <td className="px-3 py-2 text-right ktns-mono text-[#f6b6bd]">{fmtVND(row.employerTotalCost || 0)}</td>
+              {payrollOverviewRows.length === 0 && (
+                <tr><td colSpan={10} className="px-3 py-6 text-center text-[11px] text-muted">Không tìm thấy nhân sự phù hợp trong kỳ này.</td></tr>
+              )}
+              {payrollOverviewRows.map((row, index) => (
+                <tr key={row.id} className={`border-t border-paper-line align-middle ${index % 2 === 1 ? "bg-[#F8FAFC]" : "bg-white"} hover:bg-[#F0F5FF]`}>
+                  <td className="px-3 py-2.5">
+                    <div className="font-semibold text-ink">{row.name}</div>
+                    <div className="text-[10px] text-muted">{row.position || ROLE_META[row.roleType]?.label || "Nhân viên"} · {row.contractLabel || "—"}</div>
+                  </td>
+                  <td className="px-3 py-2.5 text-right ktns-mono text-ink">{Number(row.actualDays || 0).toFixed(1)}/{row.standardDays}</td>
+                  <td className="px-3 py-2.5 text-right ktns-mono text-ink">{fmtVND(row.mainSalary || 0)}</td>
+                  <td className="px-3 py-2.5 text-right ktns-mono text-[#92610A]">
+                    {row.allowanceTotal > 0 ? (
+                      <button type="button" onClick={() => setBreakdownPopup({ row, type: "allowance" })} className="inline-flex items-center gap-1 font-semibold underline decoration-dotted underline-offset-2 hover:text-[#6b4707]" title="Xem chi tiết từng khoản phụ cấp">
+                        {fmtVND(row.allowanceTotal)}<Eye size={11} />
+                      </button>
+                    ) : "—"}
+                  </td>
+                  <td className="px-3 py-2.5 text-right ktns-mono text-ledger-green">
+                    {row.bonusTotal > 0 ? (
+                      <button type="button" onClick={() => setBreakdownPopup({ row, type: "bonus" })} className="inline-flex items-center gap-1 font-semibold underline decoration-dotted underline-offset-2 hover:text-[#14532d]" title="Xem chi tiết từng khoản thưởng">
+                        {fmtVND(row.bonusTotal)}<Eye size={11} />
+                      </button>
+                    ) : "—"}
+                  </td>
+                  <td className="px-3 py-2.5 text-right ktns-mono font-bold text-ink">{fmtVND(row.grossIncome || 0)}</td>
+                  <td className="px-3 py-2.5 text-right" title="Bảo hiểm NV đóng + thuế TNCN + tạm ứng — xem cách tính ở tab Chi tiết quy đổi & khấu trừ">
+                    <div className="ktns-mono text-stamp-red">{(row.employeeInsurance + row.thueTNCN + row.advanceTotal) > 0 ? `-${fmtVND(row.employeeInsurance + row.thueTNCN + row.advanceTotal)}` : "—"}</div>
+                    <div className="text-[9px] text-muted">BH NV {fmtVND(row.employeeInsurance)}{row.insuranceFixed ? " · cố định" : ""}</div>
+                    {canEditKpi && (
+                      <button type="button" onClick={() => openInsuranceEdit(row)} className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-semibold text-[#3C50E0] hover:underline" title="Sửa mức bảo hiểm riêng của nhân viên này (số tiền cố định NV + DN đóng)">
+                        <Pencil size={9} /> Sửa BH
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 text-right ktns-mono font-bold text-[#3C50E0]">{fmtVND(row.net || 0)}</td>
+                  <td className="px-3 py-2.5 text-right">
+                    {row.paidAmount > 0 ? (
+                      <>
+                        <div className="ktns-mono text-ledger-green">{fmtVND(row.paidAmount)} <span className="font-sans text-[9px] text-muted">{row.paidMethodLabel}</span></div>
+                        {row.remainingAmount > 0 && <div className="ktns-mono text-[10px] text-stamp-red">còn {fmtVND(row.remainingAmount)}</div>}
+                      </>
+                    ) : <span className="text-[10px] text-muted">Chưa chi</span>}
+                  </td>
+                  <td className="px-3 py-2.5 text-right">
+                    <button type="button" onClick={() => setDetailRowId(row.id)} className="inline-flex items-center gap-1 rounded-md border border-[#3C50E0]/35 bg-[#3C50E0]/5 px-2.5 py-1 text-[11px] font-semibold text-[#3C50E0] hover:bg-[#3C50E0]/10">
+                      <FileText size={11} /> Phiếu lương
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
+            {payrollOverviewRows.length > 0 && (
+              <tfoot className="sticky bottom-0 bg-[#F7F9FC] text-[11px] font-bold text-ink">
+                <tr className="border-t-2 border-[#3C50E0]/40">
+                  <td className="px-3 py-2">TỔNG CỘNG · {payrollOverviewRows.length} nhân sự</td>
+                  <td className="px-3 py-2"></td>
+                  <td className="px-3 py-2 text-right ktns-mono">{fmtVND(sumOverview("mainSalary"))}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-[#92610A]">{fmtVND(overviewTotalAllowance)}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-ledger-green">{fmtVND(overviewTotalBonus)}</td>
+                  <td className="px-3 py-2 text-right ktns-mono">{fmtVND(overviewTotalGross)}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-stamp-red">{(overviewEmployeeInsurance + overviewTotalTax + overviewTotalAdvance) > 0 ? `-${fmtVND(overviewEmployeeInsurance + overviewTotalTax + overviewTotalAdvance)}` : "—"}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-[#3C50E0]">{fmtVND(overviewTotalNet)}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-ledger-green">{fmtVND(overviewTotalPaid)}</td>
+                  <td className="px-3 py-2"></td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
-        <div className="mt-2 text-[10px] text-[#8fa4c8]">Phụ cấp ăn trưa được chia theo ngày công chuẩn: mức tháng ÷ số ngày chuẩn × số ngày công đã duyệt. Nghỉ ngày nào tự trừ đúng phần của ngày đó.</div>
+        <div className="mt-2 shrink-0 rounded-lg border border-paper-line bg-[#F8FAFC] px-3 py-1.5 text-[10px] leading-4 text-muted" title="Tổng thu nhập = lương theo công + phụ cấp + thưởng. Khấu trừ = BH nhân viên đóng (10,5%) + thuế TNCN + tạm ứng. Thực lĩnh = tổng thu nhập − khấu trừ.">
+          Thực lĩnh = tổng thu nhập − khấu trừ · chi tiết ở tab <strong className="text-ink">Chi tiết quy đổi &amp; khấu trừ</strong>
+        </div>
       </section>
       )}
+
+      {salaryWorkspace === "detail" && (
+      <section className="flex min-h-0 flex-1 flex-col rounded-xl border border-paper-line bg-white p-3 shadow-sm">
+        <div className="mb-3 shrink-0">
+          <div className="flex items-center gap-2 text-sm font-bold text-ink"><FileSpreadsheet size={15} className="text-[#3C50E0]" /> Chi tiết quy đổi &amp; khấu trừ · kỳ {reportMonth}/{reportYear}</div>
+          <div className="mt-1 text-[11px] text-muted">Bảng phụ giải trình CÁCH TÍNH: lương cơ bản → đơn giá ngày → lương theo công; từng % bảo hiểm nhân viên/doanh nghiệp đóng; thuế và từng lần tạm ứng. Số liệu khớp 1-1 với bảng tổng quát.</div>
+        </div>
+        <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-paper-line">
+          <table className="w-full min-w-[1380px] text-xs">
+            <thead className="sticky top-0 z-10 bg-[#F7F9FC] text-[10px] uppercase text-muted">
+              <tr className="border-b border-paper-line">
+                <th className="px-3 py-2 text-left">Nhân sự</th>
+                <th className="px-3 py-2 text-right">Lương cơ bản</th>
+                <th className="px-3 py-2 text-right">Đơn giá ngày</th>
+                <th className="px-3 py-2 text-right">Ngày công</th>
+                <th className="px-3 py-2 text-right">Lương theo công</th>
+                <th className="px-3 py-2 text-right">Bảo hiểm NV (10,5%)</th>
+                <th className="px-3 py-2 text-right">Thuế TNCN</th>
+                <th className="px-3 py-2 text-right">Tạm ứng</th>
+                <th className="px-3 py-2 text-right">BH DN đóng (21,5%)</th>
+                <th className="px-3 py-2 text-right">Tổng chi phí DN</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payrollOverviewRows.length === 0 && (
+                <tr><td colSpan={10} className="px-3 py-6 text-center text-[11px] text-muted">Không có nhân sự trong kỳ này.</td></tr>
+              )}
+              {payrollOverviewRows.map((row, index) => (
+                <tr key={row.id} className={`border-t border-paper-line align-top ${index % 2 === 1 ? "bg-[#F8FAFC]" : "bg-white"} hover:bg-[#F0F5FF]`}>
+                  <td className="px-3 py-2">
+                    <div className="font-semibold text-ink">{row.name}</div>
+                    <div className="text-[10px] text-muted">{row.contractLabel || "—"}</div>
+                  </td>
+                  <td className="px-3 py-2 text-right ktns-mono text-ink">{fmtVND(row.baseSalary || 0)}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-ink">
+                    {fmtVND(row.daySalary || 0)}
+                    <div className="font-sans text-[9px] text-muted">{Math.abs((row.daySalary || 0) - (row.baseSalary || 0) / (row.standardDays || 1)) < 1 ? `= lương CB ÷ ${row.standardDays} công chuẩn` : "đơn giá cố định trên hồ sơ"}</div>
+                  </td>
+                  <td className="px-3 py-2 text-right ktns-mono text-ink">{Number(row.actualDays || 0).toFixed(1)}/{row.standardDays}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-ink">
+                    {fmtVND(row.mainSalary || 0)}
+                    <div className="font-sans text-[9px] text-muted">= {fmtVND(row.daySalary || 0)} × {Number(row.actualDays || 0).toFixed(1)} công{row.probationRate && row.probationRate < 1 ? ` × ${Math.round(row.probationRate * 100)}% thử việc` : ""}</div>
+                  </td>
+                  <td className="px-3 py-2 text-right ktns-mono text-stamp-red">
+                    {row.employeeInsurance > 0 ? `-${fmtVND(row.employeeInsurance)}` : "—"}
+                    {row.employeeInsurance > 0 && <div className="font-sans text-[9px] text-muted">BHXH {fmtVND(row.bhxhNV || 0)} · BHYT {fmtVND(row.bhytNV || 0)} · BHTN {fmtVND(row.bhtnNV || 0)}</div>}
+                  </td>
+                  <td className="px-3 py-2 text-right ktns-mono text-stamp-red">
+                    {row.thueTNCN > 0 ? `-${fmtVND(row.thueTNCN)}` : "—"}
+                    {row.thueTNCN > 0 && <div className="font-sans text-[9px] text-muted">TN tính thuế {fmtVND(row.taxableIncome || 0)}</div>}
+                  </td>
+                  <td className="px-3 py-2 text-right ktns-mono text-stamp-red">
+                    {row.advanceTotal > 0 ? `-${fmtVND(row.advanceTotal)}` : "—"}
+                    {row.advance > 0 && <div className="font-sans text-[9px] text-muted">Khấu trừ cố định {fmtVND(row.advance)}</div>}
+                    {(row.midMonthEntries || []).map((entry) => (
+                      <div key={entry.id} className="font-sans text-[9px] text-muted">Ứng {String(entry.date || "").split("-").reverse().join("/")}: {fmtVND(entry.amount || 0)}</div>
+                    ))}
+                  </td>
+                  <td className="px-3 py-2 text-right ktns-mono text-[#92610A]">
+                    {row.employerInsurance > 0 ? fmtVND(row.employerInsurance) : "—"}
+                    {row.employerInsurance > 0 && <div className="font-sans text-[9px] text-muted">BHXH 17 · BHYT 3 · BHTN 1 · TNLĐ 0,5 (%)</div>}
+                  </td>
+                  <td className="px-3 py-2 text-right ktns-mono font-bold text-stamp-red">{fmtVND(row.employerTotalCost || 0)}</td>
+                </tr>
+              ))}
+            </tbody>
+            {payrollOverviewRows.length > 0 && (
+              <tfoot className="sticky bottom-0 bg-[#F7F9FC] text-[11px] font-bold text-ink">
+                <tr className="border-t-2 border-[#3C50E0]/40">
+                  <td className="px-3 py-2">TỔNG CỘNG</td>
+                  <td className="px-3 py-2 text-right ktns-mono">{fmtVND(overviewTotalBaseSalary)}</td>
+                  <td className="px-3 py-2"></td>
+                  <td className="px-3 py-2"></td>
+                  <td className="px-3 py-2 text-right ktns-mono">{fmtVND(sumOverview("mainSalary"))}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-stamp-red">{overviewEmployeeInsurance > 0 ? `-${fmtVND(overviewEmployeeInsurance)}` : "—"}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-stamp-red">{overviewTotalTax > 0 ? `-${fmtVND(overviewTotalTax)}` : "—"}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-stamp-red">{overviewTotalAdvance > 0 ? `-${fmtVND(overviewTotalAdvance)}` : "—"}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-[#92610A]">{fmtVND(overviewEmployerInsurance)}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-stamp-red">{fmtVND(overviewTotalCompanyCost)}</td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+        <div className="mt-2 shrink-0 rounded-lg border border-paper-line bg-[#F8FAFC] px-3 py-2 text-[10px] leading-4 text-muted">
+          Bảo hiểm tính trên NGUYÊN lương cơ bản khi đủ ≥14 ngày công (NV đóng: BHXH 8% · BHYT 1,5% · BHTN 1%; DN đóng: BHXH 17% · BHYT 3% · BHTN 1% · BH TNLĐ-BNN 0,5%).
+          Phần DN đóng KHÔNG trừ vào lương nhân viên — cộng vào tổng chi phí doanh nghiệp và đối chiếu sổ Thu Chi khi chi trả.
+        </div>
+      </section>
+      )}
+
+      {breakdownPopup && (() => {
+        const row = breakdownPopup.row;
+        const isAllowance = breakdownPopup.type === "allowance";
+        const entries = isAllowance
+          ? [
+            row.mealAllowance > 0 && { label: `Ăn trưa (${row.fullWorkDays || 0} ngày đủ công × ${fmtVND(row.mealAllowancePerDay || 0)})`, amount: row.mealAllowance },
+            row.seniorityAllowance > 0 && { label: "Thâm niên", amount: row.seniorityAllowance },
+            row.attendanceBonus > 0 && { label: "Chuyên cần (đi làm đủ, không nghỉ)", amount: row.attendanceBonus },
+            ...(row.customAllowances || []).filter((item) => item.amount > 0).map((item) => ({ label: `${item.label}${item.note ? ` — ${item.note}` : ""}${item.prorate ? " (chia theo ngày công)" : ""}`, amount: item.amount })),
+          ].filter(Boolean)
+          : [
+            row.commission > 0 && { label: "Hoa hồng doanh số", amount: row.commission },
+            row.compBonus > 0 && { label: "Thưởng doanh số", amount: row.compBonus },
+            row.techUpsale > 0 && { label: "Hoa hồng upsale (7%)", amount: row.techUpsale },
+            row.kpiBonus > 0 && { label: "Thưởng KPI", amount: row.kpiBonus },
+            row.kpiMilestoneBonus > 0 && { label: `Thưởng mốc doanh số (${row.kpiMilestonePct || 0}%)`, amount: row.kpiMilestoneBonus },
+            row.otherBonus > 0 && { label: "Thưởng khác", amount: row.otherBonus },
+          ].filter(Boolean);
+        const total = entries.reduce((sum, item) => sum + item.amount, 0);
+        return (
+          <SupportOverlay
+            title={`${isAllowance ? "Chi tiết phụ cấp" : "Chi tiết thưởng"} · ${row.name}`}
+            subtitle={`Kỳ ${reportMonth}/${reportYear} · ngày công ${Number(row.actualDays || 0).toFixed(1)}/${row.standardDays}`}
+            size="sm"
+            onClose={() => setBreakdownPopup(null)}
+            footer={<button type="button" onClick={() => setBreakdownPopup(null)} className="rounded-lg border border-paper-line bg-white px-4 py-2.5 text-sm font-semibold text-ink-light hover:border-ink/25">Đóng</button>}
+          >
+            {entries.length === 0 ? (
+              <p className="rounded-lg border border-dashed border-paper-line bg-paper/40 px-4 py-6 text-center text-xs text-muted">Không có khoản nào trong kỳ này.</p>
+            ) : (
+              <div className="rounded-xl border border-paper-line">
+                {entries.map((item, index) => (
+                  <div key={index} className={`flex items-center justify-between gap-4 px-4 py-2.5 text-sm ${index > 0 ? "border-t border-paper-line" : ""}`}>
+                    <span className="text-charcoal">{item.label}</span>
+                    <span className="ktns-mono font-semibold text-ink">{fmtVND(item.amount)}</span>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between gap-4 border-t-2 border-[#3C50E0]/30 bg-[#F7F9FC] px-4 py-2.5 text-sm">
+                  <span className="font-bold text-ink">TỔNG CỘNG</span>
+                  <span className={`ktns-mono font-bold ${isAllowance ? "text-[#92610A]" : "text-ledger-green"}`}>{fmtVND(total)}</span>
+                </div>
+              </div>
+            )}
+          </SupportOverlay>
+        );
+      })()}
 
       {salaryWorkspace === "proposals" && (
       <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -16999,7 +22169,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
         </button>
         {showKpiConfig && (
           <div className="px-4 pb-4 border-t border-paper-line pt-3">
-            <p className="text-[11px] text-muted mb-3">Doanh số/doanh thu tháng đó được trừ VAT ({KPI_BONUS_VAT_RATE}%) trước, phần còn lại mới so mốc để lấy đúng % thưởng — đạt mốc nào tính đúng % mốc đó (không cộng dồn từng khoảng như hoa hồng lũy tiến). Đây là khoản thưởng THÊM, cộng vào lương chính đã có.</p>
+            <p className="text-[11px] text-muted mb-3">Đặt VẠCH doanh thu cơ bản — doanh thu tháng vượt vạch nào thì hưởng đúng % hoa hồng của vạch đó, tính trên TOÀN BỘ doanh thu tháng (VD: vượt 30.000.000đ → 10% hoa hồng). Đạt vạch cao nhất nào lấy % vạch đó, không cộng dồn lũy tiến. Đây là khoản thưởng THÊM, cộng vào lương chính đã có.</p>
             <div className="grid grid-cols-2 gap-4">
               {["sale", "ads"].map((role) => (
                 <div key={role}>
@@ -17051,7 +22221,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
       )}
 
       {canViewAllPayroll && <div className="order-5 shrink-0 flex justify-end gap-2">
-        <button onClick={() => exportPayrollExcel(visiblePayrollRows)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90">
+        <button onClick={() => exportPayrollExcel(visiblePayrollRows, payrollPayments, midMonthRequests, { year: reportYear, month: reportMonth })} className="flex items-center gap-1.5 text-sm border border-ledger-green/40 bg-ledger-green/10 text-ledger-green px-3.5 py-2 rounded-md hover:opacity-90">
           <FileSpreadsheet size={15} /> Xuất Excel bảng lương chi tiết
         </button>
       </div>}
@@ -17089,7 +22259,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                     <div className="font-medium">{r.name}</div>
                     <div className="text-[11px] text-muted">{r.contractLabel} · {ROLE_META[r.roleType]?.label} · {r.dependents || 0} người phụ thuộc · {tenureLabel(r.months)}</div>
                     {r.usesRevenueModel && <div className="text-[10px] text-ink-light mt-0.5">{r.compStatusLabel}</div>}
-                    {r.kpiMilestoneBonus > 0 && <div className="text-[10px] text-gold mt-0.5">+ Thưởng KPI mốc doanh số ({r.kpiMilestonePct}% × {fmtVND(r.kpiMilestoneNetRevenue)} sau VAT) = {fmtVND(r.kpiMilestoneBonus)}</div>}
+                    {r.kpiMilestoneBonus > 0 && <div className="text-[10px] text-gold mt-0.5">+ Thưởng KPI vượt vạch doanh thu ({r.kpiMilestonePct}% × {fmtVND(r.kpiMilestoneNetRevenue)} doanh thu tháng) = {fmtVND(r.kpiMilestoneBonus)}</div>}
                     {r.contractType === "ctv" && <div className="text-[10px] text-gold mt-0.5">Khấu trừ 10% thuế TNCN, không giảm trừ gia cảnh</div>}
                   </td>
                   <td className="px-4 py-2.5 text-right ktns-mono">{Number(proposalSummaryOf(r).requestedWorkDays || 0).toFixed(1)}</td>
@@ -17118,7 +22288,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                     })()}
                   </td>
                   <td className="px-4 py-2.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                    <button onClick={() => setDetailRowId(r.id)} className="text-[10px] border border-paper-line text-ink px-2 py-1 rounded hover:border-gold mr-1.5" title="Mở bảng chi tiết đầy đủ — không phải kéo ngang">Xem chi tiết</button>
+                    <button onClick={() => setDetailRowId(r.id)} className="border border-paper-line text-ink p-1.5 rounded hover:border-[#3C50E0]/60 mr-1.5" title="Xem chi tiết đầy đủ — không phải kéo ngang" aria-label="Xem chi tiết lương"><Eye size={13} /></button>
                     <button onClick={() => toggleExpand(r.id)} className="text-muted align-middle">{expanded[r.id] ? <ChevronUp size={15} /> : <ChevronDown size={15} />}</button>
                   </td>
                 </tr>
@@ -17296,7 +22466,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                   </td>
                   <td className="px-4 py-2 text-xs text-muted">{m.reason}</td>
                   <td className="px-4 py-2 text-right ktns-mono">{fmtVND(m.amount)}</td>
-                  <td className="px-4 py-2 ktns-mono text-xs text-muted">{m.date}</td>
+                  <td className="px-4 py-2 ktns-mono text-xs text-muted whitespace-nowrap">{formatDateVN(m.date)}</td>
                   <td className="px-4 py-2">
                     {renderMidMonthApprovalAction(m)}
                   </td>
@@ -17658,7 +22828,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <div className="text-[11px] uppercase font-semibold text-[#315fae]">Hồ sơ đề xuất do nhân viên gửi</div>
-                          <div className="text-xs text-muted mt-1">Gửi lúc {approval.submittedAt || "—"} bởi {approval.submittedByName || approval.submittedByEmail || r.name}</div>
+                          <div className="text-xs text-muted mt-1">Gửi lúc {fmtDateTimeVN(approval.submittedAt)} bởi {approval.submittedByName || approval.submittedByEmail || r.name}</div>
                         </div>
                         <div className="text-xl font-bold ktns-mono text-ink">{fmtVND(proposal.amount)}</div>
                       </div>
@@ -17720,30 +22890,79 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                 </div>
                 <div className="bg-paper/50 rounded-lg border border-paper-line p-4">
                   <div className="text-[11px] font-semibold text-ink uppercase mb-2">B. Thu nhập hệ thống tính (tham chiếu)</div>
-                  {r.usesRevenueModel
-                    ? <Row label="Lương theo doanh số" value={fmtVND(r.mainSalary || 0)} />
-                    : <Row label={`Lương theo ngày công (${fmtVND(r.daySalary || 0)}/ngày)`} value={fmtVND(r.salaryByDays || 0)} />}
-                  {(r.commissionAmount ?? 0) > 0 && <Row label="Hoa hồng" value={fmtVND(r.commissionAmount)} />}
+                  <div className="mb-2 rounded bg-white px-2 py-1.5 text-[10px] leading-4 text-muted">
+                    Quy đổi từ hồ sơ: lương cơ bản <strong className="ktns-mono text-ink">{fmtVND(r.baseSalary)}</strong> ÷ {r.standardDays} công chuẩn = <strong className="ktns-mono text-ink">{fmtVND(r.daySalary || 0)}/ngày</strong> × {Number(r.actualDays || 0).toFixed(1)} công thực tế{r.probationRate && r.probationRate < 1 ? ` × ${Math.round(r.probationRate * 100)}% thử việc` : ""} = <strong className="ktns-mono text-ink">{fmtVND(r.mainSalary || 0)}</strong>
+                  </div>
+                  <Row label="Lương theo ngày công" value={fmtVND(r.mainSalary || 0)} />
+                  {(r.commission ?? 0) > 0 && <Row label="Hoa hồng doanh số" value={fmtVND(r.commission)} />}
+                  {(r.compBonus ?? 0) > 0 && <Row label="Thưởng doanh số" value={fmtVND(r.compBonus)} />}
+                  {(r.techUpsale ?? 0) > 0 && <Row label="Hoa hồng upsale (7%)" value={fmtVND(r.techUpsale)} />}
                   {(r.kpiBonus ?? 0) > 0 && <Row label="Thưởng KPI" value={fmtVND(r.kpiBonus)} />}
                   {(r.kpiMilestoneBonus ?? 0) > 0 && <Row label={`Thưởng KPI mốc doanh số (${r.kpiMilestonePct}%)`} value={fmtVND(r.kpiMilestoneBonus)} />}
-                  {(r.upsaleBonus ?? 0) > 0 && <Row label="Hoa hồng upsale" value={fmtVND(r.upsaleBonus)} />}
                   {(r.otherBonus ?? 0) > 0 && <Row label="Thưởng khác" value={fmtVND(r.otherBonus)} />}
-                  <Row label="Phụ cấp ăn trưa" value={fmtVND(r.mealAllowance || 0)} />
+                  <Row label={`Phụ cấp ăn trưa (${fmtVND(r.mealAllowancePerDay || 0)}/ngày đủ công × ${r.fullWorkDays || 0} ngày)`} value={fmtVND(r.mealAllowance || 0)} />
+                  {(r.seniorityAllowance ?? 0) > 0 && <Row label="Phụ cấp thâm niên" value={fmtVND(r.seniorityAllowance)} />}
+                  {(r.customAllowances || []).map((item) => (
+                    <Row key={item.id} label={`Phụ cấp ${item.label}${item.deducted > 0 ? " (đã trừ theo ngày nghỉ)" : ""}`} value={fmtVND(item.amount)} />
+                  ))}
                   <Row label={`Chuyên cần${r.hasAbsence ? " (mất do có ngày nghỉ)" : ""}`} value={r.hasAbsence ? "0đ" : fmtVND(r.attendanceBonus || 0)} />
                   <Row label="TỔNG THU NHẬP" value={fmtVND(r.grossIncome)} strong />
                 </div>
                 <div className="bg-paper/50 rounded-lg border border-paper-line p-4">
                   <div className="text-[11px] font-semibold text-ink uppercase mb-2">C. Khấu trừ hệ thống tính (tham chiếu)</div>
-                  <Row label="BHXH-BHYT-BHTN (NV đóng)" value={`-${fmtVND(r.employeeInsurance)}`} red />
+                  {r.insuranceFixed ? (
+                    <Row label="Bảo hiểm NV đóng (SỐ TIỀN CỐ ĐỊNH khai riêng)" value={`-${fmtVND(r.employeeInsurance)}`} red strong />
+                  ) : (
+                    <>
+                      <Row label="BHXH nhân viên đóng (8% lương CB)" value={(r.bhxhNV ?? 0) > 0 ? `-${fmtVND(r.bhxhNV)}` : "—"} red={(r.bhxhNV ?? 0) > 0} />
+                      <Row label="BHYT nhân viên đóng (1,5%)" value={(r.bhytNV ?? 0) > 0 ? `-${fmtVND(r.bhytNV)}` : "—"} red={(r.bhytNV ?? 0) > 0} />
+                      <Row label="BHTN nhân viên đóng (1%)" value={(r.bhtnNV ?? 0) > 0 ? `-${fmtVND(r.bhtnNV)}` : "—"} red={(r.bhtnNV ?? 0) > 0} />
+                      <Row label="Tổng bảo hiểm NV đóng (10,5%)" value={`-${fmtVND(r.employeeInsurance)}`} red strong />
+                    </>
+                  )}
                   <Row label="Giảm trừ gia cảnh (chỉ để tính thuế)" value={fmtVND(r.personalDeduction)} />
-                  <Row label="Thuế TNCN" value={`-${fmtVND(r.thueTNCN)}`} red />
+                  <Row label={`Thuế TNCN (thu nhập tính thuế ${fmtVND(r.taxableIncome || 0)})`} value={`-${fmtVND(r.thueTNCN)}`} red />
                   {(r.advance ?? 0) > 0 && <Row label="Tạm ứng đã nhận" value={`-${fmtVND(r.advance)}`} red />}
                   <Row label="THỰC LÃNH" value={fmtVND(r.net)} strong />
                   <div className="mt-2 pt-2 border-t border-paper-line">
-                    <Row label="BH doanh nghiệp đóng" value={fmtVND(r.employerInsurance)} />
-                    <Row label="Tổng chi phí doanh nghiệp" value={fmtVND(r.employerTotalCost)} />
+                    <div className="text-[10px] font-semibold uppercase text-muted mb-1">Doanh nghiệp đóng cho nhân viên (không trừ vào lương)</div>
+                    {r.insuranceFixed ? (
+                      <Row label="Bảo hiểm DN đóng (SỐ TIỀN CỐ ĐỊNH khai riêng)" value={fmtVND(r.employerInsurance)} strong />
+                    ) : (
+                      <>
+                        <Row label="BHXH doanh nghiệp đóng (17%)" value={fmtVND(r.bhxhDN || 0)} />
+                        <Row label="BHYT doanh nghiệp đóng (3%)" value={fmtVND(r.bhytDN || 0)} />
+                        <Row label="BHTN doanh nghiệp đóng (1%)" value={fmtVND(r.bhtnDN || 0)} />
+                        <Row label="BH TNLĐ-BNN doanh nghiệp đóng (0,5%)" value={fmtVND(r.bhtnldBnnDN || 0)} />
+                        <Row label="Tổng BH doanh nghiệp đóng (21,5%)" value={fmtVND(r.employerInsurance)} strong />
+                      </>
+                    )}
+                    <Row label="Tổng chi phí doanh nghiệp (gross + BH DN)" value={fmtVND(r.employerTotalCost)} strong />
                   </div>
                 </div>
+                <div className="bg-paper/50 rounded-lg border border-paper-line p-4">
+                  <div className="text-[11px] font-semibold text-ink uppercase mb-2">C2. Tạm ứng trong kỳ</div>
+                  <Row label="Khấu trừ cố định trên hồ sơ" value={r.advance > 0 ? `-${fmtVND(r.advance)}` : "—"} red={r.advance > 0} />
+                  {midMonthEntriesOf(r.id).length === 0 ? (
+                    <div className="mt-2 text-[11px] text-muted">Không có lần ứng lương giữa tháng nào trong kỳ này.</div>
+                  ) : (
+                    <div className="mt-2 space-y-1.5">
+                      {midMonthEntriesOf(r.id).map((entry) => (
+                        <div key={entry.id} className="rounded bg-white px-2 py-1.5 text-[10px] text-muted">
+                          <div className="flex items-center justify-between gap-3">
+                            <span className="font-medium text-ink">Ứng ngày {String(entry.date || "").split("-").reverse().join("/")}</span>
+                            <span className="ktns-mono text-stamp-red">-{fmtVND(entry.amount || 0)}</span>
+                          </div>
+                          <div>{entry.reason || "—"}{entry.paidAt ? ` · chi lúc ${entry.paidAt}` : ""}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="mt-2 border-t border-paper-line pt-2">
+                    <Row label="Tổng đã ứng trong kỳ" value={`-${fmtVND((Number(r.advance) || 0) + midMonthPaidOf(r.id))}`} strong red />
+                  </div>
+                </div>
+
                 <div className="bg-paper/50 rounded-lg border border-paper-line p-4">
                   <div className="text-[11px] font-semibold text-ink uppercase mb-2">D. Thanh toán &amp; duyệt</div>
                   <Row label="Trạng thái xét duyệt" value={approvalStatusLabel(approval, paid)} strong />
@@ -17833,10 +23052,13 @@ function exportQuarterExcel(monthSnapshots, quarter, year) {
   const reportableSnapshots = monthSnapshots.filter((s) => !isFutureReportMonth(s.year, s.month, TODAY));
   const rows = reportableSnapshots.map((s) => ({
     "Tháng": `Tháng ${s.month}/${s.year}`,
-    "Doanh thu ghi nhận": Math.round(s.revenue || 0),
+    "Tổng giá trị đơn (gồm VAT)": Math.round(s.revenue || 0),
+    "Doanh thu chưa VAT": Math.round(s.revenueExVat ?? s.revenue ?? 0),
+    "VAT đầu ra": Math.round(s.vatOutput || 0),
+    "Giá vốn hàng bán": Math.round(s.cogs || 0),
     "Tiền thực thu": Math.round(s.cashReceived ?? s.thu ?? 0),
     "Chi phí vận hành": Math.round(s.operatingExpense || 0),
-    "Chi phí lương thực lãnh": Math.round(s.payrollTotal || 0),
+    "Chi phí lương (bảng lương đã chốt)": Math.round(s.payrollTotal || 0),
     "Bảo hiểm doanh nghiệp": Math.round(s.employerInsurance || 0),
     "Lợi nhuận kế toán": Math.round(s.accountingProfit ?? s.profit ?? 0),
     "Dòng tiền thuần": Math.round(s.netCashFlow || 0),
@@ -17867,6 +23089,29 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
   const [summaryLoading, setSummaryLoading] = useState(false);
   const [annualSummaryLoading, setAnnualSummaryLoading] = useState(false);
   const [summaryReloadToken, setSummaryReloadToken] = useState(0);
+  // Tab "Phát sinh tài khoản" đọc trực tiếp SỔ KÉP qua API trial-balance —
+  // không suy từ giao dịch Thu Chi tiền mặt nữa (trước đây làm tab trắng khi chưa có giao dịch).
+  const [accountRows, setAccountRows] = useState(null);
+  const [accountRowsError, setAccountRowsError] = useState("");
+  useEffect(() => {
+    if (activeTableView !== "accounts") return undefined;
+    let cancelled = false;
+    setAccountRows(null);
+    setAccountRowsError("");
+    const from = `${year}-${String((quarter - 1) * 3 + 1).padStart(2, "0")}-01`;
+    const lastMonth = quarter * 3;
+    const lastDay = new Date(year, lastMonth, 0).getDate();
+    const to = `${year}-${String(lastMonth).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+    fetchTrialBalance({ from, to })
+      .then((result) => { if (!cancelled) setAccountRows(result?.rows || []); })
+      .catch((error) => {
+        if (!cancelled) {
+          setAccountRows([]);
+          setAccountRowsError(error.message || "Không tải được bảng phát sinh từ sổ kế toán.");
+        }
+      });
+    return () => { cancelled = true; };
+  }, [activeTableView, year, quarter]);
   const months = quarterMonths(year, quarter);
   useEffect(() => {
     let cancelled = false;
@@ -17909,15 +23154,20 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
     const payrollExpenseAccrued = Number(server.payroll_expense_accrued) || 0;
     const employerInsuranceAccrued = Number(server.employer_insurance_accrued) || 0;
     const accountingProfit = Number(server.accounting_profit);
+    const revenueExVat = Number(server.revenue_ex_vat);
     return {
       year: Number(server.period?.year) || fallbackYear,
       month: Number(server.period?.month) || fallbackMonth,
       revenue: recognizedRevenue,
       recognizedRevenue,
+      revenueExVat: Number.isFinite(revenueExVat) ? revenueExVat : recognizedRevenue,
+      vatOutput: Number(server.vat_output) || 0,
+      cogs: Number(server.cogs) || 0,
       thu: cashReceived, cashCollected: cashReceived, cashReceived,
       chi: cashSpent, cashSpent, operatingExpense,
       payrollTotal: payrollExpenseAccrued,
       employerInsurance: employerInsuranceAccrued,
+      marketingSpend: Number(server.marketing_spend) || 0,
       payrollCashSpent: Number(server.payroll_cash_spent) || 0,
       netCashFlow: Number.isFinite(Number(server.net_cash_flow)) ? Number(server.net_cash_flow) : (cashReceived - cashSpent),
       profit: Number.isFinite(accountingProfit) ? accountingProfit : recognizedRevenue - operatingExpense - payrollExpenseAccrued - employerInsuranceAccrued,
@@ -17944,7 +23194,9 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
     .filter(Boolean);
   const annualReady = yearSnapshots.length === 12;
   const reportableYearSnapshots = yearSnapshots.filter((s) => !s.isFuture);
-  const annualRevenue = reportableYearSnapshots.reduce((a, s) => a + (Number(s.revenue) || 0), 0);
+  // Ngưỡng 3/50 tỷ xác định thuế suất TNDN tính trên DOANH THU CHƯA VAT (doanh thu tính thuế
+  // TNDN không gồm VAT đầu ra phải nộp hộ) — không dùng tổng thanh toán gồm VAT.
+  const annualRevenue = reportableYearSnapshots.reduce((a, s) => a + (Number(s.revenueExVat ?? s.revenue) || 0), 0);
   const annualProfitAccounting = reportableYearSnapshots.reduce((a, s) => a + (Number(s.accountingProfit ?? s.profit) || 0), 0);
   // Chi phí KHÔNG được trừ khi tính thuế TNDN — đã bị trừ vào lợi nhuận kế toán rồi, phải CỘNG
   // NGƯỢC LẠI vào thu nhập chịu thuế (Điều 9-10 Luật Thuế TNDN 2025 + Nghị định 320/2025/NĐ-CP):
@@ -17987,10 +23239,6 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
         ]}
       />
       </div>
-      <div className="shrink-0 bg-white rounded-lg border border-paper-line p-3 text-xs text-muted flex items-start gap-2">
-        <Link2 size={13} className="text-ink-light shrink-0 mt-0.5" />
-        <span>Mỗi kỳ được lấy từ cùng FinancialSummaryService trên máy chủ. Báo cáo không tự cộng lại từ dữ liệu giao diện.</span>
-      </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
       {activeTableView === "tax" && !annualReady && (
@@ -17998,8 +23246,8 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
       )}
       {activeTableView === "tax" && annualReady && (
       <div className="bg-white rounded-lg border border-stamp-red/40 p-4">
-        <div className="text-xs font-semibold text-stamp-red uppercase mb-1 flex items-center gap-1.5"><AlertTriangle size={13} /> Thuế TNDN dự kiến — Năm {year} (trước đây app CHƯA từng tính khoản này)</div>
-        <p className="text-[11px] text-muted mb-3">Tính theo Nghị định 320/2025/NĐ-CP: doanh thu năm ≤3 tỷ → 15%, 3-50 tỷ → 17%, trên 50 tỷ → 20%. Đã tự CỘNG NGƯỢC các khoản chi tiền mặt ≥5 triệu vào thu nhập chịu thuế (vì thuế không cho trừ khoản này) — đây vẫn là ước tính, còn nhiều khoản chi không hợp lý khác theo Điều 10 Luật Thuế TNDN mà app chưa nhận diện được hết, kế toán cần rà lại kỹ trước khi kê khai chính thức.</p>
+        <div className="text-xs font-semibold text-stamp-red uppercase mb-1 flex items-center gap-1.5"><AlertTriangle size={13} /> Thuế TNDN TẠM TÍNH — Năm {year}</div>
+        <p className="text-[11px] text-muted mb-3">Tạm tính theo Nghị định 320/2025/NĐ-CP: doanh thu năm (CHƯA gồm VAT) ≤3 tỷ → 15%, 3-50 tỷ → 17%, trên 50 tỷ → 20%. Lưu ý: mức thuế suất chính thức xác định theo doanh thu của KỲ TRƯỚC LIỀN KỀ — app đang tạm dùng doanh thu chưa VAT của chính năm đang xem để ước tính. Đã tự CỘNG NGƯỢC các khoản chi tiền mặt ≥5 triệu vào thu nhập chịu thuế (vì thuế không cho trừ khoản này) — còn nhiều khoản chi không hợp lý khác theo Điều 10 Luật Thuế TNDN mà app chưa nhận diện được hết, kế toán cần rà lại kỹ trước khi kê khai chính thức.</p>
         <div className="grid grid-cols-1 gap-4 border-b border-paper-line pb-3 mb-3 sm:grid-cols-2 xl:grid-cols-4">
           <div>
             <div className="text-[11px] text-muted uppercase">Lợi nhuận kế toán (đã trừ hết chi phí)</div>
@@ -18020,11 +23268,11 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
         </div>
         <div className="grid grid-cols-4 gap-4">
           <div>
-            <div className="text-[11px] text-muted uppercase">Tổng doanh thu cả năm</div>
+            <div className="text-[11px] text-muted uppercase">Doanh thu cả năm (chưa VAT)</div>
             <div className="ktns-mono text-base font-semibold">{fmtVND(annualRevenue)}</div>
           </div>
           <div>
-            <div className="text-[11px] text-muted uppercase">Thuế suất áp dụng</div>
+            <div className="text-[11px] text-muted uppercase">Thuế suất tạm áp dụng</div>
             <div className="ktns-mono text-base font-semibold text-gold">{(taxRate * 100).toFixed(0)}%</div>
           </div>
           <div>
@@ -18044,10 +23292,12 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
       )}
       {activeTableView === "quarter" && quarterReady && (<>
       {(() => {
-        const marginNet = quarterTotal.revenue > 0 ? (quarterTotal.accountingProfit / quarterTotal.revenue) * 100 : 0;
-        const payrollRatio = quarterTotal.revenue > 0 ? (quarterTotal.payrollTotal / quarterTotal.revenue) * 100 : 0;
-        const totalCost = quarterTotal.operatingExpense + quarterTotal.payrollTotal + quarterTotal.employerInsurance;
-        const costRatio = quarterTotal.revenue > 0 ? (totalCost / quarterTotal.revenue) * 100 : 0;
+        // Biên lợi nhuận tính trên DOANH THU CHƯA VAT (511) — không dùng tổng gồm VAT.
+        const revenueBase = quarterTotal.revenueExVat > 0 ? quarterTotal.revenueExVat : quarterTotal.revenue;
+        const marginNet = revenueBase > 0 ? (quarterTotal.accountingProfit / revenueBase) * 100 : 0;
+        const payrollRatio = revenueBase > 0 ? (quarterTotal.payrollTotal / revenueBase) * 100 : 0;
+        const totalCost = quarterTotal.cogs + quarterTotal.operatingExpense + quarterTotal.payrollTotal + quarterTotal.employerInsurance;
+        const costRatio = revenueBase > 0 ? (totalCost / revenueBase) * 100 : 0;
         return (
           <div className="bg-white rounded-lg border border-paper-line p-4">
             <div className="text-xs font-semibold text-ink uppercase mb-3">Chỉ số tài chính cơ bản — Quý {quarter}/{year}</div>
@@ -18055,7 +23305,7 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
               <div>
                 <div className="text-[11px] text-muted uppercase">Biên lợi nhuận ròng</div>
                 <div className={`ktns-mono text-lg font-semibold ${marginNet >= 0 ? "text-ledger-green" : "text-stamp-red"}`}>{marginNet.toFixed(1)}%</div>
-                <div className="text-[10px] text-ink-light">Lợi nhuận / Doanh thu — càng cao càng tốt, dưới 10% cần xem lại chi phí.</div>
+                <div className="text-[10px] text-ink-light">Lợi nhuận / Doanh thu chưa VAT — càng cao càng tốt, dưới 10% cần xem lại chi phí.</div>
               </div>
               <div>
                 <div className="text-[11px] text-muted uppercase">Tỷ lệ chi phí lương / doanh thu</div>
@@ -18080,16 +23330,16 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
         <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="border border-paper-line rounded-md px-3 py-2 text-sm ktns-mono">
           {yearOptions.map((y) => (<option key={y} value={y}>{y}</option>))}
         </select>
-        <button type="button" disabled={!quarterReady || summaryLoading} onClick={() => exportQuarterExcel(snapshots, quarter, year)} className="flex items-center gap-1.5 text-sm bg-ledger-green text-white px-3.5 py-2 rounded-md hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ml-auto">
+        <button type="button" disabled={!quarterReady || summaryLoading} onClick={() => exportQuarterExcel(snapshots, quarter, year)} className="flex items-center gap-1.5 text-sm border border-ledger-green/40 bg-ledger-green/10 text-ledger-green px-3.5 py-2 rounded-md hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ml-auto">
           <FileSpreadsheet size={15} /> Xuất Excel báo cáo quý
         </button>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <KpiCard icon={TrendingUp} label={`Doanh thu ghi nhận Quý ${quarter}`} value={fmtVND(quarterTotal.revenue)} tone="up" />
+        <KpiCard icon={TrendingUp} label={`Doanh thu chưa VAT Quý ${quarter}`} value={fmtVND(quarterTotal.revenueExVat)} sub={`Tổng giá trị đơn gồm VAT ${fmtVND(quarterTotal.revenue)} · giá vốn ${fmtVND(quarterTotal.cogs)}`} tone="up" />
         <KpiCard icon={Wallet} label="Tiền thực thu" value={fmtVND(quarterTotal.cashReceived)} tone="up" />
         <KpiCard icon={TrendingDown} label="Chi phí vận hành" value={fmtVND(quarterTotal.operatingExpense)} tone="down" />
-        <KpiCard icon={Banknote} label="Chi phí lương" value={fmtVND(quarterTotal.payrollTotal)} tone="down" />
+        <KpiCard icon={Banknote} label="Chi phí lương (đã chốt)" value={fmtVND(quarterTotal.payrollTotal)} tone="down" sub="Chỉ tính bảng lương đã duyệt/chốt trong kỳ — bảng lương nháp chưa tính" />
         <KpiCard icon={ShieldCheck} label="Bảo hiểm doanh nghiệp" value={fmtVND(quarterTotal.employerInsurance)} tone="down" />
         <KpiCard icon={Calculator} label="Lợi nhuận kế toán" value={fmtVND(quarterTotal.accountingProfit)} tone={quarterTotal.accountingProfit >= 0 ? "up" : "down"} />
       </div>
@@ -18105,10 +23355,13 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
           </thead>
           <tbody>
             {[
-              ["Doanh thu ghi nhận", "revenue", "text-ledger-green"],
+              ["Tổng giá trị đơn (gồm VAT)", "revenue", "text-ledger-green"],
+              ["Doanh thu chưa VAT (511)", "revenueExVat", "text-ledger-green"],
+              ["VAT đầu ra (3331)", "vatOutput", "text-muted"],
+              ["Giá vốn hàng bán (632)", "cogs", "text-stamp-red"],
               ["Tiền thực thu", "cashReceived", "text-ledger-green"],
               ["Chi phí vận hành", "operatingExpense", "text-stamp-red"],
-              ["Chi phí lương thực lãnh", "payrollTotal", "text-charcoal"],
+              ["Chi phí lương (bảng lương đã chốt)", "payrollTotal", "text-charcoal"],
               ["Bảo hiểm doanh nghiệp", "employerInsurance", "text-muted"],
               ["Lợi nhuận kế toán", "accountingProfit", null],
               ["Dòng tiền thuần", "netCashFlow", null],
@@ -18131,44 +23384,39 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-muted">* Mỗi tháng lấy từ cùng FinancialSummaryService trên máy chủ. Doanh thu, Thực thu, Chi phí và Dòng tiền không được tự cộng lại ở trình duyệt.</p>
 
       </>)}
 
-      {activeTableView === "accounts" && (() => {
-        const qFrom = `${year}-${String((quarter - 1) * 3 + 1).padStart(2, "0")}-01`;
-        const qToMonth = quarter * 3;
-        const qTo = `${year}-${String(qToMonth).padStart(2, "0")}-31`;
-        const inQuarter = transactions.filter((t) => t.date >= qFrom && t.date <= qTo);
-        const byAccount = {};
-        inQuarter.forEach((t) => {
-          const code = t.accountCode || suggestAccountCode(t);
-          if (!byAccount[code]) byAccount[code] = { debit: 0, credit: 0 };
-          if (t.kind === "thu") byAccount[code].credit += t.amount;
-          else byAccount[code].debit += t.amount;
-        });
-        const rows = Object.entries(byAccount).sort(([a], [b]) => a.localeCompare(b));
-        if (rows.length === 0) return null;
-        return (
-          <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
-            <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Tổng hợp phát sinh theo tài khoản (TK133) — Quý {quarter}/{year}</div>
+      {activeTableView === "accounts" && (
+        <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
+          <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Bảng cân đối phát sinh theo tài khoản (Sổ cái kép) — Quý {quarter}/{year}</div>
+          {accountRows === null ? (
+            <div className="px-4 py-8 text-center text-xs text-muted"><Loader2 size={14} className="mx-auto mb-2 animate-spin" /> Đang tải từ sổ kế toán...</div>
+          ) : accountRows.length === 0 ? (
+            <div className="px-4 py-8 text-center text-xs text-muted">{accountRowsError || "Chưa có bút toán nào trong quý này."}</div>
+          ) : (
             <table data-sticky-columns="true" className="w-full text-sm">
               <thead><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-4 py-2">Mã TK</th><th className="px-4 py-2">Tên tài khoản</th><th className="px-4 py-2 text-right">Phát sinh Nợ</th><th className="px-4 py-2 text-right">Phát sinh Có</th></tr></thead>
               <tbody>
-                {rows.map(([code, v]) => (
-                  <tr key={code} className="border-t border-paper-line">
-                    <td className="px-4 py-2 ktns-mono font-medium">{code}</td>
-                    <td className="px-4 py-2 text-xs">{TT133_ACCOUNTS[code] || "—"}</td>
-                    <td className="px-4 py-2 text-right ktns-mono text-stamp-red">{v.debit > 0 ? fmtVND(v.debit) : "—"}</td>
-                    <td className="px-4 py-2 text-right ktns-mono text-ledger-green">{v.credit > 0 ? fmtVND(v.credit) : "—"}</td>
+                {accountRows.map((row) => (
+                  <tr key={row.code} className="border-t border-paper-line">
+                    <td className="px-4 py-2 ktns-mono font-medium">{row.code}</td>
+                    <td className="px-4 py-2 text-xs">{row.name || TT133_ACCOUNTS[row.code] || "—"}</td>
+                    <td className="px-4 py-2 text-right ktns-mono text-stamp-red">{Number(row.debit) > 0 ? fmtVND(Number(row.debit)) : "—"}</td>
+                    <td className="px-4 py-2 text-right ktns-mono text-ledger-green">{Number(row.credit) > 0 ? fmtVND(Number(row.credit)) : "—"}</td>
                   </tr>
                 ))}
+                <tr className="border-t-2 border-ink/20 bg-paper font-bold">
+                  <td className="px-4 py-2" colSpan={2}>TỔNG PHÁT SINH</td>
+                  <td className="px-4 py-2 text-right ktns-mono text-stamp-red">{fmtVND(accountRows.reduce((s, r) => s + (Number(r.debit) || 0), 0))}</td>
+                  <td className="px-4 py-2 text-right ktns-mono text-ledger-green">{fmtVND(accountRows.reduce((s, r) => s + (Number(r.credit) || 0), 0))}</td>
+                </tr>
               </tbody>
             </table>
-            <p className="px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Bảng tổng hợp ĐƠN GIẢN theo mã TK gán trên từng giao dịch Thu Chi — DOMIX chưa hạch toán kép (mỗi giao dịch đủ cả Nợ/Có 2 vế) nên đây KHÔNG phải Bảng cân đối phát sinh chính thức theo TT133, chỉ là căn cứ tham khảo nhanh trước khi kế toán nhập vào phần mềm kế toán chính thức.</p>
-          </div>
-        );
-      })()}
+          )}
+          <p className="px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Lấy trực tiếp từ SỔ CÁI HẠCH TOÁN KÉP (chỉ bút toán đã ghi sổ, cặp đảo tự triệt tiêu) — cùng nguồn với tab Sổ kế toán.</p>
+        </div>
+      )}
       </div>
     </div>
   );
@@ -18330,7 +23578,7 @@ Hãy soạn một bản "Kế hoạch phân bổ ngân sách & nhân sự tháng
             ))}
           </tbody>
         </table>
-        <p className="px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Tỷ lệ = doanh thu đóng góp / chi phí nhóm. ≥3x: hiệu quả cao, nên cân nhắc mở rộng. 1.5-3x: ổn định. Dưới 1.5x: cần tối ưu. Kỹ thuật/vị trí khác không có doanh thu trực tiếp nên đánh giá qua tab Hiệu suất/Giao việc thay vì tỷ lệ này.</p>
+        <p className="px-4 py-1.5 text-[11px] text-muted border-t border-paper-line" title="≥3x: hiệu quả cao. 1.5–3x: ổn định. Dưới 1.5x: cần tối ưu. Vị trí không có doanh thu trực tiếp đánh giá qua Hiệu suất/Nhiệm vụ.">* Tỷ lệ = doanh thu đóng góp / chi phí nhóm.</p>
       </div>
       )}
 
@@ -18363,7 +23611,9 @@ Hãy soạn một bản "Kế hoạch phân bổ ngân sách & nhân sự tháng
             <tr className="border-t border-paper-line bg-paper">
               <td className="px-4 py-2 font-semibold">Tổng</td>
               <td className={`px-4 py-2 text-right ktns-mono font-semibold ${totalPct === 100 ? "text-ledger-green" : "text-stamp-red"}`}>{totalPct}%</td>
-              <td className="px-4 py-2 text-right ktns-mono font-semibold">{fmtVND(targetRevenue)}</td>
+              {/* Tổng tiền = CỘNG ĐÚNG các dòng phân bổ (một chỉ tiêu một công thức) — không
+                  hard-code lại doanh thu mục tiêu để tránh hai con số lệch nhau khi tổng % ≠ 100. */}
+              <td className="px-4 py-2 text-right ktns-mono font-semibold">{fmtVND(BUDGET_CATEGORIES.reduce((sum, item) => sum + targetRevenue * (Number(pcts[item.key]) || 0) / 100, 0))}</td>
             </tr>
           </tbody>
         </table>
@@ -18394,7 +23644,7 @@ Hãy soạn một bản "Kế hoạch phân bổ ngân sách & nhân sự tháng
                         <span className="text-[10px] uppercase tracking-wide text-ink-light font-semibold flex items-center gap-1.5"><FileText size={11} /> Kế hoạch đề xuất</span>
                         <div className="flex gap-1.5">
                           <button onClick={() => handlePrint(m.document)} className="text-[10px] bg-ink text-white px-2.5 py-1 rounded flex items-center gap-1 hover:bg-ink-light"><Printer size={11} /> In / Lưu PDF</button>
-                          <button onClick={() => handleDownload(m.document, i)} className="text-[10px] border border-paper-line text-ink px-2.5 py-1 rounded flex items-center gap-1 hover:border-gold"><Download size={11} /> Tải .txt</button>
+                          <button onClick={() => handleDownload(m.document, i)} className="text-[10px] border border-paper-line text-ink px-2.5 py-1 rounded flex items-center gap-1 hover:border-[#3C50E0]/60"><Download size={11} /> Tải .txt</button>
                         </div>
                       </div>
                       <div className="px-4 py-3 max-h-96 overflow-y-auto ktns-scrollbar">
@@ -18884,7 +24134,7 @@ Khi người dùng hỏi "đề xuất loại hóa đơn cho các giao dịch c�
                       <span className="text-[10px] uppercase tracking-wide text-ink-light font-semibold flex items-center gap-1.5"><FileText size={11} /> Văn bản/báo cáo đã soạn</span>
                       <div className="flex gap-1.5">
                         <button onClick={() => handlePrint(m.document)} className="text-[10px] bg-ink text-white px-2.5 py-1 rounded flex items-center gap-1 hover:bg-ink-light"><Printer size={11} /> In / Lưu PDF</button>
-                        <button onClick={() => handleDownload(m.document, i)} className="text-[10px] border border-paper-line text-ink px-2.5 py-1 rounded flex items-center gap-1 hover:border-gold"><Download size={11} /> Tải .txt</button>
+                        <button onClick={() => handleDownload(m.document, i)} className="text-[10px] border border-paper-line text-ink px-2.5 py-1 rounded flex items-center gap-1 hover:border-[#3C50E0]/60"><Download size={11} /> Tải .txt</button>
                       </div>
                     </div>
                     <div className="px-4 py-3 max-h-80 overflow-y-auto ktns-scrollbar">
@@ -18903,10 +24153,10 @@ Khi người dùng hỏi "đề xuất loại hóa đơn cho các giao dịch c�
           {loading && <div className="flex justify-start"><div className="bg-paper border border-paper-line rounded-lg px-4 py-2.5 text-sm flex items-center gap-2 text-muted"><Loader2 size={14} className="animate-spin" /> Đang soạn câu trả lời...</div></div>}
         </div>
         <div className="border-t border-paper-line p-3 flex flex-col gap-2">
-          <div className="flex gap-2 flex-wrap">{suggestions.map((s) => (<button key={s} onClick={() => setInput(s)} className="text-xs px-2.5 py-1 rounded-full border border-paper-line text-muted hover:border-gold hover:text-ink">{s}</button>))}</div>
+          <div className="flex gap-2 flex-wrap">{suggestions.map((s) => (<button key={s} onClick={() => setInput(s)} className="text-xs px-2.5 py-1 rounded-full border border-paper-line text-muted hover:border-[#3C50E0]/60 hover:text-ink">{s}</button>))}</div>
           <div className="flex gap-2">
             <input type="file" ref={fileInputRef} onChange={handleFileChange} accept="image/*,.csv,.txt,text/csv,text/plain" className="hidden" />
-            <button onClick={() => fileInputRef.current?.click()} disabled={loading} title="Gửi ảnh hóa đơn/biên lai hoặc file CSV" className="px-3 border border-paper-line rounded-md text-muted hover:text-ink hover:border-gold disabled:opacity-50"><Paperclip size={16} /></button>
+            <button onClick={() => fileInputRef.current?.click()} disabled={loading} title="Gửi ảnh hóa đơn/biên lai hoặc file CSV" className="px-3 border border-paper-line rounded-md text-muted hover:text-ink hover:border-[#3C50E0]/60 disabled:opacity-50"><Paperclip size={16} /></button>
             <input value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => e.key === "Enter" && send()} placeholder="Hỏi trợ lý AI, hoặc bấm 📎 để gửi ảnh hóa đơn..." className="flex-1 border border-paper-line rounded-md px-3 py-2 text-sm" />
             <button onClick={send} disabled={loading} className="bg-ink text-white px-4 rounded-md flex items-center gap-1.5 text-sm hover:bg-ink-light disabled:opacity-50"><Send size={14} /> Gửi</button>
           </div>
@@ -19125,7 +24375,7 @@ Nếu người dùng yêu cầu đưa các điều khoản trên vào hợp đ�
                       <span className="text-[10px] uppercase tracking-wide text-ink-light font-semibold flex items-center gap-1.5"><FileText size={11} /> Văn bản đã soạn</span>
                       <div className="flex gap-1.5">
                         <button onClick={() => handlePrint(m.document)} className="text-[10px] bg-ink text-white px-2.5 py-1 rounded flex items-center gap-1 hover:bg-ink-light"><Printer size={11} /> In / Lưu PDF</button>
-                        <button onClick={() => handleDownload(m.document, i)} className="text-[10px] border border-paper-line text-ink px-2.5 py-1 rounded flex items-center gap-1 hover:border-gold"><Download size={11} /> Tải .txt</button>
+                        <button onClick={() => handleDownload(m.document, i)} className="text-[10px] border border-paper-line text-ink px-2.5 py-1 rounded flex items-center gap-1 hover:border-[#3C50E0]/60"><Download size={11} /> Tải .txt</button>
                       </div>
                     </div>
                     <div className="px-4 py-3 max-h-80 overflow-y-auto ktns-scrollbar">
@@ -19162,11 +24412,11 @@ Nếu người dùng yêu cầu đưa các điều khoản trên vào hợp đ�
         </div>
         <div className="border-t border-paper-line p-3 flex flex-col gap-2">
           <div className="flex gap-2 flex-wrap items-center">
-            {suggestions.map((s) => (<button key={s} onClick={() => setInput(s)} className="text-xs px-2.5 py-1 rounded-full border border-paper-line text-muted hover:border-gold hover:text-ink">{s}</button>))}
+            {suggestions.map((s) => (<button key={s} onClick={() => setInput(s)} className="text-xs px-2.5 py-1 rounded-full border border-paper-line text-muted hover:border-[#3C50E0]/60 hover:text-ink">{s}</button>))}
             <select
               value=""
               onChange={(e) => { if (e.target.value) setInput(e.target.value); }}
-              className="text-xs px-2.5 py-1.5 rounded-full border border-paper-line text-ink-light bg-white hover:border-gold"
+              className="text-xs px-2.5 py-1.5 rounded-full border border-paper-line text-ink-light bg-white hover:border-[#3C50E0]/60"
             >
               <option value="">📄 Xem thêm mẫu hợp đồng...</option>
               {CONTRACT_TEMPLATES.map((g) => (
@@ -19189,6 +24439,565 @@ Nếu người dùng yêu cầu đưa các điều khoản trên vào hợp đ�
 
 // ---------- Đăng nhập & phiên làm việc (backend PostgreSQL) ----------
 // ---------- Menu người dùng (avatar góc trên phải) ----------
+
+// ---------- Sổ cái hạch toán kép — chạy SONG SONG với sổ nghiệp vụ để đối chiếu ----------
+function SoCaiKeToan({ authUser }) {
+  const isAdmin = isAdminRole(authUser?.role);
+  const [view, setView] = useState("journal");
+  const [journal, setJournal] = useState([]);
+  const [trialRows, setTrialRows] = useState([]);
+  const [vatBooks, setVatBooks] = useState({ output: [], input: [] });
+  const [recon, setRecon] = useState(null);
+  const [periods, setPeriods] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  const [expandedId, setExpandedId] = useState(null);
+  const [reverseTarget, setReverseTarget] = useState(null);
+  const [reverseReason, setReverseReason] = useState("");
+  const [lockDraft, setLockDraft] = useState("");
+  const [unlockTarget, setUnlockTarget] = useState(null);
+  const [unlockReason, setUnlockReason] = useState("");
+  // Đối soát kho ↔ TK 156 + đợt khai tồn đầu kỳ
+  const [invRecon, setInvRecon] = useState(null);
+  const [obBatches, setObBatches] = useState([]);
+  const [obDraft, setObDraft] = useState(null);
+  const [obReverseTarget, setObReverseTarget] = useState(null);
+  const [obReverseReason, setObReverseReason] = useState("");
+
+  const [khoLoadError, setKhoLoadError] = useState("");
+  const reloadKho156 = useCallback(async () => {
+    try {
+      const [reconReport, batchList] = await Promise.all([
+        fetchInventoryReconciliation(), fetchOpeningInventoryBatches(),
+      ]);
+      setInvRecon(reconReport);
+      setObBatches(batchList.batches || []);
+      setKhoLoadError("");
+    } catch (err) {
+      // KHÔNG hiển thị bảng rỗng như thể "chưa có dữ liệu" khi thực chất là lỗi tải/hết
+      // phiên — người dùng có thể tạo đợt trùng nếu tưởng nhầm danh sách trống.
+      setKhoLoadError(err.message || "Không tải được đối soát kho.");
+      setError(err.message || "Không tải được đối soát kho.");
+    }
+  }, []);
+  useEffect(() => { if (view === "kho156") reloadKho156(); }, [view, reloadKho156]);
+
+  const startOpeningDraft = async () => {
+    setError(""); setNotice("");
+    try {
+      const suggest = await suggestOpeningInventory();
+      if (!(suggest.suggestions || []).length) {
+        setNotice("Không còn tồn đầu nào chưa được khai — mọi movement opening đã thuộc đợt đã ghi sổ.");
+        return;
+      }
+      setObDraft({
+        effectiveDate: suggest.suggestions[0]?.effectiveDate || new Date().toISOString().slice(0, 10),
+        counterAccount: suggest.counterAccount || "411",
+        sourceDocument: "",
+        note: "",
+        lines: suggest.suggestions.map((line) => ({ ...line })),
+      });
+    } catch (err) { setError(err.message || "Không lấy được gợi ý tồn đầu."); }
+  };
+
+  const submitOpeningDraft = async () => {
+    if (!obDraft) return;
+    setError("");
+    try {
+      const result = await createOpeningInventoryBatch({
+        effectiveDate: obDraft.effectiveDate,
+        counterAccount: obDraft.counterAccount,
+        sourceDocument: obDraft.sourceDocument,
+        note: obDraft.note,
+        lines: obDraft.lines.map((line) => ({
+          productId: line.productId, productName: line.productName, uom: line.uom,
+          quantity: line.quantity, unitCost: line.unitCost, note: line.note || "",
+        })),
+      });
+      setObDraft(null);
+      setNotice(`Đã lập đợt ${result.batch.batchCode} (nháp) — cần người KHÁC duyệt trước khi ghi sổ.`);
+      reloadKho156();
+    } catch (err) { setError(err.message || "Không lập được đợt tồn đầu."); }
+  };
+
+  const postOpeningBatch = async (batch) => {
+    setError(""); setNotice("");
+    try {
+      const preview = await postOpeningInventoryBatch(batch.id, "preview");
+      const lines = (preview.journalLines || [])
+        .map((line) => `${line.debit ? "Nợ" : "Có"} ${line.account}: ${fmtVND(Number(line.debit || line.credit))}`)
+        .join("\n");
+      const accepted = await confirmOverlay(
+        `Ghi sổ đợt ${preview.batchCode} — tổng ${fmtVND(Number(preview.totalAmount))}?\n\n${lines}\n\nKho và sổ cái được ghi trong CÙNG một giao dịch; retry không sinh chứng từ trùng.`,
+        { title: "Ghi sổ tồn đầu kỳ", confirmLabel: "Ghi sổ" },
+      );
+      if (!accepted) return;
+      await postOpeningInventoryBatch(batch.id, "commit");
+      setNotice(`Đã ghi sổ đợt ${batch.batchCode}.`);
+      reloadKho156(); reloadAll();
+    } catch (err) { setError(err.message || "Không ghi sổ được đợt tồn đầu."); }
+  };
+
+  const reloadAll = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const [j, tb, vat, rc, pr] = await Promise.all([
+        fetchAccountingJournal(), fetchTrialBalance(), fetchVatBooks(), fetchLedgerReconciliation(), fetchAccountingPeriods(),
+      ]);
+      setJournal(j.entries || []);
+      setTrialRows(tb.rows || []);
+      setVatBooks({ output: vat.output || [], input: vat.input || [] });
+      setRecon(rc);
+      setPeriods(pr.periods || []);
+    } catch (err) {
+      setError(err.message || "Không tải được sổ cái.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+  useEffect(() => { reloadAll(); }, [reloadAll]);
+
+  const runSync = async () => {
+    setError(""); setNotice("");
+    try {
+      const preview = await syncAccountingLedger("preview");
+      const pendingTotal = Number(preview.pendingEntries || 0) + Number(preview.pendingReversals || 0);
+      if (pendingTotal === 0) { setNotice("Sổ cái đã khớp toàn bộ dữ liệu nghiệp vụ — không có chứng từ mới."); return; }
+      const accepted = await confirmOverlay(
+        `Phát hiện ${preview.pendingEntries} chứng từ mới và ${preview.pendingReversals} bút toán đảo cần ghi sổ (tổng phát sinh ${fmtVND(Number(preview.totalDebit) || 0)}).\n\nGhi sổ ngay? (idempotent — chạy lại không sinh trùng)`,
+        { title: "Đồng bộ sổ cái từ dữ liệu nghiệp vụ", confirmLabel: "Ghi sổ" },
+      );
+      if (!accepted) return;
+      const result = await syncAccountingLedger("commit");
+      setNotice(`Đã ghi ${result.posted} chứng từ, ${result.reversed} bút toán đảo.${result.errors?.length ? ` ${result.errors.length} sự kiện lỗi — xem log backend.` : ""}`);
+      reloadAll();
+    } catch (err) { setError(err.message || "Không đồng bộ được sổ cái."); }
+  };
+
+  const submitReverse = async () => {
+    if (!reverseTarget) return;
+    if (!reverseReason.trim()) { setError("Đảo bút toán bắt buộc phải nhập lý do."); return; }
+    try {
+      await reverseJournalEntry(reverseTarget.id, reverseReason.trim());
+      setReverseTarget(null); setReverseReason(""); setNotice("Đã tạo bút toán đảo liên kết chứng từ gốc.");
+      reloadAll();
+    } catch (err) { setError(err.message || "Không đảo được bút toán."); }
+  };
+
+  const statusBadge = (status) => {
+    const map = {
+      posted: ["ĐÃ GHI SỔ", "border-ledger-green/40 bg-ledger-green/10 text-ledger-green"],
+      reversed: ["ĐÃ ĐẢO", "border-stamp-red/40 bg-stamp-red/10 text-stamp-red"],
+      pending_approval: ["CHỜ DUYỆT", "border-gold/40 bg-gold/10 text-gold"],
+      rejected: ["TỪ CHỐI", "border-paper-line bg-paper text-muted"],
+      draft: ["NHÁP", "border-paper-line bg-paper text-muted"],
+    };
+    const [label, cls] = map[status] || [status, "border-paper-line bg-paper text-muted"];
+    return <span className={`rounded-full border px-2 py-0.5 text-[9px] font-bold ${cls}`}>{label}</span>;
+  };
+
+  const trialTotals = trialRows.reduce((sum, row) => ({ debit: sum.debit + Number(row.debit), credit: sum.credit + Number(row.credit) }), { debit: 0, credit: 0 });
+
+  return (
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      <SectionViewSwitcher value={view} onChange={setView} options={[
+        { id: "journal", label: "Nhật ký chung", icon: FileText, count: journal.length },
+        { id: "trial", label: "Cân đối phát sinh", icon: Scale },
+        { id: "vat", label: "Sổ VAT vào/ra", icon: FileSpreadsheet },
+        { id: "kho156", label: "Đối soát kho (156)", icon: Package },
+        { id: "recon", label: "Đối chiếu & Khóa kỳ", icon: ShieldCheck },
+      ]} />
+      <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-paper-line bg-white px-3 py-2">
+        <div className="text-[11px] leading-4 text-muted" title="Chạy song song với sổ nghiệp vụ: doanh thu 511 (chưa VAT), tiền 111/112, phải thu 131, giá vốn 632. Chứng từ đã ghi sổ là bất biến — sai sót xử lý bằng bút toán đảo.">
+          <strong className="text-ink">Sổ cái hạch toán kép (TT133/TT200)</strong> · chứng từ đã ghi sổ là bất biến
+        </div>
+        <button type="button" onClick={runSync} className="inline-flex items-center gap-1.5 rounded-lg bg-[#3C50E0] px-3.5 py-2 text-xs font-semibold text-white hover:brightness-110" title="Quét dữ liệu nghiệp vụ, xem trước rồi ghi các chứng từ còn thiếu (idempotent)">
+          <RotateCcw size={13} /> Đồng bộ sổ cái
+        </button>
+      </div>
+      {error && <div className="shrink-0 rounded-lg border border-stamp-red/40 bg-stamp-red/5 px-3 py-2 text-xs text-stamp-red">{error}</div>}
+      {notice && <div className="shrink-0 rounded-lg border border-ledger-green/40 bg-ledger-green/5 px-3 py-2 text-xs text-ledger-green">{notice}</div>}
+      {loading && <div className="shrink-0 text-xs text-muted">Đang tải sổ cái...</div>}
+
+      {view === "journal" && (
+        <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-paper-line bg-white">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 z-10 bg-[#F7F9FC] text-[10px] uppercase text-muted">
+              <tr className="border-b border-paper-line">
+                <th className="px-3 py-2 text-left">Số CT</th>
+                <th className="px-3 py-2 text-left">Ngày HT</th>
+                <th className="px-3 py-2 text-left">Diễn giải</th>
+                <th className="px-3 py-2 text-left">Nguồn</th>
+                <th className="px-3 py-2 text-left">Định khoản</th>
+                <th className="px-3 py-2 text-right">Phát sinh</th>
+                <th className="px-3 py-2 text-left">Trạng thái</th>
+                <th className="px-3 py-2 text-right">Thao tác</th>
+              </tr>
+            </thead>
+            <tbody>
+              {journal.length === 0 && <tr><td colSpan={8} className="px-3 py-8 text-center text-muted">Chưa có chứng từ — bấm "Đồng bộ sổ cái" để ghi sổ từ dữ liệu nghiệp vụ.</td></tr>}
+              {journal.map((entry) => {
+                const total = entry.lines.reduce((sum, line) => sum + Number(line.debit), 0);
+                const open = expandedId === entry.id;
+                return (
+                  <React.Fragment key={entry.id}>
+                    <tr className="border-t border-paper-line align-top hover:bg-[#F0F5FF]">
+                      <td className="whitespace-nowrap px-3 py-2 ktns-mono font-semibold text-ink">{entry.entry_no}{entry.reversal_of && <div className="text-[9px] font-normal text-muted">đảo CT #{entry.reversal_of}</div>}</td>
+                      <td className="whitespace-nowrap px-3 py-2 ktns-mono text-muted">{formatDateVN(entry.posting_date)}</td>
+                      <td className="max-w-[300px] px-3 py-2 text-charcoal">{entry.description}</td>
+                      <td className="px-3 py-2 text-[10px] text-muted">{entry.event_type}<div>{entry.source_type} #{String(entry.source_id).slice(0, 14)}</div></td>
+                      <td className="px-3 py-2">
+                        <button type="button" onClick={() => setExpandedId(open ? null : entry.id)} className="text-[10px] font-semibold text-[#3C50E0] underline decoration-dotted" title="Xem chi tiết dòng Nợ/Có" aria-expanded={open}>
+                          {entry.lines.map((line) => line.account).join(" · ")}
+                        </button>
+                        {open && (
+                          <div className="mt-1.5 rounded-md border border-paper-line bg-paper/50 px-2 py-1.5">
+                            {entry.lines.map((line, index) => (
+                              <div key={index} className="flex justify-between gap-3 text-[10px] text-charcoal">
+                                <span>{Number(line.debit) > 0 ? "Nợ" : "Có"} {line.account}{line.description ? ` — ${line.description}` : ""}</span>
+                                <span className="ktns-mono">{fmtVND(Number(line.debit) > 0 ? Number(line.debit) : Number(line.credit))}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right ktns-mono font-semibold text-ink">{fmtVND(total)}</td>
+                      <td className="px-3 py-2">{statusBadge(entry.status)}{entry.reversal_reason && <div className="mt-0.5 max-w-[160px] text-[9px] text-muted">{entry.reversal_reason}</div>}</td>
+                      <td className="px-3 py-2 text-right">
+                        {entry.status === "posted" && (
+                          <button type="button" onClick={() => { setReverseTarget(entry); setReverseReason(""); }} className="inline-flex items-center gap-1 rounded-md border border-stamp-red/35 px-2 py-1 text-[10px] font-semibold text-stamp-red hover:bg-stamp-red/5" title="Tạo bút toán đảo (không xóa chứng từ)"><RotateCcw size={11} /> Đảo</button>
+                        )}
+                      </td>
+                    </tr>
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {view === "trial" && (
+        <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-paper-line bg-white">
+          {trialRows.filter((row) => ["111", "112"].includes(row.code) && Number(row.balance) < 0).map((row) => (
+            <div key={row.code} className="flex items-center gap-2 border-b border-stamp-red/30 bg-stamp-red/5 px-3 py-2 text-xs font-semibold text-stamp-red">
+              <AlertTriangle size={13} /> Quỹ {row.code === "111" ? "tiền mặt" : "ngân hàng"} đang ÂM {fmtVND(Math.abs(Number(row.balance)))} — chi nhiều hơn thu trên sổ. Mở Nhật ký chung, lọc TK {row.code} để rà từng giao dịch; không tự điều chỉnh số liệu để làm đẹp số dư.
+            </div>
+          ))}
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 z-10 bg-[#F7F9FC] text-[10px] uppercase text-muted">
+              <tr className="border-b border-paper-line"><th className="px-3 py-2 text-left">TK</th><th className="px-3 py-2 text-left">Tên tài khoản</th><th className="px-3 py-2 text-right">Phát sinh Nợ</th><th className="px-3 py-2 text-right">Phát sinh Có</th><th className="px-3 py-2 text-right">Số dư</th></tr>
+            </thead>
+            <tbody>
+              {trialRows.map((row) => (
+                <tr key={row.code} className="border-t border-paper-line hover:bg-[#F0F5FF]">
+                  <td className="px-3 py-2 ktns-mono font-bold text-ink">{row.code}</td>
+                  <td className="px-3 py-2 text-charcoal">{row.name}</td>
+                  <td className="px-3 py-2 text-right ktns-mono">{fmtVND(Number(row.debit))}</td>
+                  <td className="px-3 py-2 text-right ktns-mono">{fmtVND(Number(row.credit))}</td>
+                  <td className={`px-3 py-2 text-right ktns-mono font-semibold ${Number(row.balance) < 0 ? "text-stamp-red" : "text-ink"}`}>{fmtVND(Number(row.balance))} <span className="font-sans text-[9px] text-muted">dư {row.balanceSide === "no" ? "Nợ" : "Có"}</span></td>
+                </tr>
+              ))}
+            </tbody>
+            <tfoot className="sticky bottom-0 bg-[#F7F9FC] font-bold text-ink">
+              <tr className="border-t-2 border-[#3C50E0]/40">
+                <td colSpan={2} className="px-3 py-2">TỔNG PHÁT SINH {trialTotals.debit === trialTotals.credit ? "✓ CÂN" : "⚠ LỆCH"}</td>
+                <td className="px-3 py-2 text-right ktns-mono">{fmtVND(trialTotals.debit)}</td>
+                <td className="px-3 py-2 text-right ktns-mono">{fmtVND(trialTotals.credit)}</td>
+                <td className="px-3 py-2"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
+
+      {view === "vat" && (
+        <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-auto xl:grid-cols-2">
+          {[["Sổ VAT ĐẦU RA (3331)", vatBooks.output], ["Sổ VAT ĐẦU VÀO (133)", vatBooks.input]].map(([title, rows]) => (
+            <div key={title} className="min-h-0 overflow-auto rounded-lg border border-paper-line bg-white">
+              <div className="sticky top-0 border-b border-paper-line bg-[#F7F9FC] px-3 py-2 text-[10px] font-bold uppercase text-muted">{title} · {rows.length} chứng từ</div>
+              <table className="w-full text-xs">
+                <thead><tr className="border-b border-paper-line text-[10px] uppercase text-muted"><th className="px-3 py-1.5 text-left">Số CT</th><th className="px-3 py-1.5 text-left">Ngày</th><th className="px-3 py-1.5 text-left">Diễn giải</th><th className="px-3 py-1.5 text-right">Chưa VAT</th><th className="px-3 py-1.5 text-right">VAT</th><th className="px-3 py-1.5 text-right">Tổng</th></tr></thead>
+                <tbody>
+                  {rows.length === 0 && <tr><td colSpan={6} className="px-3 py-6 text-center text-muted">Chưa có chứng từ VAT.</td></tr>}
+                  {rows.map((row) => (
+                    <tr key={row.entryNo} className="border-t border-paper-line">
+                      <td className="px-3 py-1.5 ktns-mono">{row.entryNo}</td>
+                      <td className="px-3 py-1.5 ktns-mono text-muted">{formatDateVN(row.date)}</td>
+                      <td className="max-w-[220px] px-3 py-1.5 text-charcoal">{row.description}</td>
+                      <td className="px-3 py-1.5 text-right ktns-mono">{fmtVND(Number(row.net))}</td>
+                      <td className="px-3 py-1.5 text-right ktns-mono font-semibold text-[#92610A]">{fmtVND(Number(row.vat))}</td>
+                      <td className="px-3 py-1.5 text-right ktns-mono">{fmtVND(Number(row.gross))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot><tr className="border-t-2 border-paper-line bg-[#F7F9FC] font-bold"><td colSpan={3} className="px-3 py-1.5">TỔNG</td><td className="px-3 py-1.5 text-right ktns-mono">{fmtVND(rows.reduce((sum, row) => sum + Number(row.net), 0))}</td><td className="px-3 py-1.5 text-right ktns-mono text-[#92610A]">{fmtVND(rows.reduce((sum, row) => sum + Number(row.vat), 0))}</td><td className="px-3 py-1.5 text-right ktns-mono">{fmtVND(rows.reduce((sum, row) => sum + Number(row.gross), 0))}</td></tr></tfoot>
+              </table>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {view === "kho156" && (
+        <div className="min-h-0 flex-1 space-y-3 overflow-auto">
+          <div className="rounded-lg border border-paper-line bg-white p-4">
+            <div className="mb-1 text-xs font-bold uppercase text-ink">Đối soát thẻ kho ↔ Sổ cái TK 156</div>
+            <div className="text-[11px] text-muted">{invRecon?.formula || "Tồn đầu kỳ + Nhập kho − Xuất kho ± Điều chỉnh = Tồn cuối kỳ"}</div>
+            {invRecon && (
+              <>
+                <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
+                  <div className="rounded-lg border border-paper-line bg-paper/40 px-3 py-2"><div className="text-[10px] uppercase text-muted">Tổng giá trị thẻ kho</div><div className="mt-1 ktns-mono text-sm font-bold text-ink">{fmtVND(Number(invRecon.totals.stockCardValue))}</div></div>
+                  <div className="rounded-lg border border-paper-line bg-paper/40 px-3 py-2"><div className="text-[10px] uppercase text-muted">Số dư TK 156 (sổ cái)</div><div className="mt-1 ktns-mono text-sm font-bold text-ink">{fmtVND(Number(invRecon.totals.ledger156Balance))}</div></div>
+                  <div className={`rounded-lg border px-3 py-2 ${invRecon.totals.balanced ? "border-ledger-green/40 bg-ledger-green/5" : "border-stamp-red/40 bg-stamp-red/5"}`}>
+                    <div className="text-[10px] uppercase text-muted">Chênh lệch</div>
+                    <div className={`mt-1 ktns-mono text-sm font-bold ${invRecon.totals.balanced ? "text-ledger-green" : "text-stamp-red"}`}>{fmtVND(Number(invRecon.totals.diff))} {invRecon.totals.balanced ? "✓ CÂN" : "⚠ LỆCH"}</div>
+                  </div>
+                </div>
+                <div className="mt-3 overflow-x-auto">
+                  <table className="w-full min-w-[860px] text-xs">
+                    <thead className="bg-[#F7F9FC] text-[10px] uppercase text-muted">
+                      <tr className="border-b border-paper-line">
+                        <th className="px-2 py-2 text-left">Sản phẩm</th>
+                        <th className="px-2 py-2 text-right">Tồn đầu</th>
+                        <th className="px-2 py-2 text-right">Nhập</th>
+                        <th className="px-2 py-2 text-right">Xuất</th>
+                        <th className="px-2 py-2 text-right">Điều chỉnh</th>
+                        <th className="px-2 py-2 text-right">Tồn cuối</th>
+                        <th className="px-2 py-2 text-right">Dư 156</th>
+                        <th className="px-2 py-2 text-right">Chênh lệch</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {invRecon.products.length === 0 && <tr><td colSpan={8} className="px-2 py-6 text-center text-muted">Chưa có dữ liệu kho.</td></tr>}
+                      {invRecon.products.map((row) => (
+                        <tr key={row.productId} className="border-t border-paper-line">
+                          <td className="px-2 py-2"><div className="font-semibold text-ink">{row.productName || row.productId}</div><div className="text-[9px] text-muted">#{row.productId} · {row.uom}</div></td>
+                          <td className="px-2 py-2 text-right ktns-mono">{Number(row.opening.qty)} <div className="text-[9px] text-muted">{fmtVND(Number(row.opening.value))}</div></td>
+                          <td className="px-2 py-2 text-right ktns-mono">{Number(row.stockIn.qty)} <div className="text-[9px] text-muted">{fmtVND(Number(row.stockIn.value))}</div></td>
+                          <td className="px-2 py-2 text-right ktns-mono">{Number(row.stockOut.qty)} <div className="text-[9px] text-muted">{fmtVND(Number(row.stockOut.value))}</div></td>
+                          <td className="px-2 py-2 text-right ktns-mono">{Number(row.adjust.qty) > 0 ? "+" : ""}{Number(row.adjust.qty)} <div className="text-[9px] text-muted">{fmtVND(Number(row.adjust.value))}</div></td>
+                          <td className="px-2 py-2 text-right ktns-mono font-semibold text-ink">{Number(row.closing.qty)} <div className="text-[9px] font-normal text-muted">{fmtVND(Number(row.closing.value))}</div></td>
+                          <td className="px-2 py-2 text-right ktns-mono">{fmtVND(Number(row.ledger156.balance))}</td>
+                          <td className={`px-2 py-2 text-right ktns-mono font-semibold ${row.balanced ? "text-ledger-green" : "text-stamp-red"}`}>{fmtVND(Number(row.diffValue))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {(invRecon.unpostedMovements || []).length > 0 && (
+                  <div className="mt-3 rounded-lg border border-gold/40 bg-gold/5 p-3">
+                    <div className="text-[10px] font-bold uppercase text-[#92610A]">Giao dịch kho gây chênh lệch — chưa có bút toán ({invRecon.unpostedMovements.length})</div>
+                    <div className="mt-1.5 space-y-1">
+                      {invRecon.unpostedMovements.map((item) => (
+                        <div key={item.movementId} className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-charcoal">
+                          <span>{formatDateVN(item.date)} · {item.type} · SL {Number(item.qty)} · ước tính {fmtVND(Number(item.estimatedValue))}</span>
+                          <span className="text-muted">{item.reason}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          <div className="rounded-lg border border-paper-line bg-white p-4">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-bold uppercase text-ink">Đợt khai tồn đầu kỳ (Opening Inventory Batch)</div>
+                <div className="mt-0.5 text-[11px] text-muted" title="Backend tự tính thành tiền; tài khoản đối ứng do kế toán chọn; đợt đã ghi sổ chỉ được đảo kèm lý do.">Nháp → duyệt → ghi sổ → đảo</div>
+              </div>
+              <button type="button" onClick={startOpeningDraft} disabled={Boolean(khoLoadError)} className="inline-flex items-center gap-1.5 rounded-lg bg-[#3C50E0] px-3 py-2 text-xs font-semibold text-white hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50" title={khoLoadError ? "Danh sách đợt chưa tải được — khóa tạo mới để tránh lập trùng" : "Gợi ý từ movement tồn đầu CHƯA được ghi sổ — nguồn đã ghi sổ sẽ không được gợi ý lại, backend cũng chặn khai trùng"}>
+                <Plus size={13} /> Lập đợt từ dữ liệu kho
+              </button>
+            </div>
+            <table className="w-full text-xs">
+              <thead><tr className="border-b border-paper-line text-[10px] uppercase text-muted"><th className="px-2 py-1.5 text-left">Mã đợt</th><th className="px-2 py-1.5 text-left">Ngày hiệu lực</th><th className="px-2 py-1.5 text-left">TK đối ứng</th><th className="px-2 py-1.5 text-right">Tổng tiền</th><th className="px-2 py-1.5 text-left">Trạng thái</th><th className="px-2 py-1.5 text-left">Lập / Duyệt</th><th className="px-2 py-1.5 text-right">Thao tác</th></tr></thead>
+              <tbody>
+                {khoLoadError && <tr><td colSpan={7} className="px-2 py-6 text-center font-semibold text-stamp-red">Không tải được danh sách đợt ({khoLoadError}) — thử tải lại hoặc đăng nhập lại. Nút tạo mới đã khóa để tránh lập trùng.</td></tr>}
+                {!khoLoadError && obBatches.length === 0 && <tr><td colSpan={7} className="px-2 py-6 text-center text-muted">Chưa có đợt tồn đầu nào — bấm "Lập đợt từ dữ liệu kho".</td></tr>}
+                {obBatches.map((batch) => (
+                  <tr key={batch.id} className="border-t border-paper-line align-top">
+                    <td className="px-2 py-2 ktns-mono font-semibold text-ink">{batch.batchCode}<div className="text-[9px] font-normal text-muted">{batch.lines.length} dòng · kho {batch.warehouse}</div></td>
+                    <td className="px-2 py-2 ktns-mono text-muted">{formatDateVN(batch.effectiveDate)}</td>
+                    <td className="px-2 py-2 ktns-mono">{batch.counterAccount}</td>
+                    <td className="px-2 py-2 text-right ktns-mono font-semibold">{fmtVND(Number(batch.totalAmount))}</td>
+                    <td className="px-2 py-2">{statusBadge(batch.status === "reviewed" ? "pending_approval" : batch.status)}{batch.reversalReason && <div className="mt-0.5 max-w-[150px] text-[9px] text-muted">{batch.reversalReason}</div>}</td>
+                    <td className="px-2 py-2 text-[10px] text-muted">{batch.createdBy || "—"}<div>{batch.reviewedBy ? `duyệt: ${batch.reviewedBy}` : ""}</div></td>
+                    <td className="px-2 py-2 text-right">
+                      <div className="flex justify-end gap-1.5">
+                        {batch.status === "draft" && (
+                          <button type="button" onClick={async () => { setError(""); try { await reviewOpeningInventoryBatch(batch.id); setNotice(`Đã duyệt đợt ${batch.batchCode}.`); reloadKho156(); } catch (err) { setError(err.message); } }} className="rounded-md border border-ledger-green/40 px-2 py-1 text-[10px] font-semibold text-ledger-green hover:bg-ledger-green/5" title="Người duyệt phải khác người lập">Duyệt</button>
+                        )}
+                        {batch.status === "reviewed" && (
+                          <button type="button" onClick={() => postOpeningBatch(batch)} className="rounded-md bg-[#3C50E0] px-2 py-1 text-[10px] font-semibold text-white" title="Xem trước bút toán rồi ghi sổ">Ghi sổ</button>
+                        )}
+                        {(batch.status === "draft" || batch.status === "reviewed") && (
+                          <button type="button" onClick={async () => { if (!(await confirmOverlay(`Xóa đợt nháp ${batch.batchCode}?`, { title: "Xóa đợt nháp", confirmLabel: "Xóa", tone: "danger" }))) return; try { await deleteDraftOpeningInventoryBatch(batch.id); reloadKho156(); } catch (err) { setError(err.message); } }} className="rounded-md border border-paper-line px-2 py-1 text-[10px] text-muted" title="Chỉ bản nháp chưa ghi sổ mới được xóa">Xóa nháp</button>
+                        )}
+                        {batch.status === "posted" && (
+                          <button type="button" onClick={() => { setObReverseTarget(batch); setObReverseReason(""); }} className="rounded-md border border-stamp-red/35 px-2 py-1 text-[10px] font-semibold text-stamp-red hover:bg-stamp-red/5" title="Đợt đã ghi sổ là bất biến — chỉ được đảo kèm lý do">Đảo</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {view === "recon" && (
+        <div className="min-h-0 flex-1 space-y-3 overflow-auto">
+          {recon && (
+            <div className="rounded-lg border border-paper-line bg-white p-4">
+              <div className="mb-2 text-xs font-bold uppercase text-ink">Đối chiếu sổ cái ↔ sổ nghiệp vụ (chạy song song)</div>
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                {[
+                  ["Doanh thu 511 (chưa VAT)", recon.ledger.revenue511], ["VAT đầu ra 3331", recon.ledger.vatOut3331],
+                  ["Phải thu 131", recon.ledger.receivable131], ["Phải trả 331", recon.ledger.payable331],
+                  ["Giá vốn 632", recon.ledger.cogs632], ["Chi phí 641+642", String(Number(recon.ledger.expense641) + Number(recon.ledger.expense642))],
+                  ["Tiền mặt 111", recon.ledger.cash111], ["Ngân hàng 112", recon.ledger.bank112],
+                ].map(([label, value]) => (
+                  <div key={label} className="rounded-lg border border-paper-line bg-paper/40 px-3 py-2"><div className="text-[10px] uppercase text-muted">{label}</div><div className="mt-1 ktns-mono text-sm font-bold text-ink">{fmtVND(Number(value))}</div></div>
+                ))}
+              </div>
+              <div className="mt-3 rounded-lg border border-gold/30 bg-gold/5 px-3 py-2 text-[11px] leading-4 text-charcoal">
+                Sổ nghiệp vụ cũ: tổng đơn hàng (gồm VAT) {fmtVND(recon.legacy.ordersGross)} · thực thu {fmtVND(recon.legacy.cashIn)} · thực chi {fmtVND(recon.legacy.cashOut)}. {recon.note}
+              </div>
+            </div>
+          )}
+          <div className="rounded-lg border border-paper-line bg-white p-4">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs font-bold uppercase text-ink">Khóa kỳ kế toán</div>
+              {isAdmin && (
+                <div className="flex items-center gap-2">
+                  <input type="month" value={lockDraft} onChange={(event) => setLockDraft(event.target.value)} className="rounded-md border border-paper-line px-2 py-1.5 text-xs ktns-mono" aria-label="Chọn kỳ cần khóa" />
+                  <button type="button" onClick={async () => { if (!lockDraft) return; if (!(await confirmOverlay(`Khóa sổ kỳ ${lockDraft}? Mọi nghiệp vụ hạch toán vào kỳ này sẽ bị chặn.`, { title: "Khóa kỳ kế toán", confirmLabel: "Khóa kỳ", tone: "danger" }))) return; try { await lockAccountingPeriod(lockDraft); setNotice(`Đã khóa kỳ ${lockDraft}.`); reloadAll(); } catch (err) { setError(err.message); } }} className="rounded-md bg-stamp-red px-3 py-1.5 text-xs font-semibold text-white" title="Khóa kỳ — chỉ Admin">Khóa kỳ</button>
+                </div>
+              )}
+            </div>
+            <table className="w-full text-xs">
+              <thead><tr className="border-b border-paper-line text-[10px] uppercase text-muted"><th className="px-2 py-1.5 text-left">Kỳ</th><th className="px-2 py-1.5 text-left">Trạng thái</th><th className="px-2 py-1.5 text-left">Người khóa</th><th className="px-2 py-1.5 text-left">Lý do mở lại</th><th className="px-2 py-1.5 text-right">Thao tác</th></tr></thead>
+              <tbody>
+                {periods.length === 0 && <tr><td colSpan={5} className="px-2 py-5 text-center text-muted">Chưa khóa kỳ nào — kỳ mở nhận nghiệp vụ bình thường.</td></tr>}
+                {periods.map((period) => (
+                  <tr key={period.period_key} className="border-t border-paper-line">
+                    <td className="px-2 py-1.5 ktns-mono font-semibold text-ink">{period.period_key}</td>
+                    <td className="px-2 py-1.5">{period.status === "locked" ? <span className="rounded-full border border-stamp-red/40 bg-stamp-red/10 px-2 py-0.5 text-[9px] font-bold text-stamp-red">ĐÃ KHÓA</span> : <span className="rounded-full border border-ledger-green/40 bg-ledger-green/10 px-2 py-0.5 text-[9px] font-bold text-ledger-green">MỞ</span>}</td>
+                    <td className="px-2 py-1.5 text-muted">{period.locked_by || "—"}</td>
+                    <td className="px-2 py-1.5 text-muted">{period.reopen_reason ? `${period.reopen_reason} (${period.reopened_by})` : "—"}</td>
+                    <td className="px-2 py-1.5 text-right">
+                      {isAdmin && period.status === "locked" && (
+                        <button type="button" onClick={() => { setUnlockTarget(period.period_key); setUnlockReason(""); }} className="rounded-md border border-paper-line px-2 py-1 text-[10px] font-semibold text-ink-light" title="Mở lại kỳ — bắt buộc có lý do, ghi nhật ký kiểm toán">Mở lại</button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {reverseTarget && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-ink/45 p-4" onClick={() => setReverseTarget(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <h3 className="ktns-serif font-semibold text-stamp-red">Đảo bút toán {reverseTarget.entry_no}</h3>
+            <p className="mt-1 text-xs text-muted">Chứng từ gốc được giữ nguyên và chuyển trạng thái "Đã đảo"; hệ thống tạo chứng từ mới ngược dấu liên kết với chứng từ gốc.</p>
+            <label className="mt-3 flex flex-col gap-1 text-xs text-muted">Lý do đảo <span className="text-stamp-red">*</span>
+              <textarea value={reverseReason} onChange={(event) => setReverseReason(event.target.value)} rows={2} className="rounded-md border border-paper-line px-2 py-1.5 text-sm" placeholder="VD: Khách hủy đơn, ghi nhầm số tiền..." />
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setReverseTarget(null)} className="rounded-md border border-paper-line px-3 py-2 text-xs text-muted">Hủy</button>
+              <button type="button" onClick={submitReverse} disabled={!reverseReason.trim()} className="rounded-md bg-stamp-red px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Tạo bút toán đảo</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {obDraft && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-ink/45 p-4" onClick={() => setObDraft(null)}>
+          <div className="w-full max-w-2xl rounded-xl bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <h3 className="ktns-serif font-semibold text-ink">Lập đợt khai tồn đầu kỳ</h3>
+            <p className="mt-1 text-xs text-muted">Số liệu gợi ý từ movement tồn đầu trong sổ kho — kiểm tra lại số lượng và giá vốn trước khi lưu. Thành tiền do backend tính = số lượng × giá vốn.</p>
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <label className="flex flex-col gap-1 text-xs text-muted">Ngày hiệu lực <span className="text-stamp-red">*</span>
+                <input type="date" value={obDraft.effectiveDate} onChange={(event) => setObDraft((prev) => ({ ...prev, effectiveDate: event.target.value }))} className="rounded-md border border-paper-line px-2 py-1.5 text-sm ktns-mono" />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-muted">TK đối ứng <span className="text-stamp-red">*</span>
+                <input type="text" value={obDraft.counterAccount} onChange={(event) => setObDraft((prev) => ({ ...prev, counterAccount: event.target.value }))} className="rounded-md border border-paper-line px-2 py-1.5 text-sm ktns-mono" placeholder="VD: 411" />
+              </label>
+              <label className="flex flex-col gap-1 text-xs text-muted">Chứng từ nguồn
+                <input type="text" value={obDraft.sourceDocument} onChange={(event) => setObDraft((prev) => ({ ...prev, sourceDocument: event.target.value }))} className="rounded-md border border-paper-line px-2 py-1.5 text-sm" placeholder="VD: Biên bản kiểm kê 01/07" />
+              </label>
+            </div>
+            <div className="mt-3 max-h-56 overflow-auto rounded-lg border border-paper-line">
+              <table className="w-full text-xs">
+                <thead className="bg-[#F7F9FC] text-[10px] uppercase text-muted"><tr><th className="px-2 py-1.5 text-left">Sản phẩm</th><th className="px-2 py-1.5 text-left">ĐVT</th><th className="px-2 py-1.5 text-right">Số lượng</th><th className="px-2 py-1.5 text-right">Giá vốn</th><th className="px-2 py-1.5 text-right">Thành tiền</th></tr></thead>
+                <tbody>
+                  {obDraft.lines.map((line, index) => (
+                    <tr key={line.productId} className="border-t border-paper-line">
+                      <td className="px-2 py-1.5">{line.productName || line.productId}</td>
+                      <td className="px-2 py-1.5 text-muted">{line.uom}</td>
+                      <td className="px-2 py-1.5 text-right">
+                        <input type="number" min="0.001" step="any" value={line.quantity} onChange={(event) => setObDraft((prev) => { const lines = [...prev.lines]; lines[index] = { ...lines[index], quantity: event.target.value }; return { ...prev, lines }; })} className="w-20 rounded-md border border-paper-line px-1.5 py-1 text-right text-xs ktns-mono" aria-label={`Số lượng ${line.productName}`} />
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        <input type="number" min="0" step="any" value={line.unitCost} onChange={(event) => setObDraft((prev) => { const lines = [...prev.lines]; lines[index] = { ...lines[index], unitCost: event.target.value }; return { ...prev, lines }; })} className="w-28 rounded-md border border-paper-line px-1.5 py-1 text-right text-xs ktns-mono" aria-label={`Giá vốn ${line.productName}`} />
+                      </td>
+                      <td className="px-2 py-1.5 text-right ktns-mono font-semibold">{fmtVND((Number(line.quantity) || 0) * (Number(line.unitCost) || 0))}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot><tr className="border-t-2 border-paper-line bg-[#F7F9FC] font-bold"><td colSpan={4} className="px-2 py-1.5">TỔNG</td><td className="px-2 py-1.5 text-right ktns-mono">{fmtVND(obDraft.lines.reduce((sum, line) => sum + (Number(line.quantity) || 0) * (Number(line.unitCost) || 0), 0))}</td></tr></tfoot>
+              </table>
+            </div>
+            <label className="mt-3 flex flex-col gap-1 text-xs text-muted">Ghi chú
+              <input type="text" value={obDraft.note} onChange={(event) => setObDraft((prev) => ({ ...prev, note: event.target.value }))} className="rounded-md border border-paper-line px-2 py-1.5 text-sm" placeholder="VD: Chuyển đổi số dư khi đưa sổ kép vào vận hành" />
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setObDraft(null)} className="rounded-md border border-paper-line px-3 py-2 text-xs text-muted">Hủy</button>
+              <button type="button" onClick={submitOpeningDraft} disabled={!obDraft.counterAccount.trim() || obDraft.lines.some((line) => !(Number(line.quantity) > 0))} className="rounded-md bg-[#3C50E0] px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Lưu đợt (nháp)</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {obReverseTarget && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-ink/45 p-4" onClick={() => setObReverseTarget(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <h3 className="ktns-serif font-semibold text-stamp-red">Đảo đợt tồn đầu {obReverseTarget.batchCode}</h3>
+            <p className="mt-1 text-xs text-muted">Đợt đã ghi sổ là bất biến — hệ thống tạo bút toán đảo liên kết chứng từ gốc và gỡ dòng thẻ kho của đợt. Retry không sinh hai chứng từ đảo.</p>
+            <label className="mt-3 flex flex-col gap-1 text-xs text-muted">Lý do đảo <span className="text-stamp-red">*</span>
+              <textarea value={obReverseReason} onChange={(event) => setObReverseReason(event.target.value)} rows={2} className="rounded-md border border-paper-line px-2 py-1.5 text-sm" placeholder="VD: Khai sai kỳ, sai giá vốn kiểm kê..." />
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setObReverseTarget(null)} className="rounded-md border border-paper-line px-3 py-2 text-xs text-muted">Hủy</button>
+              <button type="button" onClick={async () => { try { await reverseOpeningInventoryBatch(obReverseTarget.id, obReverseReason.trim()); setObReverseTarget(null); setNotice(`Đã đảo đợt ${obReverseTarget.batchCode}.`); reloadKho156(); reloadAll(); } catch (err) { setError(err.message); } }} disabled={!obReverseReason.trim()} className="rounded-md bg-stamp-red px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Tạo bút toán đảo</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {unlockTarget && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-ink/45 p-4" onClick={() => setUnlockTarget(null)}>
+          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <h3 className="ktns-serif font-semibold text-ink">Mở lại kỳ {unlockTarget}</h3>
+            <label className="mt-3 flex flex-col gap-1 text-xs text-muted">Lý do mở lại <span className="text-stamp-red">*</span>
+              <textarea value={unlockReason} onChange={(event) => setUnlockReason(event.target.value)} rows={2} className="rounded-md border border-paper-line px-2 py-1.5 text-sm" placeholder="VD: Điều chỉnh sau kiểm toán nội bộ..." />
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button type="button" onClick={() => setUnlockTarget(null)} className="rounded-md border border-paper-line px-3 py-2 text-xs text-muted">Hủy</button>
+              <button type="button" onClick={async () => { try { await unlockAccountingPeriod(unlockTarget, unlockReason.trim()); setUnlockTarget(null); setNotice(`Đã mở lại kỳ ${unlockTarget}.`); reloadAll(); } catch (err) { setError(err.message); } }} disabled={!unlockReason.trim()} className="rounded-md bg-ink px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Mở lại kỳ</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function UserMenu({ authUser, employees = [], onLogout, onOpenSettings }) {
   const [open, setOpen] = useState(false);
   const menuRef = useRef(null);
@@ -19209,7 +25018,7 @@ function UserMenu({ authUser, employees = [], onLogout, onOpenSettings }) {
       <button
         onClick={() => setOpen((v) => !v)}
         title={authUser?.email}
-        className={`flex items-center gap-1.5 rounded-full pl-1 pr-2 py-1 border transition-colors ${open ? "border-gold bg-gold/10" : "border-paper-line bg-white hover:border-gold"}`}
+        className={`flex items-center gap-1.5 rounded-full pl-1 pr-2 py-1 border transition-colors ${open ? "border-gold bg-gold/10" : "border-paper-line bg-white hover:border-[#3C50E0]/60"}`}
       >
         <AccountAvatar employee={profile} email={authUser?.email} name={displayName} className="h-7 w-7" textClassName="text-[9px]" />
         <ChevronDown size={13} className={`text-muted transition-transform ${open ? "rotate-180" : ""}`} />
@@ -19271,7 +25080,7 @@ function MonthPicker({ year, month, onChange, title, lang = "vi" }) {
       <button
         onClick={openPanel}
         title={title}
-        className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs border bg-white transition-colors ${open ? "border-gold" : "border-paper-line hover:border-gold"}`}
+        className={`flex items-center gap-2 rounded-md px-3 py-1.5 text-xs border bg-white transition-colors ${open ? "border-gold" : "border-paper-line hover:border-[#3C50E0]/60"}`}
       >
         <Calendar size={13} className="text-gold" />
         <span className="ktns-mono text-ink font-medium">{periodLabel}</span>
@@ -19285,7 +25094,7 @@ function MonthPicker({ year, month, onChange, title, lang = "vi" }) {
             <button
               onClick={() => setPanelYear((y) => Math.max(minYear, y - 1))}
               disabled={panelYear <= minYear}
-              className="w-7 h-7 rounded-md border border-paper-line flex items-center justify-center text-muted hover:border-gold hover:text-ink disabled:opacity-30"
+              className="w-7 h-7 rounded-md border border-paper-line flex items-center justify-center text-muted hover:border-[#3C50E0]/60 hover:text-ink disabled:opacity-30"
             >
               <ChevronLeft size={14} />
             </button>
@@ -19293,7 +25102,7 @@ function MonthPicker({ year, month, onChange, title, lang = "vi" }) {
             <button
               onClick={() => setPanelYear((y) => Math.min(maxYear, y + 1))}
               disabled={panelYear >= maxYear}
-              className="w-7 h-7 rounded-md border border-paper-line flex items-center justify-center text-muted hover:border-gold hover:text-ink disabled:opacity-30"
+              className="w-7 h-7 rounded-md border border-paper-line flex items-center justify-center text-muted hover:border-[#3C50E0]/60 hover:text-ink disabled:opacity-30"
             >
               <ChevronRight size={14} />
             </button>
@@ -20119,7 +25928,12 @@ function SystemTableEnhancer() {
       const headers = Array.from(table.querySelectorAll("thead tr:first-child > th"));
       const bodyRows = Array.from(table.querySelectorAll("tbody > tr")).filter((row) => {
         const cells = Array.from(row.children).filter((cell) => cell.tagName === "TD");
-        return cells.length === headers.length && !cells.some((cell) => Number(cell.colSpan) > 1);
+        if (cells.length !== headers.length || cells.some((cell) => Number(cell.colSpan) > 1)) return false;
+        // Dòng TỔNG nằm trong tbody (VD bảng phân bổ ngân sách) là dòng đã cộng sẵn —
+        // tuyệt đối không cộng lại lần nữa vào thanh tổng tự sinh (lỗi "ngân sách nhân đôi":
+        // 36.300.000đ chi tiết + 36.300.000đ dòng Tổng = footer 72.600.000đ).
+        const firstText = (cells[0]?.textContent || "").trim().toLowerCase();
+        return !/^tổng(\s|$|:|cộng)/.test(firstText);
       });
       if (headers.length < 2) return;
 
@@ -20139,7 +25953,8 @@ function SystemTableEnhancer() {
       // lên khung cha — nhiều trang dùng chính khung cha đó để ẩn/hiện qua lại giữa các bảng con
       // (đổi tab) bằng style.display nội tuyến; ép !important ở đây sẽ đè mất trạng thái ẩn đó,
       // khiến bảng cũ vẫn hiển thị chồng lên bảng mới khi đổi tab.
-      if (hasNativeFooter || hasPinnedFooter || existingBusinessSummary) {
+      // Bảng rỗng không cần thanh tổng — "TỔNG CỘNG · 0 dòng" chỉ gây nhiễu cạnh empty state.
+      if (hasNativeFooter || hasPinnedFooter || existingBusinessSummary || bodyRows.length === 0) {
         generatedBar?.remove();
         return;
       }

@@ -1,4 +1,5 @@
 from services import employee_service, user_service
+from services.delete_policy_service import DeletePolicyError, audit_blocked_delete, check_employee_delete
 
 
 def handle_get(handler, route, _parsed):
@@ -74,7 +75,13 @@ def handle_delete(handler, route, _parsed):
     if data is None:
         return True
     try:
+        # Delete Policy backend: nhân sự đang làm việc hoặc còn liên kết lương/nhiệm vụ/
+        # giao dịch không được hard-delete — trả 409 kèm hành động được phép.
+        check_employee_delete(handler.db_path, data.get("employeeId"))
         employee_service.delete_employee(handler.db_path, data.get("employeeId"), user.get("email", ""))
+    except DeletePolicyError as exc:
+        audit_blocked_delete(handler.db_path, user.get("email", ""), exc)
+        handler.send_json(exc.payload(), 409)
     except ValueError as exc:
         handler.send_json({"error": str(exc)}, 400)
     else:

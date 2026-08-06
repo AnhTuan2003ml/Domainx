@@ -25,6 +25,14 @@ FIELD_SPEC = [
     ("dailySalary", "daily_salary", "real"),
     ("bonusTarget", "bonus_target", "real"),
     ("kpi", "kpi", "real"),
+    # Vạch doanh thu RIÊNG của nhân viên (chấm KPI): vượt vạch → hưởng % hoa hồng
+    # trên toàn bộ doanh thu tháng; để 0/trống thì dùng vạch chung của công ty.
+    ("kpiRevenueThreshold", "kpi_revenue_threshold", "real"),
+    ("kpiRevenuePct", "kpi_revenue_pct", "real"),
+    # Bảo hiểm theo SỐ TIỀN CỐ ĐỊNH cho từng nhân viên (mode=1 bật; NV đóng + DN đóng).
+    ("insuranceFixedMode", "insurance_fixed_mode", "real"),
+    ("insuranceEmployeeAmount", "insurance_employee_amount", "real"),
+    ("insuranceEmployerAmount", "insurance_employer_amount", "real"),
     ("joined", "joined", "text"),
     ("status", "status", "text"),
     ("resignedDate", "resigned_date", "text"),
@@ -82,6 +90,15 @@ FIELD_SPEC = [
     # Chấm công là map lồng nhau -> lưu JSON trong một cột riêng
     ("attendance", "attendance", "json"),
     ("attendanceTimes", "attendance_times", "json"),
+    # Phụ cấp khai báo thêm (danh sách khoản) + vết cập nhật — thiếu các cột này thì
+    # frontend lưu xong bị server vứt bỏ, lần refetch sau phụ cấp "bốc hơi".
+    ("allowances", "allowances", "json"),
+    ("allowanceUpdatedAt", "allowance_updated_at", "text"),
+    ("allowanceUpdatedByName", "allowance_updated_by_name", "text"),
+    # Vết chấm KPI của kỳ (nằm trong ACCOUNTANT_EDITABLE_EMPLOYEE_FIELDS phía server).
+    ("kpiNote", "kpi_note", "text"),
+    ("kpiReviewedAt", "kpi_reviewed_at", "text"),
+    ("kpiReviewedByName", "kpi_reviewed_by_name", "text"),
 ]
 
 _SQL_TYPE = {"text": "TEXT", "int": "INTEGER", "real": "REAL", "json": "TEXT"}

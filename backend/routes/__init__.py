@@ -1,6 +1,6 @@
-from routes import ai, auth, chat, company_data, employees, support, system, users
+from routes import accounting, ai, auth, chat, company_data, employees, sales_migration, support, system, users
 
-ROUTERS = (system, auth, users, chat, support, employees, company_data, ai)
+ROUTERS = (system, auth, users, chat, support, employees, company_data, accounting, sales_migration, ai)
 
 
 def dispatch(method, handler, route, parsed):

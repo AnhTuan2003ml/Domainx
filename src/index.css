@@ -57,15 +57,16 @@ textarea {
 /* Bảng dữ liệu doanh nghiệp: cuộn trong vùng riêng, cố định cột đầu/cuối trên desktop. */
 .ktns-app {
   overflow-x: hidden;
-  --domix-table-grid: #c7d0dc;
-  --domix-table-grid-strong: #aeb9c8;
-  --domix-table-head-surface: #eef2f7;
+  --domix-table-grid: #E2E8F0;
+  --domix-table-grid-strong: #CBD5E1;
+  --domix-table-head-surface: #F7F9FC;
   --domix-table-row-surface: #ffffff;
-  --domix-table-row-hover: #f5f8fc;
-  --domix-total-surface: linear-gradient(135deg, #17365f 0%, #1f4d7f 58%, #2b5d91 100%);
-  --domix-total-cell-border: rgba(255, 255, 255, 0.2);
-  --domix-total-text: #ffffff;
-  --domix-total-accent: #ffe08a;
+  --domix-table-row-hover: #F8FAFF;
+  /* Thanh tổng dùng nền trầm cùng hệ với bảng — nổi nhờ viền vàng và chữ đậm, không nhờ màu chói. */
+  --domix-total-surface: #F7F9FC;
+  --domix-total-cell-border: rgba(29, 42, 58, 0.14);
+  --domix-total-text: #1C2434;
+  --domix-total-accent: #3C50E0;
 }
 
 .ktns-app.dark {
@@ -74,10 +75,10 @@ textarea {
   --domix-table-head-surface: #202a3a;
   --domix-table-row-surface: #111925;
   --domix-table-row-hover: #182334;
-  --domix-total-surface: linear-gradient(135deg, #173b67 0%, #1f548d 58%, #2a69a8 100%);
-  --domix-total-cell-border: rgba(255, 255, 255, 0.24);
-  --domix-total-text: #f8fbff;
-  --domix-total-accent: #ffd866;
+  --domix-total-surface: #1c2739;
+  --domix-total-cell-border: rgba(255, 255, 255, 0.12);
+  --domix-total-text: #e9eff8;
+  --domix-total-accent: #f4c76a;
 }
 
 .ktns-app table {
@@ -251,6 +252,41 @@ textarea {
   background-color: var(--domix-table-row-hover);
 }
 
+/* ==== HỆ BẢNG v2 — bảng là nhân vật chính: chỉ kẻ NGANG kiểu TailAdmin (bỏ kẻ dọc rối mắt),
+   hàng cao thoáng, sọc zebra nhẹ để dò hàng ngang, đầu bảng tách khỏi thân bằng viền đậm. ==== */
+.ktns-app { --domix-table-row-zebra: #F8FAFC; }
+.ktns-app.dark { --domix-table-row-zebra: #151E2C; }
+
+.ktns-app table:not(.ktns-print-area *) tbody td,
+.ktns-app table:not(.ktns-print-area *) thead th {
+  border-right: 0 !important;
+}
+
+.ktns-app table:not(.ktns-print-area *) thead th {
+  border-bottom: 2px solid var(--domix-table-grid-strong) !important;
+}
+
+.ktns-app table.domix-system-table tbody td {
+  padding-top: 11px !important;
+  padding-bottom: 11px !important;
+  font-size: 13px;
+}
+
+.ktns-app table.domix-system-table thead th {
+  padding-top: 11px !important;
+  padding-bottom: 11px !important;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+}
+
+.ktns-app table.domix-system-table tbody tr:nth-child(even) > td {
+  background-color: var(--domix-table-row-zebra);
+}
+
+.ktns-app table.domix-system-table tbody tr:hover > td {
+  background-color: var(--domix-table-row-hover) !important;
+}
+
 /* Vùng bảng chiếm hết phần còn lại; thanh tổng tách khỏi vùng cuộn và luôn nằm sát chân khung/trang. */
 .finance-table-shell {
   display: flex;
@@ -287,7 +323,7 @@ textarea {
   min-height: 48px;
   border-top: 2px solid var(--domix-total-accent);
   background: var(--domix-total-surface);
-  box-shadow: 0 -10px 26px rgba(7, 20, 40, 0.28);
+  box-shadow: 0 -6px 16px rgba(7, 20, 40, 0.14);
   scrollbar-width: none;
 }
 
@@ -345,7 +381,7 @@ textarea {
   border-color: var(--domix-total-cell-border) !important;
   background: var(--domix-total-surface) !important;
   color: var(--domix-total-text) !important;
-  box-shadow: 0 -10px 26px rgba(7, 20, 40, 0.25);
+  box-shadow: 0 -6px 16px rgba(7, 20, 40, 0.12);
 }
 
 .domix-table-total-bar span,
@@ -369,7 +405,7 @@ textarea {
   color: var(--domix-total-text) !important;
   border-top: 2px solid var(--domix-total-accent) !important;
   border-right: 1px solid var(--domix-total-cell-border) !important;
-  box-shadow: 0 -8px 20px rgba(3, 8, 18, 0.32) !important;
+  box-shadow: 0 -6px 14px rgba(3, 8, 18, 0.16) !important;
   white-space: nowrap;
 }
 
@@ -393,15 +429,15 @@ textarea {
 
 /* Tách từng chỉ số trong hàng tổng thành các ô rõ ràng, dễ quét bằng mắt. */
 .domix-footer-table tfoot td:first-child {
-  background: rgba(5, 18, 38, 0.28) !important;
+  background: color-mix(in srgb, var(--domix-total-text) 6%, transparent) !important;
 }
 
 .domix-footer-table tfoot td:nth-child(even) {
-  background: rgba(255, 255, 255, 0.045) !important;
+  background: color-mix(in srgb, var(--domix-total-text) 3%, transparent) !important;
 }
 
 .domix-footer-table tfoot td:last-child {
-  background: rgba(5, 18, 38, 0.20) !important;
+  background: color-mix(in srgb, var(--domix-total-text) 6%, transparent) !important;
 }
 
 .domix-table-total-bar > .flex,
@@ -418,12 +454,12 @@ textarea {
   align-items: center;
   padding: 8px 16px;
   border-right: 1px solid var(--domix-total-cell-border);
-  background: rgba(255, 255, 255, 0.025);
+  background: color-mix(in srgb, var(--domix-total-text) 2%, transparent);
 }
 
 .domix-table-total-bar > .flex > span:nth-child(even),
 .domix-table-total-bar > div > .flex > span:nth-child(even) {
-  background: rgba(255, 255, 255, 0.055);
+  background: color-mix(in srgb, var(--domix-total-text) 4%, transparent);
 }
 
 .domix-table-total-bar > .flex > span:last-child,

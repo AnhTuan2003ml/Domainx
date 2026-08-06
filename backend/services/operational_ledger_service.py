@@ -89,7 +89,11 @@ def _upsert_cash_transaction(conn, tx: dict[str, Any]):
         return
     source_type = str(tx.get("sourceModule") or tx.get("source") or "manual").strip().lower() or "manual"
     source_id = _key(tx.get("sourceId") or tx.get("sourceOrderId") or tx.get("orderId") or tx_id)
-    status = "reversed" if _status_is_cancelled(tx.get("status")) else "posted"
+    # Cặp bút toán đỏ của app (gốc đã hủy + bút toán âm triệt tiêu) phải mirror thành 'reversed'
+    # ở CẢ HAI bản ghi — trước đây amount âm bị ép về 0 nhưng bản gốc vẫn 'posted', khiến
+    # FinancialSummary đếm cả khoản đã hủy (Dashboard chi 10.001.000đ trong khi sổ là 10.000.000đ).
+    is_red_pair = bool(tx.get("reversalOf") or tx.get("reversedByEntryId"))
+    status = "reversed" if (_status_is_cancelled(tx.get("status")) or is_red_pair) else "posted"
     conn.execute(
         """
         INSERT INTO cash_transactions (
@@ -118,7 +122,7 @@ def _upsert_cash_transaction(conn, tx: dict[str, Any]):
             str(tx.get("transactionCode") or tx.get("code") or tx_id),
             tx.get("kind"),
             str(tx.get("category") or ""),
-            max(0.0, _number(tx.get("amount"))),
+            abs(_number(tx.get("amount"))),
             _date_only(tx.get("date")),
             status,
             source_type,

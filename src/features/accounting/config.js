@@ -10,18 +10,35 @@ export const TT133_ACCOUNTS = {
   "334": "Phải trả người lao động", "338": "Phải trả, phải nộp khác",
   "411": "Vốn đầu tư của chủ sở hữu", "421": "Lợi nhuận sau thuế chưa phân phối",
   "511": "Doanh thu bán hàng và cung cấp dịch vụ", "515": "Doanh thu hoạt động tài chính",
-  "632": "Giá vốn hàng bán", "642": "Chi phí quản lý kinh doanh", "811": "Chi phí khác",
+  "632": "Giá vốn hàng bán", "641": "Chi phí bán hàng (marketing, quảng cáo)",
+  "642": "Chi phí quản lý kinh doanh", "811": "Chi phí khác",
+};
+// MỘT mapping danh mục → TK duy nhất, ĐỒNG BỘ với backend ledger_sync_service
+// (_EXPENSE_ACCOUNT_BY_CATEGORY / _INCOME_ACCOUNT_BY_CATEGORY) — nhãn TK hiển thị ở
+// giao diện phải trùng đúng tài khoản sổ cái hạch toán, không được mỗi nơi một số.
+const EXPENSE_ACCOUNT_BY_CATEGORY = {
+  marketing_ads: "641",
+  an_uong_tiep_khach: "642",
 };
 // Gợi ý TK dựa trên loại giao dịch (Thu/Chi) và nguồn gốc — kế toán vẫn có thể sửa tay nếu cần
 // hạch toán khác đi, đây chỉ là gợi ý mặc định để đỡ phải tra cứu từ đầu.
 export function suggestAccountCode(t) {
   if (t.source === "bangluong") return "334";
-  if (t.source === "congno") return t.kind === "thu" ? "131" : "331";
+  // Thu/chi CÔNG NỢ (mọi biến thể nguồn: congno, congno_payment...) là nghiệp vụ 131/331 —
+  // tuyệt đối KHÔNG phải doanh thu: thu nợ chỉ giảm phải thu, không phát sinh 511/515.
+  const source = String(t.source || t.sourceModule || "");
+  if (source.startsWith("congno")) return t.kind === "thu" ? "131" : "331";
   if (t.kind === "thu") {
-    if (t.source === "crm" || t.source === "hoptac") return "511";
-    return "515";
+    if (source === "crm" || source === "hoptac") return "511";
+    const cat = String(t.category || "").toLowerCase();
+    if (cat.includes("công nợ") || cat === "thu_cong_no") return "131";
+    // 515 CHỈ dành cho doanh thu tài chính đúng bản chất (lãi tiền gửi, chênh lệch tài chính).
+    if (cat.includes("lãi") || cat.includes("tài chính") || cat === "tai_chinh") return "515";
+    return "511";
   }
   const cat = (t.category || "").toLowerCase();
+  if (EXPENSE_ACCOUNT_BY_CATEGORY[cat]) return EXPENSE_ACCOUNT_BY_CATEGORY[cat];
+  if (source === "marketing_daily" || cat.includes("marketing") || cat.includes("quảng cáo")) return "641";
   if (cat.includes("lương")) return "334";
   if (cat.includes("thuê") || cat.includes("mặt bằng")) return "642";
   if (cat.includes("hàng") || t.source === "hoptac_muahang") return "156";
@@ -119,9 +136,12 @@ export const INVOICE_TYPES = [
   "Hóa đơn điện tử",
   "Biên lai / Phiếu thu nội bộ",
   "Thu hộ đối tác (VAT do đối tác chịu)",
-  "Không cần hóa đơn (dưới 200.000đ)",
+  // "Không cần hóa đơn (dưới 200.000đ)" đã bị LOẠI BỎ: theo NĐ 123/2020/NĐ-CP (sửa đổi bởi
+  // NĐ 70/2025/NĐ-CP, hiệu lực 01/6/2025), bán hàng hóa/dịch vụ phải lập hóa đơn không phân
+  // biệt giá trị từng lần bán. Bản ghi cũ mang giá trị này vẫn hiển thị kèm cảnh báo hết hiệu lực.
   "Chưa xác định",
 ];
+export const DEPRECATED_INVOICE_TYPE_NO_INVOICE = "Không cần hóa đơn (dưới 200.000đ)";
 // Chỉ hóa đơn GTGT mới cần khai thuế VAT tách riêng.
 export const VAT_INVOICE_TYPES = ["Hóa đơn GTGT (VAT)"];
 export const VAT_RATE_OPTIONS = [0, 5, 8, 10]; // % — mức 8%/10% thay đổi theo chính sách từng giai đoạn, kiểm tra lại quy định hiện hành

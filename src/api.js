@@ -130,6 +130,63 @@ export async function fetchInventoryMovements(productId) {
   return requestJson(appendQuery("/api/company-data/inventory-movements", { productId }), { cache: "no-store" });
 }
 
+// ---------- Sổ cái hạch toán kép (chạy song song với dữ liệu nghiệp vụ) ----------
+export async function fetchAccountingJournal(params = {}) {
+  return requestJson(appendQuery("/api/accounting/journal", params), { cache: "no-store" });
+}
+export async function fetchTrialBalance(params = {}) {
+  return requestJson(appendQuery("/api/accounting/trial-balance", params), { cache: "no-store" });
+}
+export async function fetchVatBooks(params = {}) {
+  return requestJson(appendQuery("/api/accounting/vat-books", params), { cache: "no-store" });
+}
+export async function fetchLedgerReconciliation(params = {}) {
+  return requestJson(appendQuery("/api/accounting/reconciliation", params), { cache: "no-store" });
+}
+export async function fetchAccountingPeriods() {
+  return requestJson("/api/accounting/periods", { cache: "no-store" });
+}
+export async function syncAccountingLedger(mode = "preview") {
+  return requestJson("/api/accounting/sync", { method: "POST", body: JSON.stringify({ mode }) });
+}
+export async function reverseJournalEntry(entryId, reason) {
+  return requestJson("/api/accounting/journal/reverse", { method: "POST", body: JSON.stringify({ entryId, reason }) });
+}
+export async function lockAccountingPeriod(period) {
+  return requestJson("/api/accounting/periods/lock", { method: "POST", body: JSON.stringify({ period }) });
+}
+export async function unlockAccountingPeriod(period, reason) {
+  return requestJson("/api/accounting/periods/unlock", { method: "POST", body: JSON.stringify({ period, reason }) });
+}
+export async function fetchInventoryReconciliation(params = {}) {
+  return requestJson(appendQuery("/api/accounting/inventory-reconciliation", params), { cache: "no-store" });
+}
+export async function fetchOpeningInventoryBatches() {
+  return requestJson("/api/accounting/opening-inventory", { cache: "no-store" });
+}
+export async function suggestOpeningInventory() {
+  return requestJson("/api/accounting/opening-inventory/suggest", { cache: "no-store" });
+}
+export async function createOpeningInventoryBatch(payload) {
+  const idempotencyKey = payload?.idempotencyKey || `opening-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return requestJson("/api/accounting/opening-inventory", {
+    method: "POST",
+    body: JSON.stringify({ ...payload, idempotencyKey }),
+  });
+}
+export async function reviewOpeningInventoryBatch(batchId) {
+  return requestJson("/api/accounting/opening-inventory/review", { method: "POST", body: JSON.stringify({ batchId }) });
+}
+export async function postOpeningInventoryBatch(batchId, mode = "preview") {
+  return requestJson("/api/accounting/opening-inventory/post", { method: "POST", body: JSON.stringify({ batchId, mode }) });
+}
+export async function reverseOpeningInventoryBatch(batchId, reason) {
+  return requestJson("/api/accounting/opening-inventory/reverse", { method: "POST", body: JSON.stringify({ batchId, reason }) });
+}
+export async function deleteDraftOpeningInventoryBatch(batchId) {
+  return requestJson("/api/accounting/opening-inventory/delete-draft", { method: "POST", body: JSON.stringify({ batchId }) });
+}
+
 export async function createDebtPayment(debtId, payment) {
   const idempotencyKey = payment?.idempotencyKey || `debt-${debtId}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   return requestJson("/api/company-data/debt-payments", {
@@ -290,6 +347,27 @@ export async function confirmSupportRequest(caseId) {
   return requestJson("/api/support/confirm", {
     method: "POST",
     body: JSON.stringify({ caseId }),
+  });
+}
+
+export async function reportSupportCase(caseId, resultNote) {
+  return requestJson("/api/support/report", {
+    method: "POST",
+    body: JSON.stringify({ caseId, resultNote }),
+  });
+}
+
+export async function approveSupportCase(caseId) {
+  return requestJson("/api/support/approve", {
+    method: "POST",
+    body: JSON.stringify({ caseId }),
+  });
+}
+
+export async function rejectSupportCase(caseId, reason) {
+  return requestJson("/api/support/reject", {
+    method: "POST",
+    body: JSON.stringify({ caseId, reason }),
   });
 }
 

@@ -83,7 +83,10 @@ test("English dùng ngày và điều hướng không mơ hồ", () => {
   assert.match(source, /return `\$\{weekdays\.en\[TODAY\.getDay\(\)\]\}, \$\{dd\} \$\{monthNames\[TODAY\.getMonth\(\)\]\} \$\{yyyy\}`/);
   assert.match(source, /sidebar_light_mode: "Light mode"/);
   assert.match(source, /sidebar_search: "Quick search\.\.\."/);
-  assert.match(sidebar, /label\("sidebar_language", "Ngôn ngữ"\)/);
+  // Bộ chọn ngôn ngữ đã chuyển từ sidebar lên header khi tái cấu trúc menu 3 nhóm —
+  // sidebar chỉ còn điều hướng; header giữ ngôn ngữ/sáng-tối/tìm kiếm.
+  assert.match(source, /aria-label="Ngôn ngữ"/);
+  assert.doesNotMatch(sidebar, /sidebar_language/);
 });
 
 test("Dashboard, Hiệu suất và AI cùng dùng trạng thái FinancialSummary", () => {
