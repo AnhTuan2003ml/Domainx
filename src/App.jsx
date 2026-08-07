@@ -32,6 +32,9 @@ import {
   Banknote,
   Loader2,
   LogOut,
+  Mail,
+  Lock,
+  ArrowRight,
   Eye,
   EyeOff,
   ShieldCheck,
@@ -95,6 +98,7 @@ import {
 import * as XLSX from "xlsx";
 import CompanySidebar from "./components/layout/CompanySidebar";
 import { buildNavigationGroups } from "./features/navigation/config";
+import { searchNavEntries } from "./features/navigation/menuData";
 import { ALL_APP_DATA_FIELDS, DEFAULT_COMPANY, TAB_DEFAULT_FIELDS } from "./features/company/config";
 import { downloadPhieuThuChi, INVOICE_TYPES, splitVAT, suggestAccountCode, TT133_ACCOUNTS, VAT_INVOICE_TYPES, VAT_RATE_OPTIONS } from "./features/accounting/config";
 import { computeDistributionSplit, computePartnerAmount, getPartnerMonthlyRevenue, lookupCommissionTier, PARTNER_ROLES } from "./features/distribution/config";
@@ -769,13 +773,15 @@ const GlobalStyle = () => (
     .ktns-app [class*="bg-ink/40"] > div, .ktns-app [class*="bg-ink/45"] > div, .ktns-app [class*="bg-ink/50"] > div, .ktns-app [class*="bg-ink/55"] > div { animation: ktnsModalPop 0.3s cubic-bezier(0.16, 1, 0.3, 1); }
     @keyframes ktnsModalPop { from { opacity: 0; transform: scale(0.94) translateY(8px); } to { opacity: 1; transform: scale(1) translateY(0); } }
     @keyframes ktnsFadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+    /* Phong cách DomixHub Gateway: nền ĐEN THAN phẳng + lưới kẻ mờ + quầng sáng VÀNG —
+       không dùng ảnh nền, không đổi màu theo chu kỳ. */
     .domix-login-shell {
       position: relative;
       min-height: 100vh;
       overflow: hidden;
       isolation: isolate;
       color: #FFFFFF;
-      background: #08111B;
+      background: #0B0B0F;
     }
     .domix-login-shell::before {
       content: "";
@@ -783,12 +789,9 @@ const GlobalStyle = () => (
       inset: 0;
       z-index: -5;
       background:
-        linear-gradient(110deg, rgba(6, 12, 22, 0.82) 0%, rgba(6, 12, 22, 0.58) 38%, rgba(7, 14, 25, 0.72) 100%),
-        linear-gradient(180deg, rgba(6, 12, 22, 0.18), rgba(6, 12, 22, 0.72)),
-        url("https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1800&q=80");
-      background-size: cover;
-      background-position: center;
-      transform: scale(1.03);
+        radial-gradient(ellipse at 72% 8%, rgba(233, 180, 76, 0.10), transparent 42%),
+        radial-gradient(ellipse at 12% 88%, rgba(233, 180, 76, 0.06), transparent 46%),
+        linear-gradient(180deg, #0C0C10 0%, #0A0A0D 100%);
     }
     .domix-login-shell::after {
       content: "";
@@ -796,14 +799,14 @@ const GlobalStyle = () => (
       inset: -12%;
       z-index: -1;
       pointer-events: none;
-      background:
-        radial-gradient(circle at 18% 18%, rgba(81, 180, 184, 0.24), transparent 22%),
-        radial-gradient(circle at 78% 24%, rgba(255, 204, 126, 0.18), transparent 20%),
-        radial-gradient(circle at 54% 78%, rgba(113, 132, 255, 0.18), transparent 26%);
-      filter: blur(42px);
+      background: radial-gradient(circle at 76% 30%, rgba(233, 180, 76, 0.10), transparent 30%);
+      filter: blur(48px);
       animation: domix-login-fog 16s ease-in-out infinite alternate;
     }
     .domix-login-backdrop {
+      display: none;
+    }
+    .domix-login-backdrop-off {
       position: absolute;
       inset: 0;
       overflow: hidden;
@@ -848,19 +851,31 @@ const GlobalStyle = () => (
       inset: 0;
       z-index: -2;
       pointer-events: none;
-      opacity: 0.38;
+      opacity: 0.55;
       background-image:
-        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
-      background-size: 44px 44px;
-      mask-image: linear-gradient(to bottom, rgba(0,0,0,.85), transparent 94%);
+        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: 42px 42px;
     }
     .domix-login-topbar {
-      border-bottom: 1px solid rgba(255,255,255,0.08);
-      background: rgba(6, 12, 22, 0.28);
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      background: rgba(11, 11, 15, 0.72);
       backdrop-filter: blur(16px);
       -webkit-backdrop-filter: blur(16px);
     }
+    .domix-login-register-pill {
+      border: 1px solid rgba(233, 180, 76, 0.45);
+      background: rgba(233, 180, 76, 0.10);
+      color: #E9C36A;
+      font-size: 10px;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      padding: 8px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+    .domix-login-register-pill:hover { background: rgba(233, 180, 76, 0.2); }
     .domix-login-logo-mark {
       background: linear-gradient(145deg, #F0CA68, #A97A20);
       color: #07111D;
@@ -1017,21 +1032,55 @@ const GlobalStyle = () => (
     .domix-login-card {
       position: relative;
       overflow: hidden;
-      border: 1px solid rgba(255,255,255,0.16);
-      background: rgba(8, 18, 30, 0.66);
-      box-shadow: 0 32px 90px rgba(0,0,0,0.42), inset 0 1px 0 rgba(255,255,255,0.10);
-      backdrop-filter: blur(24px) saturate(1.12);
-      -webkit-backdrop-filter: blur(24px) saturate(1.12);
+      border: 1px solid rgba(255,255,255,0.09);
+      background: rgba(17, 17, 22, 0.94);
+      box-shadow: 0 32px 90px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.06);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
     }
     .domix-login-card::before {
       content: "";
       position: absolute;
       inset: 0;
       pointer-events: none;
-      background:
-        linear-gradient(125deg, rgba(255,255,255,0.10), transparent 27%),
-        radial-gradient(circle at 100% 0%, rgba(226, 189, 89, 0.14), transparent 32%);
+      background: radial-gradient(circle at 100% 0%, rgba(233, 180, 76, 0.10), transparent 34%);
     }
+    /* Hàng đầu card kiểu "SECURE ACCESS CONSOLE" + chip ONLINE của DomixHub Gateway. */
+    .domix-login-console { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+    .domix-login-console-title {
+      display: inline-flex; align-items: center; gap: 7px;
+      color: #E9C36A; font-size: 10px; font-weight: 800;
+      letter-spacing: 0.2em; text-transform: uppercase;
+    }
+    .domix-login-console-sub { margin-top: 4px; font-size: 11px; color: rgba(255,255,255,0.45); }
+    .domix-login-online {
+      display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+      padding: 4px 10px; border-radius: 999px;
+      border: 1px solid rgba(52, 211, 153, 0.35); background: rgba(52, 211, 153, 0.10);
+      color: #4ADE9C; font-size: 9px; font-weight: 800; letter-spacing: 0.16em;
+    }
+    .domix-login-online::before { content: ""; width: 6px; height: 6px; border-radius: 999px; background: #34D399; box-shadow: 0 0 8px #34D399; }
+    /* Hero kiểu Gateway: dòng tiêu đề thứ hai màu vàng + gạch dẫn trước eyebrow. */
+    .domix-login-heading-accent { color: #E9B44C; }
+    .domix-login-eyebrow-line { display: inline-block; width: 34px; height: 1px; background: #E9B44C; vertical-align: middle; margin-right: 10px; }
+    /* Panel LIVE: dàn cột equalizer vàng + lưới thông số. */
+    .domix-login-eq { display: flex; align-items: flex-end; gap: 5px; height: 74px; padding: 4px 2px 0; }
+    .domix-login-eq span {
+      flex: 1 1 0; min-width: 4px; border-radius: 3px 3px 0 0;
+      background: linear-gradient(180deg, #F2D488, #C08F2B);
+      height: calc(18% + var(--eq, 0.5) * 74%);
+      animation: domix-login-eq-bounce 1.6s ease-in-out infinite alternate;
+      animation-delay: calc(var(--eq, 0.5) * -1.4s);
+      transform-origin: bottom;
+    }
+    @keyframes domix-login-eq-bounce { from { transform: scaleY(0.55); } to { transform: scaleY(1); } }
+    .domix-login-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 18px; }
+    .domix-login-metrics label { display: block; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(255,255,255,0.42); }
+    .domix-login-metrics strong { display: block; margin-top: 2px; font-size: 13px; font-weight: 700; color: #E9B44C; }
+    /* Ô nhập có icon dẫn đầu như mẫu. */
+    .domix-login-input-wrap { position: relative; }
+    .domix-login-input-wrap > svg { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); color: rgba(233, 180, 76, 0.8); pointer-events: none; }
+    .domix-login-input-wrap .domix-login-input { padding-left: 42px; }
     .domix-login-panel {
       position: relative;
       z-index: 1;
@@ -1049,17 +1098,17 @@ const GlobalStyle = () => (
     .domix-login-divider { background: rgba(255,255,255,0.11); }
     .domix-login-input {
       width: 100%;
-      background: rgba(255,255,255,0.07);
-      border: 1px solid rgba(255,255,255,0.16);
+      background: #17171D;
+      border: 1px solid rgba(255,255,255,0.12);
       color: #FFFFFF;
       outline: none;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.035);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
     }
-    .domix-login-input:hover { border-color: rgba(255,255,255,0.28); }
+    .domix-login-input:hover { border-color: rgba(255,255,255,0.24); }
     .domix-login-input:focus {
-      background: rgba(255,255,255,0.10);
-      border-color: #E7C66C !important;
-      box-shadow: 0 0 0 3px rgba(231,198,108,0.15) !important;
+      background: #1B1B22;
+      border-color: #E9B44C !important;
+      box-shadow: 0 0 0 3px rgba(233,180,76,0.16) !important;
     }
     .domix-login-input::placeholder { color: rgba(255,255,255,0.34); }
     .domix-login-eye {
@@ -1139,9 +1188,9 @@ const GlobalStyle = () => (
       cursor: pointer;
     }
     .domix-auth-switch button.active {
-      background: rgba(255,255,255,0.13);
-      color: #FFFFFF;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 8px 22px rgba(0,0,0,0.16);
+      background: linear-gradient(135deg, #F0CE76, #D9A93F);
+      color: #141005;
+      box-shadow: 0 8px 22px rgba(197, 148, 43, 0.28);
     }
     .domix-register-note {
       border: 1px solid rgba(231,198,108,0.22);
@@ -1198,11 +1247,11 @@ const GlobalStyle = () => (
       position: relative;
       margin-top: 30px;
       width: min(100%, 620px);
-      border-radius: 30px;
+      border-radius: 18px;
       padding: 24px;
-      border: 1px solid rgba(255,255,255,0.14);
-      background: rgba(255,255,255,0.08);
-      box-shadow: 0 30px 70px rgba(0,0,0,0.28);
+      border: 1px solid rgba(255,255,255,0.09);
+      background: rgba(16, 16, 21, 0.88);
+      box-shadow: 0 30px 70px rgba(0,0,0,0.45);
       backdrop-filter: blur(18px);
       -webkit-backdrop-filter: blur(18px);
       transform-style: preserve-3d;
@@ -1217,24 +1266,13 @@ const GlobalStyle = () => (
     .domix-login-hero-panel::before {
       content: "";
       position: absolute;
-      inset: 12px;
-      border-radius: 24px;
-      background:
-        linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.02)),
-        url("https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80");
-      background-size: cover;
-      background-position: center;
-      filter: saturate(1.02) contrast(1.04);
+      inset: 0;
+      border-radius: inherit;
+      background: radial-gradient(circle at 82% 0%, rgba(233, 180, 76, 0.10), transparent 40%);
       z-index: 0;
     }
-    .domix-login-hero-panel::after {
-      content: "";
-      position: absolute;
-      inset: 12px;
-      border-radius: 24px;
-      background: linear-gradient(180deg, rgba(8,16,28,0.08), rgba(8,16,28,0.72));
-      z-index: 0;
-    }
+    .domix-login-hero-panel::after { content: none; }
+    .domix-login-metrics { position: relative; z-index: 1; }
     .domix-login-hero-content, .domix-login-hero-chips, .domix-login-hero-bar { position: relative; z-index: 1; }
     .domix-login-hero-badge {
       display: inline-flex;
@@ -2482,7 +2520,7 @@ function evaluatePerformance(e) {
       { label: "Chỉ tiêu", value: fmtVND(e.salesTarget) },
       { label: "Doanh số đạt", value: fmtVND(e.salesActual) },
       { label: "% Chỉ tiêu", value: targetRate.toFixed(0) + "%" },
-      { label: "Đơn chốt / Lead", value: `${e.dealsClosed}/${e.leadsHandled}` },
+      { label: "Đơn chốt / KH tiềm năng", value: `${e.dealsClosed}/${e.leadsHandled}` },
       { label: "Tỷ lệ chốt", value: closeRate.toFixed(0) + "%" },
     ];
   } else if (e.roleType === "ky_thuat") {
@@ -3514,7 +3552,7 @@ function DomixApp({ authUser, onLogout }) {
   const [tickerNow, setTickerNow] = useState(() => Date.now());
   const [noticeBannerDismissed, setNoticeBannerDismissed] = useState(false);
   useEffect(() => {
-    const timer = window.setInterval(() => setTickerNow(Date.now()), 15000);
+    const timer = window.setInterval(() => setTickerNow(Date.now()), 5000);
     return () => window.clearInterval(timer);
   }, []);
   const [unlockedMonths, setUnlockedMonths] = useState(new Set());
@@ -3544,6 +3582,20 @@ function DomixApp({ authUser, onLogout }) {
   const [paymentLedger, setPaymentLedger] = useState([]);
   const [securityAuditLog, setSecurityAuditLog] = useState([]);
   const [announcements, setAnnouncements] = useState([]);
+  // Thông báo MỚI gửi phải tự hiện lại kể cả khi người dùng đã đóng thanh chạy trước đó —
+  // theo dõi mã thông báo mới nhất, có bản mới là mở lại banner và tính lại mốc thời gian ngay.
+  const latestAnnouncementKeyRef = useRef("");
+  useEffect(() => {
+    const latest = (announcements || [])
+      .map((a) => `${a.id ?? ""}:${a.startAt || a.approvedAt || ""}`)
+      .sort()
+      .pop() || "";
+    if (latest && latest !== latestAnnouncementKeyRef.current) {
+      latestAnnouncementKeyRef.current = latest;
+      setNoticeBannerDismissed(false);
+      setTickerNow(Date.now());
+    }
+  }, [announcements]);
   // Chỉ cảnh báo hiệu suất đã được Sếp duyệt mới xuất hiện trong thông báo công ty.
   const [perfWarningApprovedAt, setPerfWarningApprovedAt] = useState(null);
   useEffect(() => {
@@ -3789,12 +3841,12 @@ function DomixApp({ authUser, onLogout }) {
   const areDataFieldsLoading = useCallback((fields) => (fields || []).some((field) => loadingDataFields.has(field)), [loadingDataFields]);
 
   // ĐỒNG BỘ CỘNG TÁC REALTIME giữa các tài khoản: nhiệm vụ, yêu cầu hỗ trợ, yêu cầu
-  // chấm công được làm tươi nền mỗi 5 giây DÙ ĐANG ĐỨNG Ở TAB NÀO — người giao duyệt
-  // xong là phía người nhận tự thấy (kể cả lịch sử), không ai phải tải lại trang.
+  // chấm công và THÔNG BÁO CÔNG TY được làm tươi nền mỗi 5 giây DÙ ĐANG ĐỨNG Ở TAB NÀO —
+  // sếp bấm "Gửi ngay" là thanh thông báo chạy trên máy mọi người, không ai phải tải lại trang.
   useEffect(() => {
     if (!authUser) return undefined;
     const timer = window.setInterval(() => {
-      ensureDataFields(["tasks", "supportCases", "attendanceRequests"], { force: true });
+      ensureDataFields(["tasks", "supportCases", "attendanceRequests", "announcements"], { force: true });
     }, 5000);
     return () => window.clearInterval(timer);
   }, [authUser, ensureDataFields]);
@@ -4885,9 +4937,15 @@ function DomixApp({ authUser, onLogout }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, lang]);
 
-  const paletteMatches = paletteQuery
-    ? nav.filter((n) => n.label.toLowerCase().includes(paletteQuery.toLowerCase()))
-    : nav;
+  // Tìm CHỨC NĂNG (không tìm dữ liệu): khớp tên mới, tên nhóm cha và TÊN CŨ trong keywords
+  // của cấu hình menu tập trung — gõ "Trung tâm doanh thu" vẫn ra "Bán hàng".
+  const paletteMatches = searchNavEntries(nav, paletteQuery);
+  // Badge "Việc cần xử lý" — CÙNG hàm đếm buildOperationsRows với Tổng quan/màn Việc cần xử lý,
+  // tự tính lại khi dữ liệu nguồn đổi (mutation nào cũng đi qua state chung nên badge cập nhật ngay).
+  const opsBadgeCount = useMemo(
+    () => buildOperationsRows({ orders, debts, supportCases, tasks, inventory, employees: activeEmployees, attendanceRequests, transactions }).length,
+    [orders, debts, supportCases, tasks, inventory, activeEmployees, attendanceRequests, transactions],
+  );
   const activeTabRequiredFields = activeTabAllowed ? (TAB_DEFAULT_FIELDS[tab] || []) : [];
   const activeTabDataReady = dbReady && areDataFieldsReady(activeTabRequiredFields);
   const activeTabDataLoading = !activeTabDataReady && areDataFieldsLoading(activeTabRequiredFields);
@@ -5025,7 +5083,9 @@ function DomixApp({ authUser, onLogout }) {
         taskBadgeCount={taskBadgeCount}
         attendancePendingCount={attendancePendingCount}
         payrollActionSummary={payrollActionSummary}
+        opsBadgeCount={opsBadgeCount}
         isReviewer={payrollCurrentIsBoss || payrollCurrentIsAccountant}
+        onOpenSearch={() => { setShowCommandPalette(true); setPaletteQuery(""); }}
       />
 
       <main className={`min-w-0 flex-1 h-screen ktns-scrollbar overflow-x-hidden ${TABLE_FOCUSED_TABS.includes(tab) ? "overflow-hidden flex flex-col" : "overflow-y-auto"}`} style={{ position: "relative", zIndex: 1 }}>
@@ -5059,8 +5119,8 @@ function DomixApp({ authUser, onLogout }) {
                 type="button"
                 onClick={() => setTab("crm")}
                 className="flex items-center gap-2 rounded-full bg-stamp-red/10 px-3 py-1.5 text-xs text-stamp-red transition hover:bg-stamp-red/20"
-                title="Mở Trung tâm doanh thu để phát hành hóa đơn cho các đơn còn thiếu"
-                aria-label={`Xem ${totals.missing} đơn chưa phát hành hóa đơn trong Trung tâm doanh thu`}
+                title="Mở Bán hàng để phát hành hóa đơn cho các đơn còn thiếu"
+                aria-label={`Xem ${totals.missing} đơn chưa phát hành hóa đơn trong mục Bán hàng`}
               >
                 <AlertTriangle size={13} /> {totals.missing} {t("missing_invoice_tx")}
               </button>
@@ -5115,15 +5175,22 @@ function DomixApp({ authUser, onLogout }) {
             return Number.isNaN(then.getTime()) ? Infinity : (tickerNow - then.getTime()) / 60000;
           };
           const parts = [];
-          announcements.filter((a) => {
-            if (!a.approved) return false;
+          // Chỉ chạy MỘT thông báo — bản MỚI NHẤT còn trong thời gian hiệu lực. Gửi bản tin
+          // mới là thay ngay nội dung cũ trên thanh chạy, không nối đuôi các thông báo trước.
+          const startOf = (a) => {
             const startRaw = a.startAt || a.approvedAt;
-            if (!startRaw) return false;
+            if (!startRaw) return NaN;
             const start = new Date(String(startRaw).includes("T") ? startRaw : String(startRaw).replace(" ", "T"));
-            if (Number.isNaN(start.getTime())) return false;
+            return start.getTime();
+          };
+          const activeAnnouncements = announcements.filter((a) => {
+            if (!a.approved) return false;
+            const start = startOf(a);
+            if (Number.isNaN(start)) return false;
             const durationMinutes = Math.min(1440, Math.max(1, Number(a.durationMinutes) || 10));
-            return tickerNow >= start.getTime() && tickerNow <= start.getTime() + durationMinutes * 60000;
-          }).forEach((a) => parts.push(`📢 ${a.text}`));
+            return tickerNow >= start && tickerNow <= start + durationMinutes * 60000;
+          }).sort((a, b) => startOf(b) - startOf(a));
+          if (activeAnnouncements.length > 0) parts.push(`📢 ${activeAnnouncements[0].text}`);
           if (warnNames && warnNames.length > 0 && minutesSince(perfWarningApprovedAt) <= 30) {
             parts.push(`⚠️ Cảnh báo hiệu suất: ${warnNames.join(", ")}`);
           }
@@ -5152,14 +5219,22 @@ function DomixApp({ authUser, onLogout }) {
               {activeHub.children.map((child) => {
                 const ChildIcon = child.icon;
                 const childActive = tab === child.id;
+                // Badge của tab con lấy từ DỮ LIỆU THẬT — cùng nguồn đếm với sidebar.
+                const childBadge = child.id === "dieuhanh" ? opsBadgeCount
+                  : child.id === "giaoviec" ? taskBadgeCount
+                    : child.id === "chamcong" ? attendancePendingCount
+                      : child.id === "luong" ? Number(payrollActionSummary?.total || 0)
+                        : 0;
                 return (
                   <button
                     key={child.id}
                     type="button"
                     onClick={() => setTab(child.id)}
+                    aria-current={childActive ? "page" : undefined}
                     className={`inline-flex min-h-[38px] shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border px-3.5 text-xs font-semibold transition-colors ${childActive ? "border-[#5f8df8] bg-[linear-gradient(180deg,#315ba5,#26457b)] text-white shadow-[0_6px_16px_rgba(49,91,165,0.3)]" : "border-paper-line bg-paper text-ink-light hover:border-[#5f8df8]/50 hover:text-ink"}`}
                   >
                     <ChildIcon size={14} />{child.label}
+                    {childBadge > 0 && <span className={`flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[9px] font-bold ${childActive ? "bg-white/25 text-white" : "bg-stamp-red text-white"}`}>{childBadge > 99 ? "99+" : childBadge}</span>}
                     {child.beta && <span className="rounded-full border border-gold/40 bg-gold/15 px-1.5 py-0.5 text-[9px] font-bold uppercase text-gold">Beta</span>}
                   </button>
                 );
@@ -5283,7 +5358,8 @@ function DomixApp({ authUser, onLogout }) {
                     className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left hover:bg-paper transition-colors ${i === 0 ? "bg-paper/60" : ""}`}
                   >
                     <Icon size={15} className="text-ink-light shrink-0" />
-                    {n.label}
+                    <span className="min-w-0 flex-1 truncate">{n.label}</span>
+                    {n.parentLabel && <span className="shrink-0 rounded-full border border-paper-line bg-paper px-2 py-0.5 text-[10px] text-muted">{n.parentLabel}</span>}
                   </button>
                 );
               })}
@@ -5380,7 +5456,7 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
   }).length;
 
   const actionItems = [
-    unpaidOrdersCount > 0 && { icon: CreditCard, text: `${unpaidOrdersCount} đơn chưa thu đủ tiền — theo dõi ở Công nợ/Trung tâm vận hành`, tab: "dieuhanh", tone: "red", count: unpaidOrdersCount },
+    unpaidOrdersCount > 0 && { icon: CreditCard, text: `${unpaidOrdersCount} đơn chưa thu đủ tiền — theo dõi ở Công nợ/Việc cần xử lý`, tab: "dieuhanh", tone: "red", count: unpaidOrdersCount },
     crmPending > 0 && { icon: ShoppingCart, text: `${crmPending} đơn CRM chưa xuất hóa đơn`, tab: "crm", tone: "gold", count: crmPending },
     distPending > 0 && { icon: Handshake, text: `${fmtVND(pendingDistRevenue)} doanh thu ròng đang chờ đối tác phân phối xác nhận (${distPending} đơn) — chưa vào Thu Chi`, tab: "hoptac", tone: "gold" },
     lowStockProducts.length > 0 && { icon: Package, text: `${lowStockProducts.length} sản phẩm sắp hết hàng trong Kho`, tab: "kho", tone: "red" },
@@ -5389,13 +5465,13 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
     pendingCvCount > 0 && { icon: UserPlus, text: `${pendingCvCount} ứng viên CV đang chờ quyết định tuyển`, tab: "tuyendung", tone: "gold" },
     expiringContracts.length > 0 && { icon: FileSignature, text: `${expiringContracts.length} hợp đồng sắp/đã hết hạn (≤30 ngày)`, tab: "hopdong", tone: "red" },
     cashRiskCount > 0 && { icon: AlertTriangle, text: `${cashRiskCount} khoản chi tiền mặt ≥5 triệu — nguy cơ không được trừ thuế TNDN`, tab: "thuchi", tone: "red" },
-    overdueLeadsCount > 0 && { icon: Phone, text: `${overdueLeadsCount} khách tiềm năng đến hẹn/quá hẹn gọi lại hôm nay`, tab: "crm", tone: "red" },
+    overdueLeadsCount > 0 && { icon: Phone, text: `${overdueLeadsCount} khách hàng tiềm năng đến hẹn/quá hẹn gọi lại hôm nay`, tab: "crm", tone: "red" },
   ].filter(Boolean);
 
   if (!lazyTableData.ready) {
     return (
       <div className="flex flex-col gap-4">
-        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={[{ id: "finance", label: "Tổng quan tài chính", icon: Wallet }, { id: "actions", label: "Việc cần xử lý", icon: AlertTriangle }, { id: "recent", label: "Giao dịch gần đây", icon: ClipboardList }]} />
+        <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={[{ id: "finance", label: "Tổng quan tài chính", icon: Wallet }, { id: "actions", label: "Cảnh báo", icon: AlertTriangle }, { id: "recent", label: "Hoạt động gần đây", icon: ClipboardList }]} />
         <DataLoadingPanel title="Đang tải khu vực tổng quan" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} />
       </div>
     );
@@ -5421,8 +5497,8 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
         onChange={setActiveTableView}
         options={[
           { id: "finance", label: "Tổng quan tài chính", icon: Wallet },
-          { id: "actions", label: "Việc cần xử lý", icon: AlertTriangle, count: opsRows.length },
-          { id: "recent", label: "Giao dịch gần đây", icon: ClipboardList, count: transactions.length },
+          { id: "actions", label: "Cảnh báo", icon: AlertTriangle, count: opsRows.length },
+          { id: "recent", label: "Hoạt động gần đây", icon: ClipboardList, count: transactions.length },
         ]}
       />
 
@@ -5430,8 +5506,8 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
       {/* Số đếm giống HỆT Trung tâm vận hành (chung buildOperationsRows) — bấm để mở bảng chi tiết. */}
       <button type="button" onClick={() => setTab && setTab("dieuhanh")} className="flex w-full items-center gap-3 rounded-lg border border-stamp-red/40 bg-stamp-red/5 px-4 py-3 text-left hover:bg-stamp-red/10">
         <AlertTriangle size={18} className="shrink-0 text-stamp-red" />
-        <span className="min-w-0 flex-1 text-sm text-charcoal"><strong className="text-ink">{opsRows.length} việc cần xử lý</strong> · trong đó <strong className="text-stamp-red">{opsHighCount} ưu tiên cao</strong> — cùng nguồn đếm với Trung tâm vận hành.</span>
-        <span className="shrink-0 text-xs font-semibold text-[#315fae]">Mở Trung tâm vận hành</span>
+        <span className="min-w-0 flex-1 text-sm text-charcoal"><strong className="text-ink">{opsRows.length} việc cần xử lý</strong> · trong đó <strong className="text-stamp-red">{opsHighCount} ưu tiên cao</strong> — cùng nguồn đếm với màn Việc cần xử lý.</span>
+        <span className="shrink-0 text-xs font-semibold text-[#315fae]">Mở Việc cần xử lý</span>
         <ChevronRight size={15} className="shrink-0 text-muted" />
       </button>
       {warnNames && warnNames.length > 0 && (() => {
@@ -6264,8 +6340,8 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
       <div className="flex flex-col gap-4">
         <SectionViewSwitcher value={activeTableView} onChange={setActiveTableView} options={[
           { id: "transactions", label: "Danh sách giao dịch", icon: Wallet },
-          { id: "vat_output", label: "VAT đầu ra", icon: TrendingUp },
-          { id: "vat_input", label: "VAT đầu vào", icon: TrendingDown },
+          { id: "vat_output", label: "Hóa đơn & VAT đầu ra", icon: TrendingUp },
+          { id: "vat_input", label: "Hóa đơn & VAT đầu vào", icon: TrendingDown },
         ]} />
         <DataLoadingPanel title="Đang tải dữ liệu bảng đã chọn" error={dataLoader?.dataLoadError || ""} onRetry={() => dataLoader?.ensureDataFields(lazyTableData.fields, { force: true })} />
       </div>
@@ -6288,8 +6364,8 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
           onChange={setActiveTableView}
           options={[
             { id: "transactions", label: "Danh sách giao dịch", icon: Wallet, count: filteredTransactions.length },
-            { id: "vat_output", label: "VAT đầu ra", icon: TrendingUp, count: ledgerVat.loaded ? ledgerVat.output.length : vatOutputRows.length },
-            { id: "vat_input", label: "VAT đầu vào", icon: TrendingDown, count: ledgerVat.loaded ? ledgerVat.input.length : vatInputRows.length },
+            { id: "vat_output", label: "Hóa đơn & VAT đầu ra", icon: TrendingUp, count: ledgerVat.loaded ? ledgerVat.output.length : vatOutputRows.length },
+            { id: "vat_input", label: "Hóa đơn & VAT đầu vào", icon: TrendingDown, count: ledgerVat.loaded ? ledgerVat.input.length : vatInputRows.length },
           ]}
         />
       </div>
@@ -7952,7 +8028,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
             <label className="text-xs text-muted flex flex-col gap-1">Sản phẩm
               <select value={purchaseForm.productId} onChange={(e) => setPurchaseForm({ ...purchaseForm, productId: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
                 <option value="">— Chọn sản phẩm trong Kho hàng —</option>
-                {(inventory || []).map((p) => (<option key={p.id} value={p.id}>{p.name}{p.durationMonths > 0 ? ` (${p.durationMonths} tháng)` : ""} — tồn {p.stock} {p.unit}</option>))}
+                {(inventory || []).filter((p) => !p.discontinued).map((p) => (<option key={p.id} value={p.id}>{p.name}{p.durationMonths > 0 ? ` (${p.durationMonths} tháng)` : ""} — tồn {p.stock} {p.unit}</option>))}
               </select>
             </label>
             <label className="text-xs text-muted flex flex-col gap-1">Số lượng<input type="number" min="1" value={purchaseForm.quantity} onChange={(e) => setPurchaseForm({ ...purchaseForm, quantity: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
@@ -9073,9 +9149,16 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
     return !Number.isFinite(numeric) || numeric <= 0;
   };
   const canEditProduct = (product) => canManageInventory || (canEditAssignedInventory && isAssignedProduct(product));
-  const visibleInventory = canViewAllInventory
+  const permittedInventory = canViewAllInventory
     ? inventory
     : inventory.filter((product) => isUnassignedProduct(product) || isAssignedProduct(product));
+  // Sản phẩm NGỪNG KINH DOANH không bị xóa (giữ lịch sử 156/632) nhưng phải BIẾN MẤT khỏi
+  // danh mục làm việc — muốn xem lại thì bật riêng khu "Ngừng kinh doanh" bên dưới.
+  const [showDiscontinued, setShowDiscontinued] = useState(false);
+  const discontinuedInventory = permittedInventory.filter((product) => product.discontinued);
+  const visibleInventory = showDiscontinued
+    ? discontinuedInventory
+    : permittedInventory.filter((product) => !product.discontinued);
   const activeEmployeesWithEmail = (employees || []).filter((employee) => employee.status !== "inactive" && String(employee.email || "").includes("@"));
 
   useEffect(() => {
@@ -9375,9 +9458,14 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
         />
       </div>
 
-      <div style={{ display: activeTableView === "inventory" ? "flex" : "none" }} className="shrink-0 justify-between items-center">
-        <p className="text-xs text-muted">{visibleInventory.length} sản phẩm bạn được phép xem.</p>
+      <div style={{ display: activeTableView === "inventory" ? "flex" : "none" }} className="shrink-0 justify-between items-center flex-wrap gap-2">
+        <p className="text-xs text-muted">{showDiscontinued ? `${discontinuedInventory.length} sản phẩm đã ngừng kinh doanh (giữ nguyên lịch sử kho).` : `${visibleInventory.length} sản phẩm bạn được phép xem.`}</p>
         <div className="flex gap-2">
+          {discontinuedInventory.length > 0 && (
+            <button onClick={() => setShowDiscontinued((v) => !v)} className={`flex items-center gap-1.5 text-sm px-3.5 py-2 rounded-md border ${showDiscontinued ? "border-gold bg-gold/15 text-[#92610A] font-semibold" : "border-paper-line text-ink-light hover:border-gold/60"}`} title="Sản phẩm ngừng kinh doanh được ẩn khỏi danh mục làm việc — bấm để xem/khôi phục">
+              <Archive size={14} /> {showDiscontinued ? "Về danh mục đang bán" : `Ngừng kinh doanh (${discontinuedInventory.length})`}
+            </button>
+          )}
           <button onClick={() => exportInventoryExcel(visibleInventory, employees)} className="flex items-center gap-1.5 text-sm border border-ledger-green/40 bg-ledger-green/10 text-ledger-green px-3.5 py-2 rounded-md hover:opacity-90">
             <FileSpreadsheet size={15} /> Xuất Excel
           </button>
@@ -9547,12 +9635,14 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
                         {handlingPartners.length > 0 ? handlingPartners.map((dp) => dp.name).join(", ") : <span className="text-muted">Chưa gán đối tác</span>}
                         {p.supplierName && <div className="mt-0.5 text-[10px] text-muted">NCC nhập hàng: {p.supplierName}</div>}
                       </td>
-                      <td className="px-4 py-2"><div className="flex flex-col items-start gap-1">{low ? <StampBadge text="SẮP HẾT HÀNG" /> : <StampBadge text="CÒN HÀNG" gold />}{daysLeft !== null && daysLeft < 0 && <StampBadge text="ĐÃ HẾT HẠN" />}{daysLeft !== null && daysLeft >= 0 && daysLeft <= 5 && <StampBadge text="SẮP HẾT HẠN" />}{!p.expiryDate && Number(p.durationMonths) > 0 && <StampBadge text="CHƯA NHẬP HẠN" />}{!p.expiryDate && Number(p.durationMonths) <= 0 && <span className="rounded-full border border-paper-line px-2 py-0.5 text-[10px] font-semibold text-muted">KHÔNG QUẢN LÝ HẠN</span>}</div></td>
-                      <td className="px-4 py-2 text-right">{canEditProduct(p) && <div className="flex flex-wrap items-center justify-end gap-1.5"><button type="button" onClick={() => openEditProduct(p)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2 py-1 text-[11px] font-semibold text-ink-light" title="Sửa sản phẩm được phân công" aria-label={`Sửa sản phẩm ${p.name}`}><Pencil size={12} /> Sửa</button>{canManageInventory && ((stockMovements || []).some((m) => String(m.productId) === String(p.id)) ? (
+                      <td className="px-4 py-2"><div className="flex flex-col items-start gap-1">{p.discontinued ? <StampBadge text="NGỪNG KINH DOANH" /> : low ? <StampBadge text="SẮP HẾT HÀNG" /> : <StampBadge text="CÒN HÀNG" gold />}{daysLeft !== null && daysLeft < 0 && <StampBadge text="ĐÃ HẾT HẠN" />}{daysLeft !== null && daysLeft >= 0 && daysLeft <= 5 && <StampBadge text="SẮP HẾT HẠN" />}{!p.expiryDate && Number(p.durationMonths) > 0 && <StampBadge text="CHƯA NHẬP HẠN" />}{!p.expiryDate && Number(p.durationMonths) <= 0 && <span className="rounded-full border border-paper-line px-2 py-0.5 text-[10px] font-semibold text-muted">KHÔNG QUẢN LÝ HẠN</span>}</div></td>
+                      <td className="px-4 py-2 text-right">{canEditProduct(p) && <div className="flex flex-wrap items-center justify-end gap-1.5">{p.discontinued ? (
+                        canManageInventory && <button type="button" onClick={() => setInventory((prev) => prev.map((item) => (item.id === p.id ? { ...item, discontinued: false, discontinuedAt: null } : item)))} className="inline-flex items-center gap-1 rounded-md border border-ledger-green/40 px-2 py-1 text-[11px] font-semibold text-ledger-green" title="Đưa sản phẩm trở lại danh mục đang bán — lịch sử kho giữ nguyên" aria-label={`Kinh doanh trở lại sản phẩm ${p.name}`}><RotateCcw size={12} /> Kinh doanh trở lại</button>
+                      ) : (<><button type="button" onClick={() => openEditProduct(p)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2 py-1 text-[11px] font-semibold text-ink-light" title="Sửa sản phẩm được phân công" aria-label={`Sửa sản phẩm ${p.name}`}><Pencil size={12} /> Sửa</button>{canManageInventory && ((stockMovements || []).some((m) => String(m.productId) === String(p.id)) ? (
                         <button type="button" onClick={() => removeProduct(p.id)} className="inline-flex items-center gap-1 rounded-md border border-gold/40 px-2 py-1 text-[11px] font-semibold text-gold" title="Sản phẩm đã có lịch sử kho — không xóa được, chỉ ngừng kinh doanh (giữ nguyên lịch sử 156/632)" aria-label={`Ngừng kinh doanh sản phẩm ${p.name}`}><Archive size={12} /> Ngừng KD</button>
                       ) : (
                         <button type="button" onClick={() => removeProduct(p.id)} className="inline-flex items-center gap-1 rounded-md border border-stamp-red/30 px-2 py-1 text-[11px] font-semibold text-stamp-red" title="Xóa sản phẩm chưa có lịch sử kho" aria-label={`Xóa sản phẩm ${p.name}`}><Trash2 size={12} /> Xóa</button>
-                      ))}</div>}</td>
+                      ))}</>)}</div>}</td>
                     </tr>
                   );
                 })}
@@ -15881,7 +15971,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
           onChange={setActiveTableView}
           options={[
             { id: "orders", label: "Đơn hàng CRM", icon: ShoppingCart, count: orders.length },
-            { id: "leads", label: "Khách tiềm năng", icon: Phone, count: (leads || []).filter((l) => l.status === "dang_cham_soc").length },
+            { id: "leads", label: "Khách hàng tiềm năng", icon: Phone, count: (leads || []).filter((l) => l.status === "dang_cham_soc").length },
             { id: "sales", label: "Doanh số theo Sale", icon: TrendingUp, count: saleStats.length },
             { id: "daily", label: "Báo cáo liên hệ hàng ngày", icon: CalendarCheck, count: dailyContacts.length },
           ]}
@@ -15935,7 +16025,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
 
         {showLeadForm && (
           <div className="domix-inline-form-modal bg-white border border-paper-line rounded-md p-5">
-            <div className="text-[11px] font-semibold text-ink uppercase mb-2">Khách tiềm năng mới — Marketing/Pancake đẩy qua cho Sale gọi</div>
+            <div className="text-[11px] font-semibold text-ink uppercase mb-2">Khách hàng tiềm năng mới — Marketing/Pancake đẩy qua cho Sale gọi</div>
             <div className="grid grid-cols-4 gap-2">
               <input type="date" value={leadForm.date} onChange={(e) => setLeadForm({ ...leadForm, date: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-xs" />
               <input value={leadForm.customerName} onChange={(e) => setLeadForm({ ...leadForm, customerName: e.target.value })} placeholder="Tên khách (nếu có)" className="border border-paper-line rounded px-2 py-1.5 text-xs" />
@@ -15954,7 +16044,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
             </div>
             {leadFormError && <p className="mt-1 text-xs text-stamp-red flex items-center gap-1"><AlertTriangle size={12} /> {leadFormError}</p>}
             <div className="flex gap-2 mt-2">
-              <button onClick={addLead} className="text-xs bg-ledger-green text-white px-3 py-1.5 rounded-md hover:opacity-90">Lưu khách tiềm năng</button>
+              <button onClick={addLead} className="text-xs bg-ledger-green text-white px-3 py-1.5 rounded-md hover:opacity-90">Lưu khách hàng tiềm năng</button>
               <button onClick={closeLeadForm} className="text-xs border border-paper-line px-3 py-1.5 rounded-md text-muted">Huỷ</button>
             </div>
           </div>
@@ -16085,7 +16175,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
             {(() => {
               const filtered = filteredLeads;
               if (filtered.length === 0) {
-                return <tr><td colSpan={11} className="px-4 py-6 text-center text-xs text-muted">{(leads || []).length === 0 ? 'Chưa có khách tiềm năng nào — bấm "Thêm khách cần gọi" ở trên để ghi nhận lead mới từ Marketing.' : "Không tìm thấy khách nào khớp bộ lọc/từ khoá."}</td></tr>;
+                return <tr><td colSpan={11} className="px-4 py-6 text-center text-xs text-muted">{(leads || []).length === 0 ? 'Chưa có khách hàng tiềm năng nào — bấm "Thêm khách cần gọi" ở trên để ghi nhận khách hàng tiềm năng mới từ Marketing.' : "Không tìm thấy khách nào khớp bộ lọc/từ khoá."}</td></tr>;
               }
               return filtered.slice(0, leadShowCount).map((l, idx) => {
               const isOverdue = l.nextFollowUpDate && l.nextFollowUpDate <= TODAY_STR && l.status === "dang_cham_soc";
@@ -16173,7 +16263,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
             <button onClick={() => setLeadShowCount(10)} className="text-[11px] text-muted underline hover:text-ink">Thu gọn lại còn 10 người</button>
           </div>
         )}
-        <p className="px-4 py-1.5 text-[11px] text-muted border-t border-paper-line" title='Mặc định hiện 10 người gần hẹn nhất; bấm "Xem thêm" để hiện dần.'>* Khách tiềm năng chưa tính doanh thu — chốt đơn thì bấm "Đã mua → Tạo đơn hàng".</p>
+        <p className="px-4 py-1.5 text-[11px] text-muted border-t border-paper-line" title='Mặc định hiện 10 người gần hẹn nhất; bấm "Xem thêm" để hiện dần.'>* Khách hàng tiềm năng chưa tính doanh thu — chốt đơn thì bấm "Đã mua → Tạo đơn hàng".</p>
       </div>
 
       <input ref={importT7InputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={readCrmExcelFile} />
@@ -16345,7 +16435,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                         <td className="px-2 py-1.5">
                           <select value={it.productId} onChange={(e) => selectOrderItemProduct(idx, e.target.value)} className="w-full rounded border border-paper-line px-2 py-1 text-xs">
                             <option value="">— Dịch vụ / khác (tự nhập tên) —</option>
-                            {(inventory || []).map((prod) => (<option key={prod.id} value={prod.id}>{prod.name}{prod.durationMonths > 0 ? ` (${prod.durationMonths} tháng)` : ""} — tồn {prod.stock} {prod.unit}</option>))}
+                            {(inventory || []).filter((prod) => !prod.discontinued).map((prod) => (<option key={prod.id} value={prod.id}>{prod.name}{prod.durationMonths > 0 ? ` (${prod.durationMonths} tháng)` : ""} — tồn {prod.stock} {prod.unit}</option>))}
                           </select>
                           {it.productId ? (
                             <div className={`mt-1 text-[10px] ${rowShort > 0 ? "font-semibold text-gold" : "text-ink-light"}`}>
@@ -18517,7 +18607,7 @@ function CustomerDirectory({ customers = [], orders = [], supportCases = [], emp
                 <td className="px-3 py-2 text-right ktns-mono font-semibold text-ledger-green">{fmtVND(row.total)}</td>
                 <td className={`px-3 py-2 text-right ktns-mono font-semibold ${row.remaining > 0 ? "text-stamp-red" : "text-muted"}`}>{row.remaining > 0 ? fmtVND(row.remaining) : "0đ"}</td>
                 <td className="px-3 py-2">{employeeName(row.lastOrder?.saleEmployeeId)}</td>
-                <td className="px-3 py-2">{row.cases.length > 0 ? `${row.cases.length} ca` : "—"}</td>
+                <td className="px-3 py-2">{row.cases.length > 0 ? `${row.cases.length} yêu cầu` : "—"}</td>
                 <td className="px-3 py-2 ktns-mono text-muted">{row.lastContact?.date ? formatDateVN(String(row.lastContact.date).slice(0, 10)) : "—"}</td>
                 <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                   <div className="flex justify-end gap-1.5">
@@ -23240,113 +23330,80 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
       />
       </div>
 
-      <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-auto">
+      {/* Bảng là trung tâm: vùng làm việc không tự cuộn cả trang — từng bảng cuộn riêng bên trong. */}
+      <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
       {activeTableView === "tax" && !annualReady && (
         <DataLoadingPanel title="Đang tải 12 tháng từ sổ tài chính máy chủ" error={annualSummaryLoadError} onRetry={() => setSummaryReloadToken((value) => value + 1)} />
       )}
-      {activeTableView === "tax" && annualReady && (
-      <div className="bg-white rounded-lg border border-stamp-red/40 p-4">
-        <div className="text-xs font-semibold text-stamp-red uppercase mb-1 flex items-center gap-1.5"><AlertTriangle size={13} /> Thuế TNDN TẠM TÍNH — Năm {year}</div>
-        <p className="text-[11px] text-muted mb-3">Tạm tính theo Nghị định 320/2025/NĐ-CP: doanh thu năm (CHƯA gồm VAT) ≤3 tỷ → 15%, 3-50 tỷ → 17%, trên 50 tỷ → 20%. Lưu ý: mức thuế suất chính thức xác định theo doanh thu của KỲ TRƯỚC LIỀN KỀ — app đang tạm dùng doanh thu chưa VAT của chính năm đang xem để ước tính. Đã tự CỘNG NGƯỢC các khoản chi tiền mặt ≥5 triệu vào thu nhập chịu thuế (vì thuế không cho trừ khoản này) — còn nhiều khoản chi không hợp lý khác theo Điều 10 Luật Thuế TNDN mà app chưa nhận diện được hết, kế toán cần rà lại kỹ trước khi kê khai chính thức.</p>
-        <div className="grid grid-cols-1 gap-4 border-b border-paper-line pb-3 mb-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div>
-            <div className="text-[11px] text-muted uppercase">Lợi nhuận kế toán (đã trừ hết chi phí)</div>
-            <div className="ktns-mono text-sm">{fmtVND(annualProfitAccounting)}</div>
-          </div>
-          <div>
-            <div className="text-[11px] text-muted uppercase">+ Tiền mặt ≥5tr không được trừ</div>
-            <div className="ktns-mono text-sm text-stamp-red">+{fmtVND(nonDeductibleCash)}</div>
-          </div>
-          <div>
-            <div className="text-[11px] text-muted uppercase">+ Chi thiếu hoá đơn không được trừ</div>
-            <div className="ktns-mono text-sm text-stamp-red">+{fmtVND(nonDeductibleNoInvoice)}</div>
-          </div>
-          <div>
-            <div className="text-[11px] text-muted uppercase">= Thu nhập chịu thuế TNDN</div>
-            <div className="ktns-mono text-sm font-semibold">{fmtVND(taxableIncomeTNDN)}</div>
-          </div>
+      {activeTableView === "tax" && annualReady && (<>
+      <InlineStats compact items={[
+        { label: "Doanh thu năm (chưa VAT)", value: fmtVND(annualRevenue), sub: "Cơ sở xác định ngưỡng thuế suất 3/50 tỷ — không gồm VAT đầu ra" },
+        { label: "Thuế suất tạm áp dụng", value: `${(taxRate * 100).toFixed(0)}%`, className: "text-gold", sub: "≤3 tỷ → 15% · 3–50 tỷ → 17% · trên 50 tỷ → 20% (NĐ 320/2025/NĐ-CP)" },
+        { label: "Thuế TNDN tạm tính", value: fmtVND(estimatedTNDN), className: "text-stamp-red" },
+        { label: "Lợi nhuận sau thuế", value: fmtVND(profitAfterTNDN), className: profitAfterTNDN >= 0 ? "text-ledger-green" : "text-stamp-red" },
+      ]} />
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
+        <div className="shrink-0 px-4 pt-3 pb-1 text-xs font-semibold text-stamp-red uppercase flex items-center gap-1.5"><AlertTriangle size={13} /> Thuế TNDN TẠM TÍNH — Năm {year}</div>
+        <div className="min-h-0 flex-1 overflow-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-4 py-2">Cấu thành thu nhập chịu thuế</th><th className="px-4 py-2 text-right">Số tiền</th></tr></thead>
+          <tbody>
+            <tr className="border-t border-paper-line"><td className="px-4 py-2">Lợi nhuận kế toán (đã trừ hết chi phí)</td><td className="px-4 py-2 text-right ktns-mono">{fmtVND(annualProfitAccounting)}</td></tr>
+            <tr className="border-t border-paper-line"><td className="px-4 py-2">+ Chi tiền mặt ≥5 triệu không được trừ</td><td className="px-4 py-2 text-right ktns-mono text-stamp-red">+{fmtVND(nonDeductibleCash)}</td></tr>
+            <tr className="border-t border-paper-line"><td className="px-4 py-2">+ Chi thiếu hóa đơn không được trừ</td><td className="px-4 py-2 text-right ktns-mono text-stamp-red">+{fmtVND(nonDeductibleNoInvoice)}</td></tr>
+            <tr className="border-t border-paper-line bg-paper font-semibold"><td className="px-4 py-2">= Thu nhập chịu thuế TNDN</td><td className="px-4 py-2 text-right ktns-mono">{fmtVND(taxableIncomeTNDN)}</td></tr>
+            <tr className="border-t border-paper-line"><td className="px-4 py-2">× Thuế suất tạm áp dụng</td><td className="px-4 py-2 text-right ktns-mono text-gold">{(taxRate * 100).toFixed(0)}%</td></tr>
+            <tr className="border-t-2 border-ink/20 bg-paper font-bold"><td className="px-4 py-2">Thuế TNDN dự kiến phải nộp</td><td className="px-4 py-2 text-right ktns-mono text-stamp-red">{fmtVND(estimatedTNDN)}</td></tr>
+            <tr className="border-t border-paper-line font-semibold"><td className="px-4 py-2">Lợi nhuận sau thuế TNDN</td><td className={`px-4 py-2 text-right ktns-mono ${profitAfterTNDN >= 0 ? "text-ledger-green" : "text-stamp-red"}`}>{fmtVND(profitAfterTNDN)}</td></tr>
+          </tbody>
+        </table>
         </div>
-        <div className="grid grid-cols-4 gap-4">
-          <div>
-            <div className="text-[11px] text-muted uppercase">Doanh thu cả năm (chưa VAT)</div>
-            <div className="ktns-mono text-base font-semibold">{fmtVND(annualRevenue)}</div>
-          </div>
-          <div>
-            <div className="text-[11px] text-muted uppercase">Thuế suất tạm áp dụng</div>
-            <div className="ktns-mono text-base font-semibold text-gold">{(taxRate * 100).toFixed(0)}%</div>
-          </div>
-          <div>
-            <div className="text-[11px] text-muted uppercase">Thuế TNDN dự kiến phải nộp</div>
-            <div className="ktns-mono text-base font-semibold text-stamp-red">{fmtVND(estimatedTNDN)}</div>
-          </div>
-          <div>
-            <div className="text-[11px] text-muted uppercase">Lợi nhuận sau thuế TNDN</div>
-            <div className={`ktns-mono text-base font-semibold ${profitAfterTNDN >= 0 ? "text-ledger-green" : "text-stamp-red"}`}>{fmtVND(profitAfterTNDN)}</div>
-          </div>
-        </div>
+        <details className="domix-table-total-bar shrink-0 border-t border-paper-line bg-paper px-4 py-2">
+          <summary className="cursor-pointer list-none text-[11px] font-semibold text-muted hover:text-ink">Cách tính & lưu ý khi kê khai chính thức ▾</summary>
+          <p className="pt-1.5 text-[11px] leading-5 text-muted">Tạm tính theo Nghị định 320/2025/NĐ-CP trên doanh thu năm CHƯA gồm VAT. Mức thuế suất chính thức xác định theo doanh thu KỲ TRƯỚC LIỀN KỀ — app tạm dùng doanh thu của chính năm đang xem để ước tính. Các khoản chi tiền mặt ≥5 triệu và chi thiếu hóa đơn đã được CỘNG NGƯỢC vào thu nhập chịu thuế (thuế không cho trừ); còn các khoản chi không hợp lý khác theo Điều 10 Luật Thuế TNDN app chưa nhận diện hết — kế toán rà lại kỹ trước khi kê khai.</p>
+        </details>
       </div>
-      )}
+      </>)}
 
       {activeTableView === "quarter" && !quarterReady && (
         <DataLoadingPanel title={`Đang tải số liệu Quý ${quarter}/${year}`} error={summaryLoadError} onRetry={() => setSummaryReloadToken((value) => value + 1)} />
       )}
-      {activeTableView === "quarter" && quarterReady && (<>
-      {(() => {
+      {activeTableView === "quarter" && quarterReady && (() => {
         // Biên lợi nhuận tính trên DOANH THU CHƯA VAT (511) — không dùng tổng gồm VAT.
         const revenueBase = quarterTotal.revenueExVat > 0 ? quarterTotal.revenueExVat : quarterTotal.revenue;
         const marginNet = revenueBase > 0 ? (quarterTotal.accountingProfit / revenueBase) * 100 : 0;
         const payrollRatio = revenueBase > 0 ? (quarterTotal.payrollTotal / revenueBase) * 100 : 0;
         const totalCost = quarterTotal.cogs + quarterTotal.operatingExpense + quarterTotal.payrollTotal + quarterTotal.employerInsurance;
         const costRatio = revenueBase > 0 ? (totalCost / revenueBase) * 100 : 0;
-        return (
-          <div className="bg-white rounded-lg border border-paper-line p-4">
-            <div className="text-xs font-semibold text-ink uppercase mb-3">Chỉ số tài chính cơ bản — Quý {quarter}/{year}</div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <div className="text-[11px] text-muted uppercase">Biên lợi nhuận ròng</div>
-                <div className={`ktns-mono text-lg font-semibold ${marginNet >= 0 ? "text-ledger-green" : "text-stamp-red"}`}>{marginNet.toFixed(1)}%</div>
-                <div className="text-[10px] text-ink-light">Lợi nhuận / Doanh thu chưa VAT — càng cao càng tốt, dưới 10% cần xem lại chi phí.</div>
-              </div>
-              <div>
-                <div className="text-[11px] text-muted uppercase">Tỷ lệ chi phí lương / doanh thu</div>
-                <div className={`ktns-mono text-lg font-semibold ${payrollRatio <= 40 ? "text-ledger-green" : "text-stamp-red"}`}>{payrollRatio.toFixed(1)}%</div>
-                <div className="text-[10px] text-ink-light">Thường nên dưới 40% với công ty dịch vụ/thương mại nhỏ.</div>
-              </div>
-              <div>
-                <div className="text-[11px] text-muted uppercase">Tỷ lệ tổng chi phí / doanh thu</div>
-                <div className={`ktns-mono text-lg font-semibold ${costRatio <= 80 ? "text-ledger-green" : "text-stamp-red"}`}>{costRatio.toFixed(1)}%</div>
-                <div className="text-[10px] text-ink-light">Trên 100% nghĩa là đang lỗ trong quý này.</div>
-              </div>
-            </div>
-            <p className="text-[10px] text-muted mt-3">* Chỉ số tham khảo nhanh, tính trực tiếp từ dữ liệu Thu Chi thật trong quý — không thay thế phân tích tài chính chuyên sâu (ROE, ROA, thanh khoản...) cần đầy đủ Bảng cân đối kế toán mới tính chính xác được.</p>
-          </div>
-        );
-      })()}
-
-      <div className="flex items-center gap-2">
-        <select value={quarter} onChange={(e) => setQuarter(Number(e.target.value))} className="border border-paper-line rounded-md px-3 py-2 text-sm">
+        return (<>
+      {/* BẢNG LÀ TRUNG TÂM: một hàng công cụ mỏng (kỳ + chỉ số phụ + Excel) — chú thích
+          của từng chỉ số chuyển vào tooltip; toàn bộ phần còn lại dành cho bảng số liệu. */}
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <select value={quarter} onChange={(e) => setQuarter(Number(e.target.value))} className="h-9 border border-paper-line rounded-md px-2.5 text-sm bg-white">
           {[1, 2, 3, 4].map((q) => (<option key={q} value={q}>Quý {q}</option>))}
         </select>
-        <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="border border-paper-line rounded-md px-3 py-2 text-sm ktns-mono">
+        <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="h-9 border border-paper-line rounded-md px-2.5 text-sm ktns-mono bg-white">
           {yearOptions.map((y) => (<option key={y} value={y}>{y}</option>))}
         </select>
-        <button type="button" disabled={!quarterReady || summaryLoading} onClick={() => exportQuarterExcel(snapshots, quarter, year)} className="flex items-center gap-1.5 text-sm border border-ledger-green/40 bg-ledger-green/10 text-ledger-green px-3.5 py-2 rounded-md hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 ml-auto">
-          <FileSpreadsheet size={15} /> Xuất Excel báo cáo quý
+        <button type="button" disabled={!quarterReady || summaryLoading} onClick={() => exportQuarterExcel(snapshots, quarter, year)} className="ml-auto flex h-9 items-center gap-1.5 text-xs font-semibold border border-ledger-green/40 bg-ledger-green/10 text-ledger-green px-3 rounded-md hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50">
+          <FileSpreadsheet size={14} /> Xuất Excel
         </button>
       </div>
+      <InlineStats compact items={[
+        { label: "Doanh thu chưa VAT", value: fmtVND(quarterTotal.revenueExVat), className: "text-ledger-green", sub: `Tổng giá trị đơn gồm VAT ${fmtVND(quarterTotal.revenue)} · giá vốn ${fmtVND(quarterTotal.cogs)}` },
+        { label: "Thực thu", value: fmtVND(quarterTotal.cashReceived), className: "text-ledger-green", sub: "Tiền đã thật sự về quỹ trong quý" },
+        { label: "Chi phí vận hành", value: fmtVND(quarterTotal.operatingExpense), className: "text-stamp-red" },
+        { label: "Lương (đã chốt)", value: fmtVND(quarterTotal.payrollTotal), className: "text-stamp-red", sub: "Chỉ tính bảng lương đã duyệt/chốt trong kỳ — bảng lương nháp chưa tính" },
+        { label: "Lợi nhuận", value: fmtVND(quarterTotal.accountingProfit), className: quarterTotal.accountingProfit >= 0 ? "text-ledger-green" : "text-stamp-red" },
+        { label: "Biên LN", value: `${marginNet.toFixed(1)}%`, className: marginNet >= 0 ? "text-ledger-green" : "text-stamp-red", sub: "Lợi nhuận / doanh thu chưa VAT — dưới 10% cần xem lại chi phí" },
+        { label: "Lương/DT", value: `${payrollRatio.toFixed(1)}%`, className: payrollRatio <= 40 ? "text-ledger-green" : "text-stamp-red", sub: "Thường nên dưới 40% với công ty dịch vụ/thương mại nhỏ" },
+        { label: "Chi phí/DT", value: `${costRatio.toFixed(1)}%`, className: costRatio <= 80 ? "text-ledger-green" : "text-stamp-red", sub: "Trên 100% nghĩa là đang lỗ trong quý này" },
+      ]} />
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        <KpiCard icon={TrendingUp} label={`Doanh thu chưa VAT Quý ${quarter}`} value={fmtVND(quarterTotal.revenueExVat)} sub={`Tổng giá trị đơn gồm VAT ${fmtVND(quarterTotal.revenue)} · giá vốn ${fmtVND(quarterTotal.cogs)}`} tone="up" />
-        <KpiCard icon={Wallet} label="Tiền thực thu" value={fmtVND(quarterTotal.cashReceived)} tone="up" />
-        <KpiCard icon={TrendingDown} label="Chi phí vận hành" value={fmtVND(quarterTotal.operatingExpense)} tone="down" />
-        <KpiCard icon={Banknote} label="Chi phí lương (đã chốt)" value={fmtVND(quarterTotal.payrollTotal)} tone="down" sub="Chỉ tính bảng lương đã duyệt/chốt trong kỳ — bảng lương nháp chưa tính" />
-        <KpiCard icon={ShieldCheck} label="Bảo hiểm doanh nghiệp" value={fmtVND(quarterTotal.employerInsurance)} tone="down" />
-        <KpiCard icon={Calculator} label="Lợi nhuận kế toán" value={fmtVND(quarterTotal.accountingProfit)} tone={quarterTotal.accountingProfit >= 0 ? "up" : "down"} />
-      </div>
-
-      <div className="bg-white rounded-lg border border-paper-line overflow-x-auto">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
+        <div className="min-h-0 flex-1 overflow-auto">
         <table data-sticky-columns="true" data-disable-generated-total="true" className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10">
             <tr className="bg-paper text-left text-xs uppercase text-muted">
               <th className="px-4 py-2.5">Chỉ tiêu</th>
               {snapshots.map((s) => (<th key={s.month} className="px-4 py-2.5 text-right">Tháng {s.month}/{s.year}{s.isFuture ? " (chưa đến kỳ)" : s.year === ATT_YEAR && s.month === ATT_MONTH ? " (hiện tại)" : ""}</th>))}
@@ -23377,26 +23434,30 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
               </tr>
             ))}
             <tr className="border-t border-paper-line">
-              <td className="px-4 py-2 font-medium">Giao dịch thiếu hoá đơn</td>
+              <td className="px-4 py-2 font-medium">Đơn chưa phát hành hóa đơn</td>
               {snapshots.map((s) => (<td key={s.month} className={`px-4 py-2 text-right ktns-mono ${s.isFuture ? "text-muted" : s.missingInvoices > 0 ? "text-stamp-red" : "text-ledger-green"}`}>{s.isFuture ? "—" : s.missingInvoices}</td>))}
               <td className="px-4 py-2 text-right ktns-mono font-semibold bg-paper">{quarterTotal.missingInvoices}</td>
             </tr>
           </tbody>
         </table>
+        </div>
+        <p className="domix-table-total-bar shrink-0 border-t border-paper-line bg-paper px-4 py-2 text-[10px] text-muted">* Chỉ số tham khảo nhanh tính từ dữ liệu Thu Chi thật trong quý — rê chuột lên các chỉ số gạch chấm phía trên để xem giải thích. Phân tích chuyên sâu (ROE/ROA/thanh khoản) cần đầy đủ Bảng cân đối kế toán.</p>
       </div>
 
-      </>)}
+      </>);
+      })()}
 
       {activeTableView === "accounts" && (
-        <div className="bg-white rounded-lg border border-paper-line overflow-hidden">
-          <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Bảng cân đối phát sinh theo tài khoản (Sổ cái kép) — Quý {quarter}/{year}</div>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
+          <div className="shrink-0 px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase">Bảng cân đối phát sinh theo tài khoản (Sổ cái kép) — Quý {quarter}/{year}</div>
           {accountRows === null ? (
             <div className="px-4 py-8 text-center text-xs text-muted"><Loader2 size={14} className="mx-auto mb-2 animate-spin" /> Đang tải từ sổ kế toán...</div>
           ) : accountRows.length === 0 ? (
             <div className="px-4 py-8 text-center text-xs text-muted">{accountRowsError || "Chưa có bút toán nào trong quý này."}</div>
           ) : (
+            <div className="min-h-0 flex-1 overflow-auto">
             <table data-sticky-columns="true" className="w-full text-sm">
-              <thead><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-4 py-2">Mã TK</th><th className="px-4 py-2">Tên tài khoản</th><th className="px-4 py-2 text-right">Phát sinh Nợ</th><th className="px-4 py-2 text-right">Phát sinh Có</th></tr></thead>
+              <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-4 py-2">Mã TK</th><th className="px-4 py-2">Tên tài khoản</th><th className="px-4 py-2 text-right">Phát sinh Nợ</th><th className="px-4 py-2 text-right">Phát sinh Có</th></tr></thead>
               <tbody>
                 {accountRows.map((row) => (
                   <tr key={row.code} className="border-t border-paper-line">
@@ -23413,8 +23474,9 @@ function QuarterReport({ transactions, orders, marketingLogs, employees, reportY
                 </tr>
               </tbody>
             </table>
+            </div>
           )}
-          <p className="px-4 py-2.5 text-[11px] text-muted border-t border-paper-line">* Lấy trực tiếp từ SỔ CÁI HẠCH TOÁN KÉP (chỉ bút toán đã ghi sổ, cặp đảo tự triệt tiêu) — cùng nguồn với tab Sổ kế toán.</p>
+          <p className="domix-table-total-bar shrink-0 px-4 py-2 text-[11px] text-muted border-t border-paper-line bg-paper">* Lấy trực tiếp từ SỔ CÁI HẠCH TOÁN KÉP (chỉ bút toán đã ghi sổ, cặp đảo tự triệt tiêu) — cùng nguồn với tab Sổ kế toán.</p>
         </div>
       )}
       </div>
@@ -24605,7 +24667,7 @@ function SoCaiKeToan({ authUser }) {
       <SectionViewSwitcher value={view} onChange={setView} options={[
         { id: "journal", label: "Nhật ký chung", icon: FileText, count: journal.length },
         { id: "trial", label: "Cân đối phát sinh", icon: Scale },
-        { id: "vat", label: "Sổ VAT vào/ra", icon: FileSpreadsheet },
+        { id: "vat", label: "Hóa đơn & VAT", icon: FileSpreadsheet },
         { id: "kho156", label: "Đối soát kho (156)", icon: Package },
         { id: "recon", label: "Đối chiếu & Khóa kỳ", icon: ShieldCheck },
       ]} />
@@ -24715,7 +24777,7 @@ function SoCaiKeToan({ authUser }) {
 
       {view === "vat" && (
         <div className="grid min-h-0 flex-1 grid-cols-1 gap-3 overflow-auto xl:grid-cols-2">
-          {[["Sổ VAT ĐẦU RA (3331)", vatBooks.output], ["Sổ VAT ĐẦU VÀO (133)", vatBooks.input]].map(([title, rows]) => (
+          {[["HÓA ĐƠN & VAT ĐẦU RA (3331)", vatBooks.output], ["HÓA ĐƠN & VAT ĐẦU VÀO (133)", vatBooks.input]].map(([title, rows]) => (
             <div key={title} className="min-h-0 overflow-auto rounded-lg border border-paper-line bg-white">
               <div className="sticky top-0 border-b border-paper-line bg-[#F7F9FC] px-3 py-2 text-[10px] font-bold uppercase text-muted">{title} · {rows.length} chứng từ</div>
               <table className="w-full text-xs">
@@ -25518,44 +25580,57 @@ function LoginScreen({ onLogin, onRegistered }) {
         <div className="max-w-[1280px] mx-auto h-[72px] flex items-center justify-between gap-6">
           <div className="flex items-center gap-3 min-w-0">
             <img src="/logo.jfif" alt="DOMIX" className="domix-login-logo-mark w-10 h-10 rounded-lg object-cover shrink-0" />
-            <div className="min-w-0">
-              <div className="ktns-serif font-bold text-white text-lg leading-tight tracking-wide">DOMIX</div>
-              <div className="text-[10px] uppercase tracking-[0.18em] text-white/[0.45] truncate">Business operation system</div>
+            <div className="min-w-0 flex items-baseline gap-3">
+              <div className="ktns-serif font-bold text-lg leading-tight tracking-wide"><span className="text-white">DOMIX</span><span className="text-[#E9B44C]">ERP</span></div>
+              <div className="hidden md:block text-[10px] uppercase tracking-[0.2em] text-white/[0.4] truncate">Unified Access</div>
             </div>
           </div>
-          <div className="hidden sm:flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-white/[0.55] px-3 py-2 rounded-full border border-white/10 bg-white/5">
-            <ShieldCheck size={13} className="text-[#E7C66C]" /> Nội bộ an toàn
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex items-center gap-2 text-[10px] uppercase tracking-[0.14em] text-white/[0.55] px-3 py-2 rounded-full border border-white/10 bg-white/5">
+              <ShieldCheck size={13} className="text-[#E9C36A]" /> Nội bộ an toàn
+            </div>
+            <button type="button" className="domix-login-register-pill" onClick={() => switchMode("register")}>Đăng ký</button>
           </div>
         </div>
       </header>
 
       <main className="domix-login-stage relative z-[2]">
         <section className="domix-login-showcase">
-          <div className="domix-login-eyebrow text-[10px] uppercase font-semibold">Một nền tảng · Toàn bộ vận hành</div>
-          <h1 className="domix-login-heading ktns-serif text-[clamp(34px,4.7vw,67px)] font-bold leading-[1.02] mt-4 max-w-3xl">
-            Điều hành doanh nghiệp<br />trên một không gian duy nhất.
+          <div className="domix-login-eyebrow text-[10px] uppercase font-semibold"><span className="domix-login-eyebrow-line" aria-hidden="true" />Giải pháp vận hành · DOMIX</div>
+          <h1 className="domix-login-heading ktns-serif text-[clamp(34px,4.7vw,67px)] font-bold leading-[1.04] mt-4 max-w-3xl">
+            Kiến tạo doanh nghiệp.<br /><span className="domix-login-heading-accent">Tăng tốc cùng DOMIX.</span>
           </h1>
           <p className="text-sm text-white/[0.62] leading-relaxed mt-5 max-w-xl">
-            Kế toán, nhân sự, bán hàng, công việc và báo cáo được kết nối thành một luồng vận hành rõ ràng.
+            Từ kế toán, nhân sự, bán hàng đến kho và báo cáo — DOMIX kết nối toàn bộ vận hành
+            của doanh nghiệp thành một luồng dữ liệu duy nhất.
           </p>
+          <div className="mt-6 flex flex-wrap items-center gap-4">
+            <button type="button" onClick={() => document.getElementById("domix-login-email")?.focus()} className="domix-login-button rounded-xl text-sm font-bold px-5 py-3 inline-flex items-center gap-2">
+              Khám phá hệ sinh thái <ArrowRight size={15} />
+            </button>
+            <span className="inline-flex items-center gap-2 text-[11px] text-white/[0.55]"><CheckCircle2 size={13} className="text-[#4ADE9C]" /> Nhanh chóng · Bảo mật · Linh hoạt</span>
+          </div>
 
           <div className="domix-login-hero-panel" aria-hidden="true">
             <div className="domix-login-hero-content">
-              <div className="domix-login-hero-badge"><Sparkles size={12} /> Scenic workspace</div>
-              <div className="domix-login-hero-title ktns-serif">Minh Bạch, rõ ràng, giàu sang thịnh vượng.</div>
-              <div className="domix-login-hero-copy">Một không gian làm việc đồng bộ cho số liệu, nhân sự và tiến độ hằng ngày.</div>
-            </div>
-            <div className="domix-login-hero-chips">
-              <div className="domix-login-hero-chip"><strong>Kế toán</strong><span>Thu chi · Báo cáo</span></div>
-              <div className="domix-login-hero-chip"><strong>Nhân sự</strong><span>Hồ sơ · Chấm công</span></div>
-              <div className="domix-login-hero-chip"><strong>Bán hàng</strong><span>CRM · Giao việc</span></div>
-            </div>
-            <div className="domix-login-hero-bar">
-              <div className="domix-login-hero-metric">
-                <label>System flow</label>
-                <strong>All in one</strong>
+              <div className="flex items-center justify-between gap-3">
+                <span className="inline-flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-white/[0.72]"><span className="h-1.5 w-1.5 rounded-full bg-[#34D399] shadow-[0_0_8px_#34D399]" /> Domix Operations / Live</span>
+                <span className="text-[9px] uppercase tracking-[0.16em] text-white/[0.35]">ERP Suite</span>
               </div>
-              <div className="domix-login-hero-line"><span /></div>
+              <div className="mt-3 text-[10px] uppercase tracking-[0.16em] text-white/[0.4]">Digital Operation Signal</div>
+              <div className="domix-login-eq mt-2">
+                {[0.42, 0.85, 0.3, 0.66, 0.95, 0.5, 0.74, 0.36, 0.88, 0.58, 0.44, 0.79, 0.33, 0.91, 0.62, 0.48, 0.83, 0.4, 0.7, 0.55, 0.9, 0.37, 0.68, 0.8].map((v, i) => (
+                  <span key={i} style={{ "--eq": v }} />
+                ))}
+              </div>
+            </div>
+            <div className="domix-login-metrics mt-5">
+              <div><label>Kế toán</label><strong>Sổ kép</strong></div>
+              <div><label>Bán hàng</label><strong>CRM</strong></div>
+              <div><label>Kho</label><strong>156</strong></div>
+              <div><label>Nhân sự</label><strong>Lương</strong></div>
+              <div><label>Marketing</label><strong>ROAS</strong></div>
+              <div><label>Báo cáo</label><strong>Quý</strong></div>
             </div>
           </div>
         </section>
@@ -25565,21 +25640,25 @@ function LoginScreen({ onLogin, onRegistered }) {
           className="domix-login-card rounded-[22px] p-6 sm:p-8 lg:p-9 flex flex-col gap-5"
         >
           <div className="domix-login-panel flex flex-col gap-5">
+            <div className="domix-login-console">
+              <div>
+                <div className="domix-login-console-title"><ShieldCheck size={13} /> Secure Access Console</div>
+                <div className="domix-login-console-sub">Một tài khoản · Toàn bộ hệ thống DOMIX</div>
+              </div>
+              <span className="domix-login-online">Online</span>
+            </div>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="domix-login-kicker inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.2em] mb-3">
-                  <Sparkles size={12} /> Secure workspace
-                </div>
                 <h2 className="domix-login-title ktns-serif text-3xl font-bold leading-tight">
                   {mode === "login"
-                    ? "Chào mừng bạn"
+                    ? "Tiếp tục bứt phá."
                     : mode === "register"
                       ? (registerStep === "otp" ? "Xác thực email" : "Tạo tài khoản")
                       : (forgotStep === "reset" ? "Đặt lại mật khẩu" : "Quên mật khẩu")}
                 </h2>
                 <p className="domix-login-subtitle text-sm mt-2 leading-relaxed">
                   {mode === "login"
-                    ? "Truy cập nhanh vào không gian làm việc nội bộ của bạn."
+                    ? "Công việc, số liệu và báo cáo đang chờ đúng tài khoản của bạn."
                     : mode === "register"
                       ? (registerStep === "otp"
                         ? "Nhập mã OTP đã gửi về email để hoàn tất đăng ký."
@@ -25609,29 +25688,33 @@ function LoginScreen({ onLogin, onRegistered }) {
 
             {mode === "login" ? (
               <>
-                <label className="domix-login-label text-xs flex flex-col gap-2">
+                <label className="domix-login-label text-[10px] uppercase tracking-[0.14em] flex flex-col gap-2">
                   Gmail / Email công ty
-                  <input
-                    id="domix-login-email"
-                    name="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="domix-login-input rounded-lg px-4 py-3 text-sm"
-                    autoComplete="email"
-                    placeholder="ten@gmail.com"
-                    required
-                  />
+                  <div className="domix-login-input-wrap">
+                    <Mail size={15} />
+                    <input
+                      id="domix-login-email"
+                      name="email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="domix-login-input rounded-lg px-4 py-3 text-sm normal-case tracking-normal"
+                      autoComplete="email"
+                      placeholder="you@gmail.com"
+                      required
+                    />
+                  </div>
                 </label>
 
-                <label className="domix-login-label text-xs flex flex-col gap-2">
+                <label className="domix-login-label text-[10px] uppercase tracking-[0.14em] flex flex-col gap-2">
                   Mật khẩu
-                  <div className="relative">
+                  <div className="domix-login-input-wrap relative">
+                    <Lock size={15} />
                     <input
                       type={showPassword ? "text" : "password"}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="domix-login-input rounded-lg pl-4 pr-12 py-3 text-sm"
+                      className="domix-login-input rounded-lg pr-12 py-3 text-sm normal-case tracking-normal"
                       autoComplete="current-password"
                       placeholder="Nhập mật khẩu"
                       required
@@ -25840,9 +25923,10 @@ function LoginScreen({ onLogin, onRegistered }) {
               className="domix-login-button rounded-lg text-sm font-bold px-4 py-3.5 flex items-center justify-center gap-2"
             >
               {(mode === "login" ? loading : (mode === "register" ? registerLoading : forgotLoading)) && <Loader2 size={15} className="animate-spin" />}
+              {mode === "login" && !loading && <CheckCircle2 size={15} />}
               <span>
                 {mode === "login"
-                  ? (loading ? "Đang xác thực..." : "Đăng nhập hệ thống")
+                  ? (loading ? "Đang xác thực..." : "Vào DOMIX")
                   : mode === "register"
                     ? (registerLoading
                       ? "Đang xử lý..."
@@ -25851,13 +25935,14 @@ function LoginScreen({ onLogin, onRegistered }) {
                       ? "Đang xử lý..."
                       : (forgotStep === "reset" ? "Xác thực và đặt mật khẩu mới" : "Gửi mã OTP"))}
               </span>
+              {mode === "login" && !loading && <ArrowRight size={15} className="ml-auto" />}
             </button>
 
             <div className="domix-login-security rounded-lg px-3 py-3 flex items-start gap-3">
-              <ShieldCheck size={16} className="text-[#E7C66C] shrink-0 mt-0.5" />
+              <ShieldCheck size={16} className="text-[#E9C36A] shrink-0 mt-0.5" />
               <div className="domix-login-muted text-[11px] leading-relaxed">
                 {mode === "login"
-                  ? "Phiên đăng nhập được bảo vệ bằng token và tự hết hạn sau 12 giờ."
+                  ? "Phiên bảo mật dùng chung cho toàn bộ hệ thống DOMIX — token tự hết hạn sau 12 giờ."
                   : mode === "register"
                     ? "Mật khẩu được mã hóa một chiều. Tài khoản chỉ được tạo sau khi OTP email hợp lệ."
                     : "Sau khi đặt lại mật khẩu, toàn bộ phiên đăng nhập cũ sẽ bị thu hồi để bảo vệ tài khoản."}

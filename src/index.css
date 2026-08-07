@@ -59,7 +59,8 @@ textarea {
   overflow-x: hidden;
   --domix-table-grid: #E2E8F0;
   --domix-table-grid-strong: #CBD5E1;
-  --domix-table-head-surface: #F7F9FC;
+  --domix-table-head-surface: #E7EDF6;
+  --domix-table-head-text: #1C2434;
   --domix-table-row-surface: #ffffff;
   --domix-table-row-hover: #F8FAFF;
   /* Thanh tổng dùng nền trầm cùng hệ với bảng — nổi nhờ viền vàng và chữ đậm, không nhờ màu chói. */
@@ -72,7 +73,8 @@ textarea {
 .ktns-app.dark {
   --domix-table-grid: #465267;
   --domix-table-grid-strong: #5b6980;
-  --domix-table-head-surface: #202a3a;
+  --domix-table-head-surface: #263349;
+  --domix-table-head-text: #F1F5FB;
   --domix-table-row-surface: #111925;
   --domix-table-row-hover: #182334;
   --domix-total-surface: #1c2739;
@@ -264,6 +266,15 @@ textarea {
 
 .ktns-app table:not(.ktns-print-area *) thead th {
   border-bottom: 2px solid var(--domix-table-grid-strong) !important;
+}
+
+/* TIÊU ĐỀ CỘT nổi bật hơn Ô NỘI DUNG trên MỌI bảng của hệ thống: nền đậm hơn thân bảng
+   (token head-surface ở trên) + chữ đậm màu mực — thay cho chữ xám nhạt cũ vốn chìm hơn
+   cả nội dung. Áp một chỗ tại đây, không sửa rải rác từng bảng. */
+.ktns-app table:not(.ktns-print-area *) thead th {
+  color: var(--domix-table-head-text);
+  font-weight: 700;
+  letter-spacing: 0.04em;
 }
 
 .ktns-app table.domix-system-table tbody td {

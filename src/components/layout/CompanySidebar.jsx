@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Building2, MapPin, Phone, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
+import { Building2, MapPin, Phone, PanelLeftClose, PanelLeftOpen, Search, X } from "lucide-react";
 
 function CountBadge({ children, className = "bg-stamp-red text-white" }) {
   return (
@@ -27,7 +27,9 @@ export default function CompanySidebar({
   taskBadgeCount,
   attendancePendingCount,
   payrollActionSummary,
+  opsBadgeCount,
   isReviewer,
+  onOpenSearch,
 }) {
   const payrollActionCount = Number(payrollActionSummary?.total || 0);
   // t() trả về chính key khi thiếu bản dịch — phải rơi về fallback tiếng Việt, không hiện key thô.
@@ -43,6 +45,7 @@ export default function CompanySidebar({
   }, [collapsed]);
 
   // Số cảnh báo của một mục: mục thường tính theo chính nó; mục lớn cộng dồn các bảng con.
+  // Giá trị luôn lấy từ DỮ LIỆU THẬT truyền qua props — cấu hình menu chỉ khai báo badgeKey.
   const badgeFor = (item) => {
     const ids = item.children ? item.children.map((child) => child.id) : [item.id];
     let total = 0;
@@ -50,6 +53,7 @@ export default function CompanySidebar({
     if (ids.includes("giaoviec")) total += Number(taskBadgeCount) || 0;
     if (ids.includes("chamcong")) total += Number(attendancePendingCount) || 0;
     if (ids.includes("luong")) total += payrollActionCount;
+    if (ids.includes("dieuhanh")) total += Number(opsBadgeCount) || 0;
     return total;
   };
 
@@ -79,6 +83,22 @@ export default function CompanySidebar({
           </button>
         </div>
 
+        {/* Tìm CHỨC NĂNG (mở bảng Ctrl+K) — nhận cả tên cũ: "Trung tâm doanh thu" ra "Bán hàng". */}
+        {onOpenSearch && (
+          <div className={collapsed ? "px-2 pt-3" : "px-3 pt-3"}>
+            <button
+              type="button"
+              onClick={onOpenSearch}
+              title={collapsed ? label("sidebar_find_feature", "Tìm chức năng… (Ctrl+K)") : undefined}
+              aria-label={label("sidebar_find_feature", "Tìm chức năng")}
+              className={`flex w-full items-center rounded-lg border border-white/15 bg-white/5 text-white/60 transition-colors hover:border-white/30 hover:text-white ${collapsed ? "justify-center px-0 py-2" : "gap-2 px-3 py-2"}`}
+            >
+              <Search size={14} className="shrink-0" />
+              {!collapsed && <span className="flex-1 truncate text-left text-xs">{label("sidebar_find_feature", "Tìm chức năng…")}</span>}
+              {!collapsed && <span className="ktns-mono shrink-0 rounded border border-white/15 px-1 py-0.5 text-[9px]">Ctrl K</span>}
+            </button>
+          </div>
+        )}
         <nav className="ktns-sidebar-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain py-3">
           {navGroups.map((group) => (
             <div key={group.label} className="mb-1">

@@ -9,7 +9,7 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "oxlint",
-    "test": "node --test src/domain.test.js src/theme.test.js",
+    "test": "node --test src/domain.test.js src/theme.test.js src/navigation.test.js",
     "preview": "vite preview",
     "docker:up": "docker compose up -d --build",
     "docker:down": "docker compose down",
