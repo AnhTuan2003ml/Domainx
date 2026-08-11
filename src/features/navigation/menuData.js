@@ -55,7 +55,7 @@ export const NAV_SECTIONS = [
           {
             id: "crm",
             label: { vi: "Doanh thu & Thanh toán", en: "Revenue & Payments" },
-            keywords: ["trung tâm doanh thu", "crm", "thanh toán", "hóa đơn bán hàng", "doanh thu theo page", "khách tiềm năng", "lead", "khách hàng tiềm năng"],
+            keywords: ["trung tâm doanh thu", "crm", "thanh toán", "hóa đơn bán hàng", "doanh thu theo page"],
           },
           { id: "hoptac", label: { vi: "Hợp tác phân phối", en: "Distribution" }, keywords: ["đối tác", "phân phối", "quyết toán"] },
           { id: "hopdong", label: { vi: "Hợp đồng", en: "Contracts" }, keywords: ["hợp đồng", "contracts"] },
@@ -67,6 +67,13 @@ export const NAV_SECTIONS = [
         keywords: ["crm", "chăm sóc khách hàng", "cskh", "hỗ trợ"],
         children: [
           { id: "khachhang", label: { vi: "Danh sách khách hàng", en: "Customers" }, keywords: ["khách hàng", "customers", "danh bạ khách"] },
+          // Khách tiềm năng thuộc vòng đời KHÁCH HÀNG (chưa mua → chăm sóc → mua) nên đặt ở
+          // nhóm Khách hàng & CSKH, không nằm trong Doanh thu (nơi chỉ có đơn/tiền đã bán).
+          {
+            id: "leads",
+            label: { vi: "Khách hàng tiềm năng", en: "Leads" },
+            keywords: ["lead", "khách tiềm năng", "khách cần gọi", "marketing đẩy số", "số điện thoại khách", "chăm sóc khách tiềm năng"],
+          },
           {
             id: "hotro",
             label: { vi: "Yêu cầu hỗ trợ", en: "Support Requests" },

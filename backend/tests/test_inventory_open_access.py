@@ -13,6 +13,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 from server import POSITION_PERMISSIONS, _merge_append_only_stock_movements
 from services.inventory_audit_service import apply_inventory_audit
+from services.lead_audit_service import stamp_lead_collectors
 
 
 class OpenInventoryPermissionTests(unittest.TestCase):
@@ -101,6 +102,44 @@ class InventoryAuditTests(unittest.TestCase):
         self.assertEqual(len(result["inventoryAuditLog"]), 1)
         self.assertEqual(result["inventoryAuditLog"][0]["action"], "delete")
         self.assertEqual(events[0]["type"], "deleted")
+
+
+class LeadCollectorStampTests(unittest.TestCase):
+    def test_new_lead_stamped_with_actor(self):
+        result = stamp_lead_collectors(
+            {"leads": []},
+            {"leads": [{"id": 1, "phone": "0900000001", "collectedByName": "Kẻ giả mạo"}]},
+            actor_email="an@domix.vn", actor_name="An",
+        )
+        lead = result["leads"][0]
+        self.assertEqual(lead["collectedByEmail"], "an@domix.vn")
+        self.assertEqual(lead["collectedByName"], "An")
+        self.assertTrue(lead["collectedAt"])
+
+    def test_existing_lead_keeps_original_collector(self):
+        existing = {"leads": [{
+            "id": 1, "phone": "0900000001",
+            "collectedByEmail": "goc@domix.vn", "collectedByName": "Gốc", "collectedAt": "2026-08-01 09:00:00",
+        }]}
+        result = stamp_lead_collectors(
+            existing,
+            {"leads": [{"id": 1, "phone": "0900000001", "collectedByEmail": "hack@x.vn", "collectedByName": "Hack"}]},
+            actor_email="b@domix.vn", actor_name="Bình",
+        )
+        lead = result["leads"][0]
+        self.assertEqual(lead["collectedByEmail"], "goc@domix.vn")
+        self.assertEqual(lead["collectedByName"], "Gốc")
+        self.assertEqual(lead["collectedAt"], "2026-08-01 09:00:00")
+
+    def test_legacy_lead_without_collector_stays_blank(self):
+        existing = {"leads": [{"id": 7, "phone": "0900000007"}]}
+        result = stamp_lead_collectors(
+            existing,
+            {"leads": [{"id": 7, "phone": "0900000007", "collectedByName": "Tự nhận"}]},
+            actor_email="c@domix.vn", actor_name="Chi",
+        )
+        self.assertNotIn("collectedByName", result["leads"][0])
+        self.assertNotIn("collectedByEmail", result["leads"][0])
 
 
 if __name__ == "__main__":

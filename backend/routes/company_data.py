@@ -24,6 +24,7 @@ from services.business_sync_service import (
 )
 from services.delete_policy_service import DeletePolicyError, audit_blocked_delete, guard_state_removals
 from services.inventory_audit_service import apply_inventory_audit, notify_inventory_events
+from services.lead_audit_service import stamp_lead_collectors
 from services.ledger_sync_service import sync_after_save
 from services.payroll_payment_service import record_payroll_payment, resolve_payroll_reconciliation
 from services.financial_summary_service import FinancialSummaryError, get_financial_series, get_financial_summary
@@ -333,10 +334,15 @@ def handle_put(handler, route, _parsed):
             preserved = handler.preserve_restricted_state(merged_data, user, existing_data)
             reconciled = reconcile_company_data(preserved)
             # Lịch sử chỉnh sửa kho (ai/lúc nào/đổi gì) — ghi trong CÙNG transaction.
-            return apply_inventory_audit(
+            audited = apply_inventory_audit(
                 existing_data, reconciled,
                 actor_email=(user or {}).get("email") or "", actor_name=actor_name,
                 events_box=inventory_events,
+            )
+            # Lead MỚI được đóng dấu người thu thập theo tài khoản đang lưu.
+            return stamp_lead_collectors(
+                existing_data, audited,
+                actor_email=(user or {}).get("email") or "", actor_name=actor_name,
             )
 
         try:
@@ -385,10 +391,14 @@ def handle_put(handler, route, _parsed):
         _validate_marketing_log_dates(existing_data, merged_body)
         preserved = handler.preserve_restricted_state(merged_body, user, existing_data)
         reconciled = reconcile_company_data(preserved)
-        return apply_inventory_audit(
+        audited = apply_inventory_audit(
             existing_data, reconciled,
             actor_email=(user or {}).get("email") or "", actor_name=actor_name,
             events_box=inventory_events,
+        )
+        return stamp_lead_collectors(
+            existing_data, audited,
+            actor_email=(user or {}).get("email") or "", actor_name=actor_name,
         )
 
     try:
@@ -541,8 +551,8 @@ def handle_post(handler, route, _parsed):
         _, employee, _ = handler.employee_context(user)
         position_role = handler.employee_position_role(employee)
         full_access = handler.is_full_admin(user)
-        if not (full_access or position_role in {"sale", "ky_thuat"}):
-            handler.send_json({"error": "Chỉ Sale, Kỹ thuật upsale, Kế toán hoặc Sếp/Admin được thêm đơn CRM."}, 403)
+        if not (full_access or position_role in {"sale", "ky_thuat", "ads"}):
+            handler.send_json({"error": "Chỉ Sale, Kỹ thuật upsale, Marketing, Kế toán hoặc Sếp/Admin được thêm đơn CRM."}, 403)
             return True
 
         actor_name = _actor_display_name(handler, user)
@@ -555,7 +565,9 @@ def handle_post(handler, route, _parsed):
                 body,
                 actor_email=user.get("email") or "",
                 actor_employee_id=(employee or {}).get("id"),
-                allow_assign_any=full_access,
+                # Marketing khai "khách đã mua" ngay trong Ghi nhận ngày và GÁN Sale chốt đơn —
+                # ads được chọn Sale phụ trách; Sale/Kỹ thuật vẫn bị khóa về chính mình.
+                allow_assign_any=full_access or position_role == "ads",
             )
             result_box["orderId"] = order_id
             # Đơn bán xuất kho làm GIẢM tồn → cũng phải có lịch sử + thông báo kho.

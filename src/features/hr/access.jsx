@@ -91,14 +91,14 @@ export const ACCOUNT_ROLE_META = {
 export const ROLE_TAB_ACCESS = {
   admin: [
     "dashboard", "dieuhanh", "thuchi", "congno", "vongop", "taisan", "quy", "hoachdinh", "socai",
-    "khachhang", "crm", "donhang", "marketing", "hoptac", "kho", "hopdong",
+    "khachhang", "leads", "crm", "donhang", "marketing", "hoptac", "kho", "hopdong",
     "hotro", "hotro-donhang", "hotro-khach", "hotro-congno", "hotro-lichsu",
     "giaoviec", "chat", "nhansu", "tuyendung", "chamcong", "hieusuat", "luong",
     "ai", "phaply", "task-reminder-settings", "settings", "taikhoan",
   ],
   accountant: [
     "dashboard", "dieuhanh", "thuchi", "congno", "vongop", "taisan", "quy", "hoachdinh", "socai",
-    "khachhang", "crm", "donhang", "marketing", "hoptac", "kho", "hopdong",
+    "khachhang", "leads", "crm", "donhang", "marketing", "hoptac", "kho", "hopdong",
     "hotro", "hotro-donhang", "hotro-khach", "hotro-congno", "hotro-lichsu",
     "giaoviec", "chat", "nhansu", "tuyendung", "chamcong", "hieusuat", "luong",
     "ai", "phaply", "settings", "taikhoan",
@@ -108,7 +108,7 @@ export const ROLE_TAB_ACCESS = {
   // khách → công nợ cần nhắc → lịch sử).
   user: [
     "crm", "giaoviec", "chat", "chamcong", "luong", "taikhoan", "kho", "hieusuat",
-    "khachhang", "hotro", "hotro-donhang", "hotro-khach", "hotro-congno", "hotro-lichsu",
+    "khachhang", "leads", "hotro", "hotro-donhang", "hotro-khach", "hotro-congno", "hotro-lichsu",
   ],
 };
 

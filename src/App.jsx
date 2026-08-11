@@ -2336,7 +2336,40 @@ function resolveKpiMilestone(e, revenue, roleTiers) {
   return computeKpiMilestoneBonus(revenue, roleTiers);
 }
 
+// ---------- LƯƠNG HIỆU LỰC THEO THÁNG ----------
+// Sửa lương/KPI trên hồ sơ chỉ áp dụng TỪ THÁNG được chọn trở đi; bảng lương các tháng
+// TRƯỚC mốc đó tra lại đúng snapshot đã áp dụng khi ấy — xem lại tháng cũ không bị đổi.
+const COMP_HISTORY_FIELDS = [
+  "baseSalary", "dailySalary", "mealAllowance", "attendanceBonus", "bonusTarget", "kpi",
+  "contractType", "probationRate", "allowances", "kpiRevenueThreshold", "kpiRevenuePct", "kpiTiersOverride",
+];
+function employeeCompForMonth(e, year, month) {
+  const history = Array.isArray(e?.compensationHistory)
+    ? e.compensationHistory.filter((h) => h && /^\d{4}-\d{2}$/.test(String(h.effectiveFrom || "")) && h.values)
+    : [];
+  if (history.length === 0) return e;
+  const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+  const sorted = history.slice().sort((a, b) => String(a.effectiveFrom).localeCompare(String(b.effectiveFrom)));
+  // Kỳ HIỆN HÀNH (từ mốc thay đổi mới nhất trở đi) luôn dùng giá trị SỐNG trên hồ sơ —
+  // để chỉnh sửa trực tiếp (phụ cấp, KPI của kế toán...) có hiệu lực ngay, không bị snapshot đè.
+  if (monthKey >= String(sorted[sorted.length - 1].effectiveFrom)) return e;
+  let snapshot = null;
+  sorted.forEach((h) => { if (String(h.effectiveFrom) <= monthKey) snapshot = h; });
+  if (!snapshot) snapshot = sorted[0]; // tháng trước cả mốc đầu tiên: dùng cấu hình cũ nhất đã ghi
+  const resolved = { ...e };
+  COMP_HISTORY_FIELDS.forEach((field) => {
+    if (field in snapshot.values) resolved[field] = snapshot.values[field];
+  });
+  return resolved;
+}
+
+// Bảng KPI RIÊNG của nhân viên (khai báo trong hồ sơ) ưu tiên hơn bảng chung của công ty.
+function employeeKpiTiers(e, roleTiers) {
+  return Array.isArray(e?.kpiTiersOverride) && e.kpiTiersOverride.length > 0 ? e.kpiTiersOverride : roleTiers;
+}
+
 function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAULT_KPI_TIERS) {
+  e = employeeCompForMonth(e, year, month);
   const contract = CONTRACT_META[e.contractType] || CONTRACT_META.chinh_thuc;
   const months = tenureMonths(e.joined);
 
@@ -2353,6 +2386,8 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
       bhxhDN: 0, bhytDN: 0, bhtnDN: 0, bhtnldBnnDN: 0, employerInsurance: 0,
       personalDeduction: 0, taxableIncome: 0, thueTNCN: 0,
       net: 0, employerTotalCost: 0, notStarted: true,
+      baseSalary: Number(e.baseSalary) || 0, dailySalary: Number(e.dailySalary) || 0,
+      bonusTarget: Number(e.bonusTarget) || 0, kpi: Number(e.kpi) || 0,
     };
   }
 
@@ -2398,7 +2433,7 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
       commission = comp.commission; // hoa hồng lũy tiến vẫn cộng thêm riêng khi đạt mốc 100tr+, không đổi.
       compStatusLabel = comp.statusLabel;
       compRate = comp.rate;
-      const kpiCalc = resolveKpiMilestone(e, revenueUsed, kpiTiers.sale);
+      const kpiCalc = resolveKpiMilestone(e, revenueUsed, employeeKpiTiers(e, kpiTiers.sale));
       kpiMilestoneBonus = kpiCalc.bonusAmount; kpiMilestonePct = kpiCalc.pct; kpiMilestoneNetRevenue = kpiCalc.netOfVat;
     }
   } else if (e.roleType === "ads") {
@@ -2412,7 +2447,7 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
       compBonus = comp.bonus;
       compStatusLabel = comp.statusLabel;
       compRate = comp.rate;
-      const kpiCalc = resolveKpiMilestone(e, revenueUsed, kpiTiers.ads);
+      const kpiCalc = resolveKpiMilestone(e, revenueUsed, employeeKpiTiers(e, kpiTiers.ads));
       kpiMilestoneBonus = kpiCalc.bonusAmount; kpiMilestonePct = kpiCalc.pct; kpiMilestoneNetRevenue = kpiCalc.netOfVat;
     }
   } else if (e.roleType === "ky_thuat") {
@@ -2481,6 +2516,10 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
     bhxhDN, bhytDN, bhtnDN, bhtnldBnnDN, employerInsurance,
     personalDeduction, taxableIncome: Math.max(taxableIncome, 0), thueTNCN,
     net, employerTotalCost,
+    // Cấu hình lương ĐÃ TRA THEO THÁNG — ghi đè giá trị sống khi spread {...e, ...computePayroll()}
+    // để cột "Lương cơ bản"/KPI ở Bảng lương & Nhân sự hiển thị đúng mức của tháng đang xem.
+    baseSalary: Number(e.baseSalary) || 0, dailySalary: Number(e.dailySalary) || 0,
+    bonusTarget: Number(e.bonusTarget) || 0, kpi: Number(e.kpi) || 0,
   };
 }
 
@@ -5296,6 +5335,7 @@ function DomixApp({ authUser, onLogout }) {
           {tab === "hotro" && <HoTroKhachHang cases={supportCases} setCases={setSupportCases} employees={activeEmployees} orders={orders} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} supportPrefill={supportPrefill} onSupportPrefillConsumed={() => setSupportPrefill(null)} recordFocus={recordFocus} onRecordFocusConsumed={() => setRecordFocus(null)} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
           {tab === "hotro-lichsu" && <HoTroKhachHang key="hotro-lichsu" initialView="history" cases={supportCases} setCases={setSupportCases} employees={activeEmployees} orders={orders} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
           {tab === "khachhang" && <CustomerDirectory key="khachhang" customers={customers} orders={orders} supportCases={supportCases} employees={activeEmployees} setTab={setTab} onCreateSupport={createSupportFromContext} onCreateOrder={createOrderFromContext} onCreateTask={assignTaskFromOps} />}
+          {tab === "leads" && <DoanhThuCRM key="leads-standalone" lockView="leads" orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} currentEmployee={payrollCurrentEmployee} canManageAllSales={payrollCurrentIsBoss || payrollCurrentIsAccountant} revenueByEmployee={revenueByEmployee} setTransactions={setTransactions} inventory={inventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} authUser={effectiveAuthUser} setDebts={setDebts} refreshFinancialSummary={refreshFinancialSummary} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
           {tab === "hotro-khach" && <CustomerDirectory customers={customers} orders={orders} supportCases={supportCases} employees={activeEmployees} setTab={setTab} onCreateSupport={createSupportFromContext} onCreateOrder={createOrderFromContext} onCreateTask={assignTaskFromOps} />}
           {tab === "hotro-congno" && <CongNo key="hotro-congno" debts={debts} setDebts={setDebts} setTransactions={setTransactions} transactions={transactions} paymentLedger={paymentLedger} distributionOrders={distributionOrders} distributionPartners={distributionPartners} setTab={setTab} authUser={effectiveAuthUser} allEmployees={employees} payDebt={payDebt} unpayDebt={unpayDebt} customers={customers} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
           {tab === "chat" && <ChatPage authUser={effectiveAuthUser} onUnreadChange={setChatUnread} employees={employees} tasks={tasks} setTasks={setTasks} setTab={setTab} supportCases={supportCases} setSupportCases={setSupportCases} dataLoader={{ ensureDataFields, applyAppData }} />}
@@ -5305,7 +5345,7 @@ function DomixApp({ authUser, onLogout }) {
           {tab === "nhansu" && <NhanSu authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} onEmployeesPersisted={applyPersistedEmployees} refreshEmployees={refreshEmployees} showForm={showEmpForm} setShowForm={setShowEmpForm} reportYear={reportYear} reportMonth={reportMonth} prefillEmployee={prefillEmployee} setPrefillEmployee={setPrefillEmployee} onOpenProfile={setProfileEmployeeId} lang={lang} />}
           {tab === "tuyendung" && <><BetaFeatureNotice /><TuyenDungAI cvReviews={cvReviews} setCvReviews={setCvReviews} employees={activeEmployees} masterRanking={masterRanking} company={company} queue={cvQueue} setQueue={setCvQueue} processing={cvProcessing} setProcessing={setCvProcessing} progress={cvProgress} setProgress={setCvProgress} setPrefillEmployee={setPrefillEmployee} setTab={setTab} setShowEmpForm={setShowEmpForm} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} /></>}
           {tab === "chamcong" && <ChamCong authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} refreshEmployees={refreshEmployees} employeesSyncing={employeesSyncing} employeeSyncError={employeeSyncError} attendanceRequests={attendanceRequests} setAttendanceRequests={setAttendanceRequests} unlockedMonths={unlockedMonths} setUnlockedMonths={setUnlockedMonths} company={company} lang={lang} dataLoader={{ ensureDataFields }} />}
-          {tab === "hieusuat" && <HieuSuat employees={effectiveActiveEmployees} masterRanking={masterRanking} supportCases={supportCases} financialSummary={financialSummary} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} onOpenProfile={setProfileEmployeeId} />}
+          {tab === "hieusuat" && <HieuSuat employees={effectiveActiveEmployees} masterRanking={masterRanking} supportCases={supportCases} financialSummary={financialSummary} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} onOpenProfile={setProfileEmployeeId} currentEmployeeId={payrollCurrentEmployee?.id ?? null} />}
           {tab === "luong" && <BangLuong payrollRows={payrollRows} totalPayroll={totalPayroll} setEmployees={setEmployees} reportYear={reportYear} reportMonth={reportMonth} setTransactions={setTransactions} payrollPayments={payrollPayments} setPayrollPayments={setPayrollPayments} company={company} kpiTiers={kpiTiers} setKpiTiers={setKpiTiers} payrollApprovals={payrollApprovals} setPayrollApprovals={setPayrollApprovals} midMonthRequests={midMonthRequests} setMidMonthRequests={setMidMonthRequests} employees={employees} authUser={effectiveAuthUser} applyAppData={applyAppData} refreshFinancialSummary={refreshFinancialSummary} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
           {tab === "quy" && <QuarterReport transactions={transactions} orders={orders} marketingLogs={marketingLogs} employees={employees} reportYear={reportYear} reportMonth={reportMonth} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
           {tab === "hoachdinh" && <><BetaFeatureNotice /><HoachDinhNganSach prevSnapshot={prevSnapshot} prevPeriod={prevPeriod} roleGroupStats={roleGroupStats} company={company} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} /></>}
@@ -9577,14 +9617,17 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
                         {entry.byEmail && entry.byName && <span className="text-[10px] text-muted">{entry.byEmail}</span>}
                       </div>
                       {(entry.changes || []).length > 0 && (
-                        <ul className="mt-2 space-y-1 text-xs text-ink-light">
+                        // Lưới 2 cột: nhãn field rộng cố định, giá trị cũ→mới cùng mép — các dòng thẳng cột.
+                        <ul className="mt-2 grid grid-cols-[150px_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs text-ink-light">
                           {(entry.changes || []).map((change, changeIdx) => (
-                            <li key={`${entry.id || entry.at}-${changeIdx}`} className="flex flex-wrap items-baseline gap-1.5">
-                              <span className="font-semibold text-ink">{change.label || change.field}:</span>
-                              {change.from === null || change.from === undefined
-                                ? <span className="ktns-mono">{change.to}</span>
-                                : <><span className="ktns-mono text-muted line-through">{change.from}</span><span className="text-muted">→</span><span className="ktns-mono">{change.to}</span></>}
-                            </li>
+                            <React.Fragment key={`${entry.id || entry.at}-${changeIdx}`}>
+                              <li className="list-none truncate font-semibold text-ink" title={change.label || change.field}>{change.label || change.field}</li>
+                              <li className="list-none flex flex-wrap items-baseline gap-1.5">
+                                {change.from === null || change.from === undefined
+                                  ? <span className="ktns-mono">{change.to}</span>
+                                  : <><span className="ktns-mono text-muted line-through">{change.from}</span><span className="text-muted">→</span><span className="ktns-mono">{change.to}</span></>}
+                              </li>
+                            </React.Fragment>
                           ))}
                         </ul>
                       )}
@@ -14974,8 +15017,10 @@ function OrderLifecycleBadges({ order }) {
   );
 }
 
-function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmployee, canManageAllSales, revenueByEmployee, setTransactions, inventory, distPartners, distOrders, setDistOrders, reportYear, reportMonth, pages, setSupportCases, customers, setCustomers, moveStock, authUser, setDebts, recordFocus, onRecordFocusConsumed, onReturnToOps, orderPrefill, onOrderPrefillConsumed, refreshFinancialSummary, dataLoader }) {
-  const [activeTableView, setActiveTableView] = useState("orders");
+function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmployee, canManageAllSales, revenueByEmployee, setTransactions, inventory, distPartners, distOrders, setDistOrders, reportYear, reportMonth, pages, setSupportCases, customers, setCustomers, moveStock, authUser, setDebts, recordFocus, onRecordFocusConsumed, onReturnToOps, orderPrefill, onOrderPrefillConsumed, refreshFinancialSummary, dataLoader, lockView = null }) {
+  // lockView="leads": component được tab "Khách hàng tiềm năng" (nhóm Khách hàng & CSKH)
+  // dùng lại, khóa đúng một khung leads — không hiện bộ chuyển khung Doanh thu.
+  const [activeTableView, setActiveTableView] = useState(lockView || "orders");
   const importT7InputRef = useRef(null);
   const importWorkbookRef = useRef(null);
   const [importWorkbookInfo, setImportWorkbookInfo] = useState(null);
@@ -15002,14 +15047,21 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
   // Tìm kiếm PHẢI xuyên suốt TOÀN BỘ lịch sử, không chỉ trong tháng đang xem — khách chỉ nhớ SĐT
   // hay email thì không thể bắt họ (Sale) nhớ đơn đó thuộc tháng nào để bật đúng bộ lọc trước.
   const orderSearchQ = orderSearch.trim().toLowerCase();
+  // PHẠM VI SỐ LIỆU — chống "lú": dữ liệu mở cho cả công ty xem, nhưng NHÂN VIÊN mặc định
+  // chỉ thấy ĐƠN CỦA MÌNH (đúng số liệu tính hoa hồng của họ); bấm "Toàn công ty" mới xem hết.
+  // Admin/Kế toán mặc định xem toàn công ty như cũ.
+  const isOwnOrder = (o) => currentEmployee?.id != null && Number(o.saleEmployeeId || o.employeeId) === Number(currentEmployee.id);
+  const myOrderCount = currentEmployee?.id != null ? orders.filter(isOwnOrder).length : 0;
+  const [orderScope, setOrderScope] = useState(() => (!canManageAllSales && currentEmployee?.id != null ? "mine" : "all"));
+  const scopedOrders = orderScope === "mine" ? orders.filter(isOwnOrder) : orders;
   const visibleOrders = orderSearchQ
-    ? orders.filter((o) => o.customerName?.toLowerCase().includes(orderSearchQ) || o.phone?.includes(orderSearchQ) || o.email?.toLowerCase().includes(orderSearchQ))
+    ? scopedOrders.filter((o) => o.customerName?.toLowerCase().includes(orderSearchQ) || o.phone?.includes(orderSearchQ) || o.email?.toLowerCase().includes(orderSearchQ))
     : rangeMode === "all"
-    ? orders
-    : orders.filter((o) => o.date >= rangeFrom && o.date <= rangeTo);
+    ? scopedOrders
+    : scopedOrders.filter((o) => o.date >= rangeFrom && o.date <= rangeTo);
   // Đơn theo ĐÚNG kỳ đang xem, KHÔNG bị ảnh hưởng bởi ô tìm kiếm — dùng riêng cho các ô KPI/thống
   // kê tổng đầu trang, để đổi tháng là số liệu đổi theo NGAY, không lẫn với việc đang tìm kiếm.
-  const periodOrders = rangeMode === "all" ? orders : orders.filter((o) => o.date >= rangeFrom && o.date <= rangeTo);
+  const periodOrders = rangeMode === "all" ? scopedOrders : scopedOrders.filter((o) => o.date >= rangeFrom && o.date <= rangeTo);
   const [expanded, setExpanded] = useState({});
   const [contactDraft, setContactDraft] = useState({});
   const [expandedLead, setExpandedLead] = useState({});
@@ -15037,6 +15089,9 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
   });
   const [leadFormError, setLeadFormError] = useState("");
   const saleEmployees = employees.filter((e) => e.roleType === "sale" && (canManageAllSales || String(e.id) === String(currentEmployee?.id)));
+  // Khách tiềm năng mở cho MỌI nhân viên: ai cũng thêm/gán được cho BẤT KỲ Sale nào —
+  // khác saleEmployees (giới hạn theo quyền) vốn chỉ dành cho form đơn hàng.
+  const leadSaleOptions = employees.filter((e) => e.roleType === "sale" && e.status !== "inactive");
   // Sale chốt đơn VÀ Kỹ thuật upsale thành công đều đẩy qua đây để kế toán xuất hoá đơn —
   // loại giao dịch tự suy ra từ vị trí người được chọn, không cần chọn tay 2 lần.
   const dealEmployees = employees.filter((e) => (e.roleType === "sale" || e.roleType === "ky_thuat") && (canManageAllSales || String(e.id) === String(currentEmployee?.id)));
@@ -15928,7 +15983,14 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
     setShowLeadForm(false);
   };
   const closeLeadForm = () => { setShowLeadForm(false); setLeadFormError(""); };
-  const removeLead = (id) => setLeads((prev) => prev.filter((l) => l.id !== id));
+  const removeLead = async (id) => {
+    const lead = (leads || []).find((l) => l.id === id);
+    const accepted = await confirmOverlay(
+      `Xóa khách tiềm năng "${lead?.customerName || lead?.phone || id}"? Toàn bộ lịch sử chăm sóc của khách này sẽ mất.`,
+      { title: "Xóa khách tiềm năng", confirmLabel: "Xóa", tone: "danger" },
+    );
+    if (accepted) setLeads((prev) => prev.filter((l) => l.id !== id));
+  };
   const markLeadRejected = (id) => setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, status: "tu_choi" } : l)));
   // Chuyển lead thành đơn hàng thật khi Sale đã chốt được — copy đúng thông tin khách qua form
   // Thêm đơn hàng, xoá khỏi danh sách lead (đã "tốt nghiệp" thành khách hàng thật).
@@ -15949,10 +16011,26 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
     } : l)));
     setLeadContactDraft((p) => ({ ...p, [leadId]: { type: "call", note: "", nextFollowUpDate: "" } }));
   };
+  // THỐNG KÊ NGƯỜI THU THẬP: máy chủ tự đóng dấu collectedBy* khi lead được tạo (không giả
+  // mạo được) — đây là căn cứ "khách này do ai lấy được thông tin".
+  const [leadCollectorFilter, setLeadCollectorFilter] = useState("");
+  const leadCollectorKeyOf = (l) => String(l.collectedByEmail || l.collectedByName || "").trim().toLowerCase() || "__unknown";
+  const leadCollectorStats = (() => {
+    const byKey = new Map();
+    (leads || []).forEach((l) => {
+      const key = leadCollectorKeyOf(l);
+      const entry = byKey.get(key) || { key, label: String(l.collectedByName || l.collectedByEmail || "Chưa ghi nhận").trim() || "Chưa ghi nhận", total: 0, active: 0 };
+      entry.total += 1;
+      if (l.status === "dang_cham_soc") entry.active += 1;
+      byKey.set(key, entry);
+    });
+    return Array.from(byKey.values()).sort((a, b) => b.total - a.total);
+  })();
   // Nâng lên cấp component để dùng chung cho cả bảng LẪN nút "Xem thêm" bên dưới — tránh tính 2 lần.
   const filteredLeads = (() => {
     const q = leadSearch.trim().toLowerCase();
     return (leads || []).filter((l) => {
+      if (leadCollectorFilter && leadCollectorKeyOf(l) !== leadCollectorFilter) return false;
       if (q) {
         const inNote = (l.contactLog || []).some((c) => c.note?.toLowerCase().includes(q));
         const matches = l.customerName?.toLowerCase().includes(q) || l.phone?.includes(q) || inNote;
@@ -16031,18 +16109,56 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
         </div>
       )}
 
-      <div className="shrink-0">
-        <SectionViewSwitcher
-          value={activeTableView}
-          onChange={setActiveTableView}
-          options={[
-            { id: "orders", label: "Đơn hàng CRM", icon: ShoppingCart, count: orders.length },
-            { id: "leads", label: "Khách hàng tiềm năng", icon: Phone, count: (leads || []).filter((l) => l.status === "dang_cham_soc").length },
-            { id: "sales", label: "Doanh số theo Sale", icon: TrendingUp, count: saleStats.length },
-            { id: "daily", label: "Báo cáo liên hệ hàng ngày", icon: CalendarCheck, count: dailyContacts.length },
-          ]}
-        />
-      </div>
+      {!lockView && (
+        <div className="shrink-0">
+          <SectionViewSwitcher
+            value={activeTableView}
+            onChange={setActiveTableView}
+            options={[
+              { id: "orders", label: "Đơn hàng CRM", icon: ShoppingCart, count: orders.length },
+              { id: "sales", label: "Doanh số theo Sale", icon: TrendingUp, count: saleStats.length },
+              { id: "daily", label: "Báo cáo liên hệ hàng ngày", icon: CalendarCheck, count: dailyContacts.length },
+            ]}
+          />
+        </div>
+      )}
+
+      {/* Form khách tiềm năng là MODAL nổi dùng chung — đặt ở cấp gốc để mở được từ mọi khung
+          (bảng Khách tiềm năng, Báo cáo liên hệ hàng ngày) và từ tab Khách hàng & CSKH. */}
+      {showLeadForm && (
+        <div className="domix-inline-form-modal bg-white border border-paper-line rounded-md p-5">
+          <div className="text-[11px] font-semibold text-ink uppercase mb-2">Khách hàng tiềm năng mới — Marketing/Pancake đẩy qua cho Sale gọi</div>
+          {/* Lưới 4 cột đều, nhãn trên — mọi ô cùng chiều cao, cùng mép, không lệch cột. */}
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+            <label className="text-[10px] text-muted flex flex-col gap-0.5">Ngày lấy số<input type="date" value={leadForm.date} onChange={(e) => setLeadForm({ ...leadForm, date: e.target.value })} className="w-full border border-paper-line rounded px-2 py-1.5 text-xs ktns-mono" /></label>
+            <label className="text-[10px] text-muted flex flex-col gap-0.5">Tên khách (nếu có)<input value={leadForm.customerName} onChange={(e) => setLeadForm({ ...leadForm, customerName: e.target.value })} placeholder="Tên khách" className="w-full border border-paper-line rounded px-2 py-1.5 text-xs" /></label>
+            <label className="text-[10px] text-muted flex flex-col gap-0.5">SĐT *<input value={leadForm.phone} onChange={(e) => setLeadForm({ ...leadForm, phone: e.target.value })} placeholder="09xxxxxxxx" className="w-full border border-paper-line rounded px-2 py-1.5 text-xs ktns-mono" /></label>
+            <label className="text-[10px] text-muted flex flex-col gap-0.5">Nguồn
+              <select value={leadForm.source} onChange={(e) => setLeadForm({ ...leadForm, source: e.target.value })} className="w-full border border-paper-line rounded px-2 py-1.5 text-xs">
+                {Object.entries(LEAD_SOURCES).map(([id, label]) => (<option key={id} value={id}>{label}</option>))}
+              </select>
+            </label>
+            <label className="text-[10px] text-muted flex flex-col gap-0.5">Sale phụ trách *
+              <select value={leadForm.saleEmployeeId} onChange={(e) => setLeadForm({ ...leadForm, saleEmployeeId: e.target.value })} className="w-full border border-paper-line rounded px-2 py-1.5 text-xs">
+                <option value="">— Chọn Sale —</option>
+                {leadSaleOptions.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
+              </select>
+            </label>
+            <label className="text-[10px] text-muted flex flex-col gap-0.5">Hình thức liên hệ
+              <select value={leadForm.contactType} onChange={(e) => setLeadForm({ ...leadForm, contactType: e.target.value })} className="w-full border border-paper-line rounded px-2 py-1.5 text-xs">
+                {Object.entries(CONTACT_TYPES).map(([id, m]) => (<option key={id} value={id}>{m.label}</option>))}
+              </select>
+            </label>
+            <label className="text-[10px] text-muted flex flex-col gap-0.5 col-span-2">Ghi chú (nếu đã gọi luôn)<input value={leadForm.note} onChange={(e) => setLeadForm({ ...leadForm, note: e.target.value })} placeholder="VD: hẹn mai gọi lại xác nhận" className="w-full border border-paper-line rounded px-2 py-1.5 text-xs" /></label>
+          </div>
+          <p className="mt-2 text-[11px] text-muted">Hệ thống tự ghi nhận <strong className="text-ink">bạn là người thu thập</strong> thông tin khách này — dùng cho thống kê nguồn khai thác, không sửa được.</p>
+          {leadFormError && <p className="mt-1 text-xs text-stamp-red flex items-center gap-1"><AlertTriangle size={12} /> {leadFormError}</p>}
+          <div className="flex gap-2 mt-2">
+            <button onClick={addLead} className="text-xs bg-ledger-green text-white px-3 py-1.5 rounded-md hover:opacity-90">Lưu khách hàng tiềm năng</button>
+            <button onClick={closeLeadForm} className="text-xs border border-paper-line px-3 py-1.5 rounded-md text-muted">Huỷ</button>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: activeTableView === "sales" ? undefined : "none" }} className="bg-white rounded-lg border border-paper-line overflow-hidden">
         <div className="px-4 pt-3 pb-1 text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><TrendingUp size={13} /> Chi tiết doanh số từng Sale — để tính KPI &amp; xem chất lượng</div>
@@ -16084,37 +16200,11 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
           <div className="text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><Phone size={13} /> Báo cáo gọi/liên hệ khách hàng theo ngày</div>
           <div className="flex items-center gap-2">
             <input type="date" value={callReportDate} onChange={(e) => setCallReportDate(e.target.value)} className="border border-paper-line rounded px-2.5 py-1.5 text-xs ktns-mono" />
-            <button onClick={() => { setLeadForm((f) => ({ ...f, date: callReportDate, saleEmployeeId: f.saleEmployeeId || saleEmployees[0]?.id || "" })); setShowLeadForm(true); }} className="text-xs bg-ink text-white px-2.5 py-1.5 rounded-md hover:bg-ink-light flex items-center gap-1"><Plus size={12} /> Thêm khách cần gọi</button>
+            <button onClick={() => { setLeadForm((f) => ({ ...f, date: callReportDate, saleEmployeeId: f.saleEmployeeId || leadSaleOptions[0]?.id || "" })); setShowLeadForm(true); }} className="text-xs bg-ink text-white px-2.5 py-1.5 rounded-md hover:bg-ink-light flex items-center gap-1"><Plus size={12} /> Thêm khách cần gọi</button>
             <button onClick={() => exportDailyCallReportExcel(dailyContacts, dailyBySale, callReportDate, nameOf)} className="text-xs border border-ledger-green/40 bg-ledger-green/10 text-ledger-green px-2.5 py-1.5 rounded-md hover:bg-ledger-green/20 flex items-center gap-1"><FileSpreadsheet size={12} /> Xuất Excel</button>
           </div>
         </div>
 
-        {showLeadForm && (
-          <div className="domix-inline-form-modal bg-white border border-paper-line rounded-md p-5">
-            <div className="text-[11px] font-semibold text-ink uppercase mb-2">Khách hàng tiềm năng mới — Marketing/Pancake đẩy qua cho Sale gọi</div>
-            <div className="grid grid-cols-4 gap-2">
-              <input type="date" value={leadForm.date} onChange={(e) => setLeadForm({ ...leadForm, date: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-xs" />
-              <input value={leadForm.customerName} onChange={(e) => setLeadForm({ ...leadForm, customerName: e.target.value })} placeholder="Tên khách (nếu có)" className="border border-paper-line rounded px-2 py-1.5 text-xs" />
-              <input value={leadForm.phone} onChange={(e) => setLeadForm({ ...leadForm, phone: e.target.value })} placeholder="SĐT *" className="border border-paper-line rounded px-2 py-1.5 text-xs ktns-mono" />
-              <select value={leadForm.source} onChange={(e) => setLeadForm({ ...leadForm, source: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-xs">
-                {Object.entries(LEAD_SOURCES).map(([id, label]) => (<option key={id} value={id}>{label}</option>))}
-              </select>
-              <select value={leadForm.saleEmployeeId} onChange={(e) => setLeadForm({ ...leadForm, saleEmployeeId: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-xs">
-                <option value="">— Nhân sự Sale phụ trách *</option>
-                {saleEmployees.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
-              </select>
-              <select value={leadForm.contactType} onChange={(e) => setLeadForm({ ...leadForm, contactType: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-xs">
-                {Object.entries(CONTACT_TYPES).map(([id, m]) => (<option key={id} value={id}>{m.label}</option>))}
-              </select>
-              <input value={leadForm.note} onChange={(e) => setLeadForm({ ...leadForm, note: e.target.value })} placeholder="Ghi chú Sale gọi (nếu đã gọi luôn)" className="border border-paper-line rounded px-2 py-1.5 text-xs col-span-2" />
-            </div>
-            {leadFormError && <p className="mt-1 text-xs text-stamp-red flex items-center gap-1"><AlertTriangle size={12} /> {leadFormError}</p>}
-            <div className="flex gap-2 mt-2">
-              <button onClick={addLead} className="text-xs bg-ledger-green text-white px-3 py-1.5 rounded-md hover:opacity-90">Lưu khách hàng tiềm năng</button>
-              <button onClick={closeLeadForm} className="text-xs border border-paper-line px-3 py-1.5 rounded-md text-muted">Huỷ</button>
-            </div>
-          </div>
-        )}
         <table data-sticky-columns="true" data-mobile-cards="true" className="w-full text-sm">
           <thead>
             <tr className="bg-paper text-left text-xs uppercase text-muted">
@@ -16201,9 +16291,10 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
 
       <div style={{ display: activeTableView === "leads" ? undefined : "none" }} className="bg-white rounded-lg border border-gold/40 overflow-hidden">
         <div className="px-4 py-2.5 bg-gold/5 flex items-center justify-between flex-wrap gap-2">
-          <span className="text-xs font-semibold text-gold uppercase flex items-center gap-1.5"><Phone size={13} /> Khách hàng tiềm năng đang chăm sóc — chưa mua, chưa phải đơn hàng thật</span>
-          <span className="text-[11px] text-muted">{(leads || []).filter((l) => l.status === "dang_cham_soc").length} người đang chăm sóc</span>
+          <span className="text-xs font-semibold text-gold uppercase flex items-center gap-1.5"><Phone size={13} /> Khách hàng tiềm năng — chưa mua, chưa phải đơn hàng thật</span>
+          <span className="text-[11px] text-muted">{(leads || []).filter((l) => l.status === "dang_cham_soc").length} đang chăm sóc · {(leads || []).length} tổng</span>
         </div>
+        {/* HÀNG CÔNG CỤ theo đúng trường ngữ nghĩa: TÌM/LỌC bên trái — HÀNH ĐỘNG TẠO MỚI bên phải. */}
         <div className="px-4 py-2.5 border-b border-paper-line flex items-center gap-2 flex-wrap">
           <div className="relative flex-1 min-w-[200px]">
             <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
@@ -16222,26 +16313,44 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
           ].map((f) => (
             <button key={f.id} onClick={() => setLeadFilter(f.id)} className={`text-[11px] px-2.5 py-1.5 rounded-md border ${leadFilter === f.id ? "bg-ink text-white border-ink" : "border-paper-line text-muted"}`}>{f.label}</button>
           ))}
+          <span className="hidden h-5 w-px bg-paper-line sm:block" />
+          <button onClick={() => { setLeadForm((f) => ({ ...f, date: TODAY_STR, saleEmployeeId: f.saleEmployeeId || leadSaleOptions[0]?.id || "" })); setShowLeadForm(true); }} className="text-xs bg-ink text-white px-3 py-1.5 rounded-md hover:bg-ink-light flex items-center gap-1"><Plus size={13} /> Thêm khách tiềm năng</button>
+        </div>
+        {/* THỐNG KÊ NGƯỜI THU THẬP (phần phụ, không lấn bảng): ai lấy được bao nhiêu khách — bấm chip để lọc. */}
+        <div className="px-4 py-2 border-b border-paper-line flex items-center gap-1.5 flex-wrap bg-paper/40">
+          <span className="text-[10px] font-semibold uppercase tracking-[0.05em] text-muted">Người thu thập</span>
+          <button onClick={() => setLeadCollectorFilter("")} className={`text-[11px] px-2 py-1 rounded-full border ${!leadCollectorFilter ? "bg-ink text-white border-ink" : "border-paper-line text-muted hover:text-ink"}`}>Tất cả ({(leads || []).length})</button>
+          {leadCollectorStats.map((c) => (
+            <button key={c.key} onClick={() => setLeadCollectorFilter(leadCollectorFilter === c.key ? "" : c.key)} className={`text-[11px] px-2 py-1 rounded-full border ${leadCollectorFilter === c.key ? "bg-gold text-white border-gold" : "border-paper-line text-muted hover:text-ink"}`} title={`${c.label}: ${c.total} khách thu thập · ${c.active} đang chăm sóc`}>
+              {c.label} ({c.total})
+            </button>
+          ))}
         </div>
         {selectedLeadIds.length > 0 && (
           <div className="px-4 py-2.5 bg-gold/10 border-b border-gold/40 flex items-center gap-2 flex-wrap">
             <span className="text-xs text-charcoal">Đã chọn <strong>{selectedLeadIds.length}</strong> khách — chuyển hết cho:</span>
             <select value={bulkReassignTarget} onChange={(e) => setBulkReassignTarget(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-xs bg-white">
               <option value="">— Chọn Sale —</option>
-              {saleEmployees.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
+              {leadSaleOptions.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
             </select>
             <button onClick={bulkReassign} disabled={!bulkReassignTarget} className="text-xs bg-ink text-white px-3 py-1.5 rounded-md disabled:opacity-40">Chuyển ngay</button>
             <button onClick={() => setSelectedLeadIds([])} className="text-xs text-muted underline">Bỏ chọn hết</button>
           </div>
         )}
-        <div className="max-h-[420px] overflow-y-auto">
-        <table data-sticky-columns="true" data-mobile-cards="true" className="w-full text-sm">
-          <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-2 py-2"></th><th className="px-4 py-2">STT</th><th className="px-4 py-2">Ngày lấy</th><th className="px-4 py-2">Khách hàng</th><th className="px-4 py-2">SĐT</th><th className="px-4 py-2">Nguồn</th><th className="px-4 py-2">Sale phụ trách</th><th className="px-4 py-2">Hẹn gọi lại</th><th className="px-4 py-2">Trạng thái</th><th className="px-4 py-2"></th><th className="px-2 py-2"></th></tr></thead>
+        <div className="max-h-[420px] overflow-x-auto overflow-y-auto">
+        {/* table-fixed + colgroup: bề rộng từng cột KHÓA CỨNG — tiêu đề và mọi hàng thẳng cột tuyệt đối. */}
+        <table data-sticky-columns="true" data-mobile-cards="true" className="w-full min-w-[1180px] table-fixed text-sm">
+          <colgroup>
+            <col className="w-[36px]" /><col className="w-[52px]" /><col className="w-[92px]" /><col />
+            <col className="w-[108px]" /><col className="w-[108px]" /><col className="w-[120px]" /><col className="w-[140px]" />
+            <col className="w-[118px]" /><col className="w-[132px]" /><col className="w-[190px]" /><col className="w-[36px]" />
+          </colgroup>
+          <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-2 py-2"></th><th className="px-4 py-2">STT</th><th className="px-4 py-2">Ngày lấy</th><th className="px-4 py-2">Khách hàng</th><th className="px-4 py-2">SĐT</th><th className="px-4 py-2">Nguồn</th><th className="px-4 py-2">Người thu thập</th><th className="px-4 py-2">Sale phụ trách</th><th className="px-4 py-2">Hẹn gọi lại</th><th className="px-4 py-2">Trạng thái</th><th className="px-4 py-2"></th><th className="px-2 py-2"></th></tr></thead>
           <tbody>
             {(() => {
               const filtered = filteredLeads;
               if (filtered.length === 0) {
-                return <tr><td colSpan={11} className="px-4 py-6 text-center text-xs text-muted">{(leads || []).length === 0 ? 'Chưa có khách hàng tiềm năng nào — bấm "Thêm khách cần gọi" ở trên để ghi nhận khách hàng tiềm năng mới từ Marketing.' : "Không tìm thấy khách nào khớp bộ lọc/từ khoá."}</td></tr>;
+                return <tr><td colSpan={12} className="px-4 py-6 text-center text-xs text-muted">{(leads || []).length === 0 ? 'Chưa có khách hàng tiềm năng nào — bấm "Thêm khách tiềm năng" ở hàng công cụ phía trên để ghi nhận khách mới.' : "Không tìm thấy khách nào khớp bộ lọc/từ khoá."}</td></tr>;
               }
               return filtered.slice(0, leadShowCount).map((l, idx) => {
               const isOverdue = l.nextFollowUpDate && l.nextFollowUpDate <= TODAY_STR && l.status === "dang_cham_soc";
@@ -16253,12 +16362,13 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                   <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedLeadIds.includes(l.id)} onChange={() => toggleLeadSelect(l.id)} /></td>
                   <td className="px-4 py-2 ktns-mono text-xs text-muted">{idx + 1}</td>
                   <td className="px-4 py-2 ktns-mono text-xs text-muted">{formatDateVN(l.date)}</td>
-                  <td className="px-4 py-2 font-medium">{l.customerName}</td>
+                  <td className="px-4 py-2 font-medium"><div className="truncate" title={l.customerName}>{l.customerName}</div></td>
                   <td className="px-4 py-2 ktns-mono text-xs">{l.phone}</td>
-                  <td className="px-4 py-2 text-xs">{LEAD_SOURCES[l.source]}</td>
+                  <td className="px-4 py-2 text-xs"><div className="truncate" title={LEAD_SOURCES[l.source]}>{LEAD_SOURCES[l.source]}</div></td>
+                  <td className="px-4 py-2 text-xs">{l.collectedByName || l.collectedByEmail ? <div className="truncate text-charcoal" title={l.collectedByName || l.collectedByEmail}>{l.collectedByName || l.collectedByEmail}</div> : <span className="text-muted">—</span>}</td>
                   <td className="px-4 py-2 text-xs" onClick={(e) => e.stopPropagation()}>
-                    <select value={l.saleEmployeeId || ""} onChange={(e) => reassignLead(l.id, e.target.value)} className="border border-paper-line rounded px-1.5 py-1 text-[11px] bg-white">
-                      {saleEmployees.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
+                    <select value={l.saleEmployeeId || ""} onChange={(e) => reassignLead(l.id, e.target.value)} className="w-full border border-paper-line rounded px-1.5 py-1 text-[11px] bg-white">
+                      {leadSaleOptions.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
                     </select>
                   </td>
                   <td className="px-4 py-2 text-xs">
@@ -16285,7 +16395,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                 </tr>
                 {isExpanded && (
                   <tr className="border-t border-paper-line bg-paper/40">
-                    <td colSpan={11} className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <td colSpan={12} className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="text-[11px] font-semibold text-ink uppercase mb-1.5">Lịch sử chăm sóc — {l.customerName} ({l.phone})</div>
                       {(l.contactLog || []).length === 0 && <div className="text-xs text-muted mb-2">Chưa có lượt chăm sóc nào được ghi nhận.</div>}
                       <div className="flex flex-col gap-1 mb-2">
@@ -16585,8 +16695,14 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
         </div>
       )}
 
-      {/* MỘT hàng công cụ của bảng: tìm kiếm + kỳ + đếm + toàn bộ nút nghiệp vụ — bảng chiếm phần còn lại. */}
+      {/* MỘT hàng công cụ của bảng: phạm vi + tìm kiếm + kỳ + đếm + toàn bộ nút nghiệp vụ — bảng chiếm phần còn lại. */}
       <div style={{ display: activeTableView === "orders" ? "flex" : "none" }} className="shrink-0 bg-white rounded-lg border border-paper-line px-2.5 py-1.5 items-center gap-2 flex-wrap">
+        {currentEmployee?.id != null && (
+          <div className="flex shrink-0 overflow-hidden rounded-md border border-paper-line text-[11px] font-semibold" role="group" aria-label="Phạm vi số liệu đơn hàng">
+            <button type="button" onClick={() => setOrderScope("mine")} aria-pressed={orderScope === "mine"} className={`px-2.5 py-1.5 ${orderScope === "mine" ? "bg-ink text-white" : "text-muted hover:text-ink"}`} title="Chỉ đơn do bạn phụ trách — đúng số liệu tính doanh số/hoa hồng của bạn">Đơn của tôi ({myOrderCount})</button>
+            <button type="button" onClick={() => setOrderScope("all")} aria-pressed={orderScope === "all"} className={`px-2.5 py-1.5 ${orderScope === "all" ? "bg-ink text-white" : "text-muted hover:text-ink"}`} title="Toàn bộ đơn của công ty (chỉ xem)">Toàn công ty ({orders.length})</button>
+          </div>
+        )}
         <div className="relative flex-1 min-w-[200px]">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" />
           <input
@@ -16599,7 +16715,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
         {!orderSearchQ && (
           <RangeModePicker rangeMode={rangeMode} setRangeMode={setRangeMode} rangeFrom={rangeFrom} setRangeFrom={setRangeFrom} rangeTo={rangeTo} setRangeTo={setRangeTo} reportMonth={reportMonth} reportYear={reportYear} show={showRangePicker} setShow={setShowRangePicker} />
         )}
-        <span className="text-[11px] text-muted">{visibleOrders.length}/{orders.length} đơn{orderSearchQ ? " · khớp mọi tháng" : ""}</span>
+        <span className="text-[11px] text-muted">{visibleOrders.length}/{scopedOrders.length} đơn{orderScope === "mine" ? " của tôi" : ""}{orderSearchQ ? " · khớp mọi tháng" : ""}</span>
         <span className="hidden h-5 w-px bg-paper-line sm:block" />
         <button disabled={importT7Reading} onClick={() => importT7InputRef.current?.click()} className="flex items-center gap-1 text-xs border border-[#4f7ee8]/50 text-[#3C50E0] px-2.5 py-1.5 rounded-md hover:bg-[#3C50E0]/5 disabled:opacity-50" title="Đọc file Excel theo mẫu doanh thu — file nhiều sheet sẽ hiện danh sách chọn sheet">
           {importT7Reading ? <Loader2 size={13} className="animate-spin" /> : <FileUp size={13} />} {importT7Reading ? "Đang xử lý..." : "Đọc Excel"}
@@ -17340,8 +17456,9 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
   const defaultMarketingEmployeeId = canManageMarketing ? (mktEmployees[0]?.id || "") : (currentEmployee?.id || "");
   const [form, setForm] = useState({
     date: TODAY_STR, employeeId: defaultMarketingEmployeeId, pageId: "", pagesManaged: "1", customersReached: "",
-    conversions: "", adSpend: "", revenue: "", note: "",
+    conversions: "", adSpend: "", revenue: "", note: "", customers: [],
   });
+  const [logSaving, setLogSaving] = useState(false);
   const nameOf = (id) => employees.find((e) => e.id === id)?.name || "—";
   const normalizedDailySearch = dailySearch.trim().toLocaleLowerCase("vi-VN");
   const dailyTableLogs = visibleLogs.filter((log) => {
@@ -17374,7 +17491,7 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
   const resetMarketingLogForm = () => {
     setEditingLogId(null);
     setLogFormError("");
-    setForm({ date: TODAY_STR, employeeId: defaultMarketingEmployeeId, pageId: "", pagesManaged: "1", customersReached: "", conversions: "", adSpend: "", revenue: "", note: "" });
+    setForm({ date: TODAY_STR, employeeId: defaultMarketingEmployeeId, pageId: "", pagesManaged: "1", customersReached: "", conversions: "", adSpend: "", revenue: "", note: "", customers: [] });
     setShowForm(false);
   };
   const startEditLog = (log) => {
@@ -17385,11 +17502,13 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
       pageId: log.pageId ? String(log.pageId) : "", pagesManaged: String(log.pagesManaged ?? 1),
       customersReached: String(log.customersReached ?? ""), conversions: String(log.conversions ?? ""),
       adSpend: String(log.adSpend ?? ""), revenue: String(log.revenue ?? ""), note: log.note || "",
+      // Khách đã ghi (có orderId/leadId) hiện dạng chỉ đọc — không tạo trùng đơn/lead khi lưu lại.
+      customers: Array.isArray(log.customers) ? log.customers.map((c) => ({ ...c })) : [],
     });
     setShowForm(true);
   };
-  const addLog = () => {
-    if (!canWriteMarketingDaily) return;
+  const addLog = async () => {
+    if (!canWriteMarketingDaily || logSaving) return;
     // Ngày thống kê BẮT BUỘC và phải đúng dạng YYYY-MM-DD (giữ nguyên chuỗi, không qua
     // new Date().toISOString() để khỏi lệch ngày theo UTC). Backend chặn thêm một lớp nữa.
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(form.date || ""))) {
@@ -17405,17 +17524,110 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
       setLogFormError("Vui lòng chọn nhân viên phụ trách.");
       return;
     }
+    // KHÁCH HÀNG TRONG NGÀY: kiểm tra đủ thông tin TRƯỚC khi tạo bất kỳ đơn/lead nào.
+    const customerRows = form.customers || [];
+    for (const row of customerRows) {
+      if (row.orderId || row.leadId) continue; // đã ghi từ lần lưu trước — không tạo lại
+      if (!String(row.name || "").trim() && !String(row.phone || "").trim()) {
+        setLogFormError("Khách hàng trong ngày: mỗi dòng cần TÊN hoặc SĐT — hãy điền hoặc xóa dòng trống.");
+        return;
+      }
+      if (!Number(row.saleEmployeeId)) {
+        setLogFormError(`Khách "${row.name || row.phone}": chọn Sale phụ trách.`);
+        return;
+      }
+      if (row.outcome === "da_mua") {
+        if (!row.productId) {
+          setLogFormError(`Khách "${row.name || row.phone}" đã mua: chọn SẢN PHẨM đã mua để tạo đơn liên kết Bán hàng.`);
+          return;
+        }
+        if (!(Number(row.amount) > 0)) {
+          setLogFormError(`Khách "${row.name || row.phone}" đã mua: nhập SỐ TIỀN đơn hàng.`);
+          return;
+        }
+      }
+    }
     setLogFormError("");
+    setLogSaving(true);
+    // Khách "ĐÃ MUA" → tạo ĐƠN THẬT bên Bán hàng qua endpoint nguyên tử (trừ kho, tính doanh
+    // thu/hoa hồng cho Sale được chọn, gắn Page) — không phải quay lại tab Bán hàng nhập nữa.
+    const processed = [];
+    let hasNewOrder = false;
+    try {
+      for (const row of customerRows) {
+        if (row.orderId || row.leadId) { processed.push(row); continue; }
+        const saleId = Number(row.saleEmployeeId);
+        if (row.outcome === "da_mua") {
+          const product = (inventory || []).find((p) => String(p.id) === String(row.productId));
+          const quantity = Math.max(1, Number(row.quantity) || 1);
+          const amount = Number(row.amount) || 0;
+          // Gửi kèm hồ sơ KHÁCH HÀNG để đồng bộ luôn vào Danh sách khách hàng —
+          // backend tự chống trùng theo SĐT (trùng thì gắn đơn vào hồ sơ khách cũ).
+          const customerId = Date.now() + Math.floor(Math.random() * 1000);
+          const customerName = String(row.name || "").trim() || "(Chưa rõ tên)";
+          const customerPhone = String(row.phone || "").trim();
+          const result = await createCrmOrder({
+            order: {
+              date: form.date,
+              customerName, phone: customerPhone, customerId,
+              productId: product?.id ?? null, productName: product?.name || "",
+              quantity, amount,
+              pageId: form.pageId ? Number(form.pageId) : null,
+              source: "marketing_ads",
+              saleEmployeeId: saleId,
+              customerPaidAmount: row.paid ? amount : 0,
+              customerPaymentStatus: row.paid ? "paid" : "unpaid",
+              note: `Chốt từ Ghi nhận hiệu suất Marketing ngày ${form.date}`,
+            },
+            customer: { id: customerId, customerName, phone: customerPhone, email: "", source: "marketing_ads", createdAt: new Date().toISOString() },
+          });
+          hasNewOrder = true;
+          processed.push({ ...row, orderId: result?.orderId ?? null, productName: product?.name || "" });
+        } else {
+          const leadId = `lead:${Date.now()}:${processed.length}`;
+          const createdAt = new Date().toISOString();
+          setLeads((prev) => [...(prev || []), {
+            id: leadId, date: form.date, customerName: String(row.name || "").trim() || "(Chưa rõ tên)",
+            phone: String(row.phone || "").trim(), email: "",
+            note: "Từ Ghi nhận hiệu suất ngày (Marketing)", saleEmployeeId: saleId,
+            source: "marketing_ads", status: "dang_cham_soc", contactLog: [], createdAt,
+            createdByEmployeeId: currentEmployee?.id || null,
+            createdByName: currentEmployee?.name || authUser?.email || "",
+            createdByEmail: authUser?.email || "",
+          }]);
+          processed.push({ ...row, leadId });
+        }
+      }
+    } catch (error) {
+      // Đơn đã tạo xong mang orderId — bấm Lưu lại chỉ xử lý tiếp các dòng còn lại, không tạo trùng.
+      setForm((f) => ({ ...f, customers: [...processed, ...(f.customers || []).slice(processed.length)] }));
+      setLogFormError(`Không tạo được đơn hàng: ${error.message || "lỗi máy chủ"}. Các khách đã xử lý được giữ nguyên — bấm Lưu để tiếp tục các dòng còn lại.`);
+      setLogSaving(false);
+      return;
+    }
+    const normalizedCustomers = processed.map((row, rowIdx) => ({
+      id: row.id || `mkc:${Date.now()}:${rowIdx}`,
+      name: String(row.name || "").trim(), phone: String(row.phone || "").trim(),
+      outcome: row.outcome === "da_mua" ? "da_mua" : "tiem_nang",
+      saleEmployeeId: Number(row.saleEmployeeId) || null,
+      productId: row.productId || null, productName: row.productName || "",
+      quantity: Number(row.quantity) || 0, amount: Number(row.amount) || 0, paid: Boolean(row.paid),
+      orderId: row.orderId || null, leadId: row.leadId || null,
+    }));
     const normalized = {
       ...form, employeeId, pageId: form.pageId ? Number(form.pageId) : null,
       pagesManaged: Number(form.pagesManaged) || 0, customersReached: Number(form.customersReached) || 0,
       conversions: Number(form.conversions) || 0, adSpend: Number(form.adSpend) || 0, revenue: Number(form.revenue) || 0,
+      customers: normalizedCustomers,
     };
     if (editingLogId !== null) {
       setLogs((prev) => prev.map((log) => log.id === editingLogId && canEditMarketingLog(log) ? { ...log, ...normalized } : log));
     } else {
       setLogs((prev) => [...prev, { ...normalized, id: Date.now() }]);
     }
+    // Đơn mới trừ kho/tăng doanh thu — kéo dữ liệu chuẩn từ máy chủ về ngay, không chờ poll.
+    if (hasNewOrder) dataLoader?.ensureDataFields?.(["orders", "inventory", "stockMovements", "transactions", "debts", "customers", "paymentLedger"], { force: true });
+    setLogSaving(false);
     resetMarketingLogForm();
   };
   const removeLog = (id) => setLogs((prev) => prev.filter((log) => log.id !== id || !canEditMarketingLog(log)));
@@ -17825,7 +18037,8 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
             <label className="text-xs text-muted flex flex-col gap-1">Ngày<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Nhân viên
               {canManageMarketing ? <select value={form.employeeId} onChange={(e) => setForm({ ...form, employeeId: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
-                {mktEmployees.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
+                {/* TẤT CẢ nhân sự đang hoạt động — ai cũng ghi nhận hiệu suất ngày được, không chỉ Marketing/Sale. */}
+                {employees.filter((e) => e.status !== "inactive").map((e) => (<option key={e.id} value={e.id}>{e.name}{ROLE_META[e.roleType]?.label ? ` — ${ROLE_META[e.roleType].label}` : ""}</option>))}
               </select> : <div className="border border-paper-line rounded bg-paper px-2 py-1.5 text-sm">{currentEmployee?.name || "Tài khoản hiện tại"}</div>}
             </label>
             <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Page đang chạy
@@ -17840,8 +18053,79 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
             <label className="text-xs text-muted flex flex-col gap-1">Doanh thu (đ)<MoneyInput value={form.revenue} onChange={(v) => setForm({ ...form, revenue: v })} /></label>
             <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Ghi chú tối ưu (đã đổi gì hôm nay)<input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} placeholder="VD: đổi creative, tắt tập quảng cáo yếu..." className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
           </div>
+
+          {/* KHÁCH HÀNG TRONG NGÀY: khai từng khách và đánh dấu TIỀM NĂNG hay ĐÃ MUA ngay tại đây.
+              "Đã mua" tự tạo đơn thật bên Bán hàng (liên kết orderId) — làm trọn trong 1 giao diện. */}
+          <div className="mt-4 pt-3 border-t border-paper-line">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+              <div className="text-[11px] font-semibold text-ink uppercase">Khách hàng trong ngày — đánh dấu tiềm năng hay đã mua</div>
+              {/* Sale phụ trách của dòng khách mới ĐỒNG BỘ theo ô "Nhân viên" đã chọn ở trên. */}
+              <button type="button" onClick={() => setForm({ ...form, customers: [...(form.customers || []), { key: `${Date.now()}-${(form.customers || []).length}`, name: "", phone: "", outcome: "tiem_nang", saleEmployeeId: String(form.employeeId || currentEmployee?.id || saleEmpAll[0]?.id || ""), productId: "", quantity: "1", amount: "", paid: false }] })} className="text-[11px] border border-paper-line px-2.5 py-1.5 rounded-md text-ink-light hover:text-ink flex items-center gap-1"><Plus size={12} /> Thêm khách</button>
+            </div>
+            {(form.customers || []).length === 0 ? (
+              <p className="text-[11px] text-muted">Khai thông tin từng khách ngay tại đây: <strong className="text-ink">Khách tiềm năng</strong> tự vào danh sách gọi của Sale; <strong className="text-ink">Đã mua hàng</strong> tự tạo đơn bên Bán hàng (gắn Page, trừ kho, tính doanh thu) — không phải quay lại tab Bán hàng nhập đơn nữa.</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {(form.customers || []).map((customerRow, rowIdx) => {
+                  const saved = Boolean(customerRow.orderId || customerRow.leadId);
+                  const setRow = (patch) => setForm({ ...form, customers: form.customers.map((item, i) => (i === rowIdx ? { ...item, ...patch } : item)) });
+                  const rowProduct = (inventory || []).find((p) => String(p.id) === String(customerRow.productId));
+                  return (
+                    <div key={customerRow.key || customerRow.id || rowIdx} className={`rounded-md border px-2.5 py-2 ${saved ? "border-ledger-green/30 bg-ledger-green/5" : "border-paper-line bg-paper/50"}`}>
+                      {saved ? (
+                        <div className="flex items-center gap-2 flex-wrap text-xs">
+                          <span className="font-medium text-ink">{customerRow.name || customerRow.phone}</span>
+                          {customerRow.phone && <span className="ktns-mono text-muted">{customerRow.phone}</span>}
+                          {customerRow.orderId
+                            ? <span className="rounded-full bg-ledger-green px-2 py-0.5 text-[10px] font-bold text-white">ĐÃ MUA · Đơn #{customerRow.orderId}</span>
+                            : <span className="rounded-full bg-gold px-2 py-0.5 text-[10px] font-bold text-white">TIỀM NĂNG</span>}
+                          {customerRow.productName && <span className="text-muted">{customerRow.productName} × {customerRow.quantity} · {fmtVND(customerRow.amount)}</span>}
+                          <span className="text-[10px] text-muted">Sale: {nameOf(Number(customerRow.saleEmployeeId))}</span>
+                        </div>
+                      ) : (
+                        // Lưới 12 cột CỐ ĐỊNH dùng chung cho mọi dòng khách — nhãn trên, ô nhập
+                        // full-width trong ô lưới nên các cột luôn thẳng hàng giữa các dòng.
+                        <div className="grid grid-cols-12 items-end gap-2">
+                          <label className="col-span-3 text-[10px] text-muted flex flex-col gap-0.5">Tên khách<input value={customerRow.name} onChange={(e) => setRow({ name: e.target.value })} placeholder="Tên khách" className="w-full border border-paper-line rounded px-2 py-1.5 text-xs" /></label>
+                          <label className="col-span-3 text-[10px] text-muted flex flex-col gap-0.5">SĐT<input value={customerRow.phone} onChange={(e) => setRow({ phone: e.target.value })} placeholder="09xxxxxxxx" className="w-full border border-paper-line rounded px-2 py-1.5 text-xs ktns-mono" /></label>
+                          <label className="col-span-3 text-[10px] text-muted flex flex-col gap-0.5">Kết quả
+                            <select value={customerRow.outcome} onChange={(e) => setRow({ outcome: e.target.value })} className="w-full border border-paper-line rounded px-2 py-1.5 text-xs">
+                              <option value="tiem_nang">Khách tiềm năng</option>
+                              <option value="da_mua">ĐÃ MUA HÀNG</option>
+                            </select>
+                          </label>
+                          <label className="col-span-2 text-[10px] text-muted flex flex-col gap-0.5">Sale phụ trách
+                            <select value={customerRow.saleEmployeeId} onChange={(e) => setRow({ saleEmployeeId: e.target.value })} className="w-full border border-paper-line rounded px-2 py-1.5 text-xs">
+                              <option value="">— Chọn nhân sự —</option>
+                              {employees.filter((e) => e.status !== "inactive").map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
+                            </select>
+                          </label>
+                          <div className="col-span-1 flex justify-end">
+                            <button type="button" onClick={() => setForm({ ...form, customers: form.customers.filter((_, i) => i !== rowIdx) })} className="inline-flex h-[30px] w-[30px] items-center justify-center rounded border border-paper-line text-muted hover:text-stamp-red" title="Xóa dòng khách này" aria-label="Xóa dòng khách"><Trash2 size={13} /></button>
+                          </div>
+                          {customerRow.outcome === "da_mua" && (<>
+                            <label className="col-span-6 text-[10px] text-muted flex flex-col gap-0.5">Sản phẩm đã mua
+                              <select value={customerRow.productId} onChange={(e) => { const p = (inventory || []).find((x) => String(x.id) === e.target.value); setRow({ productId: e.target.value, amount: p ? String((Number(p.sellPrice) || 0) * (Number(customerRow.quantity) || 1)) : customerRow.amount }); }} className="w-full border border-paper-line rounded px-2 py-1.5 text-xs">
+                                <option value="">— Chọn sản phẩm —</option>
+                                {(inventory || []).filter((p) => !p.discontinued).map((p) => (<option key={p.id} value={p.id}>{p.name}{p.sku ? ` (${p.sku})` : ""}</option>))}
+                              </select>
+                            </label>
+                            <label className="col-span-1 text-[10px] text-muted flex flex-col gap-0.5">SL<input type="number" min="1" value={customerRow.quantity} onChange={(e) => setRow({ quantity: e.target.value, amount: rowProduct ? String((Number(rowProduct.sellPrice) || 0) * (Number(e.target.value) || 1)) : customerRow.amount })} className="w-full border border-paper-line rounded px-2 py-1.5 text-xs ktns-mono" /></label>
+                            <label className="col-span-3 text-[10px] text-muted flex flex-col gap-0.5">Số tiền (đ)<MoneyInput value={customerRow.amount} onChange={(v) => setRow({ amount: v })} /></label>
+                            <label className="col-span-2 flex h-[30px] items-center gap-1.5 self-end text-[11px] text-muted"><input type="checkbox" checked={Boolean(customerRow.paid)} onChange={(e) => setRow({ paid: e.target.checked })} /> Đã thu đủ</label>
+                          </>)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <p className="text-[10px] text-ink-light">Khách "ĐÃ MUA HÀNG" khi bấm Lưu sẽ tự tạo đơn thật bên Bán hàng: gắn Page nguồn, trừ kho, tính doanh thu &amp; hoa hồng cho Sale được chọn — đơn liên kết hiện ngay trong nhật ký (Đơn #...).</p>
+              </div>
+            )}
+          </div>
+
           {logFormError && <p className="mt-2 text-xs text-stamp-red flex items-center gap-1"><AlertTriangle size={12} /> {logFormError}</p>}
-          <button onClick={addLog} className="mt-4 bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">{editingLogId !== null ? "Lưu cập nhật" : "Lưu"}</button>
+          <button onClick={addLog} disabled={logSaving} className="mt-4 bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">{logSaving ? "Đang lưu & tạo đơn..." : editingLogId !== null ? "Lưu cập nhật" : "Lưu"}</button>
         </div>
       )}
 
@@ -17908,7 +18192,18 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
                     <td className="px-3 py-2.5 text-right text-xs text-muted ktns-mono">{fmtVND(log.adSpend)}</td>
                     <td className="px-3 py-2.5 text-right text-xs font-semibold text-ledger-green ktns-mono">{fmtVND(log.revenue)}</td>
                     <td className={`px-3 py-2.5 text-right text-xs font-bold ktns-mono ${roasTone}`}>{roas.toFixed(2)}x</td>
-                    <td className="px-3 py-2.5"><div className="line-clamp-2 text-xs leading-5 text-muted" title={log.note || ""}>{log.note || "—"}</div></td>
+                    <td className="px-3 py-2.5">
+                      <div className="line-clamp-2 text-xs leading-5 text-muted" title={log.note || ""}>{log.note || "—"}</div>
+                      {Array.isArray(log.customers) && log.customers.length > 0 && (
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {log.customers.map((c) => (
+                            <span key={c.id} className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold ${c.orderId ? "bg-ledger-green/15 text-ledger-green" : "bg-gold/20 text-[#92610A]"}`} title={`${c.name || c.phone}${c.productName ? ` · ${c.productName} × ${c.quantity} · ${fmtVND(c.amount)}` : ""}${c.orderId ? ` · Đơn #${c.orderId}` : " · Khách tiềm năng"} · Sale: ${nameOf(Number(c.saleEmployeeId))}`}>
+                              {c.name || c.phone}{c.orderId ? " ✓ mua" : ""}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-3 py-2.5 text-center">{canEditMarketingLog(log) ? <div className="flex items-center justify-center gap-1">
                       <button onClick={() => startEditLog(log)} className="rounded-md p-1.5 text-muted transition hover:bg-white hover:text-ink" title="Sửa cập nhật"><Pencil size={14} /></button>
                       <button onClick={() => removeLog(log.id)} className="rounded-md p-1.5 text-muted transition hover:bg-white hover:text-stamp-red" title="Xóa cập nhật"><Trash2 size={14} /></button>
@@ -19099,6 +19394,9 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
     salesTarget: "", salesActual: "", dealsClosed: "", leadsHandled: "",
     tasksAssigned: "", tasksCompleted: "", tasksOnTime: "", bugsFixed: "", upsaleValue: "",
     consecutiveLowKpiMonths: "0", accountRole: "user",
+    // Lương hiệu lực theo tháng + bảng KPI riêng của nhân viên này.
+    compEffectiveFrom: TODAY_STR.slice(0, 7),
+    kpiTiersOverride: [],
   };
   const [form, setForm] = useState(blankForm);
   // Nhận dữ liệu điền sẵn từ Tuyển dụng AI (bấm "Tuyển ngay") — chỉ chạy khi có dữ liệu mới gửi
@@ -19121,11 +19419,14 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
   const startEdit = (e) => {
     if (!isAdmin) return;
     setEditingId(e.id);
+    // Form hiển thị đúng LƯƠNG CỦA KỲ THÁNG đang chọn (không phải giá trị mới nhất) —
+    // mỗi tháng hoàn toàn độc lập cả khi XEM lẫn khi SỬA.
+    const mc = employeeCompForMonth(e, reportYear, reportMonth);
     setForm({
-      name: e.name, position: e.position, dept: e.dept, baseSalary: String(e.baseSalary), dailySalary: String(e.dailySalary || 0), bonusTarget: String(e.bonusTarget), kpi: String(e.kpi), joined: e.joined,
-      dependents: String(e.dependents || 0), mealAllowance: String(e.mealAllowance || 0), attendanceBonus: String(e.attendanceBonus || 0),
+      name: e.name, position: e.position, dept: e.dept, baseSalary: String(mc.baseSalary), dailySalary: String(mc.dailySalary || 0), bonusTarget: String(mc.bonusTarget), kpi: String(mc.kpi), joined: e.joined,
+      dependents: String(e.dependents || 0), mealAllowance: String(mc.mealAllowance || 0), attendanceBonus: String(mc.attendanceBonus || 0),
       roleType: e.roleType, customScore: String(e.customScore || 0),
-      contractType: e.contractType || "chinh_thuc", probationRate: String(Math.round((e.probationRate || DEFAULT_PROBATION_RATE) * 100)),
+      contractType: mc.contractType || "chinh_thuc", probationRate: String(Math.round((mc.probationRate || DEFAULT_PROBATION_RATE) * 100)),
       dob: e.dob || "", hometown: e.hometown || "", bankName: e.bankName || "", bankAccount: e.bankAccount || "", phone: e.phone || "", email: e.email || "", resignedDate: e.resignedDate || "",
       idNumber: e.idNumber || "", education: e.education || "Đại học", major: e.major || "", resumeSummary: e.resumeSummary || "",
       idFrontData: e.idFrontData || "", idFrontName: e.idFrontName || "", idFrontType: e.idFrontType || "",
@@ -19137,6 +19438,10 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
       consecutiveLowKpiMonths: String(e.consecutiveLowKpiMonths || 0),
       accountRole: normalizeAccountRole(accountForEmployee(e)?.role || e.accountRole || "user"),
       account_id: e.account_id || null,
+      compEffectiveFrom: TODAY_STR.slice(0, 7),
+      kpiTiersOverride: Array.isArray(mc.kpiTiersOverride)
+        ? mc.kpiTiersOverride.map((tier) => ({ minRevenue: String(tier.minRevenue ?? 0), pct: String(tier.pct ?? 0) }))
+        : [],
     });
     setShowForm(true);
   };
@@ -19201,13 +19506,61 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
       tasksAssigned: num(form.tasksAssigned), tasksCompleted: num(form.tasksCompleted), tasksOnTime: num(form.tasksOnTime), bugsFixed: num(form.bugsFixed),
       upsaleValue: num(form.upsaleValue), consecutiveLowKpiMonths: num(form.consecutiveLowKpiMonths),
       resignedDate: form.resignedDate || null,
+      // Bảng KPI riêng: chỉ giữ dòng hợp lệ; mảng rỗng = dùng bảng KPI chung của công ty.
+      kpiTiersOverride: (form.kpiTiersOverride || [])
+        .map((tier) => ({ minRevenue: num(tier.minRevenue), pct: num(tier.pct) }))
+        .filter((tier) => tier.minRevenue >= 0 && tier.pct >= 0 && (tier.minRevenue > 0 || tier.pct > 0))
+        .sort((a, b) => a.minRevenue - b.minRevenue),
     };
+    delete parsed.compEffectiveFrom;
     setAccountLoading(true);
     setAccountError("");
     setAccountMessage("");
     const nextEmployee = editingId
       ? { ...editingEmployee, ...parsed, id: editingId }
       : { ...parsed, id: Date.now(), status: "active", attendance: defaultAttendance(), otherBonus: 0, advance: 0 };
+    // LƯƠNG HIỆU LỰC THEO THÁNG: nếu cấu hình lương/KPI thay đổi thì ghi mốc "áp dụng từ
+    // tháng" vào compensationHistory — bảng lương các tháng TRƯỚC mốc giữ nguyên như cũ.
+    if (editingId && editingEmployee) {
+      const pickComp = (source) => Object.fromEntries(COMP_HISTORY_FIELDS.map((field) => [field, source?.[field]]));
+      const compChanged = COMP_HISTORY_FIELDS.some(
+        (field) => JSON.stringify(nextEmployee[field] ?? null) !== JSON.stringify(editingEmployee[field] ?? null),
+      );
+      if (compChanged) {
+        let history = Array.isArray(editingEmployee.compensationHistory) ? [...editingEmployee.compensationHistory] : [];
+        // Mốc áp dụng = KỲ THÁNG đang chọn trên đầu trang — sửa ở kỳ nào, bản ghi lương của
+        // kỳ đó thay đổi; các tháng trước giữ nguyên bản ghi cũ.
+        const effectiveFrom = reportYear && reportMonth
+          ? `${reportYear}-${String(reportMonth).padStart(2, "0")}`
+          : TODAY_STR.slice(0, 7);
+        if (history.length === 0) {
+          // Mốc nền: giữ lại cấu hình TRƯỚC lần điều chỉnh đầu tiên cho mọi tháng cũ.
+          history.push({
+            effectiveFrom: String(editingEmployee.joined || "1970-01-01").slice(0, 7),
+            values: pickComp(editingEmployee),
+            note: "Cấu hình trước lần điều chỉnh đầu tiên",
+            createdAt: nowStamp(),
+          });
+        }
+        history = history.filter((entry) => String(entry.effectiveFrom) !== String(effectiveFrom));
+        history.push({
+          effectiveFrom,
+          values: pickComp(nextEmployee),
+          createdBy: authUser?.email || "",
+          createdAt: nowStamp(),
+        });
+        history.sort((a, b) => String(a.effectiveFrom).localeCompare(String(b.effectiveFrom)));
+        nextEmployee.compensationHistory = history.slice(-60);
+        // Sửa ở KỲ QUÁ KHỨ (đã có mốc mới hơn phía sau): chỉ bản ghi kỳ đó đổi — giá trị SỐNG
+        // trên hồ sơ phải giữ theo mốc MỚI NHẤT để các tháng sau không bị kéo về mức cũ.
+        const latestEntry = history[history.length - 1];
+        if (latestEntry && String(latestEntry.effectiveFrom) !== String(effectiveFrom) && latestEntry.values) {
+          COMP_HISTORY_FIELDS.forEach((field) => {
+            if (field in latestEntry.values) nextEmployee[field] = latestEntry.values[field];
+          });
+        }
+      }
+    }
     const nextEmployees = editingId
       ? employees.map((employee) => (employee.id === editingId ? nextEmployee : employee))
       : [...employees, nextEmployee];
@@ -19396,10 +19749,6 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
                 {Object.entries(ROLE_META).map(([id, m]) => (<option key={id} value={id}>{m.label}</option>))}
               </select>
             </label>
-            <div className="md:col-span-2 xl:col-span-3 rounded-md border border-gold/25 bg-gold/5 px-3 py-2 text-[11px] text-ink-light">
-              <strong className="text-ink">Quyền theo vị trí:</strong> {POSITION_ACCESS_META[form.roleType]?.summary || POSITION_ACCESS_META.khac.summary}
-              <span className="ml-1">Quyền tài khoản Admin/Kế toán vẫn được ưu tiên cao hơn.</span>
-            </div>
             <label className="text-xs text-muted flex flex-col gap-1">Loại hợp đồng
               <select value={form.contractType} onChange={(e) => setForm({ ...form, contractType: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
                 {Object.entries(CONTRACT_META).map(([id, m]) => (<option key={id} value={id}>{m.label}</option>))}
@@ -19407,33 +19756,47 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
             </label>
             <label className="text-xs text-muted flex flex-col gap-1">Lương cơ bản tháng (đ)<MoneyInput value={form.baseSalary} onChange={(v) => setForm({ ...form, baseSalary: v })} /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Lương một ngày (đ)<MoneyInput value={form.dailySalary} onChange={(v) => setForm({ ...form, dailySalary: v })} /><span className="text-[10px] text-ink-light normal-case">Nếu để 0, hệ thống tự lấy lương cơ bản chia số ngày làm việc chuẩn của tháng.</span></label>
-            <label className="text-xs text-muted flex flex-col gap-1">
-              Mức thưởng mục tiêu (đ)<MoneyInput value={form.bonusTarget} onChange={(v) => setForm({ ...form, bonusTarget: v })} />
-              <span className="text-[10px] text-ink-light normal-case">
-                {form.roleType === "sale" || form.roleType === "ads"
-                  ? "Sale/Ads không dùng số này — lương tính theo doanh số ở form riêng bên dưới."
-                  : form.roleType === "ky_thuat"
-                  ? "Kỹ thuật không dùng số này — thưởng tính theo % giá trị upsale."
-                  : "Số tiền thưởng tối đa nếu đạt 100% KPI thưởng bên dưới. VD: 2.000.000đ + KPI 80% → thưởng thực nhận 1.600.000đ."}
-              </span>
-            </label>
-            <label className="text-xs text-muted flex flex-col gap-1">
-              KPI thưởng (%)<input type="number" value={form.kpi} onChange={(e) => setForm({ ...form, kpi: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" />
-              <span className="text-[10px] text-ink-light normal-case">
-                {form.roleType === "sale" || form.roleType === "ads"
-                  ? "Sale/Ads không dùng số này — chỉ áp dụng cho các vị trí còn lại (Kế toán, HR, Vận hành, CSKH, Quản lý, IT, Khác)."
-                  : "Tự đánh giá 0-120% mức hoàn thành công việc tháng này — nhân với \"Mức thưởng mục tiêu\" ở trên ra tiền thưởng thực nhận trong Bảng lương."}
-              </span>
-            </label>
+            <label className="text-xs text-muted flex flex-col gap-1">Mức thưởng mục tiêu (đ)<MoneyInput value={form.bonusTarget} onChange={(v) => setForm({ ...form, bonusTarget: v })} /></label>
+            <label className="text-xs text-muted flex flex-col gap-1">KPI thưởng (%)<input type="number" value={form.kpi} onChange={(e) => setForm({ ...form, kpi: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
             {form.contractType === "thu_viec" && (
               <label className="text-xs text-muted flex flex-col gap-1">% Lương thử việc<input type="number" value={form.probationRate} onChange={(e) => setForm({ ...form, probationRate: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
             )}
             <label className="text-xs text-muted flex flex-col gap-1">Ngày vào làm<input type="date" value={form.joined} onChange={(e) => setForm({ ...form, joined: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Số người phụ thuộc<input type="number" value={form.dependents} onChange={(e) => setForm({ ...form, dependents: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Phụ cấp ăn trưa (đ)<MoneyInput value={form.mealAllowance} onChange={(v) => setForm({ ...form, mealAllowance: v })} /></label>
-            <label className="text-xs text-muted flex flex-col gap-1">Phụ cấp chuyên cần (đ, mất nếu có ngày nghỉ)<MoneyInput value={form.attendanceBonus} onChange={(v) => setForm({ ...form, attendanceBonus: v })} /></label>
-            <div className="md:col-span-2 text-[11px] text-ink-light bg-paper rounded px-2 py-1.5 flex items-center gap-1.5"><CalendarCheck size={12} /> Ngày công chấm ở tab Chấm công sau khi lưu — mặc định làm đủ công.</div>
+            <label className="text-xs text-muted flex flex-col gap-1">Phụ cấp chuyên cần (đ)<MoneyInput value={form.attendanceBonus} onChange={(v) => setForm({ ...form, attendanceBonus: v })} /></label>
+            <div className="md:col-span-2 xl:col-span-3 rounded bg-gold/10 px-2.5 py-1.5 text-[11px] text-ink">Các khoản TIỀN ở trên lưu thành bản ghi riêng của <strong>tháng {String(reportMonth).padStart(2, "0")}/{reportYear}</strong> (kỳ đang chọn đầu trang) — tháng trước giữ nguyên mức cũ.</div>
           </div>
+
+          {/* BẢNG KPI RIÊNG — luôn có trong form thêm/sửa; áp dụng từ kỳ đang chọn trên đầu trang.
+              Trống = dùng bảng KPI chung; hiện chỉ Sale/Ads được tính thưởng theo mốc doanh thu. */}
+          {(
+            <div className="mt-4 pt-4 border-t border-paper-line">
+              <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+                <div className="text-xs font-medium text-ink">Bảng KPI riêng của nhân viên này — áp dụng từ tháng {String(reportMonth).padStart(2, "0")}/{reportYear} <span className="font-normal text-muted">· trống thì dùng bảng KPI chung</span></div>
+                <button type="button" onClick={() => setForm({ ...form, kpiTiersOverride: [...(form.kpiTiersOverride || []), { minRevenue: "", pct: "" }] })} className="text-[11px] border border-paper-line px-2.5 py-1.5 rounded-md text-ink-light hover:text-ink flex items-center gap-1"><Plus size={12} /> Thêm mốc</button>
+              </div>
+              {(form.kpiTiersOverride || []).length === 0 ? (
+                <p className="text-[11px] text-muted">Đang dùng bảng KPI chung. Bấm "Thêm mốc" để đặt các mốc doanh thu → % thưởng áp dụng RIÊNG cho {form.name || "nhân viên này"} (có thể đổi từng tháng — mốc "Áp dụng từ tháng" ở trên quyết định tháng bắt đầu).</p>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {/* Lưới cột cố định: nhãn mốc · doanh thu · % thưởng · xóa — mọi dòng thẳng hàng. */}
+                  <div className="grid grid-cols-[64px_minmax(0,1fr)_150px_34px] items-center gap-x-2 text-[10px] font-semibold uppercase tracking-[0.04em] text-muted">
+                    <span></span><span>Doanh thu từ (đ)</span><span>Thưởng (% doanh thu)</span><span></span>
+                  </div>
+                  {(form.kpiTiersOverride || []).map((tier, tierIdx) => (
+                    <div key={tierIdx} className="grid grid-cols-[64px_minmax(0,1fr)_150px_34px] items-center gap-x-2">
+                      <span className="text-[11px] text-muted">Mốc {tierIdx + 1}</span>
+                      <MoneyInput value={tier.minRevenue} onChange={(v) => setForm({ ...form, kpiTiersOverride: form.kpiTiersOverride.map((t, i) => (i === tierIdx ? { ...t, minRevenue: v } : t)) })} />
+                      <input type="number" min="0" max="100" value={tier.pct} onChange={(e) => setForm({ ...form, kpiTiersOverride: form.kpiTiersOverride.map((t, i) => (i === tierIdx ? { ...t, pct: e.target.value } : t)) })} className="w-full border border-paper-line rounded px-2 py-1.5 text-xs ktns-mono" aria-label={`Phần trăm thưởng mốc ${tierIdx + 1}`} />
+                      <button type="button" onClick={() => setForm({ ...form, kpiTiersOverride: form.kpiTiersOverride.filter((_, i) => i !== tierIdx) })} className="inline-flex h-[30px] w-[30px] items-center justify-center rounded border border-paper-line text-muted hover:text-stamp-red" title="Xóa mốc này" aria-label={`Xóa mốc KPI ${tierIdx + 1}`}><Trash2 size={13} /></button>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-ink-light">Doanh thu tháng đạt mốc cao nhất nào thì hưởng đúng % của mốc đó trên TOÀN BỘ doanh thu tháng. Bảng này thay thế hoàn toàn bảng KPI chung cho riêng nhân viên này.</p>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="mt-4 pt-4 border-t border-paper-line">
             <div className="text-xs font-medium text-ink mb-2">Hồ sơ cá nhân — để chuyển lương &amp; liên hệ</div>
@@ -19650,7 +20013,9 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
                     <div className="ktns-mono font-semibold text-ink">{fmtVND(pay.usesRevenueModel ? pay.mainSalary : pay.salaryByDays)}</div>
                     <div className="mt-1 text-[11px] text-muted">Công: <span className="ktns-mono font-medium text-charcoal">{cong.toFixed(1)}/{standardWorkDaysFor(reportYear, reportMonth)}</span></div>
                     <div className="mt-1 text-[10px] text-muted">Tháng {reportMonth}/{reportYear}</div>
-                    <div className="mt-1 text-[10px] text-muted">Cơ bản: {fmtVND(e.baseSalary)} · Ngày: {fmtVND(e.dailySalary || (e.baseSalary / standardWorkDaysFor(reportYear, reportMonth)))}</div>
+                    {/* Lương tra THEO THÁNG đang xem (compensationHistory) — đổi lương tháng này
+                        không làm cột này của tháng cũ nhảy theo. */}
+                    <div className="mt-1 text-[10px] text-muted">Cơ bản: {fmtVND(pay.baseSalary)} · Ngày: {fmtVND(pay.dailySalary || pay.daySalary)}</div>
                   </td>
                   <td className="hidden px-4 py-3 min-w-[175px] 2xl:table-cell">
                     <div className="text-xs text-muted">Ngày công: <span className="ktns-mono font-medium text-charcoal">{cong.toFixed(1)}/{standardWorkDaysFor(reportYear, reportMonth)}</span></div>
@@ -19825,7 +20190,7 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
 }
 
 // ---------- Hiệu suất nhân viên ----------
-function HieuSuat({ employees, masterRanking, supportCases, financialSummary, dataLoader, onOpenProfile }) {
+function HieuSuat({ employees, masterRanking, supportCases, financialSummary, dataLoader, onOpenProfile, currentEmployeeId = null }) {
   const [activeTableView, setActiveTableView] = useState("overview");
   const lazyTableData = useLazyTableData(activeTableView, { overview: ["supportCases"], details: ["supportCases"] }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   // Số ca Hỗ trợ khách hàng đã hoàn thành — tính THẬT từ dữ liệu module Hỗ trợ khách hàng, không
@@ -19901,10 +20266,15 @@ function HieuSuat({ employees, masterRanking, supportCases, financialSummary, da
               </tr>
             </thead>
             <tbody>
-              {masterRanking.map((r) => (
-                <tr key={r.emp.id} className={`border-t border-paper-line ${r.performanceStatus === "canh_bao" ? "ktns-warn-row" : ""}`}>
+              {masterRanking.map((r) => {
+                const isSelf = currentEmployeeId != null && Number(r.emp.id) === Number(currentEmployeeId);
+                return (
+                <tr key={r.emp.id} className={`border-t border-paper-line ${isSelf ? "bg-gold/10 ring-1 ring-inset ring-gold/40" : r.performanceStatus === "canh_bao" ? "ktns-warn-row" : ""}`}>
                   <td className="px-4 py-2">
-                    {onOpenProfile ? <button type="button" onClick={() => onOpenProfile(r.emp.id)} className="font-medium text-ink hover:underline">{r.emp.name}</button> : <div className="font-medium">{r.emp.name}</div>}
+                    <div className="flex items-center gap-1.5">
+                      {onOpenProfile ? <button type="button" onClick={() => onOpenProfile(r.emp.id)} className="font-medium text-ink hover:underline">{r.emp.name}</button> : <div className="font-medium">{r.emp.name}</div>}
+                      {isSelf && <span className="rounded-full bg-gold px-1.5 py-0.5 text-[9px] font-bold text-white">BẠN</span>}
+                    </div>
                     <div className="text-[11px] text-muted">{ROLE_META[r.emp.roleType]?.label}</div>
                   </td>
                   <td className="px-4 py-2 text-right ktns-mono text-xs">{Math.round(r.attendanceRate * 100)}%</td>
@@ -19918,7 +20288,8 @@ function HieuSuat({ employees, masterRanking, supportCases, financialSummary, da
                     </span>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
           </div>

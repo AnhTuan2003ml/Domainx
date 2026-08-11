@@ -17,7 +17,7 @@ test("mỗi tab id chỉ xuất hiện đúng một lần — không lặp chứ
 test("giữ nguyên 100% tab id cũ — không mất route/phân quyền nào", () => {
   const expected = [
     "dashboard", "dieuhanh", "chat", "donhang", "crm", "hoptac", "hopdong",
-    "khachhang", "hotro", "hotro-donhang", "hotro-khach", "hotro-congno", "hotro-lichsu",
+    "khachhang", "leads", "hotro", "hotro-donhang", "hotro-khach", "hotro-congno", "hotro-lichsu",
     "kho", "marketing", "nhansu", "chamcong", "giaoviec", "luong", "hieusuat", "tuyendung",
     "thuchi", "congno", "vongop", "taisan", "socai", "quy", "hoachdinh",
     "ai", "phaply", "task-reminder-settings", "settings",
@@ -33,7 +33,9 @@ test("tìm bằng TÊN CŨ trả về đúng chức năng mới", () => {
   assert.equal(first("Trung tâm vận hành")?.id, "dieuhanh");
   assert.equal(first("Trung tâm vận hành")?.label, "Việc cần xử lý");
   assert.equal(first("Sổ VAT")?.id, "thuchi");
-  assert.equal(first("lead")?.id, "crm");
+  // "Khách hàng tiềm năng" đã chuyển từ Doanh thu sang nhóm Khách hàng & CSKH.
+  assert.equal(first("lead")?.id, "leads");
+  assert.equal(first("lead")?.parentLabel, "Khách hàng & CSKH");
   assert.equal(first("mã ca")?.id, "hotro");
   assert.equal(first("quản lý hàng hóa")?.id, "kho");
   assert.equal(first("giao dịch kho")?.id, "kho");
@@ -43,7 +45,7 @@ test("tìm bằng TÊN CŨ trả về đúng chức năng mới", () => {
 
 test("tìm bằng tên mới cũng ra đúng và truy vấn rỗng trả toàn bộ", () => {
   assert.equal(searchNavEntries(entries, "Việc cần xử lý")[0]?.id, "dieuhanh");
-  assert.equal(searchNavEntries(entries, "Khách hàng tiềm năng")[0]?.id, "crm");
+  assert.equal(searchNavEntries(entries, "Khách hàng tiềm năng")[0]?.id, "leads");
   assert.equal(searchNavEntries(entries, "").length, entries.length);
   assert.equal(searchNavEntries(entries, "chuỗi-không-tồn-tại-xyz").length, 0);
 });

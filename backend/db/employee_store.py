@@ -99,6 +99,11 @@ FIELD_SPEC = [
     ("kpiNote", "kpi_note", "text"),
     ("kpiReviewedAt", "kpi_reviewed_at", "text"),
     ("kpiReviewedByName", "kpi_reviewed_by_name", "text"),
+    # LƯƠNG HIỆU LỰC THEO THÁNG: mỗi lần Admin đổi lương/KPI có mốc "áp dụng từ tháng";
+    # bảng lương tháng cũ tra lại snapshot cũ, không bị thay đổi hồi tố.
+    ("compensationHistory", "compensation_history", "json"),
+    # Bảng KPI riêng của từng nhân viên (mảng {minRevenue, pct}) — trống thì dùng bảng chung.
+    ("kpiTiersOverride", "kpi_tiers_override", "json"),
 ]
 
 _SQL_TYPE = {"text": "TEXT", "int": "INTEGER", "real": "REAL", "json": "TEXT"}

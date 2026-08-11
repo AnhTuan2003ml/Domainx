@@ -53,8 +53,9 @@ USER_READABLE_STATE_FIELDS = {
     "inventory", "stockMovements", "attendanceRequests",
     # Chỉ các bản ghi thuộc chính nhân viên được giữ lại để tính lương tham chiếu.
     "transactions", "orders", "marketingLogs", "supportCases",
-    # Khách hàng + CSKH mở cho mọi nhân viên: danh bạ khách và công nợ cần nhắc (chỉ đọc).
-    "customers", "debts",
+    # Khách hàng + CSKH mở cho mọi nhân viên: danh bạ khách và công nợ cần nhắc (chỉ đọc);
+    # khách tiềm năng (leads) mở cả đọc lẫn ghi — ai thu thập được ghi dấu server-side.
+    "customers", "debts", "leads",
 }
 SAFE_COMPANY_FIELDS = {
     "name", "address", "phone", "email", "taxCode", "representative",
@@ -82,6 +83,7 @@ ACCOUNTANT_EDITABLE_EMPLOYEE_FIELDS = {
 EMPLOYEE_PRIVATE_FIELDS = {
     "baseSalary", "dailySalary", "bonusTarget", "contractType", "probationRate", "dependents",
     "mealAllowance", "attendanceBonus", "otherBonus", "advance", "allowances",
+    "compensationHistory", "kpiTiersOverride",
     "dob", "hometown", "bankName", "bankAccount", "phone", "idNumber",
     "education", "major", "resumeSummary", "idFrontData", "idFrontName", "idFrontType",
     "idBackData", "idBackName", "idBackType", "resumeFileData", "resumeFileName",
@@ -407,20 +409,10 @@ def _user_visible_data(db_path, data, user):
     if isinstance(marketing_logs, list):
         filtered["marketingLogs"] = marketing_logs
 
+    # Khách tiềm năng mở cho mọi nhân viên — thống kê "ai thu thập" cần thấy đủ danh sách.
     leads = data.get("leads")
     if isinstance(leads, list):
-        if position_role == "quan_ly":
-            filtered["leads"] = leads
-        elif position_role == "ads":
-            filtered["leads"] = [
-                item for item in leads
-                if isinstance(item, dict) and str(item.get("source") or "") in {"marketing_ads", "pancake"}
-            ]
-        elif position_role == "sale":
-            filtered["leads"] = [
-                item for item in leads
-                if _record_belongs_to_employee(item, employee_id, "saleEmployeeId")
-            ]
+        filtered["leads"] = leads
 
     support_cases = data.get("supportCases")
     if isinstance(support_cases, list):
@@ -1459,10 +1451,11 @@ def preserve_restricted_state_fields(db_path, incoming_data, user, existing_data
             merged["marketingLogs"] = _merge_employee_owned_records(
                 existing_data.get("marketingLogs", []), incoming_data.get("marketingLogs", []), employee_id, "employeeId"
             )
-        if position_role in {"sale", "ads"} and "leads" in incoming_data:
-            merged["leads"] = _merge_employee_leads(
-                existing_data.get("leads", []), incoming_data.get("leads", []), user, employee, position_role, employees
-            )
+        # Khách tiềm năng mở cho MỌI nhân viên (thêm/sửa/xóa) — người thu thập được máy chủ
+        # đóng dấu trong lead_audit_service, client không giả mạo được.
+        if "leads" in incoming_data:
+            incoming_leads = incoming_data.get("leads")
+            merged["leads"] = incoming_leads if isinstance(incoming_leads, list) else existing_data.get("leads", [])
         # Chính sách kho mở: MỌI nhân viên được thêm/sửa/xóa sản phẩm và ghi nhật ký kho.
         # Trách nhiệm truy vết bằng lịch sử chỉnh sửa (inventory_audit_service) + Delete Policy
         # (sản phẩm có lịch sử nhập/xuất vẫn không thể xóa, chỉ được ngừng kinh doanh).
