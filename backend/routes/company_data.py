@@ -23,7 +23,12 @@ from services.business_sync_service import (
     upsert_inventory_product,
 )
 from services.delete_policy_service import DeletePolicyError, audit_blocked_delete, guard_state_removals
-from services.inventory_audit_service import apply_inventory_audit, notify_inventory_events
+from services.inventory_audit_service import (
+    apply_inventory_audit,
+    detect_marketing_daily_events,
+    notify_inventory_events,
+    notify_marketing_events,
+)
 from services.lead_audit_service import stamp_lead_collectors
 from services.ledger_sync_service import sync_after_save
 from services.payroll_payment_service import record_payroll_payment, resolve_payroll_reconciliation
@@ -316,6 +321,7 @@ def handle_put(handler, route, _parsed):
 
     actor_name = _actor_display_name(handler, user)
     inventory_events = []
+    marketing_events = []
 
     if route == "/api/data/fields":
         patch = body.get("data") if isinstance(body, dict) else None
@@ -340,10 +346,12 @@ def handle_put(handler, route, _parsed):
                 events_box=inventory_events,
             )
             # Lead MỚI được đóng dấu người thu thập theo tài khoản đang lưu.
-            return stamp_lead_collectors(
+            stamped = stamp_lead_collectors(
                 existing_data, audited,
                 actor_email=(user or {}).get("email") or "", actor_name=actor_name,
             )
+            detect_marketing_daily_events(existing_data, stamped, marketing_events)
+            return stamped
 
         try:
             saved_state = update_state(handler.db_path, apply_patch, expected_version=expected_version)
@@ -360,9 +368,9 @@ def handle_put(handler, route, _parsed):
         # Sổ cái hạch toán kép chạy song song: mọi bản ghi nghiệp vụ mới được đưa vào
         # journal qua Posting Service (idempotent) ngay sau khi lưu thành công.
         sync_after_save(handler.db_path, actor=(user or {}).get("email") or "system")
-        # Kho thay đổi (thêm sản phẩm / tăng giảm số lượng / xóa) → thông báo hệ thống,
-        # tin nhắn DOMIX và email cho toàn bộ nhân viên.
+        # Kho thay đổi → chỉ tin nhắn DOMIX + email; ticker dành cho tin nghiệp vụ module.
         notify_inventory_events(handler.db_path, user, actor_name, inventory_events)
+        notify_marketing_events(handler.db_path, marketing_events)
         visible_state = handler.filter_state(saved_state, user) or {}
         visible_data = visible_state.get("data") if isinstance(visible_state.get("data"), dict) else {}
         response_keys = set(patch.keys())
@@ -396,10 +404,12 @@ def handle_put(handler, route, _parsed):
             actor_email=(user or {}).get("email") or "", actor_name=actor_name,
             events_box=inventory_events,
         )
-        return stamp_lead_collectors(
+        stamped = stamp_lead_collectors(
             existing_data, audited,
             actor_email=(user or {}).get("email") or "", actor_name=actor_name,
         )
+        detect_marketing_daily_events(existing_data, stamped, marketing_events)
+        return stamped
 
     try:
         saved_state = update_state(handler.db_path, replace_state, expected_version=expected_version)
@@ -415,6 +425,7 @@ def handle_put(handler, route, _parsed):
         return True
     sync_after_save(handler.db_path, actor=(user or {}).get("email") or "system")
     notify_inventory_events(handler.db_path, user, actor_name, inventory_events)
+    notify_marketing_events(handler.db_path, marketing_events)
     handler.send_json({
         "ok": True,
         "updatedAt": saved_state.get("updatedAt"),

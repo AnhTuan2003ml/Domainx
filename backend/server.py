@@ -56,6 +56,8 @@ USER_READABLE_STATE_FIELDS = {
     # Khách hàng + CSKH mở cho mọi nhân viên: danh bạ khách và công nợ cần nhắc (chỉ đọc);
     # khách tiềm năng (leads) mở cả đọc lẫn ghi — ai thu thập được ghi dấu server-side.
     "customers", "debts", "leads",
+    # Bảng hiệu suất Marketing theo ngày mở cho mọi nhân viên xem (cần tên Page để hiển thị).
+    "marketingPages",
 }
 SAFE_COMPANY_FIELDS = {
     "name", "address", "phone", "email", "taxCode", "representative",

@@ -109,6 +109,8 @@ export const ROLE_TAB_ACCESS = {
   user: [
     "crm", "giaoviec", "chat", "chamcong", "luong", "taikhoan", "kho", "hieusuat",
     "khachhang", "leads", "hotro", "hotro-donhang", "hotro-khach", "hotro-congno", "hotro-lichsu",
+    // Mọi nhân viên xem được Bảng hiệu suất Marketing theo ngày (ghi vẫn theo quyền vị trí).
+    "marketing",
   ],
 };
 

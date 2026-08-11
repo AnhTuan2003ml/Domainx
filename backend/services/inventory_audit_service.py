@@ -240,33 +240,8 @@ def notify_inventory_events(db_path, actor_user, actor_name, events):
 
     actor_name = str(actor_name or "").strip() or str((actor_user or {}).get("email") or "").strip() or "Hệ thống"
     lines = [_event_line(event) for event in events]
-
-    # 1) Thông báo hệ thống (banner/ticker realtime qua poll announcements 5s).
-    ticker_text = f"📦 KHO HÀNG · {actor_name}: " + " · ".join(lines)
-    if len(ticker_text) > 240:
-        ticker_text = ticker_text[:237] + "…"
-    try:
-        def append_announcement(existing_data):
-            result = dict(existing_data or {})
-            announcements = [item for item in (result.get("announcements") or []) if isinstance(item, dict)]
-            now = _now_vn()
-            announcements.append({
-                "id": int(time.time() * 1000),
-                "text": ticker_text,
-                "approved": True,
-                "approvedAt": now.strftime("%Y-%m-%d %H:%M:%S"),
-                "startAt": now.strftime("%Y-%m-%dT%H:%M"),
-                # Mặc định 24h — chạy tới khi có thông báo mới thay thế trên ticker.
-                "durationMinutes": 1440,
-                "createdAt": now.strftime("%Y-%m-%d %H:%M:%S"),
-                "source": "inventory",
-            })
-            result["announcements"] = announcements[-200:]
-            return result
-
-        update_state(db_path, append_announcement)
-    except Exception as exc:  # noqa: BLE001 — thông báo không được làm hỏng thao tác chính
-        print(f"[INVENTORY NOTIFY] Không ghi được thông báo hệ thống: {exc}")
+    # Thay đổi DỮ LIỆU (kho) KHÔNG lên thanh thông báo — chỉ nhắn DOMIX + email.
+    # Thanh thông báo dành cho tin NGHIỆP VỤ theo module (notify_marketing_events...).
 
     body = "\n".join([
         "[CẬP NHẬT KHO HÀNG]",
@@ -300,6 +275,79 @@ def notify_inventory_events(db_path, actor_user, actor_name, events):
         daemon=True,
     )
     thread.start()
+
+
+def post_ticker_announcement(db_path, text):
+    """Đăng một bản tin nghiệp vụ lên thanh thông báo (ticker) — mặc định chạy 24h."""
+    ticker_text = str(text or "").strip()
+    if not ticker_text:
+        return
+    if len(ticker_text) > 240:
+        ticker_text = ticker_text[:237] + "…"
+
+    def append_announcement(existing_data):
+        result = dict(existing_data or {})
+        announcements = [item for item in (result.get("announcements") or []) if isinstance(item, dict)]
+        now = _now_vn()
+        announcements.append({
+            "id": int(time.time() * 1000),
+            "text": ticker_text,
+            "approved": True,
+            "approvedAt": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "startAt": now.strftime("%Y-%m-%dT%H:%M"),
+            "durationMinutes": 1440,
+            "createdAt": now.strftime("%Y-%m-%d %H:%M:%S"),
+            "source": "module",
+        })
+        result["announcements"] = announcements[-200:]
+        return result
+
+    update_state(db_path, append_announcement)
+
+
+def detect_marketing_daily_events(existing_data, new_data, events_box):
+    """Bản ghi Ghi nhận hiệu suất ngày MỚI → sự kiện nghiệp vụ cho thanh thông báo."""
+    events_box.clear()
+    if not isinstance(new_data, dict) or not isinstance(new_data.get("marketingLogs"), list):
+        return
+    old_ids = {str(l.get("id")) for l in (existing_data or {}).get("marketingLogs") or [] if isinstance(l, dict)}
+    for log in new_data["marketingLogs"]:
+        if not isinstance(log, dict) or log.get("archived") or str(log.get("id")) in old_ids:
+            continue
+        customers = [c for c in (log.get("customers") or []) if isinstance(c, dict)]
+        events_box.append({
+            "employeeId": log.get("employeeId"),
+            "date": str(log.get("date") or ""),
+            "reached": int(float(log.get("customersReached") or 0)),
+            "conversions": int(float(log.get("conversions") or 0)),
+            "bought": sum(1 for c in customers if c.get("orderId") or c.get("outcome") == "da_mua"),
+            "leads": sum(1 for c in customers if c.get("leadId")),
+        })
+
+
+def notify_marketing_events(db_path, events):
+    """Ticker chạy tin NGHIỆP VỤ: 'Nguyễn Văn A chốt được 10 khách ngày ...'."""
+    events = [event for event in (events or []) if isinstance(event, dict)]
+    if not events:
+        return
+    try:
+        from services import employee_service
+        names = {str(e.get("id")): e.get("name") for e in employee_service.list_employees(db_path)}
+    except Exception:  # noqa: BLE001
+        names = {}
+    for event in events:
+        name = names.get(str(event.get("employeeId"))) or "Nhân viên"
+        parts = [f"📣 MARKETING · {name} chốt được {event['reached']} khách ngày {event['date']}"]
+        if event["conversions"]:
+            parts.append(f"{event['conversions']} chuyển đổi")
+        if event["bought"]:
+            parts.append(f"{event['bought']} khách ĐÃ MUA HÀNG")
+        if event["leads"]:
+            parts.append(f"{event['leads']} khách tiềm năng mới")
+        try:
+            post_ticker_announcement(db_path, " · ".join(parts))
+        except Exception as exc:  # noqa: BLE001
+            print(f"[MARKETING NOTIFY] Không đăng được thông báo: {exc}")
 
 
 def _send_emails_background(db_path, actor_name, lines):
