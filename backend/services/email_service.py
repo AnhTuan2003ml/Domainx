@@ -126,6 +126,62 @@ def send_inventory_expiry_alert(
         smtp.send_message(message)
 
 
+def send_inventory_change_alert(recipient_email, recipient_name, actor_name, event_lines):
+    """Báo cho nhân viên khi kho thay đổi: thêm sản phẩm mới / số lượng tăng giảm."""
+    sender_email = (SMTP_EMAIL or "").strip()
+    app_password = (SMTP_APP_PASSWORD or "").replace(" ", "").strip()
+    missing = []
+    if not sender_email:
+        missing.append("DOMIX_SMTP_EMAIL")
+    if not app_password:
+        missing.append("DOMIX_SMTP_APP_PASSWORD")
+    if missing:
+        raise RuntimeError(
+            "Chưa cấu hình " + ", ".join(missing)
+            + ". Hãy khai báo trong file .env ở thư mục gốc rồi khởi động lại server."
+        )
+
+    event_lines = [str(line or "").strip() for line in (event_lines or []) if str(line or "").strip()]
+    headline = event_lines[0] if event_lines else "Kho hàng vừa được cập nhật."
+    subject = f"[DOMIX] Kho hàng cập nhật: {headline}"
+    if len(subject) > 140:
+        subject = subject[:137] + "…"
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = f"DOMIX <{sender_email}>"
+    message["To"] = recipient_email
+    message.set_content(
+        f"Xin chào {recipient_name or recipient_email},\n\n"
+        f"Kho hàng DOMIX vừa được cập nhật bởi: {actor_name}.\n\n"
+        + "\n".join(f"- {line}" for line in event_lines)
+        + "\n\nMở DOMIX > Sản phẩm & Kho để xem chi tiết và lịch sử chỉnh sửa."
+    )
+
+    safe_name = html.escape(str(recipient_name or recipient_email or ""))
+    safe_actor = html.escape(str(actor_name or "DOMIX"))
+    safe_rows = "".join(
+        f'<li style="padding:6px 0;color:#35445a;line-height:1.55;border-bottom:1px solid #eef1f5">{html.escape(line)}</li>'
+        for line in event_lines
+    )
+    message.add_alternative(
+        f"""
+        <div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;padding:24px;border:1px solid #e6e8ec;border-radius:14px;background:#ffffff">
+          <div style="font-size:12px;letter-spacing:2px;color:#657083">DOMIX · CẬP NHẬT KHO HÀNG</div>
+          <h2 style="margin:14px 0 8px;color:#18294a">Kho hàng vừa thay đổi</h2>
+          <p style="color:#556070;line-height:1.6">Xin chào <strong>{safe_name}</strong>. Người thao tác: <strong>{safe_actor}</strong>.</p>
+          <ul style="margin:14px 0;padding:0 0 0 18px;font-size:14px">{safe_rows}</ul>
+          <p style="margin-top:18px;color:#7a8492;font-size:13px;line-height:1.6">Mở DOMIX &gt; <strong style="color:#18294a">Sản phẩm &amp; Kho</strong> để xem chi tiết và lịch sử chỉnh sửa từng sản phẩm.</p>
+        </div>
+        """,
+        subtype="html",
+    )
+
+    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS) as smtp:
+        smtp.login(sender_email, app_password)
+        smtp.send_message(message)
+
+
 def send_password_reset_otp(recipient_email, otp_code, expires_minutes):
     sender_email = (SMTP_EMAIL or "").strip()
     app_password = (SMTP_APP_PASSWORD or "").replace(" ", "").strip()

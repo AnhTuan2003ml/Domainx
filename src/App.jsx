@@ -94,6 +94,7 @@ import {
   BellRing,
   Menu,
   RotateCcw,
+  History,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import CompanySidebar from "./components/layout/CompanySidebar";
@@ -4897,16 +4898,39 @@ function DomixApp({ authUser, onLogout }) {
     [effectiveAccountRole, payrollCurrentEmployee]
   );
   // Mục lớn (hub) hiện khi còn ít nhất một tab con được phép; mục thường lọc theo quyền như cũ.
-  const navGroups = allNavGroups
-    .map((group) => ({
-      ...group,
-      items: group.items
-        .map((item) => (item.children
-          ? { ...item, children: item.children.filter((child) => allowedTabIds.has(child.id)) }
-          : item))
-        .filter((item) => (item.children ? item.children.length > 0 : allowedTabIds.has(item.id))),
-    }))
-    .filter((group) => group.items.length > 0);
+  const navGroups = (() => {
+    const groups = allNavGroups
+      .map((group) => ({
+        ...group,
+        items: group.items
+          .map((item) => (item.children
+            ? { ...item, children: item.children.filter((child) => allowedTabIds.has(child.id)) }
+            : item))
+          .filter((item) => (item.children ? item.children.length > 0 : allowedTabIds.has(item.id))),
+      }));
+    // Nhân viên thường không có Bảng điều hành — "Hiệu suất nhân viên" chính là màn tổng quan
+    // của họ nên chuyển từ nhóm Nhân sự & Tiền lương lên mục TỔNG QUAN (đứng sau Tin nhắn).
+    // Admin/Kế toán giữ nguyên vị trí trong Nhân sự & Tiền lương.
+    if (effectiveAccountRole === "user") {
+      let movedPerformance = null;
+      groups.forEach((group) => {
+        group.items = group.items
+          .map((item) => {
+            if (!item.children) return item;
+            const performanceChild = item.children.find((child) => child.id === "hieusuat");
+            if (!performanceChild) return item;
+            movedPerformance = performanceChild;
+            return { ...item, children: item.children.filter((child) => child.id !== "hieusuat") };
+          })
+          .filter((item) => (item.children ? item.children.length > 0 : true));
+      });
+      const overviewGroup = groups.find((group) => group.id === "section-overview");
+      if (movedPerformance && overviewGroup) {
+        overviewGroup.items = [...overviewGroup.items, { ...movedPerformance, parentLabel: overviewGroup.label }];
+      }
+    }
+    return groups.filter((group) => group.items.length > 0);
+  })();
   // Danh sách phẳng mọi tab con — dùng cho tìm nhanh và tiêu đề trang.
   const nav = navGroups.flatMap((g) => g.items.flatMap((item) => (item.children ? item.children : [item])));
   // Hub đang chứa tab hiện tại (nếu có) — quyết định thanh menu ngang của vùng làm việc.
@@ -5187,7 +5211,9 @@ function DomixApp({ authUser, onLogout }) {
             if (!a.approved) return false;
             const start = startOf(a);
             if (Number.isNaN(start)) return false;
-            const durationMinutes = Math.min(1440, Math.max(1, Number(a.durationMinutes) || 10));
+            // Mặc định 24h (1440 phút): thông báo chạy cả ngày cho tới khi có bản tin mới
+            // thay thế (ticker luôn chỉ hiển thị bản MỚI NHẤT còn hiệu lực).
+            const durationMinutes = Math.min(1440, Math.max(1, Number(a.durationMinutes) || 1440));
             return tickerNow >= start && tickerNow <= start + durationMinutes * 60000;
           }).sort((a, b) => startOf(b) - startOf(a));
           if (activeAnnouncements.length > 0) parts.push(`📢 ${activeAnnouncements[0].text}`);
@@ -5390,7 +5416,7 @@ function QuickAnnouncementBox({ announcements, setAnnouncements }) {
     const bad = containsProfanity(text);
     if (bad) { setBlockedMsg(`Nội dung chứa từ ngữ không phù hợp ("${bad}") — vui lòng sửa lại trước khi gửi. Đây là thông báo chạy cho cả công ty xem.`); return; }
     setBlockedMsg("");
-    setAnnouncements((prev) => [...prev, { id: Date.now(), text: text.trim(), approved: true, approvedAt: nowStamp(), startAt: toLocalDateTimeInputValue(new Date()), durationMinutes: 30, createdAt: nowStamp() }]);
+    setAnnouncements((prev) => [...prev, { id: Date.now(), text: text.trim(), approved: true, approvedAt: nowStamp(), startAt: toLocalDateTimeInputValue(new Date()), durationMinutes: 1440, createdAt: nowStamp() }]);
     setText("");
     setJustSent(true);
     setTimeout(() => setJustSent(false), 3000);
@@ -5668,7 +5694,8 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
 function AnnouncementPanel({ announcements, setAnnouncements }) {
   const [draftText, setDraftText] = useState("");
   const [draftStartAt, setDraftStartAt] = useState(() => toLocalDateTimeInputValue(new Date()));
-  const [draftDurationMinutes, setDraftDurationMinutes] = useState(30);
+  // Mặc định 24h — thông báo chạy cả ngày, chỉ dừng sớm khi có bản tin mới thay thế.
+  const [draftDurationMinutes, setDraftDurationMinutes] = useState(1440);
   const [blockedMsg, setBlockedMsg] = useState("");
   const addDraft = () => {
     if (!draftText.trim()) return;
@@ -5678,7 +5705,7 @@ function AnnouncementPanel({ announcements, setAnnouncements }) {
     setAnnouncements((prev) => [...prev, {
       id: Date.now(), text: draftText.trim(), approved: false, createdAt: nowStamp(),
       startAt: draftStartAt || toLocalDateTimeInputValue(new Date()),
-      durationMinutes: Math.min(1440, Math.max(1, Number(draftDurationMinutes) || 30)),
+      durationMinutes: Math.min(1440, Math.max(1, Number(draftDurationMinutes) || 1440)),
     }]);
     setDraftText("");
   };
@@ -5687,7 +5714,7 @@ function AnnouncementPanel({ announcements, setAnnouncements }) {
     approved: !a.approved,
     approvedAt: !a.approved ? nowStamp() : a.approvedAt,
     startAt: a.startAt || toLocalDateTimeInputValue(new Date()),
-    durationMinutes: Math.min(1440, Math.max(1, Number(a.durationMinutes) || 30)),
+    durationMinutes: Math.min(1440, Math.max(1, Number(a.durationMinutes) || 1440)),
   } : a)));
   const updateAnnouncement = (id, patch) => setAnnouncements((prev) => prev.map((a) => a.id === id ? { ...a, ...patch } : a));
   const removeAnnouncement = (id) => setAnnouncements((prev) => prev.filter((a) => a.id !== id));
@@ -5695,7 +5722,7 @@ function AnnouncementPanel({ announcements, setAnnouncements }) {
   return (
     <div className="bg-white rounded-lg border border-paper-line p-5">
       <h3 className="ktns-serif font-semibold text-ink mb-1 flex items-center gap-2"><Megaphone size={16} /> Thông báo chạy chữ đầu trang</h3>
-      <p className="text-xs text-muted mb-3" title="Ví dụ: chọn 13:30, thời lượng 30 phút thì ticker chỉ hiển thị 13:30–14:00.">Đặt giờ bắt đầu và thời lượng; bấm <strong className="text-charcoal">Duyệt hiển thị</strong> để chạy.</p>
+      <p className="text-xs text-muted mb-3" title="Mặc định 1440 phút (24h). Ticker luôn chỉ chạy bản tin MỚI NHẤT còn hiệu lực — gửi bản mới là thay ngay bản cũ.">Đặt giờ bắt đầu và thời lượng (mặc định 24h — chạy tới khi có thông báo mới thay thế); bấm <strong className="text-charcoal">Duyệt hiển thị</strong> để chạy.</p>
       <div className="mb-3 grid gap-2 md:grid-cols-[minmax(0,1fr)_200px_130px_auto]">
         <input value={draftText} onChange={(e) => setDraftText(e.target.value)} placeholder="VD: Họp toàn công ty lúc 15h..." className="border border-paper-line rounded px-2.5 py-1.5 text-sm" />
         <label className="text-[10px] text-muted flex flex-col gap-0.5">Bắt đầu chạy<input type="datetime-local" value={draftStartAt} onChange={(e) => setDraftStartAt(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
@@ -5711,7 +5738,7 @@ function AnnouncementPanel({ announcements, setAnnouncements }) {
             <div key={a.id} className={`flex items-center gap-2 px-3 py-2 rounded-md border ${a.approved ? "border-ledger-green/40 bg-ledger-green/5" : "border-paper-line bg-paper/60"}`}>
               <span className="flex-1 text-sm text-charcoal">{a.text}</span>
               <label className="text-[9px] text-muted flex flex-col gap-0.5">Bắt đầu<input type="datetime-local" value={a.startAt || toLocalDateTimeInputValue(new Date())} onChange={(e) => updateAnnouncement(a.id, { startAt: e.target.value })} className="w-[190px] border border-paper-line rounded px-1.5 py-1 text-[10px] ktns-mono" /></label>
-              <label className="text-[9px] text-muted flex flex-col gap-0.5">Phút<input type="number" min="1" max="1440" value={a.durationMinutes || 30} onChange={(e) => updateAnnouncement(a.id, { durationMinutes: Math.min(1440, Math.max(1, Number(e.target.value) || 30)) })} className="w-16 border border-paper-line rounded px-1.5 py-1 text-[10px] ktns-mono" /></label>
+              <label className="text-[9px] text-muted flex flex-col gap-0.5">Phút<input type="number" min="1" max="1440" value={a.durationMinutes || 1440} onChange={(e) => updateAnnouncement(a.id, { durationMinutes: Math.min(1440, Math.max(1, Number(e.target.value) || 1440)) })} className="w-16 border border-paper-line rounded px-1.5 py-1 text-[10px] ktns-mono" /></label>
               <span className="text-[10px] text-muted ktns-mono">{fmtContactTime(a.createdAt)}</span>
               <button onClick={() => toggleApprove(a.id)} className={`text-[11px] px-2.5 py-1 rounded-md ${a.approved ? "bg-ledger-green text-white" : "border border-gold text-gold"}`}>
                 {a.approved ? "Đã duyệt / theo lịch" : "Duyệt hiển thị"}
@@ -9136,22 +9163,12 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
   const [serverInventoryMovements, setServerInventoryMovements] = useState([]);
   const [inventoryLedgerStatus, setInventoryLedgerStatus] = useState({ balanced: true, issues: [] });
   const [movementLoadError, setMovementLoadError] = useState("");
-  const canManageInventory = normalizeAccountRole(authUser?.role) !== "user";
-  const canEditAssignedInventory = !canManageInventory && Boolean(positionAccess?.inventoryWrite && currentEmployee?.id);
-  const canViewAllInventory = canManageInventory || positionAccess?.inventoryScope === "all-read" || positionAccess?.inventoryScope === "all";
-  const isAssignedProduct = (product) => Number(product?.assignedEmployeeId) === Number(currentEmployee?.id);
-  // Hàng chung (chưa giao cho ai phụ trách) là danh mục của cả công ty — mọi nhân viên đều xem
-  // được; chỉ mặt hàng đã giao đích danh mới giới hạn đúng người phụ trách.
-  const isUnassignedProduct = (product) => {
-    const assigned = product?.assignedEmployeeId;
-    if (assigned === null || assigned === undefined || assigned === "") return true;
-    const numeric = Number(assigned);
-    return !Number.isFinite(numeric) || numeric <= 0;
-  };
-  const canEditProduct = (product) => canManageInventory || (canEditAssignedInventory && isAssignedProduct(product));
-  const permittedInventory = canViewAllInventory
-    ? inventory
-    : inventory.filter((product) => isUnassignedProduct(product) || isAssignedProduct(product));
+  // CHÍNH SÁCH KHO MỞ: mọi nhân viên đều xem TOÀN BỘ kho và được thêm/sửa/xóa sản phẩm.
+  // Trách nhiệm truy vết bằng lịch sử chỉnh sửa từng sản phẩm (nút Lịch sử) + thông báo
+  // toàn công ty khi thêm hàng/đổi số lượng — không chặn quyền theo phân công như trước.
+  const canManageInventory = true;
+  const canEditProduct = () => true;
+  const permittedInventory = inventory;
   // Sản phẩm NGỪNG KINH DOANH không bị xóa (giữ lịch sử 156/632) nhưng phải BIẾN MẤT khỏi
   // danh mục làm việc — muốn xem lại thì bật riêng khu "Ngừng kinh doanh" bên dưới.
   const [showDiscontinued, setShowDiscontinued] = useState(false);
@@ -9310,6 +9327,9 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
   // Luôn yêu cầu nhập lý do (qua modal pendingAdjust) để Nhật ký kho biết "vì sao" chứ không chỉ "bao nhiêu".
   const [pendingAdjust, setPendingAdjust] = useState(null); // { id, delta, productName }
   const [adjustReason, setAdjustReason] = useState("");
+  // Modal LỊCH SỬ CHỈNH SỬA: ai sửa, lúc nào, đổi field nào — dữ liệu máy chủ ghi, client chỉ đọc.
+  const [historyProductId, setHistoryProductId] = useState(null);
+  const historyProduct = historyProductId === null ? null : inventory.find((product) => String(product.id) === String(historyProductId)) || null;
   const requestAdjustStock = (product, delta) => {
     if (!canEditProduct(product) || !moveStock) return;
     setPendingAdjust({ id: product.id, delta, productName: product.name });
@@ -9448,7 +9468,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
-      <div style={{ display: activeTableView === "inventory" ? undefined : "none" }} className="shrink-0 rounded-lg border border-paper-line bg-white px-3 py-2 text-xs text-muted">{canManageInventory ? "Quản lý toàn bộ sản phẩm, tồn kho, ngày hết hạn và người phụ trách." : canEditAssignedInventory ? "Bạn xem được hàng chung của công ty và hàng được giao cho mình; chỉ sửa được hàng đã giao cho mình. Không được tạo mới, xóa hoặc chuyển người phụ trách." : canViewAllInventory ? "Bạn được xem toàn bộ Kho hàng ở chế độ chỉ đọc." : "Bạn xem được hàng chung của công ty và hàng được giao cho mình ở chế độ chỉ đọc."}</div>
+      <div style={{ display: activeTableView === "inventory" ? undefined : "none" }} className="shrink-0 rounded-lg border border-paper-line bg-white px-3 py-2 text-xs text-muted">Mọi nhân viên đều xem và thao tác được toàn bộ Kho hàng. Mỗi lần thêm/sửa đều được ghi lịch sử (ai, lúc nào) và thông báo cho toàn công ty.</div>
 
       <div className="shrink-0">
         <SectionViewSwitcher
@@ -9526,6 +9546,52 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
             <div className="flex justify-end gap-2 mt-4">
               <button type="button" onClick={() => setPendingAdjust(null)} className="text-sm px-3.5 py-2 rounded-md border border-paper-line text-muted hover:text-ink">Hủy</button>
               <button type="button" disabled={!adjustReason.trim()} onClick={confirmAdjustStock} className="text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light disabled:opacity-50 disabled:cursor-not-allowed">Xác nhận</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {historyProduct && (
+        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-4" onClick={() => setHistoryProductId(null)}>
+          <div className="bg-white rounded-lg w-full max-w-2xl shadow-xl flex max-h-[80vh] flex-col" onClick={(ev) => ev.stopPropagation()}>
+            <div className="flex items-start justify-between gap-3 border-b border-paper-line px-5 py-4">
+              <div>
+                <h3 className="ktns-serif font-semibold text-ink">Lịch sử chỉnh sửa — {historyProduct.name}</h3>
+                <p className="mt-0.5 text-xs text-muted">Máy chủ tự ghi mỗi lần thêm/sửa: ai thao tác, lúc nào, đổi những gì. Tăng giảm tồn kho chi tiết xem thêm ở Nhật ký kho.</p>
+              </div>
+              <button type="button" onClick={() => setHistoryProductId(null)} className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-paper-line text-muted hover:text-ink" aria-label="Đóng lịch sử chỉnh sửa"><X size={15} /></button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto px-5 py-4">
+              {(historyProduct.history || []).length === 0 ? (
+                <p className="text-sm text-muted">Chưa có lịch sử chỉnh sửa — sản phẩm được tạo trước khi hệ thống bắt đầu ghi dấu vết. Lần sửa tiếp theo sẽ được ghi lại đầy đủ.</p>
+              ) : (
+                <ol className="space-y-3">
+                  {(historyProduct.history || []).slice().reverse().map((entry) => (
+                    <li key={entry.id || entry.at} className="rounded-lg border border-paper-line bg-paper px-3.5 py-3">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                        <span className="ktns-mono text-muted">{entry.at}</span>
+                        <span className="font-semibold text-ink">{entry.byName || entry.byEmail || "—"}</span>
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${entry.action === "create" ? "bg-ledger-green/10 text-ledger-green" : entry.action === "delete" ? "bg-stamp-red/10 text-stamp-red" : "bg-gold/15 text-gold"}`}>
+                          {entry.action === "create" ? "TẠO MỚI" : entry.action === "delete" ? "XÓA" : "CHỈNH SỬA"}
+                        </span>
+                        {entry.byEmail && entry.byName && <span className="text-[10px] text-muted">{entry.byEmail}</span>}
+                      </div>
+                      {(entry.changes || []).length > 0 && (
+                        <ul className="mt-2 space-y-1 text-xs text-ink-light">
+                          {(entry.changes || []).map((change, changeIdx) => (
+                            <li key={`${entry.id || entry.at}-${changeIdx}`} className="flex flex-wrap items-baseline gap-1.5">
+                              <span className="font-semibold text-ink">{change.label || change.field}:</span>
+                              {change.from === null || change.from === undefined
+                                ? <span className="ktns-mono">{change.to}</span>
+                                : <><span className="ktns-mono text-muted line-through">{change.from}</span><span className="text-muted">→</span><span className="ktns-mono">{change.to}</span></>}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              )}
             </div>
           </div>
         </div>
@@ -9636,7 +9702,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
                         {p.supplierName && <div className="mt-0.5 text-[10px] text-muted">NCC nhập hàng: {p.supplierName}</div>}
                       </td>
                       <td className="px-4 py-2"><div className="flex flex-col items-start gap-1">{p.discontinued ? <StampBadge text="NGỪNG KINH DOANH" /> : low ? <StampBadge text="SẮP HẾT HÀNG" /> : <StampBadge text="CÒN HÀNG" gold />}{daysLeft !== null && daysLeft < 0 && <StampBadge text="ĐÃ HẾT HẠN" />}{daysLeft !== null && daysLeft >= 0 && daysLeft <= 5 && <StampBadge text="SẮP HẾT HẠN" />}{!p.expiryDate && Number(p.durationMonths) > 0 && <StampBadge text="CHƯA NHẬP HẠN" />}{!p.expiryDate && Number(p.durationMonths) <= 0 && <span className="rounded-full border border-paper-line px-2 py-0.5 text-[10px] font-semibold text-muted">KHÔNG QUẢN LÝ HẠN</span>}</div></td>
-                      <td className="px-4 py-2 text-right">{canEditProduct(p) && <div className="flex flex-wrap items-center justify-end gap-1.5">{p.discontinued ? (
+                      <td className="px-4 py-2 text-right">{canEditProduct(p) && <div className="flex flex-wrap items-center justify-end gap-1.5"><button type="button" onClick={() => setHistoryProductId(p.id)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2 py-1 text-[11px] font-semibold text-muted hover:text-ink" title="Xem lịch sử chỉnh sửa: ai sửa, lúc nào, đổi gì" aria-label={`Lịch sử chỉnh sửa sản phẩm ${p.name}`}><History size={12} /> Lịch sử</button>{p.discontinued ? (
                         canManageInventory && <button type="button" onClick={() => setInventory((prev) => prev.map((item) => (item.id === p.id ? { ...item, discontinued: false, discontinuedAt: null } : item)))} className="inline-flex items-center gap-1 rounded-md border border-ledger-green/40 px-2 py-1 text-[11px] font-semibold text-ledger-green" title="Đưa sản phẩm trở lại danh mục đang bán — lịch sử kho giữ nguyên" aria-label={`Kinh doanh trở lại sản phẩm ${p.name}`}><RotateCcw size={12} /> Kinh doanh trở lại</button>
                       ) : (<><button type="button" onClick={() => openEditProduct(p)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2 py-1 text-[11px] font-semibold text-ink-light" title="Sửa sản phẩm được phân công" aria-label={`Sửa sản phẩm ${p.name}`}><Pencil size={12} /> Sửa</button>{canManageInventory && ((stockMovements || []).some((m) => String(m.productId) === String(p.id)) ? (
                         <button type="button" onClick={() => removeProduct(p.id)} className="inline-flex items-center gap-1 rounded-md border border-gold/40 px-2 py-1 text-[11px] font-semibold text-gold" title="Sản phẩm đã có lịch sử kho — không xóa được, chỉ ngừng kinh doanh (giữ nguyên lịch sử 156/632)" aria-label={`Ngừng kinh doanh sản phẩm ${p.name}`}><Archive size={12} /> Ngừng KD</button>

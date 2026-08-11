@@ -941,6 +941,9 @@ def upsert_inventory_product(data, product_fields, opening_stock=0):
     clean["name"] = name
     clean["expiryDate"] = expiry_date
     clean.pop("openingStock", None)
+    # Lịch sử chỉnh sửa là dữ liệu MÁY CHỦ quản lý (inventory_audit_service) —
+    # không nhận history từ client để không thể ghi đè/xóa dấu vết.
+    clean.pop("history", None)
 
     if existing:
         # Tồn là số dẫn xuất từ sổ kho; form sửa thông tin không được ghi đè trực tiếp.

@@ -194,10 +194,8 @@ def handle_post(handler, route, _parsed):
         return True
 
     employees, sender_employee, is_accountant = handler.employee_context(user)
-    sender_role = handler.employee_position_role(sender_employee)
-    if not (handler.is_full_admin(user) or is_accountant or sender_role in {"sale", "ky_thuat", "it", "cskh", "van_hanh"}):
-        handler.send_json({"error": "Tài khoản không có quyền giao yêu cầu hỗ trợ khách hàng."}, 403)
-        return True
+    # CSKH mở cho mọi nhân viên: bất kỳ tài khoản đã đăng nhập nào cũng được tạo/giao
+    # yêu cầu hỗ trợ. Người TIẾP NHẬN vẫn phải thuộc nhóm được phép (kỹ thuật/IT/CSKH).
     try:
         recipient_employee_id = int(data.get("recipientEmployeeId"))
     except (TypeError, ValueError):

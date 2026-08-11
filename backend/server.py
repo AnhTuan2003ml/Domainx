@@ -49,10 +49,12 @@ ACCOUNTANT_WRITABLE_STATE_FIELDS = {
 USER_READABLE_STATE_FIELDS = {
     "lang", "company", "announcements", "unlockedMonths", "tasks",
     "payrollApprovals", "midMonthRequests", "payrollPayments", "kpiTiers",
-    # Nhân viên được xem toàn bộ danh mục Kho hàng ở chế độ chỉ đọc.
-    "inventory", "attendanceRequests",
+    # Chính sách kho mở: mọi nhân viên xem toàn bộ danh mục Kho + nhật ký kho.
+    "inventory", "stockMovements", "attendanceRequests",
     # Chỉ các bản ghi thuộc chính nhân viên được giữ lại để tính lương tham chiếu.
     "transactions", "orders", "marketingLogs", "supportCases",
+    # Khách hàng + CSKH mở cho mọi nhân viên: danh bạ khách và công nợ cần nhắc (chỉ đọc).
+    "customers", "debts",
 }
 SAFE_COMPANY_FIELDS = {
     "name", "address", "phone", "email", "taxCode", "representative",
@@ -74,13 +76,13 @@ ACCOUNTANT_EDITABLE_EMPLOYEE_FIELDS = {
     "allowances", "mealAllowance", "attendanceBonus", "bonusTarget", "kpi",
     "otherBonus", "advance", "kpiNote", "kpiReviewedAt", "kpiReviewedByName",
 }
+# Hiệu suất nhân viên mở cho MỌI người xem: các chỉ số hoạt động (chấm công, doanh số,
+# quảng cáo, nhiệm vụ, upsale, KPI) không còn bị che. Vẫn giữ KÍN tuyệt đối: tiền lương,
+# phụ cấp/thưởng/tạm ứng, ngân hàng, giấy tờ tùy thân, hồ sơ cá nhân.
 EMPLOYEE_PRIVATE_FIELDS = {
-    "baseSalary", "dailySalary", "bonusTarget", "kpi", "contractType", "probationRate", "dependents",
-    "mealAllowance", "attendanceBonus", "otherBonus", "advance", "attendance", "allowances",
-    "salesTarget", "salesActual", "dealsClosed", "leadsHandled", "adSpend", "adRevenue",
-    "conversions", "ctr", "tasksAssigned", "tasksCompleted", "tasksOnTime", "bugsFixed",
-    "upsaleValue", "dob", "hometown", "bankName", "bankAccount", "phone", "idNumber",
-    "attendanceTimes",
+    "baseSalary", "dailySalary", "bonusTarget", "contractType", "probationRate", "dependents",
+    "mealAllowance", "attendanceBonus", "otherBonus", "advance", "allowances",
+    "dob", "hometown", "bankName", "bankAccount", "phone", "idNumber",
     "education", "major", "resumeSummary", "idFrontData", "idFrontName", "idFrontType",
     "idBackData", "idBackName", "idBackType", "resumeFileData", "resumeFileName",
     "resumeFileType",
@@ -133,17 +135,20 @@ def _employee_is_accountant(employee):
     return any(token in description for token in ("ke toan", "tai chinh", "accountant", "accounting", "finance"))
 
 
+# CHÍNH SÁCH KHO MỞ: mọi nhân viên (mọi nhóm vị trí) đều xem toàn bộ kho và được
+# thêm/sửa/xóa sản phẩm. Trách nhiệm cá nhân được truy vết bằng lịch sử chỉnh sửa
+# (inventory history + inventoryAuditLog), không bằng chặn quyền như trước.
 POSITION_PERMISSIONS = {
-    "ads": {"marketing_write": True, "inventory_scope": "assigned", "inventory_write": True},
-    "sale": {"marketing_write": True, "inventory_scope": "assigned", "inventory_write": True},
-    "ky_thuat": {"inventory_scope": "assigned", "inventory_write": True},
-    "it": {"inventory_scope": "assigned", "inventory_write": True},
+    "ads": {"marketing_write": True, "inventory_scope": "all", "inventory_write": True},
+    "sale": {"marketing_write": True, "inventory_scope": "all", "inventory_write": True},
+    "ky_thuat": {"inventory_scope": "all", "inventory_write": True},
+    "it": {"inventory_scope": "all", "inventory_write": True},
     "ke_toan": {"inventory_scope": "all", "inventory_write": True},
-    "nhan_su": {"inventory_scope": "none", "inventory_write": False},
-    "van_hanh": {"inventory_scope": "assigned", "inventory_write": True},
-    "cskh": {"inventory_scope": "all_read", "inventory_write": False},
-    "quan_ly": {"inventory_scope": "all_read", "inventory_write": False},
-    "khac": {"inventory_scope": "none", "inventory_write": False},
+    "nhan_su": {"inventory_scope": "all", "inventory_write": True},
+    "van_hanh": {"inventory_scope": "all", "inventory_write": True},
+    "cskh": {"inventory_scope": "all", "inventory_write": True},
+    "quan_ly": {"inventory_scope": "all", "inventory_write": True},
+    "khac": {"inventory_scope": "all", "inventory_write": True},
 }
 
 LEAD_SOURCES = {"marketing_ads", "pancake", "tu_tim", "gioi_thieu", "khac"}
@@ -364,7 +369,6 @@ def _user_visible_data(db_path, data, user):
     _, employee, _ = _employee_context(db_path, user)
     employee_id = int(employee["id"]) if employee else None
     position_role = _employee_position_role(employee)
-    permissions = _employee_position_permissions(employee)
 
     readable_fields = set(USER_READABLE_STATE_FIELDS)
     if position_role in {"ads", "sale", "quan_ly"}:
@@ -383,42 +387,25 @@ def _user_visible_data(db_path, data, user):
     if "company" in filtered:
         filtered["company"] = _safe_company(filtered.get("company"))
 
-    employee_emails = employee_service.employee_emails_by_id(db_path)
+    # Hiệu suất nhân viên mở cho mọi người: nhiệm vụ, đơn hàng, marketing và yêu cầu hỗ trợ
+    # được ĐỌC toàn bộ để bảng xếp hạng tính đúng cho từng người. Quyền GHI vẫn bị giới hạn
+    # như cũ trong preserve_restricted_state_fields.
     tasks = data.get("tasks")
     if isinstance(tasks, list):
-        filtered["tasks"] = [
-            task for task in tasks
-            if _record_belongs_to_employee(task, employee_id, "employeeId")
-            or (employee_id is None and _task_visible_to_user(task, employee_emails, user))
-        ]
+        filtered["tasks"] = tasks
 
+    # Chính sách kho mở: mọi nhân viên xem toàn bộ danh mục kho.
     inventory = data.get("inventory")
     if isinstance(inventory, list):
-        scope = permissions.get("inventory_scope", "none")
-        if scope in {"all", "all_read"}:
-            filtered["inventory"] = inventory
-        else:
-            # Hàng chung (chưa giao cho ai phụ trách) là danh mục của cả công ty — mọi nhân viên
-            # đều xem được. Chỉ mặt hàng đã giao đích danh mới bị giới hạn cho đúng người đó.
-            filtered["inventory"] = [
-                item for item in inventory
-                if _inventory_is_unassigned(item)
-                or _record_belongs_to_employee(item, employee_id, "assignedEmployeeId")
-            ]
+        filtered["inventory"] = inventory
 
     orders = data.get("orders")
     if isinstance(orders, list):
-        if position_role in {"ads", "quan_ly"}:
-            filtered["orders"] = orders
-        else:
-            filtered["orders"] = [item for item in orders if _record_belongs_to_employee(item, employee_id, "saleEmployeeId", "employeeId")]
+        filtered["orders"] = orders
 
     marketing_logs = data.get("marketingLogs")
     if isinstance(marketing_logs, list):
-        if position_role in {"ads", "sale", "quan_ly"}:
-            filtered["marketingLogs"] = marketing_logs
-        else:
-            filtered["marketingLogs"] = [item for item in marketing_logs if _record_belongs_to_employee(item, employee_id, "employeeId")]
+        filtered["marketingLogs"] = marketing_logs
 
     leads = data.get("leads")
     if isinstance(leads, list):
@@ -437,10 +424,7 @@ def _user_visible_data(db_path, data, user):
 
     support_cases = data.get("supportCases")
     if isinstance(support_cases, list):
-        if position_role in {"cskh", "quan_ly"}:
-            filtered["supportCases"] = support_cases
-        else:
-            filtered["supportCases"] = [item for item in support_cases if _record_belongs_to_employee(item, employee_id, "employeeId", "assignedEmployeeId", "supportEmployeeId", "assignedByEmployeeId")]
+        filtered["supportCases"] = support_cases
 
     attendance_requests = data.get("attendanceRequests")
     if isinstance(attendance_requests, list):
@@ -1235,47 +1219,15 @@ def _merge_employee_leads(existing_records, incoming_records, user, employee, po
     return result
 
 
-def _merge_assigned_inventory(existing_inventory, incoming_inventory, employee_id):
-    existing_inventory = existing_inventory if isinstance(existing_inventory, list) else []
-    incoming_by_id = {
-        str(item.get("id")): item for item in (incoming_inventory if isinstance(incoming_inventory, list) else [])
-        if isinstance(item, dict) and item.get("id") is not None
-    }
-    merged = []
-    for old in existing_inventory:
-        if not isinstance(old, dict):
-            merged.append(old)
-            continue
-        if not _record_belongs_to_employee(old, employee_id, "assignedEmployeeId"):
-            merged.append(old)
-            continue
-        candidate = incoming_by_id.get(str(old.get("id")))
-        if not isinstance(candidate, dict):
-            merged.append(old)
-            continue
-        updated = dict(old)
-        updated.update(candidate)
-        # Nhân viên chỉ sửa sản phẩm đã được giao; không được chuyển người phụ trách/xóa/tạo mới.
-        updated["id"] = old.get("id")
-        updated["assignedEmployeeId"] = old.get("assignedEmployeeId")
-        merged.append(updated)
-    return merged
-
-
-def _merge_assigned_stock_movements(existing_movements, incoming_movements, assigned_product_ids):
+def _merge_append_only_stock_movements(existing_movements, incoming_movements):
+    """Nhật ký kho là sổ append-only: bản ghi cũ bất biến, chỉ nhận thêm movement MỚI."""
     existing_movements = existing_movements if isinstance(existing_movements, list) else []
     incoming_movements = incoming_movements if isinstance(incoming_movements, list) else []
     existing_ids = {str(item.get("id")) for item in existing_movements if isinstance(item, dict) and item.get("id") is not None}
-    allowed_new = []
-    for item in incoming_movements:
-        if not isinstance(item, dict) or str(item.get("id")) in existing_ids:
-            continue
-        try:
-            product_id = int(item.get("productId"))
-        except (TypeError, ValueError):
-            continue
-        if product_id in assigned_product_ids:
-            allowed_new.append(item)
+    allowed_new = [
+        item for item in incoming_movements
+        if isinstance(item, dict) and item.get("id") is not None and str(item.get("id")) not in existing_ids
+    ]
     return existing_movements + allowed_new
 
 
@@ -1346,6 +1298,8 @@ def preserve_restricted_state_fields(db_path, incoming_data, user, existing_data
     # request autosave chung từ trình duyệt ghi đè bằng bản cũ khi nhiều người cùng làm.
     merged["paymentLedger"] = existing_data.get("paymentLedger", [])
     merged["securityAuditLog"] = existing_data.get("securityAuditLog", [])
+    # Sổ audit kho do máy chủ ghi (inventory_audit_service) — client không được ghi đè.
+    merged["inventoryAuditLog"] = existing_data.get("inventoryAuditLog", [])
     old_approvals = existing_data.get("payrollApprovals", [])
     old_mid = existing_data.get("midMonthRequests", [])
     old_payments = existing_data.get("payrollPayments", [])
@@ -1509,19 +1463,16 @@ def preserve_restricted_state_fields(db_path, incoming_data, user, existing_data
             merged["leads"] = _merge_employee_leads(
                 existing_data.get("leads", []), incoming_data.get("leads", []), user, employee, position_role, employees
             )
-        if position_permissions.get("inventory_write") and "inventory" in incoming_data and employee_id is not None:
-            merged["inventory"] = _merge_assigned_inventory(
-                existing_data.get("inventory", []), incoming_data.get("inventory", []), employee_id
+        # Chính sách kho mở: MỌI nhân viên được thêm/sửa/xóa sản phẩm và ghi nhật ký kho.
+        # Trách nhiệm truy vết bằng lịch sử chỉnh sửa (inventory_audit_service) + Delete Policy
+        # (sản phẩm có lịch sử nhập/xuất vẫn không thể xóa, chỉ được ngừng kinh doanh).
+        if "inventory" in incoming_data:
+            incoming_inventory = incoming_data.get("inventory")
+            merged["inventory"] = incoming_inventory if isinstance(incoming_inventory, list) else existing_data.get("inventory", [])
+        if "stockMovements" in incoming_data:
+            merged["stockMovements"] = _merge_append_only_stock_movements(
+                existing_data.get("stockMovements", []), incoming_data.get("stockMovements", [])
             )
-            assigned_ids = {
-                int(item.get("id")) for item in existing_data.get("inventory", [])
-                if isinstance(item, dict) and item.get("id") is not None
-                and _record_belongs_to_employee(item, employee_id, "assignedEmployeeId")
-            }
-            if "stockMovements" in incoming_data:
-                merged["stockMovements"] = _merge_assigned_stock_movements(
-                    existing_data.get("stockMovements", []), incoming_data.get("stockMovements", []), assigned_ids
-                )
 
         merged["attendanceRequests"] = _merge_regular_attendance_requests(
             old_attendance_requests, incoming_data.get("attendanceRequests", []), employee_id

@@ -23,6 +23,7 @@ from services.business_sync_service import (
     upsert_inventory_product,
 )
 from services.delete_policy_service import DeletePolicyError, audit_blocked_delete, guard_state_removals
+from services.inventory_audit_service import apply_inventory_audit, notify_inventory_events
 from services.ledger_sync_service import sync_after_save
 from services.payroll_payment_service import record_payroll_payment, resolve_payroll_reconciliation
 from services.financial_summary_service import FinancialSummaryError, get_financial_series, get_financial_summary
@@ -89,6 +90,18 @@ def _validate_marketing_log_dates(existing_data, new_data):
             raise StateValidationError(
                 "Bản ghi Marketing mới bắt buộc có NGÀY dạng YYYY-MM-DD — bản ghi không có ngày sẽ không thuộc tháng nào."
             )
+
+
+def _actor_display_name(handler, user):
+    """Tên hiển thị của người thao tác — ưu tiên hồ sơ nhân sự, fallback email."""
+    try:
+        _, employee, _ = handler.employee_context(user)
+        name = str((employee or {}).get("name") or "").strip()
+        if name:
+            return name
+    except Exception:  # noqa: BLE001 — tên hiển thị không được làm hỏng request
+        pass
+    return str((user or {}).get("email") or "").strip() or "Hệ thống"
 
 
 def _audit_event(data, action, user, success, detail="", handler=None):
@@ -300,6 +313,9 @@ def handle_put(handler, route, _parsed):
             "version": current.get("version", 0),
         }, 409)
 
+    actor_name = _actor_display_name(handler, user)
+    inventory_events = []
+
     if route == "/api/data/fields":
         patch = body.get("data") if isinstance(body, dict) else None
         if not isinstance(patch, dict):
@@ -315,7 +331,13 @@ def handle_put(handler, route, _parsed):
             _validate_order_page_links(existing_data, merged_data)
             _validate_marketing_log_dates(existing_data, merged_data)
             preserved = handler.preserve_restricted_state(merged_data, user, existing_data)
-            return reconcile_company_data(preserved)
+            reconciled = reconcile_company_data(preserved)
+            # Lịch sử chỉnh sửa kho (ai/lúc nào/đổi gì) — ghi trong CÙNG transaction.
+            return apply_inventory_audit(
+                existing_data, reconciled,
+                actor_email=(user or {}).get("email") or "", actor_name=actor_name,
+                events_box=inventory_events,
+            )
 
         try:
             saved_state = update_state(handler.db_path, apply_patch, expected_version=expected_version)
@@ -332,6 +354,9 @@ def handle_put(handler, route, _parsed):
         # Sổ cái hạch toán kép chạy song song: mọi bản ghi nghiệp vụ mới được đưa vào
         # journal qua Posting Service (idempotent) ngay sau khi lưu thành công.
         sync_after_save(handler.db_path, actor=(user or {}).get("email") or "system")
+        # Kho thay đổi (thêm sản phẩm / tăng giảm số lượng / xóa) → thông báo hệ thống,
+        # tin nhắn DOMIX và email cho toàn bộ nhân viên.
+        notify_inventory_events(handler.db_path, user, actor_name, inventory_events)
         visible_state = handler.filter_state(saved_state, user) or {}
         visible_data = visible_state.get("data") if isinstance(visible_state.get("data"), dict) else {}
         response_keys = set(patch.keys())
@@ -359,7 +384,12 @@ def handle_put(handler, route, _parsed):
         _validate_order_page_links(existing_data, merged_body)
         _validate_marketing_log_dates(existing_data, merged_body)
         preserved = handler.preserve_restricted_state(merged_body, user, existing_data)
-        return reconcile_company_data(preserved)
+        reconciled = reconcile_company_data(preserved)
+        return apply_inventory_audit(
+            existing_data, reconciled,
+            actor_email=(user or {}).get("email") or "", actor_name=actor_name,
+            events_box=inventory_events,
+        )
 
     try:
         saved_state = update_state(handler.db_path, replace_state, expected_version=expected_version)
@@ -374,6 +404,7 @@ def handle_put(handler, route, _parsed):
         handler.send_json(error.payload(), 409)
         return True
     sync_after_save(handler.db_path, actor=(user or {}).get("email") or "system")
+    notify_inventory_events(handler.db_path, user, actor_name, inventory_events)
     handler.send_json({
         "ok": True,
         "updatedAt": saved_state.get("updatedAt"),
@@ -484,6 +515,28 @@ def handle_post(handler, route, _parsed):
         handler.send_json({"ok": True, "version": verification_state.get("version", 0)})
         return True
 
+    if route == "/api/company-data/inventory-product":
+        # CHÍNH SÁCH KHO MỞ: mọi nhân viên đã đăng nhập đều thêm/sửa được sản phẩm kho.
+        # Trách nhiệm truy vết bằng lịch sử chỉnh sửa + thông báo toàn công ty, không chặn quyền.
+        actor_name = _actor_display_name(handler, user)
+        inventory_events = []
+        product = body.get("product") if isinstance(body.get("product"), dict) else {}
+        opening_stock = body.get("openingStock")
+
+        def save_product(existing_data):
+            saved = upsert_inventory_product(existing_data, product, opening_stock)
+            return apply_inventory_audit(
+                existing_data, saved,
+                actor_email=user.get("email") or "", actor_name=actor_name,
+                events_box=inventory_events,
+            )
+
+        saved_state = update_state(handler.db_path, save_product)
+        sync_after_save(handler.db_path, actor=user.get("email") or "system")
+        notify_inventory_events(handler.db_path, user, actor_name, inventory_events)
+        _send_synced_fields(handler, saved_state, user, ("inventory", "stockMovements", "orders"))
+        return True
+
     if route == "/api/company-data/crm-orders":
         _, employee, _ = handler.employee_context(user)
         position_role = handler.employee_position_role(employee)
@@ -492,6 +545,8 @@ def handle_post(handler, route, _parsed):
             handler.send_json({"error": "Chỉ Sale, Kỹ thuật upsale, Kế toán hoặc Sếp/Admin được thêm đơn CRM."}, 403)
             return True
 
+        actor_name = _actor_display_name(handler, user)
+        inventory_events = []
         result_box = {}
 
         def add_order(existing_data):
@@ -503,11 +558,17 @@ def handle_post(handler, route, _parsed):
                 allow_assign_any=full_access,
             )
             result_box["orderId"] = order_id
-            return saved
+            # Đơn bán xuất kho làm GIẢM tồn → cũng phải có lịch sử + thông báo kho.
+            return apply_inventory_audit(
+                existing_data, saved,
+                actor_email=user.get("email") or "", actor_name=actor_name,
+                events_box=inventory_events,
+            )
 
         saved_state = update_state(handler.db_path, add_order)
         # Bán hàng → Nợ 131 / Có 511 + 3331; xuất kho → Nợ 632 / Có 156 (bình quân gia quyền).
         sync_after_save(handler.db_path, actor=user.get("email") or "system")
+        notify_inventory_events(handler.db_path, user, actor_name, inventory_events)
         visible_state = handler.filter_state(saved_state, user) or {}
         visible_data = visible_state.get("data") if isinstance(visible_state.get("data"), dict) else {}
         response_data = {
@@ -631,15 +692,7 @@ def handle_post(handler, route, _parsed):
         )
         return True
 
-    product = body.get("product") if isinstance(body.get("product"), dict) else {}
-    opening_stock = body.get("openingStock")
-
-    def save_product(existing_data):
-        return upsert_inventory_product(existing_data, product, opening_stock)
-
-    saved_state = update_state(handler.db_path, save_product)
-    sync_after_save(handler.db_path, actor=user.get("email") or "system")
-    _send_synced_fields(handler, saved_state, user, ("inventory", "stockMovements", "orders"))
+    handler.send_json({"error": "API không tồn tại"}, 404)
     return True
 
 

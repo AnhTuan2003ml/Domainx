@@ -22,52 +22,54 @@ export const ROLE_META = {
 
 // Quyền nghiệp vụ theo nhóm vị trí. users.role vẫn chỉ có admin/accountant/user;
 // quyền dưới đây quyết định nhân viên user được mở thêm tab nào và được thao tác đến đâu.
+// CHÍNH SÁCH KHO MỞ: mọi nhóm vị trí đều xem TOÀN BỘ kho và được thêm/sửa/xóa sản phẩm —
+// trách nhiệm truy vết bằng lịch sử chỉnh sửa từng sản phẩm, không chặn quyền.
 export const POSITION_ACCESS_META = {
   ads: {
     tabs: ["marketing", "kho"], marketingWrite: true,
-    inventoryScope: "assigned", inventoryWrite: true,
-    summary: "Ghi nhận/cập nhật Marketing hằng ngày; xem và sửa sản phẩm được phân công.",
+    inventoryScope: "all", inventoryWrite: true,
+    summary: "Ghi nhận/cập nhật Marketing hằng ngày; toàn quyền xem và thao tác Kho hàng.",
   },
   sale: {
     tabs: ["khachhang", "crm", "donhang", "marketing", "kho", "hotro"], marketingWrite: true,
-    inventoryScope: "assigned", inventoryWrite: true,
-    summary: "Quản lý đơn CRM của mình; cập nhật Marketing hằng ngày; sửa sản phẩm được phân công.",
+    inventoryScope: "all", inventoryWrite: true,
+    summary: "Quản lý đơn CRM của mình; cập nhật Marketing hằng ngày; toàn quyền Kho hàng.",
   },
   ky_thuat: {
-    tabs: ["crm", "kho", "hotro", "hotro-donhang", "hotro-lichsu"], inventoryScope: "assigned", inventoryWrite: true,
-    summary: "Xử lý hỗ trợ/upsale, tra cứu đơn đã bán của yêu cầu hỗ trợ và sửa sản phẩm được phân công.",
+    tabs: ["crm", "kho", "hotro", "hotro-donhang", "hotro-lichsu"], inventoryScope: "all", inventoryWrite: true,
+    summary: "Xử lý hỗ trợ/upsale, tra cứu đơn đã bán của yêu cầu hỗ trợ; toàn quyền Kho hàng.",
   },
   it: {
-    tabs: ["kho"], inventoryScope: "assigned", inventoryWrite: true,
-    summary: "Chỉ xem và sửa sản phẩm được giao phụ trách.",
+    tabs: ["kho"], inventoryScope: "all", inventoryWrite: true,
+    summary: "Toàn quyền xem và thao tác Kho hàng.",
   },
   ke_toan: {
     tabs: [], inventoryScope: "all", inventoryWrite: true,
     summary: "Tài khoản được đồng bộ thành quyền Kế toán và có toàn quyền vận hành.",
   },
   nhan_su: {
-    tabs: ["nhansu", "tuyendung", "chamcong", "hieusuat"], inventoryScope: "none",
-    summary: "Theo dõi nhân sự, tuyển dụng, chấm công và hiệu suất; không truy cập tài chính.",
+    tabs: ["nhansu", "tuyendung", "chamcong", "hieusuat"], inventoryScope: "all", inventoryWrite: true,
+    summary: "Theo dõi nhân sự, tuyển dụng, chấm công và hiệu suất; toàn quyền Kho hàng; không truy cập tài chính.",
   },
   van_hanh: {
-    tabs: ["kho", "hopdong", "hotro"], inventoryScope: "assigned", inventoryWrite: true,
-    summary: "Theo dõi vận hành và sửa sản phẩm được phân công.",
+    tabs: ["kho", "hopdong", "hotro"], inventoryScope: "all", inventoryWrite: true,
+    summary: "Theo dõi vận hành; toàn quyền Kho hàng.",
   },
   cskh: {
     // CSKH đi trọn luồng trong mục Hỗ trợ khách hàng: yêu cầu → khách → đơn đã mua →
-    // công nợ cần nhắc → lịch sử — chỉ đọc dữ liệu bán hàng, không sửa kế toán.
+    // công nợ cần nhắc → lịch sử.
     tabs: ["kho", "hotro", "hotro-donhang", "hotro-khach", "hotro-congno", "hotro-lichsu"],
-    inventoryScope: "all-read", inventoryWrite: false,
-    summary: "Xem toàn bộ kho để tư vấn khách hàng; theo luồng hỗ trợ tra được khách, đơn đã mua và công nợ cần nhắc; không được thay đổi kho/kế toán.",
+    inventoryScope: "all", inventoryWrite: true,
+    summary: "Toàn quyền Kho hàng để tư vấn khách; theo luồng hỗ trợ tra được khách, đơn đã mua và công nợ cần nhắc.",
   },
   quan_ly: {
     tabs: ["dashboard", "crm", "marketing", "kho", "hopdong", "hotro", "nhansu", "hieusuat"],
-    inventoryScope: "all-read", inventoryWrite: false,
-    summary: "Xem báo cáo vận hành tổng hợp; các thay đổi nhạy cảm vẫn dành cho Admin/Kế toán.",
+    inventoryScope: "all", inventoryWrite: true,
+    summary: "Xem báo cáo vận hành tổng hợp; toàn quyền Kho hàng; các thay đổi nhạy cảm vẫn dành cho Admin/Kế toán.",
   },
   khac: {
-    tabs: [], inventoryScope: "none", inventoryWrite: false,
-    summary: "Chỉ dùng chức năng cá nhân; quyền bổ sung cần Admin đổi nhóm vị trí.",
+    tabs: [], inventoryScope: "all", inventoryWrite: true,
+    summary: "Dùng chức năng cá nhân và toàn quyền Kho hàng; quyền bổ sung cần Admin đổi nhóm vị trí.",
   },
 };
 
@@ -83,7 +85,7 @@ export function positionAccessFor(employee, accountRole = "user") {
 export const ACCOUNT_ROLE_META = {
   admin: { label: "Quản trị/Admin", description: "Toàn quyền quản trị hệ thống và duyệt cuối." },
   accountant: { label: "Kế toán", description: "Toàn quyền vận hành tương đương Admin; vẫn tách riêng trong luồng duyệt lương." },
-  user: { label: "Nhân viên", description: "Nhận việc, chat, xem Kho hàng, chấm công và tạo đề xuất lương cá nhân." },
+  user: { label: "Nhân viên", description: "Nhận việc, chat, toàn quyền Kho hàng, xem Hiệu suất, chấm công và tạo đề xuất lương cá nhân." },
 };
 
 export const ROLE_TAB_ACCESS = {
@@ -101,7 +103,13 @@ export const ROLE_TAB_ACCESS = {
     "giaoviec", "chat", "nhansu", "tuyendung", "chamcong", "hieusuat", "luong",
     "ai", "phaply", "settings", "taikhoan",
   ],
-  user: ["crm", "giaoviec", "chat", "chamcong", "luong", "taikhoan"],
+  // Chính sách mở: mọi nhân viên đều có Kho hàng (toàn quyền), Hiệu suất nhân viên,
+  // Danh sách khách hàng và trọn luồng Chăm sóc khách hàng (yêu cầu → đơn đã bán →
+  // khách → công nợ cần nhắc → lịch sử).
+  user: [
+    "crm", "giaoviec", "chat", "chamcong", "luong", "taikhoan", "kho", "hieusuat",
+    "khachhang", "hotro", "hotro-donhang", "hotro-khach", "hotro-congno", "hotro-lichsu",
+  ],
 };
 
 export function normalizeAccountEmail(value = "") {

@@ -257,16 +257,33 @@ class SupportAndSalesWorkflowTests(unittest.TestCase):
         hr = {"id": 30, "name": "Nhân sự", "email": "hr@example.com", "roleType": "nhan_su"}
         state = {"data": {"supportCases": [], "orders": [], "inventory": [], "transactions": [], "debts": [], "paymentLedger": [], "stockMovements": [], "distributionOrders": []}}
 
+        # CSKH mở cho mọi nhân viên: Nhân sự (hay bất kỳ vị trí nào) đều tạo/giao được
+        # yêu cầu hỗ trợ — người TIẾP NHẬN vẫn phải thuộc nhóm kỹ thuật/IT/CSKH.
         assign_body = {
             "caseId": "permission-case", "recipientEmployeeId": 20,
-            "issue": "Kiểm thử quyền", "details": "Không được vượt qua API",
+            "issue": "Kiểm thử quyền", "details": "Mọi nhân viên đều giao được yêu cầu",
+            "supportType": "tu_van_truoc_ban", "supportChannel": "remote",
+            "customerName": "Khách kiểm thử",
         }
         hr_assign = FakeHandler(
             {"email": "hr@example.com", "role": "user"}, assign_body,
             [sale, technician, hr], hr, state,
         )
-        self.assertTrue(support_route.handle_post(hr_assign, "/api/support/assign", None))
-        self.assertEqual(hr_assign.status, 403)
+        with patch.object(support_route, "update_state", side_effect=self._atomic_update(hr_assign)), \
+             patch.object(support_route, "read_state", return_value=state), \
+             patch.object(support_route.chat_service, "send_message"), \
+             patch.object(support_route.email_service, "send_support_assignment_email"):
+            self.assertTrue(support_route.handle_post(hr_assign, "/api/support/assign", None))
+        self.assertEqual(hr_assign.status, 200)
+        # Người tiếp nhận KHÔNG thuộc nhóm hỗ trợ (Sale) → vẫn phải bị chặn 400.
+        bad_recipient = FakeHandler(
+            {"email": "hr@example.com", "role": "user"},
+            {**assign_body, "caseId": "permission-case-2", "recipientEmployeeId": 10},
+            [sale, technician, hr], hr, state,
+        )
+        with patch.object(support_route, "read_state", return_value=state):
+            self.assertTrue(support_route.handle_post(bad_recipient, "/api/support/assign", None))
+        self.assertEqual(bad_recipient.status, 400)
 
         sale_confirm = FakeHandler(
             {"email": "sale@example.com", "role": "user"}, {"caseId": "permission-case"},
