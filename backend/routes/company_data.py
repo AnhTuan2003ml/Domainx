@@ -371,6 +371,10 @@ def handle_put(handler, route, _parsed):
         # Kho thay đổi → chỉ tin nhắn DOMIX + email; ticker dành cho tin nghiệp vụ module.
         notify_inventory_events(handler.db_path, user, actor_name, inventory_events)
         notify_marketing_events(handler.db_path, marketing_events)
+        # Đăng ticker là một lần ghi PHỤ làm version tăng thêm — trả version MỚI NHẤT
+        # để autosave kế tiếp của client không dính 409 oan.
+        if marketing_events:
+            saved_state = read_state(handler.db_path) or saved_state
         visible_state = handler.filter_state(saved_state, user) or {}
         visible_data = visible_state.get("data") if isinstance(visible_state.get("data"), dict) else {}
         response_keys = set(patch.keys())
@@ -426,6 +430,8 @@ def handle_put(handler, route, _parsed):
     sync_after_save(handler.db_path, actor=(user or {}).get("email") or "system")
     notify_inventory_events(handler.db_path, user, actor_name, inventory_events)
     notify_marketing_events(handler.db_path, marketing_events)
+    if marketing_events:
+        saved_state = read_state(handler.db_path) or saved_state
     handler.send_json({
         "ok": True,
         "updatedAt": saved_state.get("updatedAt"),

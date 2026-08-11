@@ -5334,9 +5334,9 @@ function DomixApp({ authUser, onLogout }) {
           {tab === "giaoviec" && <GiaoViec authUser={effectiveAuthUser} tasks={tasks} setTasks={setTasks} employees={activeEmployees} orders={orders} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} realtimeUnreadTaskIds={unreadAssignedTaskIds} onOpenProfile={setProfileEmployeeId} supportCases={supportCases} setSupportCases={setSupportCases} taskPrefill={taskPrefill} onTaskPrefillConsumed={() => setTaskPrefill(null)} recordFocus={recordFocus} onRecordFocusConsumed={() => setRecordFocus(null)} onOpenRecord={openRecordFromOps} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
           {tab === "hotro" && <HoTroKhachHang cases={supportCases} setCases={setSupportCases} employees={activeEmployees} orders={orders} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} supportPrefill={supportPrefill} onSupportPrefillConsumed={() => setSupportPrefill(null)} recordFocus={recordFocus} onRecordFocusConsumed={() => setRecordFocus(null)} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
           {tab === "hotro-lichsu" && <HoTroKhachHang key="hotro-lichsu" initialView="history" cases={supportCases} setCases={setSupportCases} employees={activeEmployees} orders={orders} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
-          {tab === "khachhang" && <CustomerDirectory key="khachhang" customers={customers} orders={orders} supportCases={supportCases} employees={activeEmployees} setTab={setTab} onCreateSupport={createSupportFromContext} onCreateOrder={createOrderFromContext} onCreateTask={assignTaskFromOps} />}
+          {tab === "khachhang" && <CustomerDirectory key="khachhang" customers={customers} orders={orders} supportCases={supportCases} employees={activeEmployees} setTab={setTab} onCreateSupport={createSupportFromContext} onCreateOrder={createOrderFromContext} onCreateTask={assignTaskFromOps} inventory={inventory} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} canCreateOrder={payrollCurrentIsBoss || payrollCurrentIsAccountant || ["sale", "ky_thuat", "ads"].includes(payrollCurrentEmployee?.roleType)} />}
           {tab === "leads" && <DoanhThuCRM key="leads-standalone" lockView="leads" orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} currentEmployee={payrollCurrentEmployee} canManageAllSales={payrollCurrentIsBoss || payrollCurrentIsAccountant} revenueByEmployee={revenueByEmployee} setTransactions={setTransactions} inventory={inventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} authUser={effectiveAuthUser} setDebts={setDebts} refreshFinancialSummary={refreshFinancialSummary} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
-          {tab === "hotro-khach" && <CustomerDirectory customers={customers} orders={orders} supportCases={supportCases} employees={activeEmployees} setTab={setTab} onCreateSupport={createSupportFromContext} onCreateOrder={createOrderFromContext} onCreateTask={assignTaskFromOps} />}
+          {tab === "hotro-khach" && <CustomerDirectory customers={customers} orders={orders} supportCases={supportCases} employees={activeEmployees} setTab={setTab} onCreateSupport={createSupportFromContext} onCreateOrder={createOrderFromContext} onCreateTask={assignTaskFromOps} inventory={inventory} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} canCreateOrder={payrollCurrentIsBoss || payrollCurrentIsAccountant || ["sale", "ky_thuat", "ads"].includes(payrollCurrentEmployee?.roleType)} />}
           {tab === "hotro-congno" && <CongNo key="hotro-congno" debts={debts} setDebts={setDebts} setTransactions={setTransactions} transactions={transactions} paymentLedger={paymentLedger} distributionOrders={distributionOrders} distributionPartners={distributionPartners} setTab={setTab} authUser={effectiveAuthUser} allEmployees={employees} payDebt={payDebt} unpayDebt={unpayDebt} customers={customers} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
           {tab === "chat" && <ChatPage authUser={effectiveAuthUser} onUnreadChange={setChatUnread} employees={employees} tasks={tasks} setTasks={setTasks} setTab={setTab} supportCases={supportCases} setSupportCases={setSupportCases} dataLoader={{ ensureDataFields, applyAppData }} />}
           {(tab === "donhang" || tab === "hotro-donhang") && <RevenueFinanceHub key={tab} ordersOnly={tab === "hotro-donhang"} recordFocus={recordFocus} onRecordFocusConsumed={() => setRecordFocus(null)} onReturnToOps={returnToOps} orderPrefill={orderPrefill} onOrderPrefillConsumed={() => setOrderPrefill(null)} financialSummary={financialSummary} financialSummaryError={financialSummaryError} refreshFinancialSummary={refreshFinancialSummary} transactions={transactions} setTransactions={setTransactions} orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} payrollRows={payrollRows} kpiTiers={kpiTiers} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} revenueByEmployee={revenueByEmployee} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} debts={debts} setDebts={setDebts} company={company} unlockedMonths={unlockedMonths} onOpenReceivables={() => setTab("congno")} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
@@ -8885,7 +8885,7 @@ function CongNo({ debts, setDebts, setTransactions, transactions, paymentLedger 
                   </td>
                   <td className="px-3 py-2 text-right whitespace-nowrap" onClick={(ev) => ev.stopPropagation()}>
                     <div className="flex flex-wrap justify-end gap-1.5">
-                      {d.status !== "paid" && mayRecordPayment && (
+                      {d.status !== "paid" && mayRecordPayment && normalizeAccountRole(authUser?.role) !== "user" && (
                         <button type="button" onClick={() => openPayModal(d)} className="rounded-md bg-ink px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-ink-light">{d.type === "thu" ? "Thu tiền" : "Trả tiền"}</button>
                       )}
                       {d.sourceModule === "manual" && <button type="button" onClick={() => openEditDebt(d)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2 py-1 text-[11px] font-semibold text-ink-light" title="Sửa khoản công nợ" aria-label={`Sửa công nợ của ${d.counterpartyName || d.partner}`}><Pencil size={12} /> Sửa</button>}
@@ -16014,6 +16014,8 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
   // THỐNG KÊ NGƯỜI THU THẬP: máy chủ tự đóng dấu collectedBy* khi lead được tạo (không giả
   // mạo được) — đây là căn cứ "khách này do ai lấy được thông tin".
   const [leadCollectorFilter, setLeadCollectorFilter] = useState("");
+  // Sale mặc định thấy KHÁCH MÌNH PHỤ TRÁCH trước; bấm "Toàn công ty" xem hết.
+  const [leadScope, setLeadScope] = useState(() => (!canManageAllSales && currentEmployee?.roleType === "sale" ? "mine" : "all"));
   const leadCollectorKeyOf = (l) => String(l.collectedByEmail || l.collectedByName || "").trim().toLowerCase() || "__unknown";
   const leadCollectorStats = (() => {
     const byKey = new Map();
@@ -16030,6 +16032,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
   const filteredLeads = (() => {
     const q = leadSearch.trim().toLowerCase();
     return (leads || []).filter((l) => {
+      if (leadScope === "mine" && Number(l.saleEmployeeId) !== Number(currentEmployee?.id)) return false;
       if (leadCollectorFilter && leadCollectorKeyOf(l) !== leadCollectorFilter) return false;
       if (q) {
         const inNote = (l.contactLog || []).some((c) => c.note?.toLowerCase().includes(q));
@@ -16305,6 +16308,12 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
               className="w-full border border-paper-line rounded-md pl-8 pr-2 py-1.5 text-xs"
             />
           </div>
+          {currentEmployee?.id != null && (
+            <div className="flex shrink-0 overflow-hidden rounded-md border border-paper-line text-[11px] font-semibold" role="group" aria-label="Phạm vi khách tiềm năng">
+              <button type="button" onClick={() => setLeadScope("mine")} aria-pressed={leadScope === "mine"} className={`px-2.5 py-1.5 ${leadScope === "mine" ? "bg-ink text-white" : "text-muted hover:text-ink"}`}>Tôi phụ trách ({(leads || []).filter((l) => Number(l.saleEmployeeId) === Number(currentEmployee.id)).length})</button>
+              <button type="button" onClick={() => setLeadScope("all")} aria-pressed={leadScope === "all"} className={`px-2.5 py-1.5 ${leadScope === "all" ? "bg-ink text-white" : "text-muted hover:text-ink"}`}>Toàn công ty ({(leads || []).length})</button>
+            </div>
+          )}
           {[
             { id: "all", label: "Tất cả" },
             { id: "overdue", label: "Đến hẹn/quá hẹn" },
@@ -17450,7 +17459,9 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
   }, [reportYear, reportMonth, rangeMode]);
   const [showRangePicker, setShowRangePicker] = useState(false);
   const [dailySearch, setDailySearch] = useState("");
-  const [dailyEmployeeFilter, setDailyEmployeeFilter] = useState("all");
+  // Nhân viên thường mặc định xem SỐ LIỆU CỦA MÌNH trước (chống "lú" khi dữ liệu mở toàn
+  // công ty) — bấm "Tất cả" vẫn xem được mọi người.
+  const [dailyEmployeeFilter, setDailyEmployeeFilter] = useState(() => (!canManageMarketing && currentEmployee?.id ? String(currentEmployee.id) : "all"));
   const [dailyPageFilter, setDailyPageFilter] = useState("all");
   const visibleLogs = rangeMode === "all" ? logs : logs.filter((l) => l.date >= rangeFrom && l.date <= rangeTo);
   const defaultMarketingEmployeeId = canManageMarketing ? (mktEmployees[0]?.id || "") : (currentEmployee?.id || "");
@@ -18892,7 +18903,50 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
 // ---------- Danh bạ khách hàng cho luồng Hỗ trợ: khách → đơn đã mua → công nợ → yêu cầu hỗ trợ ----------
 // CSKH tra một khách là thấy đủ ngữ cảnh (đơn, sản phẩm, thanh toán, sale phụ trách, lịch sử hỗ trợ)
 // — không phải mở nhiều module rồi tự tìm lại. Chỉ đọc: không sửa dữ liệu bán hàng/kế toán ở đây.
-function CustomerDirectory({ customers = [], orders = [], supportCases = [], employees = [], setTab, onCreateSupport, onCreateOrder, onCreateTask }) {
+function CustomerDirectory({ customers = [], orders = [], supportCases = [], employees = [], setTab, onCreateSupport, onCreateOrder, onCreateTask, inventory = [], dataLoader, canCreateOrder = true }) {
+  // TẠO ĐƠN NHANH TẠI CHỖ — không phải nhảy sang tab Bán hàng rồi quay lại nữa:
+  // khách đã prefill sẵn, chỉ chọn sản phẩm (tiền tự điền) và Lưu.
+  const [quickOrder, setQuickOrder] = useState(null);
+  const [qoForm, setQoForm] = useState({ productId: "", quantity: "1", amount: "", saleEmployeeId: "", paid: false });
+  const [qoSaving, setQoSaving] = useState(false);
+  const [qoError, setQoError] = useState("");
+  const [qoSuccess, setQoSuccess] = useState("");
+  const openQuickOrder = (target) => {
+    setQuickOrder(target);
+    setQoForm({ productId: "", quantity: "1", amount: "", saleEmployeeId: String(target.lastOrder?.saleEmployeeId || ""), paid: false });
+    setQoError("");
+    setQoSuccess("");
+  };
+  const saveQuickOrder = async () => {
+    const product = (inventory || []).find((p) => String(p.id) === String(qoForm.productId));
+    if (!product) { setQoError("Chọn sản phẩm khách mua."); return; }
+    const amount = Number(qoForm.amount) || 0;
+    if (!(amount > 0)) { setQoError("Nhập số tiền đơn hàng."); return; }
+    if (!Number(qoForm.saleEmployeeId)) { setQoError("Chọn Sale phụ trách."); return; }
+    setQoSaving(true); setQoError("");
+    try {
+      const c = quickOrder.customer;
+      const result = await createCrmOrder({
+        order: {
+          date: TODAY_STR, customerName: c.customerName || "", phone: c.phone || "", email: c.email || "",
+          customerId: c.id, productId: product.id, productName: product.name,
+          quantity: Math.max(1, Number(qoForm.quantity) || 1), amount,
+          saleEmployeeId: Number(qoForm.saleEmployeeId),
+          customerPaidAmount: qoForm.paid ? amount : 0,
+          customerPaymentStatus: qoForm.paid ? "paid" : "unpaid",
+          note: "Tạo từ Danh sách khách hàng",
+        },
+        customer: { id: c.id, customerName: c.customerName || "", phone: c.phone || "", email: c.email || "" },
+      });
+      dataLoader?.ensureDataFields?.(["orders", "inventory", "stockMovements", "transactions", "debts", "customers", "paymentLedger"], { force: true });
+      setQoSuccess(`Đã tạo đơn #${result?.orderId || ""} cho ${c.customerName} — đơn đã nằm trong tab Bán hàng, kho và doanh thu cập nhật xong.`);
+      setQuickOrder(null);
+    } catch (error) {
+      setQoError(error.message || "Không tạo được đơn hàng.");
+    } finally {
+      setQoSaving(false);
+    }
+  };
   const [search, setSearch] = useState("");
   // Chi tiết khách mở bằng OVERLAY POPUP — không chen inline vào bảng làm hàng phình cao.
   const [detailRow, setDetailRow] = useState(null);
@@ -18940,6 +18994,39 @@ function CustomerDirectory({ customers = [], orders = [], supportCases = [], emp
       <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-paper-line bg-white px-3 py-2">
         <span className="text-sm font-bold text-ink">Khách hàng ({visible.length})</span>
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Tìm theo tên, SĐT, email hoặc mã khách..." className="min-w-[260px] flex-1 max-w-md rounded-md border border-paper-line px-2.5 py-1.5 text-xs" aria-label="Tìm khách hàng" />
+        {qoSuccess && <div role="status" className="w-full rounded-lg border border-ledger-green/35 bg-ledger-green/10 px-3 py-2 text-xs text-ink flex items-center justify-between gap-2"><span>✓ {qoSuccess}</span><button type="button" onClick={() => setQoSuccess("")} className="text-muted hover:text-ink" aria-label="Đóng thông báo"><X size={13} /></button></div>}
+        {quickOrder && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4" onClick={() => setQuickOrder(null)}>
+            <div className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl" onClick={(ev) => ev.stopPropagation()}>
+              <h3 className="ktns-serif mb-1 font-semibold text-ink">Tạo đơn nhanh — {quickOrder.customer.customerName}</h3>
+              <p className="mb-3 text-xs text-muted">Khách đã điền sẵn ({quickOrder.customer.phone || "chưa có SĐT"}). Chọn sản phẩm, tiền tự tính theo giá bán — lưu là đơn nằm ngay trong Bán hàng, không phải chuyển tab.</p>
+              <div className="flex flex-col gap-2">
+                <label className="text-[10px] text-muted flex flex-col gap-0.5">Sản phẩm *
+                  <select value={qoForm.productId} onChange={(e) => { const p = (inventory || []).find((x) => String(x.id) === e.target.value); setQoForm({ ...qoForm, productId: e.target.value, amount: p ? String((Number(p.sellPrice) || 0) * (Number(qoForm.quantity) || 1)) : qoForm.amount }); }} className="w-full rounded border border-paper-line px-2 py-1.5 text-sm">
+                    <option value="">— Chọn sản phẩm —</option>
+                    {(inventory || []).filter((p) => !p.discontinued).map((p) => (<option key={p.id} value={p.id}>{p.name}{p.sku ? ` (${p.sku})` : ""} — {fmtVND(p.sellPrice)}</option>))}
+                  </select>
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  <label className="text-[10px] text-muted flex flex-col gap-0.5">Số lượng<input type="number" min="1" value={qoForm.quantity} onChange={(e) => { const p = (inventory || []).find((x) => String(x.id) === String(qoForm.productId)); setQoForm({ ...qoForm, quantity: e.target.value, amount: p ? String((Number(p.sellPrice) || 0) * (Number(e.target.value) || 1)) : qoForm.amount }); }} className="w-full rounded border border-paper-line px-2 py-1.5 text-sm ktns-mono" /></label>
+                  <label className="text-[10px] text-muted flex flex-col gap-0.5">Số tiền (đ) *<MoneyInput value={qoForm.amount} onChange={(v) => setQoForm({ ...qoForm, amount: v })} /></label>
+                </div>
+                <label className="text-[10px] text-muted flex flex-col gap-0.5">Sale phụ trách *
+                  <select value={qoForm.saleEmployeeId} onChange={(e) => setQoForm({ ...qoForm, saleEmployeeId: e.target.value })} className="w-full rounded border border-paper-line px-2 py-1.5 text-sm">
+                    <option value="">— Chọn nhân sự —</option>
+                    {employees.filter((e) => e.status !== "inactive").map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
+                  </select>
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-muted"><input type="checkbox" checked={qoForm.paid} onChange={(e) => setQoForm({ ...qoForm, paid: e.target.checked })} /> Khách đã thanh toán đủ</label>
+              </div>
+              {qoError && <p className="mt-2 text-xs text-stamp-red">{qoError}</p>}
+              <div className="mt-4 flex justify-end gap-2">
+                <button type="button" onClick={() => setQuickOrder(null)} className="rounded-md border border-paper-line px-3.5 py-2 text-sm text-muted hover:text-ink">Hủy</button>
+                <button type="button" disabled={qoSaving} onClick={saveQuickOrder} className="rounded-md bg-ledger-green px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60">{qoSaving ? "Đang tạo đơn..." : "Tạo đơn"}</button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
       <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-paper-line bg-white">
         <table data-sticky-columns="true" className="w-full min-w-[980px] text-xs">
@@ -19019,8 +19106,8 @@ function CustomerDirectory({ customers = [], orders = [], supportCases = [], emp
               </div>
 
               <div className="mt-3 flex flex-wrap gap-1.5">
-                {onCreateOrder && (
-                  <button type="button" onClick={() => { const target = detailRow; setDetailRow(null); onCreateOrder({ customerName: target.customer.customerName || target.lastOrder?.customerName || "", phone: target.customer.phone || "", email: target.customer.email || "", saleEmployeeId: target.lastOrder?.saleEmployeeId || "" }); }} className="inline-flex items-center gap-1 rounded-md bg-ledger-green px-2.5 py-1.5 text-[11px] font-semibold text-white hover:opacity-90"><Plus size={11} /> Tạo đơn mới</button>
+                {canCreateOrder && (
+                  <button type="button" onClick={() => { const target = detailRow; setDetailRow(null); openQuickOrder(target); }} className="inline-flex items-center gap-1 rounded-md bg-ledger-green px-2.5 py-1.5 text-[11px] font-semibold text-white hover:opacity-90"><Plus size={11} /> Tạo đơn mới</button>
                 )}
                 {onCreateSupport && (
                   <button type="button" onClick={() => { const target = detailRow; setDetailRow(null); onCreateSupport({ customerId: (typeof target.customer.id === "number" ? target.customer.id : target.lastOrder?.customerId) ?? undefined, customerName: target.customer.customerName || target.lastOrder?.customerName || "", phone: target.customer.phone || "", email: target.customer.email || "", orderId: target.lastOrder?.id || "", productName: target.lastOrder?.productName || target.lastOrder?.importedProductName || "" }); }} className="inline-flex items-center gap-1 rounded-md bg-ink px-2.5 py-1.5 text-[11px] font-semibold text-white hover:opacity-90"><Headphones size={11} /> Tạo yêu cầu hỗ trợ</button>
