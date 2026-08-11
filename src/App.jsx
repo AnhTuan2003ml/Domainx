@@ -4920,7 +4920,7 @@ function DomixApp({ authUser, onLogout }) {
   // Các tab lấy bảng dữ liệu làm trọng tâm — trang không cuộn theo toàn bộ nội dung như
   // trước nữa, mà chỉ vùng bảng bên trong tự cuộn, để bảng luôn chiếm phần lớn màn hình và
   // thanh tổng kết (Tổng thu/Tổng chi...) đứng yên ở chân bảng dù cuộn tới đâu.
-  const TABLE_FOCUSED_TABS = ["chat", "marketing", "kho", "nhansu", "chamcong", "luong", "hieusuat", "tuyendung", "thuchi", "congno", "vongop", "taisan", "quy", "hoachdinh", "hoptac", "hopdong", "hotro", "giaoviec", "crm"];
+  const TABLE_FOCUSED_TABS = ["chat", "marketing", "kho", "nhansu", "chamcong", "luong", "hieusuat", "tuyendung", "thuchi", "congno", "vongop", "taisan", "quy", "hoachdinh", "hoptac", "hopdong", "hotro", "giaoviec", "crm", "donhang", "hotro-donhang", "khachhang", "hotro-khach", "leads", "hotro-lichsu", "hotro-congno"];
   const effectiveAccountRole = useMemo(() => {
     if (isAdminRole(authUser?.role)) return "admin";
     if (isAccountantRole(authUser?.role)) return "accountant";
@@ -5334,9 +5334,9 @@ function DomixApp({ authUser, onLogout }) {
           {tab === "giaoviec" && <GiaoViec authUser={effectiveAuthUser} tasks={tasks} setTasks={setTasks} employees={activeEmployees} orders={orders} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} realtimeUnreadTaskIds={unreadAssignedTaskIds} onOpenProfile={setProfileEmployeeId} supportCases={supportCases} setSupportCases={setSupportCases} taskPrefill={taskPrefill} onTaskPrefillConsumed={() => setTaskPrefill(null)} recordFocus={recordFocus} onRecordFocusConsumed={() => setRecordFocus(null)} onOpenRecord={openRecordFromOps} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
           {tab === "hotro" && <HoTroKhachHang cases={supportCases} setCases={setSupportCases} employees={activeEmployees} orders={orders} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} supportPrefill={supportPrefill} onSupportPrefillConsumed={() => setSupportPrefill(null)} recordFocus={recordFocus} onRecordFocusConsumed={() => setRecordFocus(null)} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
           {tab === "hotro-lichsu" && <HoTroKhachHang key="hotro-lichsu" initialView="history" cases={supportCases} setCases={setSupportCases} employees={activeEmployees} orders={orders} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
-          {tab === "khachhang" && <CustomerDirectory key="khachhang" customers={customers} orders={orders} supportCases={supportCases} employees={activeEmployees} setTab={setTab} onCreateSupport={createSupportFromContext} onCreateOrder={createOrderFromContext} onCreateTask={assignTaskFromOps} inventory={inventory} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} canCreateOrder={payrollCurrentIsBoss || payrollCurrentIsAccountant || ["sale", "ky_thuat", "ads"].includes(payrollCurrentEmployee?.roleType)} />}
+          {tab === "khachhang" && <CustomerDirectory key="khachhang" currentEmployee={payrollCurrentEmployee} customers={customers} orders={orders} supportCases={supportCases} employees={activeEmployees} setTab={setTab} onCreateSupport={createSupportFromContext} onCreateOrder={createOrderFromContext} onCreateTask={assignTaskFromOps} inventory={inventory} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} canCreateOrder={payrollCurrentIsBoss || payrollCurrentIsAccountant || ["sale", "ky_thuat", "ads"].includes(payrollCurrentEmployee?.roleType)} />}
           {tab === "leads" && <DoanhThuCRM key="leads-standalone" lockView="leads" orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} currentEmployee={payrollCurrentEmployee} canManageAllSales={payrollCurrentIsBoss || payrollCurrentIsAccountant} revenueByEmployee={revenueByEmployee} setTransactions={setTransactions} inventory={inventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} authUser={effectiveAuthUser} setDebts={setDebts} refreshFinancialSummary={refreshFinancialSummary} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
-          {tab === "hotro-khach" && <CustomerDirectory customers={customers} orders={orders} supportCases={supportCases} employees={activeEmployees} setTab={setTab} onCreateSupport={createSupportFromContext} onCreateOrder={createOrderFromContext} onCreateTask={assignTaskFromOps} inventory={inventory} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} canCreateOrder={payrollCurrentIsBoss || payrollCurrentIsAccountant || ["sale", "ky_thuat", "ads"].includes(payrollCurrentEmployee?.roleType)} />}
+          {tab === "hotro-khach" && <CustomerDirectory currentEmployee={payrollCurrentEmployee} customers={customers} orders={orders} supportCases={supportCases} employees={activeEmployees} setTab={setTab} onCreateSupport={createSupportFromContext} onCreateOrder={createOrderFromContext} onCreateTask={assignTaskFromOps} inventory={inventory} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} canCreateOrder={payrollCurrentIsBoss || payrollCurrentIsAccountant || ["sale", "ky_thuat", "ads"].includes(payrollCurrentEmployee?.roleType)} />}
           {tab === "hotro-congno" && <CongNo key="hotro-congno" debts={debts} setDebts={setDebts} setTransactions={setTransactions} transactions={transactions} paymentLedger={paymentLedger} distributionOrders={distributionOrders} distributionPartners={distributionPartners} setTab={setTab} authUser={effectiveAuthUser} allEmployees={employees} payDebt={payDebt} unpayDebt={unpayDebt} customers={customers} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
           {tab === "chat" && <ChatPage authUser={effectiveAuthUser} onUnreadChange={setChatUnread} employees={employees} tasks={tasks} setTasks={setTasks} setTab={setTab} supportCases={supportCases} setSupportCases={setSupportCases} dataLoader={{ ensureDataFields, applyAppData }} />}
           {(tab === "donhang" || tab === "hotro-donhang") && <RevenueFinanceHub key={tab} ordersOnly={tab === "hotro-donhang"} recordFocus={recordFocus} onRecordFocusConsumed={() => setRecordFocus(null)} onReturnToOps={returnToOps} orderPrefill={orderPrefill} onOrderPrefillConsumed={() => setOrderPrefill(null)} financialSummary={financialSummary} financialSummaryError={financialSummaryError} refreshFinancialSummary={refreshFinancialSummary} transactions={transactions} setTransactions={setTransactions} orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} payrollRows={payrollRows} kpiTiers={kpiTiers} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} revenueByEmployee={revenueByEmployee} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} debts={debts} setDebts={setDebts} company={company} unlockedMonths={unlockedMonths} onOpenReceivables={() => setTab("congno")} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
@@ -5366,6 +5366,8 @@ function DomixApp({ authUser, onLogout }) {
           reportYear={reportYear}
           reportMonth={reportMonth}
           financialSummary={financialSummary}
+          viewerIsManager={payrollCurrentIsBoss || payrollCurrentIsAccountant || isAdminRole(effectiveAuthUser?.role) || isAccountantRole(effectiveAuthUser?.role)}
+          viewerEmployeeId={payrollCurrentEmployee?.id ?? null}
           onClose={() => setProfileEmployeeId(null)}
         />
       )}
@@ -15007,7 +15009,7 @@ function OrderLifecycleBadges({ order }) {
   };
   const cell = (kind, prefix) => {
     const [short, full, color] = ORDER_LIFECYCLE_LABELS[kind][lifecycle[kind]] || [lifecycle[kind], lifecycle[kind], "muted"];
-    return <span className={`whitespace-nowrap rounded border px-1 py-px text-[9px] font-bold leading-3 ${tone[color]}`} title={`${prefix}: ${full}`}>{short}</span>;
+    return <span className={`whitespace-nowrap rounded border px-1.5 py-0.5 text-[10px] font-bold leading-4 ${tone[color]}`} title={`${prefix}: ${full}`}>{short}</span>;
   };
   // MỘT dòng ngang duy nhất — chi tiết nằm trong tooltip từng badge.
   return (
@@ -15068,7 +15070,6 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
   const [leadContactDraft, setLeadContactDraft] = useState({});
   const [leadSearch, setLeadSearch] = useState("");
   const [leadFilter, setLeadFilter] = useState("all"); // all | overdue | today | no_date | rejected
-  const [leadShowCount, setLeadShowCount] = useState(10);
   const [selectedLeadIds, setSelectedLeadIds] = useState([]);
   const [bulkReassignTarget, setBulkReassignTarget] = useState("");
   const toggleLeadSelect = (id) => setSelectedLeadIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -16351,17 +16352,17 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
         <table data-sticky-columns="true" data-mobile-cards="true" className="w-full min-w-[1180px] table-fixed text-sm">
           <colgroup>
             <col className="w-[36px]" /><col className="w-[52px]" /><col className="w-[92px]" /><col />
-            <col className="w-[108px]" /><col className="w-[108px]" /><col className="w-[120px]" /><col className="w-[140px]" />
+            <col className="w-[108px]" /><col className="w-[150px]" /><col className="w-[140px]" />
             <col className="w-[118px]" /><col className="w-[132px]" /><col className="w-[190px]" /><col className="w-[36px]" />
           </colgroup>
-          <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-2 py-2"></th><th className="px-4 py-2">STT</th><th className="px-4 py-2">Ngày lấy</th><th className="px-4 py-2">Khách hàng</th><th className="px-4 py-2">SĐT</th><th className="px-4 py-2">Nguồn</th><th className="px-4 py-2">Người thu thập</th><th className="px-4 py-2">Sale phụ trách</th><th className="px-4 py-2">Hẹn gọi lại</th><th className="px-4 py-2">Trạng thái</th><th className="px-4 py-2"></th><th className="px-2 py-2"></th></tr></thead>
+          <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-2 py-2"></th><th className="px-4 py-2">STT</th><th className="px-4 py-2">Ngày lấy</th><th className="px-4 py-2">Khách hàng</th><th className="px-4 py-2">SĐT</th><th className="px-4 py-2">Nguồn · Người thu thập</th><th className="px-4 py-2">Sale phụ trách</th><th className="px-4 py-2">Hẹn gọi lại</th><th className="px-4 py-2">Trạng thái</th><th className="px-4 py-2"></th><th className="px-2 py-2"></th></tr></thead>
           <tbody>
             {(() => {
               const filtered = filteredLeads;
               if (filtered.length === 0) {
-                return <tr><td colSpan={12} className="px-4 py-6 text-center text-xs text-muted">{(leads || []).length === 0 ? 'Chưa có khách hàng tiềm năng nào — bấm "Thêm khách tiềm năng" ở hàng công cụ phía trên để ghi nhận khách mới.' : "Không tìm thấy khách nào khớp bộ lọc/từ khoá."}</td></tr>;
+                return <tr><td colSpan={11} className="px-4 py-6 text-center text-xs text-muted">{(leads || []).length === 0 ? 'Chưa có khách hàng tiềm năng nào — bấm "Thêm khách tiềm năng" ở hàng công cụ phía trên để ghi nhận khách mới.' : "Không tìm thấy khách nào khớp bộ lọc/từ khoá."}</td></tr>;
               }
-              return filtered.slice(0, leadShowCount).map((l, idx) => {
+              return filtered.map((l, idx) => {
               const isOverdue = l.nextFollowUpDate && l.nextFollowUpDate <= TODAY_STR && l.status === "dang_cham_soc";
               const isExpanded = expandedLead[l.id];
               const draft = leadContactDraft[l.id] || { type: "call", note: "", nextFollowUpDate: "" };
@@ -16373,8 +16374,10 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                   <td className="px-4 py-2 ktns-mono text-xs text-muted">{formatDateVN(l.date)}</td>
                   <td className="px-4 py-2 font-medium"><div className="truncate" title={l.customerName}>{l.customerName}</div></td>
                   <td className="px-4 py-2 ktns-mono text-xs">{l.phone}</td>
-                  <td className="px-4 py-2 text-xs"><div className="truncate" title={LEAD_SOURCES[l.source]}>{LEAD_SOURCES[l.source]}</div></td>
-                  <td className="px-4 py-2 text-xs">{l.collectedByName || l.collectedByEmail ? <div className="truncate text-charcoal" title={l.collectedByName || l.collectedByEmail}>{l.collectedByName || l.collectedByEmail}</div> : <span className="text-muted">—</span>}</td>
+                  <td className="px-4 py-2 text-xs">
+                    <div className="truncate" title={`Nguồn: ${LEAD_SOURCES[l.source] || "—"}${l.collectedByName || l.collectedByEmail ? ` · Người thu thập: ${l.collectedByName || l.collectedByEmail}` : ""}`}>{LEAD_SOURCES[l.source]}</div>
+                    {(l.collectedByName || l.collectedByEmail) && <div className="truncate text-[10px] text-muted">{l.collectedByName || l.collectedByEmail}</div>}
+                  </td>
                   <td className="px-4 py-2 text-xs" onClick={(e) => e.stopPropagation()}>
                     <select value={l.saleEmployeeId || ""} onChange={(e) => reassignLead(l.id, e.target.value)} className="w-full border border-paper-line rounded px-1.5 py-1 text-[11px] bg-white">
                       {leadSaleOptions.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
@@ -16404,7 +16407,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                 </tr>
                 {isExpanded && (
                   <tr className="border-t border-paper-line bg-paper/40">
-                    <td colSpan={12} className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                    <td colSpan={11} className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                       <div className="text-[11px] font-semibold text-ink uppercase mb-1.5">Lịch sử chăm sóc — {l.customerName} ({l.phone})</div>
                       {(l.contactLog || []).length === 0 && <div className="text-xs text-muted mb-2">Chưa có lượt chăm sóc nào được ghi nhận.</div>}
                       <div className="flex flex-col gap-1 mb-2">
@@ -16436,19 +16439,8 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
           </tbody>
         </table>
         </div>
-        {filteredLeads.length > leadShowCount && (
-          <div className="px-4 py-2.5 border-t border-paper-line text-center">
-            <button onClick={() => setLeadShowCount((c) => c + 10)} className="text-xs text-ink-light underline hover:text-ink">
-              Xem thêm 10 người (còn {filteredLeads.length - leadShowCount} người) — hoặc <span onClick={(e) => { e.stopPropagation(); setLeadShowCount(filteredLeads.length); }} className="text-gold underline">xem tất cả {filteredLeads.length} người</span>
-            </button>
-          </div>
-        )}
-        {leadShowCount > 10 && filteredLeads.length > 10 && (
-          <div className="px-4 py-2 border-t border-paper-line text-center">
-            <button onClick={() => setLeadShowCount(10)} className="text-[11px] text-muted underline hover:text-ink">Thu gọn lại còn 10 người</button>
-          </div>
-        )}
-        <p className="px-4 py-1.5 text-[11px] text-muted border-t border-paper-line" title='Mặc định hiện 10 người gần hẹn nhất; bấm "Xem thêm" để hiện dần.'>* Khách hàng tiềm năng chưa tính doanh thu — chốt đơn thì bấm "Đã mua → Tạo đơn hàng".</p>
+        {/* Không còn "Xem thêm 10 người" — bảng dùng chuẩn phân trang chung 50 dòng/trang. */}
+        <p className="px-4 py-1.5 text-[11px] text-muted border-t border-paper-line">* Khách hàng tiềm năng chưa tính doanh thu — chốt đơn thì bấm "Đã mua → Tạo đơn hàng".</p>
       </div>
 
       <input ref={importT7InputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={readCrmExcelFile} />
@@ -16559,13 +16551,14 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
       {showForm && (
         <div className="domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
           <button
-            className="absolute top-3 right-3 text-muted hover:text-ink"
+            className="absolute top-3 right-3 flex h-9 w-9 items-center justify-center rounded-full border border-paper-line text-muted transition-colors hover:border-stamp-red/40 hover:bg-stamp-red/5 hover:text-stamp-red"
+            aria-label="Đóng form đơn hàng"
             onClick={async () => {
               const hasInput = JSON.stringify(form) !== orderFormBaselineRef.current;
               if (hasInput && !(await confirmOverlay("Bạn đã nhập thông tin đơn hàng nhưng chưa bấm Lưu — đóng lại sẽ MẤT hết thông tin vừa nhập. Vẫn muốn đóng?", { title: "Đơn hàng chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return;
               setShowForm(false);
             }}
-          ><X size={16} /></button>
+          ><X size={17} /></button>
           <h3 className="ktns-serif font-semibold text-ink mb-4">Đơn hàng / Upsale mới</h3>
           <div className="grid grid-cols-4 gap-3">
             <label className="text-xs text-muted flex flex-col gap-1">Ngày tháng<input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
@@ -16700,7 +16693,18 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
             ) : null;
           })()}
           {orderFormError && <p role="alert" className="mt-3 flex items-start gap-1.5 rounded-lg border border-stamp-red/35 bg-stamp-red/5 px-3 py-2 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} className="mt-0.5 shrink-0" /> {orderFormError}</p>}
-          <button type="button" onClick={addOrder} className="mt-4 min-h-[40px] rounded-md bg-ledger-green px-4 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45" disabled={orderSubmitting}>{orderSubmitting ? "Đang lưu..." : "Lưu đơn hàng"}</button>
+          <div className="mt-4 flex items-center justify-end gap-2 border-t border-paper-line pt-3.5">
+            <button
+              type="button"
+              onClick={async () => {
+                const hasInput = JSON.stringify(form) !== orderFormBaselineRef.current;
+                if (hasInput && !(await confirmOverlay("Bạn đã nhập thông tin đơn hàng nhưng chưa bấm Lưu — đóng lại sẽ MẤT hết thông tin vừa nhập. Vẫn muốn đóng?", { title: "Đơn hàng chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return;
+                setShowForm(false);
+              }}
+              className="rounded-md border border-paper-line px-4 py-2 text-sm text-muted transition-colors hover:text-ink"
+            >Hủy</button>
+            <button type="button" onClick={addOrder} className="min-h-[40px] rounded-md bg-ledger-green px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45" disabled={orderSubmitting}>{orderSubmitting ? "Đang lưu..." : "Lưu đơn hàng"}</button>
+          </div>
         </div>
       )}
 
@@ -16743,36 +16747,34 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
       </div>
 
       <div style={{ display: activeTableView === "orders" ? "flex" : "none" }} className="min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
-        <FinanceScrollableTable minWidth={1180} className="rounded-none border-0 bg-transparent">
-        <table data-sticky-columns="true" data-mobile-cards="true" className="domix-finance-table domix-sales-orders-table w-full text-sm" style={{ minWidth: 1180 }}>
+        <FinanceScrollableTable minWidth={960} className="rounded-none border-0 bg-transparent">
+        <table data-sticky-columns="true" data-mobile-cards="true" className="domix-finance-table domix-sales-orders-table domix-sticky-actions w-full text-sm" style={{ minWidth: 960 }}>
           <thead className="sticky top-0 z-10">
             <tr className="bg-paper text-left text-xs uppercase text-muted">
+              {/* CHỈ cột thiết yếu để quét & hành động — chi tiết (email, thời hạn gói, lịch sử
+                  chăm sóc...) nằm trong drawer "Xem chi tiết" của từng dòng. */}
               <th className="px-3 py-2.5">STT</th>
               <th className="px-3 py-2.5">Ngày</th>
               <th className="px-3 py-2.5">Khách hàng</th>
               <th className="px-3 py-2.5">Sản phẩm</th>
-              <th className="px-3 py-2.5">Thời hạn</th>
               <th className="px-3 py-2.5">Ngày hết hạn</th>
-              <th className="px-3 py-2.5">Liên hệ</th>
+              <th className="px-3 py-2.5">SĐT</th>
               <th className="px-3 py-2.5">Người phụ trách</th>
-              <th className="px-3 py-2.5">Loại</th>
               <th className="px-3 py-2.5 text-right">Số tiền</th>
               <th className="px-3 py-2.5">Trạng thái</th>
               <th className="px-3 py-2.5">Tình trạng hoá đơn</th>
-              <th className="px-3 py-2.5">Chăm sóc KH</th>
               <th className="px-3 py-2.5"></th>
             </tr>
           </thead>
           <tbody>
             {visibleOrders.slice().reverse().map((o, idx) => {
               const pending = o.invoiceStatus !== "issued";
-              const log = o.contactLog || [];
-              const lastContact = log[log.length - 1];
               const durationInfo = crmOrderDurationInfo(o, inventory);
               const expiryDate = o.expiryDate || crmAddDurationToIsoDate(o.serviceStartDate || o.date, durationInfo);
+              const isMine = currentEmployee?.id != null && Number(o.saleEmployeeId) === Number(currentEmployee.id);
               return (
                 <React.Fragment key={o.id}>
-                  <tr data-order-row={o.id} className={`border-t border-paper-line cursor-pointer hover:bg-paper/50 ${String(focusOrderId) === String(o.id) ? "ring-2 ring-inset ring-[#3C50E0] bg-[#3C50E0]/10" : ""} ${isOrderCancelled(o) ? "opacity-55" : pending ? "ktns-warn-row" : ""}`} onClick={() => setDetailOrderId(o.id)}>
+                  <tr data-order-row={o.id} className={`border-t border-paper-line cursor-pointer hover:bg-paper/50 ${isMine ? "domix-row-mine" : ""} ${String(focusOrderId) === String(o.id) ? "ring-2 ring-inset ring-[#3C50E0] bg-[#3C50E0]/10" : ""} ${isOrderCancelled(o) ? "opacity-55" : pending ? "ktns-warn-row" : ""}`} onClick={() => setDetailOrderId(o.id)}>
                     <td className="px-3 py-1.5 ktns-mono text-xs text-muted">{idx + 1}</td>
                     <td className="px-3 py-1.5 ktns-mono text-xs text-muted whitespace-nowrap">{formatDateVN(o.date)}</td>
                     <td className="px-3 py-1.5 min-w-[150px] max-w-[210px]">
@@ -16788,18 +16790,28 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                       )}
                       {o.inventoryStatus === "pending_stock" && <div className="mt-0.5 flex items-center gap-1 text-[9px] font-semibold text-gold"><AlertTriangle size={9} /> Chờ bổ sung kho · thiếu {o.inventoryShortage || o.quantity || 1}</div>}
                     </td>
-                    <td className="px-3 py-1.5 text-xs whitespace-nowrap"><span className="rounded bg-[#315fae]/10 px-2 py-1 font-semibold text-[#315fae]">{durationInfo.label || "—"}</span></td>
-                    <td className="px-3 py-1.5 text-xs whitespace-nowrap"><span className="ktns-mono font-semibold text-ledger-green" title={`Bắt đầu từ ${formatDateVN(o.serviceStartDate || o.date) || "—"}`}>{expiryDate ? formatDateVN(expiryDate) : "—"}</span></td>
-                    <td className="px-3 py-1.5 text-xs text-muted min-w-[110px] max-w-[160px]">
-                      <div className="ktns-mono whitespace-nowrap">{o.phone || "—"}</div>
-                      {o.email ? <div className="truncate" title={o.email}>{o.email}</div> : null}
+                    <td className="px-3 py-1.5 text-xs whitespace-nowrap">
+                      <span className="ktns-mono font-semibold text-ledger-green" title={`Bắt đầu từ ${formatDateVN(o.serviceStartDate || o.date) || "—"}${durationInfo.label ? ` · gói ${durationInfo.label}` : ""}`}>{expiryDate ? formatDateVN(expiryDate) : "—"}</span>
+                      {durationInfo.label ? <div className="text-[10px] text-muted">gói {durationInfo.label}</div> : null}
                     </td>
-                    <td className={`px-3 py-1.5 text-xs whitespace-nowrap min-w-[120px] ${saleAssigneeDisplay(o.saleEmployeeId).warn ? "text-stamp-red font-medium" : ""}`}>{saleAssigneeDisplay(o.saleEmployeeId).label}</td>
-                    <td className="px-3 py-1.5">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium whitespace-nowrap ${o.dealType === "upsale" ? "bg-gold" : "bg-ink-light"}`} style={{ color: "white" }}>{o.dealType === "upsale" ? "Upsale KT" : "Sale"}</span>
+                    <td className="px-3 py-1.5 text-xs text-muted whitespace-nowrap">
+                      <span className="ktns-mono">{o.phone || "—"}</span>
+                    </td>
+                    <td className={`px-3 py-1.5 text-xs whitespace-nowrap min-w-[120px] ${saleAssigneeDisplay(o.saleEmployeeId).warn ? "text-stamp-red font-medium" : ""}`}>
+                      {saleAssigneeDisplay(o.saleEmployeeId).label}
+                      {isMine && <span className="ml-1.5 rounded bg-[#3C50E0]/10 px-1.5 py-0.5 text-[9px] font-bold text-[#3C50E0]" title="Đơn do bạn phụ trách — tính vào doanh số của bạn">TÔI</span>}
+                      {o.dealType === "upsale" && <span className="ml-1.5 rounded bg-gold px-1.5 py-0.5 text-[9px] font-bold text-white whitespace-nowrap" title="Đơn upsale do kỹ thuật chốt">Upsale KT</span>}
                     </td>
                     <td className="px-3 py-1.5 text-right ktns-mono font-medium text-ledger-green whitespace-nowrap">{fmtVND(o.amount)}</td>
-                    <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}><OrderLifecycleBadges order={o} /></td>
+                    <td className="px-3 py-1.5" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex flex-nowrap items-center gap-1">
+                        <OrderLifecycleBadges order={o} />
+                        {o.supportStatus === "cho_xac_nhan" && <span className="rounded border border-gold/40 bg-gold/10 px-1 py-px text-[9px] font-bold text-gold" title="Hỗ trợ: chờ kỹ thuật xác nhận">HT…</span>}
+                        {o.supportStatus === "dang_ho_tro" && <span className="rounded border border-gold/40 bg-gold/10 px-1 py-px text-[9px] font-bold text-gold" title="Đang hỗ trợ">HT</span>}
+                        {o.supportStatus === "cho_duyet_hoan_tat" && <span className="rounded border border-gold/40 bg-gold/10 px-1 py-px text-[9px] font-bold text-gold" title="Hỗ trợ: chờ duyệt hoàn tất">HT?</span>}
+                        {o.supportStatus === "hoan_tat" && <span className="rounded border border-ledger-green/40 bg-ledger-green/10 px-1 py-px text-[9px] font-bold text-ledger-green" title="Hỗ trợ đã hoàn tất">HT✓</span>}
+                      </div>
+                    </td>
                     <td className="px-3 py-1.5 min-w-[130px]" onClick={(e) => e.stopPropagation()}>
                       <button onClick={(e) => startInvoiceEdit(o, e)} title={o.invoiceStatus === "issued" ? `Hoá đơn ${o.invoiceNo || ""}` : "Bấm để xuất hoá đơn"}>
                         {o.invoiceStatus === "issued" ? <StampBadge text="ĐÃ XUẤT" gold /> : <StampBadge text="CHƯA XUẤT HĐ" />}
@@ -16811,20 +16823,8 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                         </div>
                       )}
                     </td>
-                    <td className="whitespace-nowrap px-3 py-1.5 text-xs" onClick={(e) => e.stopPropagation()}>
-                      {/* MỘT dòng ngắn duy nhất: kênh gần nhất + giờ dễ đọc; trạng thái hỗ trợ là
-                          badge nhỏ kèm tooltip — chi tiết và thao tác nằm trong drawer của dòng. */}
-                      <div className="flex items-center gap-1.5">
-                        {lastContact
-                          ? <span className="text-muted">{CONTACT_TYPES[lastContact.type]?.label || "Hỗ trợ"} · <span className="ktns-mono">{fmtContactTime(lastContact.date)}</span></span>
-                          : <span className="text-stamp-red">Chưa liên hệ</span>}
-                        {o.supportStatus === "cho_xac_nhan" && <span className="rounded border border-gold/40 bg-gold/10 px-1 py-px text-[9px] font-bold text-gold" title="Hỗ trợ: chờ kỹ thuật xác nhận">HT…</span>}
-                        {o.supportStatus === "dang_ho_tro" && <span className="rounded border border-gold/40 bg-gold/10 px-1 py-px text-[9px] font-bold text-gold" title="Đang hỗ trợ">HT</span>}
-                        {o.supportStatus === "cho_duyet_hoan_tat" && <span className="rounded border border-gold/40 bg-gold/10 px-1 py-px text-[9px] font-bold text-gold" title="Hỗ trợ: chờ duyệt hoàn tất">HT?</span>}
-                        {o.supportStatus === "hoan_tat" && <span className="rounded border border-ledger-green/40 bg-ledger-green/10 px-1 py-px text-[9px] font-bold text-ledger-green" title="Hỗ trợ đã hoàn tất">HT✓</span>}
-                      </div>
-                    </td>
                     <td className="px-3 py-1.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <button onClick={() => setDetailOrderId(o.id)} className="text-muted hover:text-[#3C50E0] mr-2" title="Xem chi tiết — email, thời hạn gói, lịch sử chăm sóc, thao tác nhanh"><Eye size={13} /></button>
                       {isOrderCancelled(o) ? (
                         <span className="text-[9px] font-semibold text-muted" title="Đơn đã hủy — giữ lại làm dấu vết, kho và sổ cái đã tự đảo">Lưu vết</span>
                       ) : (
@@ -16845,10 +16845,10 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
           </tbody>
           <tfoot className="finance-sticky-footer">
             <tr>
-              <td colSpan={9} className="px-3 py-3 text-xs font-bold uppercase tracking-[0.06em] text-ink">TỔNG CỘNG · {visibleOrders.length} đơn đang hiển thị</td>
+              <td colSpan={7} className="px-3 py-3 text-xs font-bold uppercase tracking-[0.06em] text-ink">TỔNG CỘNG · {visibleOrders.length} đơn đang hiển thị</td>
               <td className="px-3 py-3 text-right text-sm font-bold ktns-mono text-ledger-green">{fmtVND(visibleOrders.reduce((sum, order) => sum + (Number(order.amount) || 0), 0))}</td>
-              <td className="px-3 py-3 text-xs font-semibold text-stamp-red">{visibleOrders.filter((order) => order.invoiceStatus !== "issued").length > 0 ? `${visibleOrders.filter((order) => order.invoiceStatus !== "issued").length} chưa xuất` : "Đã đủ"}</td>
-              <td colSpan={2} className="px-3 py-3 text-right text-[11px] text-muted">{dealEmployees.length} nhân sự đang ghi nhận</td>
+              <td colSpan={2} className="px-3 py-3 text-xs font-semibold text-stamp-red">{visibleOrders.filter((order) => order.invoiceStatus !== "issued").length > 0 ? `${visibleOrders.filter((order) => order.invoiceStatus !== "issued").length} chưa xuất` : "Đã đủ"}</td>
+              <td className="px-3 py-3 text-right text-[11px] text-muted">{dealEmployees.length} nhân sự</td>
             </tr>
           </tfoot>
         </table>
@@ -17072,6 +17072,13 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                   {o.email ? infoRow("Email", o.email) : null}
                   {infoRow("Sale phụ trách", saleName)}
                   {infoRow("Sản phẩm", (o.productName || o.importedProductName) ? `${o.productName || o.importedProductName} ×${o.quantity || 1}` : "Dịch vụ")}
+                  {(() => {
+                    const drawerDuration = crmOrderDurationInfo(o, inventory);
+                    const drawerExpiry = o.expiryDate || crmAddDurationToIsoDate(o.serviceStartDate || o.date, drawerDuration);
+                    return (drawerDuration.label || drawerExpiry) ? infoRow("Thời hạn gói", (
+                      <span>{drawerDuration.label || "—"}{drawerExpiry ? <span className="ktns-mono"> · hết hạn {formatDateVN(drawerExpiry)}</span> : null}</span>
+                    )) : null;
+                  })()}
                   {infoRow("Tổng tiền", <span className="ktns-mono font-bold text-ledger-green">{fmtVND(o.amount)}</span>)}
                   {Number.isFinite(collected) && infoRow("Đã thu", <span className="ktns-mono">{fmtVND(collected)}</span>)}
                   {Number.isFinite(remaining) && infoRow("Còn phải thu", <span className={`ktns-mono font-bold ${remaining > 0 ? "text-stamp-red" : "text-muted"}`}>{fmtVND(remaining)}</span>)}
@@ -18903,7 +18910,7 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
 // ---------- Danh bạ khách hàng cho luồng Hỗ trợ: khách → đơn đã mua → công nợ → yêu cầu hỗ trợ ----------
 // CSKH tra một khách là thấy đủ ngữ cảnh (đơn, sản phẩm, thanh toán, sale phụ trách, lịch sử hỗ trợ)
 // — không phải mở nhiều module rồi tự tìm lại. Chỉ đọc: không sửa dữ liệu bán hàng/kế toán ở đây.
-function CustomerDirectory({ customers = [], orders = [], supportCases = [], employees = [], setTab, onCreateSupport, onCreateOrder, onCreateTask, inventory = [], dataLoader, canCreateOrder = true }) {
+function CustomerDirectory({ customers = [], orders = [], supportCases = [], employees = [], setTab, onCreateSupport, onCreateOrder, onCreateTask, inventory = [], dataLoader, canCreateOrder = true, currentEmployee = null }) {
   // TẠO ĐƠN NHANH TẠI CHỖ — không phải nhảy sang tab Bán hàng rồi quay lại nữa:
   // khách đã prefill sẵn, chỉ chọn sản phẩm (tiền tự điền) và Lưu.
   const [quickOrder, setQuickOrder] = useState(null);
@@ -19029,7 +19036,7 @@ function CustomerDirectory({ customers = [], orders = [], supportCases = [], emp
         )}
       </div>
       <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-paper-line bg-white">
-        <table data-sticky-columns="true" className="w-full min-w-[980px] text-xs">
+        <table data-sticky-columns="true" className="domix-sticky-actions w-full min-w-[980px] text-xs">
           <thead className="sticky top-0 z-10 bg-[#F7F9FC] text-[10px] uppercase text-muted">
             <tr className="border-b border-paper-line">
               <th className="px-3 py-2 text-left">Khách hàng</th>
@@ -19038,15 +19045,16 @@ function CustomerDirectory({ customers = [], orders = [], supportCases = [], emp
               <th className="px-3 py-2 text-right">Tổng giá trị</th>
               <th className="px-3 py-2 text-right">Còn phải thu</th>
               <th className="px-3 py-2 text-left">Sale phụ trách</th>
-              <th className="px-3 py-2 text-left">Yêu cầu hỗ trợ</th>
-              <th className="px-3 py-2 text-left">Liên hệ gần nhất</th>
+              <th className="px-3 py-2 text-left">CSKH</th>
               <th className="px-3 py-2 text-right">Thao tác</th>
             </tr>
           </thead>
           <tbody>
-            {visible.length === 0 && <tr><td colSpan={9} className="px-3 py-10 text-center text-muted">Không tìm thấy khách hàng phù hợp.</td></tr>}
-            {visible.map((row) => (
-              <tr key={row.customer.id} className="cursor-pointer border-t border-paper-line hover:bg-[#F0F5FF]" onClick={() => setDetailRow(row)}>
+            {visible.length === 0 && <tr><td colSpan={8} className="px-3 py-10 text-center text-muted">Không tìm thấy khách hàng phù hợp.</td></tr>}
+            {visible.map((row) => {
+              const isMine = currentEmployee?.id != null && Number(row.lastOrder?.saleEmployeeId) === Number(currentEmployee.id);
+              return (
+              <tr key={row.customer.id} className={`cursor-pointer border-t border-paper-line hover:bg-[#F0F5FF] ${isMine ? "domix-row-mine" : ""}`} onClick={() => setDetailRow(row)}>
                 {/* Hồ sơ cũ có thể thiếu tên — lấy tên từ đơn gần nhất của chính khách đó
                     (cùng ID/SĐT), không hiển thị "—" khi đơn hàng đã biết tên. */}
                 <td className="max-w-[180px] truncate px-3 py-2 font-semibold text-ink" title={row.customer.customerName || row.lastOrder?.customerName || ""}>{row.customer.customerName || row.lastOrder?.customerName || "—"}</td>
@@ -19054,9 +19062,14 @@ function CustomerDirectory({ customers = [], orders = [], supportCases = [], emp
                 <td className="px-3 py-2 text-right ktns-mono">{row.orders.length}</td>
                 <td className="px-3 py-2 text-right ktns-mono font-semibold text-ledger-green">{fmtVND(row.total)}</td>
                 <td className={`px-3 py-2 text-right ktns-mono font-semibold ${row.remaining > 0 ? "text-stamp-red" : "text-muted"}`}>{row.remaining > 0 ? fmtVND(row.remaining) : "0đ"}</td>
-                <td className="px-3 py-2">{employeeName(row.lastOrder?.saleEmployeeId)}</td>
-                <td className="px-3 py-2">{row.cases.length > 0 ? `${row.cases.length} yêu cầu` : "—"}</td>
-                <td className="px-3 py-2 ktns-mono text-muted">{row.lastContact?.date ? formatDateVN(String(row.lastContact.date).slice(0, 10)) : "—"}</td>
+                <td className="px-3 py-2">
+                  {employeeName(row.lastOrder?.saleEmployeeId)}
+                  {isMine && <span className="ml-1.5 rounded bg-[#3C50E0]/10 px-1.5 py-0.5 text-[9px] font-bold text-[#3C50E0]" title="Khách do bạn phụ trách">TÔI</span>}
+                </td>
+                <td className="px-3 py-2" title="Số yêu cầu hỗ trợ · lần liên hệ gần nhất — chi tiết trong hồ sơ khách (bấm dòng)">
+                  {row.cases.length > 0 ? <span className="font-semibold text-ink">{row.cases.length} yêu cầu</span> : <span className="text-muted">—</span>}
+                  {row.lastContact?.date ? <span className="ktns-mono text-muted"> · {formatDateVN(String(row.lastContact.date).slice(0, 10))}</span> : null}
+                </td>
                 <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
                   <div className="flex justify-end gap-1.5">
                     <button type="button" onClick={() => setDetailRow(row)} className="rounded-md border border-[#3C50E0]/35 p-1.5 text-[#3C50E0] hover:bg-[#3C50E0]/5" title="Xem chi tiết hồ sơ khách" aria-label={`Xem chi tiết khách ${row.customer.customerName || ""}`}><Eye size={13} /></button>
@@ -19070,14 +19083,15 @@ function CustomerDirectory({ customers = [], orders = [], supportCases = [], emp
                           orderId: row.lastOrder?.id || "",
                           productName: row.lastOrder?.productName || row.lastOrder?.importedProductName || "",
                         })}
-                        className="rounded-md bg-ink px-2 py-1 text-[10px] font-semibold text-white"
+                        className="rounded-md border border-paper-line px-2 py-1 text-[10px] font-semibold text-muted transition-colors hover:border-[#3C50E0]/50 hover:bg-[#3C50E0]/5 hover:text-[#3C50E0]"
                         title="Mở form hỗ trợ với khách + đơn gần nhất đã điền sẵn"
                       >Tạo hỗ trợ</button>
                     )}
                   </div>
                 </td>
               </tr>
-            ))}
+              );
+            })}
           </tbody>
         </table>
       </div>
@@ -19325,7 +19339,9 @@ function OperationsCenter({ orders = [], debts = [], supportCases = [], tasks = 
 // ---------- Hồ sơ nhân viên hợp nhất (mở từ Nhân sự/Hiệu suất/Giao việc) ----------
 const PROFILE_PERF_LABELS = { tot: "Tốt", trung_binh: "Trung bình", canh_bao: "Cảnh báo", chua_co_du_lieu: "Chưa đủ dữ liệu" };
 
-function EmployeeProfileModal({ employee, tasks = [], orders = [], marketingLogs = [], payrollRows = [], reportYear, reportMonth, financialSummary, onClose }) {
+function EmployeeProfileModal({ employee, tasks = [], orders = [], marketingLogs = [], payrollRows = [], reportYear, reportMonth, financialSummary, onClose, viewerIsManager = false, viewerEmployeeId = null }) {
+  // Lightbox xem ảnh giấy tờ (CCCD/hồ sơ) — hook phải đứng trước mọi early-return.
+  const [docPreview, setDocPreview] = useState(null);
   if (!employee) return null;
   // CÙNG một nguồn task cho cả badge hiệu suất lẫn ô "Nhiệm vụ": không để một màn hình
   // vừa nói "chưa có task" vừa liệt kê task — enrich hồ sơ bằng số liệu Giao việc trong kỳ.
@@ -19347,66 +19363,178 @@ function EmployeeProfileModal({ employee, tasks = [], orders = [], marketingLogs
   const marketingSpend = myMarketing.reduce((sum, log) => sum + (Number(log.adSpend) || 0), 0);
   const assignedRevenue = employee.roleType === "ads" ? marketingRevenue : orderRevenue;
 
+  // Giấy tờ tuỳ thân & tài khoản ngân hàng là dữ liệu nhạy cảm: chỉ quản trị/kế toán
+  // hoặc CHÍNH CHỦ hồ sơ được xem; người khác (mở từ Hiệu suất/Giao việc) chỉ thấy hiệu suất.
+  const canViewSensitive = viewerIsManager || (viewerEmployeeId != null && Number(viewerEmployeeId) === Number(employee.id));
+  const infoItem = (label, value) => (
+    <div className="flex items-start justify-between gap-3 border-b border-paper-line py-1.5 text-xs last:border-b-0">
+      <span className="shrink-0 text-muted">{label}</span>
+      <span className="min-w-0 break-words text-right font-medium text-ink">{value || "—"}</span>
+    </div>
+  );
+  const sectionTitle = (text) => <div className="mb-2 text-[10px] font-bold uppercase tracking-wide text-muted">{text}</div>;
+  const docTile = (label, data, name, type) => {
+    const isImage = String(type || "").startsWith("image/");
+    return (
+      <div className="min-w-0">
+        <div className="mb-1 text-[10px] font-semibold uppercase text-muted">{label}</div>
+        {data ? (
+          isImage ? (
+            <button type="button" onClick={() => setDocPreview({ data, name: name || label, type })} className="block w-full overflow-hidden rounded-lg border border-paper-line bg-paper/40 transition-shadow hover:shadow-md" title={`Bấm để xem lớn — ${name || label}`}>
+              <img src={data} alt={label} className="aspect-[3/2] w-full object-cover" />
+            </button>
+          ) : (
+            <a href={data} download={name || label} className="flex aspect-[3/2] w-full flex-col items-center justify-center gap-1.5 rounded-lg border border-paper-line bg-paper/40 px-2 text-center text-[11px] text-ink underline">
+              <Paperclip size={15} /> <span className="truncate max-w-full">{name || "Tệp đính kèm"}</span>
+            </a>
+          )
+        ) : (
+          <div className="flex aspect-[3/2] w-full items-center justify-center rounded-lg border border-dashed border-paper-line text-[11px] text-muted">Chưa có ảnh</div>
+        )}
+      </div>
+    );
+  };
+
+  const performanceSection = (
+    <section className="md:col-span-2 rounded-xl border border-paper-line p-4">
+      {sectionTitle("Hiệu suất trong kỳ")}
+      <div className="mb-3 rounded-lg border border-paper-line bg-paper/60 px-3 py-2.5 text-xs">
+        <span className="font-semibold text-ink">Hiệu suất: </span>
+        <StampBadge text={(PROFILE_PERF_LABELS[perf.status] || perf.status || "—").toUpperCase()} gold={perf.status === "tot"} />
+        {perf.reminders?.length > 0 && <p className="mt-1.5 text-[11px] text-muted">{perf.reminders.join(" · ")}</p>}
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <div className="rounded-lg border border-paper-line p-3">
+          <div className="text-[10px] uppercase text-muted">Nhiệm vụ (kỳ hiện tại)</div>
+          <div className="mt-1 text-lg font-bold text-ink">{taskStats.done}/{taskStats.total}</div>
+          <div className="text-[10px] text-muted">đạt / tổng giao · {taskStats.warned} lần cảnh báo</div>
+        </div>
+        <div className="rounded-lg border border-paper-line p-3">
+          <div className="text-[10px] uppercase text-muted">Ngày công</div>
+          <div className="mt-1 text-lg font-bold text-ink">{payroll ? `${payroll.actualDays}/${payroll.standardDays}` : "—"}</div>
+          <div className="text-[10px] text-muted">ngày duyệt / ngày chuẩn</div>
+        </div>
+        <div className="rounded-lg border border-paper-line p-3">
+          <div className="text-[10px] uppercase text-muted">Doanh thu phụ trách</div>
+          <div className="mt-1 text-lg font-bold text-ledger-green ktns-mono">{fmtVND(assignedRevenue)}</div>
+          <div className="text-[10px] text-muted">{myOrders.length} đơn CRM{myMarketing.length ? ` · ${myMarketing.length} log marketing` : ""}</div>
+        </div>
+        <div className="rounded-lg border border-paper-line p-3">
+          <div className="text-[10px] uppercase text-muted">Lương thực lĩnh</div>
+          <div className="mt-1 text-lg font-bold text-ink ktns-mono">{payroll ? fmtVND(payroll.net) : "—"}</div>
+          <div className="text-[10px] text-muted">{payroll ? `BH doanh nghiệp: ${fmtVND(payroll.employerInsurance)}` : "Chưa có dữ liệu bảng lương kỳ này"}</div>
+        </div>
+        {marketingSpend > 0 && (
+          <div className="rounded-lg border border-paper-line p-3">
+            <div className="text-[10px] uppercase text-muted">Chi quảng cáo đã dùng</div>
+            <div className="mt-1 text-lg font-bold text-stamp-red ktns-mono">{fmtVND(marketingSpend)}</div>
+          </div>
+        )}
+      </div>
+      <div className="mt-3">
+        <div className="mb-1.5 text-[10px] uppercase text-muted">Nhiệm vụ trong kỳ</div>
+        {myTasks.length === 0 ? (
+          <p className="text-xs text-muted">Chưa có nhiệm vụ nào được giao trong kỳ này.</p>
+        ) : (
+          <ul className="flex flex-col gap-1.5">
+            {myTasks.slice(0, 10).map((task) => (
+              <li key={task.id} className="flex items-center justify-between gap-2 rounded border border-paper-line px-2.5 py-1.5 text-xs">
+                <span className="truncate">{task.description}</span>
+                <span className={`shrink-0 text-[10px] font-semibold ${task.doneManual ? "text-ledger-green" : "text-muted"}`}>{task.doneManual ? "Đã hoàn thành" : "Đang làm"}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {myTasks.length > 10 && <p className="mt-1.5 text-[10px] text-muted">Còn {myTasks.length - 10} nhiệm vụ khác — xem đầy đủ ở tab Giao việc.</p>}
+      </div>
+    </section>
+  );
+
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-ink/50 p-4" onClick={onClose}>
-      <div className="w-full max-w-2xl max-h-[88vh] overflow-y-auto rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-paper-line bg-white px-5 py-4">
-          <div>
+      <div className="flex max-h-[90vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+        <div className="flex shrink-0 items-start justify-between gap-3 border-b border-paper-line bg-white px-5 py-4">
+          <div className="min-w-0">
             <h3 className="ktns-serif text-lg font-bold text-ink">{employee.name}</h3>
-            <p className="text-xs text-muted">{ROLE_META[employee.roleType]?.label || employee.position || "Nhân viên"} · {employee.email || "—"}{employee.status === "inactive" ? " · Đã nghỉ việc" : ""}</p>
+            <p className="text-xs text-muted">{ROLE_META[employee.roleType]?.label || employee.position || "Nhân viên"}{employee.dept ? ` · ${employee.dept}` : ""} · {employee.email || "—"}{employee.status === "inactive" ? " · Đã nghỉ việc" : ""}</p>
           </div>
-          <button type="button" onClick={onClose} className="rounded-full border border-paper-line p-2 text-muted hover:text-ink" aria-label="Đóng hồ sơ"><X size={16} /></button>
+          <button type="button" onClick={onClose} className="shrink-0 rounded-full border border-paper-line p-2 text-muted hover:text-ink" aria-label="Đóng hồ sơ"><X size={16} /></button>
         </div>
-        <div className="grid grid-cols-2 gap-3 p-5">
-          <div className="col-span-2 rounded-lg border border-paper-line bg-paper/60 px-3 py-2.5 text-xs">
-            <span className="font-semibold text-ink">Hiệu suất: </span>
-            <StampBadge text={(PROFILE_PERF_LABELS[perf.status] || perf.status || "—").toUpperCase()} gold={perf.status === "tot"} />
-            {perf.reminders?.length > 0 && <p className="mt-1.5 text-[11px] text-muted">{perf.reminders.join(" · ")}</p>}
-          </div>
-          <div className="rounded-lg border border-paper-line p-3">
-            <div className="text-[10px] uppercase text-muted">Nhiệm vụ (kỳ hiện tại)</div>
-            <div className="mt-1 text-lg font-bold text-ink">{taskStats.done}/{taskStats.total}</div>
-            <div className="text-[10px] text-muted">đạt / tổng giao · {taskStats.warned} lần cảnh báo</div>
-          </div>
-          <div className="rounded-lg border border-paper-line p-3">
-            <div className="text-[10px] uppercase text-muted">Ngày công</div>
-            <div className="mt-1 text-lg font-bold text-ink">{payroll ? `${payroll.actualDays}/${payroll.standardDays}` : "—"}</div>
-            <div className="text-[10px] text-muted">ngày duyệt / ngày chuẩn</div>
-          </div>
-          <div className="rounded-lg border border-paper-line p-3">
-            <div className="text-[10px] uppercase text-muted">Doanh thu phụ trách</div>
-            <div className="mt-1 text-lg font-bold text-ledger-green ktns-mono">{fmtVND(assignedRevenue)}</div>
-            <div className="text-[10px] text-muted">{myOrders.length} đơn CRM{myMarketing.length ? ` · ${myMarketing.length} log marketing` : ""}</div>
-          </div>
-          <div className="rounded-lg border border-paper-line p-3">
-            <div className="text-[10px] uppercase text-muted">Lương thực lĩnh</div>
-            <div className="mt-1 text-lg font-bold text-ink ktns-mono">{payroll ? fmtVND(payroll.net) : "—"}</div>
-            <div className="text-[10px] text-muted">{payroll ? `BH doanh nghiệp: ${fmtVND(payroll.employerInsurance)}` : "Chưa có dữ liệu bảng lương kỳ này"}</div>
-          </div>
-          {marketingSpend > 0 && (
-            <div className="rounded-lg border border-paper-line p-3">
-              <div className="text-[10px] uppercase text-muted">Chi quảng cáo đã dùng</div>
-              <div className="mt-1 text-lg font-bold text-stamp-red ktns-mono">{fmtVND(marketingSpend)}</div>
-            </div>
-          )}
-          <div className="col-span-2">
-            <div className="mb-1.5 text-[10px] uppercase text-muted">Nhiệm vụ trong kỳ</div>
-            {myTasks.length === 0 ? (
-              <p className="text-xs text-muted">Chưa có nhiệm vụ nào được giao trong kỳ này.</p>
+        <div className="min-h-0 flex-1 overflow-y-auto p-5">
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+            {canViewSensitive ? (
+              <>
+                <section className="rounded-xl border border-paper-line p-4">
+                  {sectionTitle("Thông tin cá nhân & liên hệ")}
+                  {infoItem("Ngày sinh", employee.dob ? formatDateVN(employee.dob) : "")}
+                  {infoItem("Quê quán", employee.hometown)}
+                  {infoItem("Số điện thoại", <span className="ktns-mono">{employee.phone || "—"}</span>)}
+                  {infoItem("Email", employee.email)}
+                  {infoItem("Số CCCD/CMND", <span className="ktns-mono">{employee.idNumber || "—"}</span>)}
+                  {infoItem("Trình độ", [employee.education, employee.major].filter(Boolean).join(" · "))}
+                  {employee.resumeSummary && (
+                    <div className="mt-2 rounded-lg bg-paper/50 px-2.5 py-2 text-[11px] leading-5 text-charcoal">{employee.resumeSummary}</div>
+                  )}
+                </section>
+                <section className="rounded-xl border border-paper-line p-4">
+                  {sectionTitle("Giấy tờ tuỳ thân — bấm ảnh để xem lớn")}
+                  <div className="grid grid-cols-2 gap-3">
+                    {docTile("CCCD mặt trước", employee.idFrontData, employee.idFrontName, employee.idFrontType)}
+                    {docTile("CCCD mặt sau", employee.idBackData, employee.idBackName, employee.idBackType)}
+                  </div>
+                  <div className="mt-3">
+                    {employee.resumeFileData ? (
+                      String(employee.resumeFileType || "").startsWith("image/") ? (
+                        <button type="button" onClick={() => setDocPreview({ data: employee.resumeFileData, name: employee.resumeFileName || "Hồ sơ đính kèm", type: employee.resumeFileType })} className="flex items-center gap-1.5 text-[11px] font-semibold text-ink-light underline hover:text-ink"><Paperclip size={12} /> Hồ sơ đính kèm: {employee.resumeFileName || "xem ảnh"}</button>
+                      ) : (
+                        <a href={employee.resumeFileData} download={employee.resumeFileName || "ho-so"} className="flex items-center gap-1.5 text-[11px] font-semibold text-ink-light underline hover:text-ink"><Paperclip size={12} /> Tải hồ sơ đính kèm: {employee.resumeFileName || "tệp"}</a>
+                      )
+                    ) : (
+                      <p className="text-[11px] text-muted">Chưa có file hồ sơ/sơ yếu lý lịch đính kèm.</p>
+                    )}
+                  </div>
+                </section>
+                <section className="md:col-span-2 rounded-xl border border-paper-line p-4">
+                  {sectionTitle("Hợp đồng & lương")}
+                  <div className="grid grid-cols-1 gap-x-6 md:grid-cols-2">
+                    <div>
+                      {infoItem("Loại hợp đồng", CONTRACT_META[employee.contractType]?.label || employee.contractType)}
+                      {infoItem("Ngày vào làm", employee.joined ? formatDateVN(employee.joined) : "")}
+                      {employee.resignedDate ? infoItem("Ngày nghỉ việc", formatDateVN(employee.resignedDate)) : null}
+                      {infoItem("Lương cơ bản tháng", <span className="ktns-mono">{fmtVND(employee.baseSalary)}</span>)}
+                      {infoItem("Số người phụ thuộc", String(employee.dependents ?? 0))}
+                    </div>
+                    <div>
+                      {infoItem("Phụ cấp ăn trưa", <span className="ktns-mono">{fmtVND(employee.mealAllowance)}</span>)}
+                      {infoItem("Phụ cấp chuyên cần", <span className="ktns-mono">{fmtVND(employee.attendanceBonus)}</span>)}
+                      {infoItem("Ngân hàng", employee.bankName)}
+                      {infoItem("Số tài khoản", <span className="ktns-mono">{employee.bankAccount || "—"}</span>)}
+                    </div>
+                  </div>
+                </section>
+              </>
             ) : (
-              <ul className="flex flex-col gap-1.5">
-                {myTasks.slice(0, 10).map((task) => (
-                  <li key={task.id} className="flex items-center justify-between gap-2 rounded border border-paper-line px-2.5 py-1.5 text-xs">
-                    <span className="truncate">{task.description}</span>
-                    <span className={`shrink-0 text-[10px] font-semibold ${task.doneManual ? "text-ledger-green" : "text-muted"}`}>{task.doneManual ? "Đã hoàn thành" : "Đang làm"}</span>
-                  </li>
-                ))}
-              </ul>
+              <section className="md:col-span-2 rounded-xl border border-paper-line bg-paper/50 px-4 py-3 text-[11px] text-muted">
+                Thông tin cá nhân, giấy tờ và lương chỉ hiển thị với quản trị/kế toán hoặc chính chủ hồ sơ.
+              </section>
             )}
-            {myTasks.length > 10 && <p className="mt-1.5 text-[10px] text-muted">Còn {myTasks.length - 10} nhiệm vụ khác — xem đầy đủ ở tab Giao việc.</p>}
+            {performanceSection}
           </div>
         </div>
       </div>
+      {docPreview && (
+        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-ink/70 p-6" onClick={(event) => { event.stopPropagation(); setDocPreview(null); }}>
+          <div className="flex max-h-full max-w-4xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-paper-line px-4 py-2.5">
+              <h4 className="truncate text-sm font-semibold text-ink">{docPreview.name}</h4>
+              <button type="button" onClick={() => setDocPreview(null)} className="shrink-0 rounded-full border border-paper-line p-1.5 text-muted hover:text-ink" aria-label="Đóng ảnh"><X size={14} /></button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto p-3">
+              <img src={docPreview.data} alt={docPreview.name} className="max-h-[78vh] w-auto max-w-full rounded" />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -19913,26 +20041,48 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
               <label className="text-xs text-muted flex flex-col gap-1 md:col-span-2 xl:col-span-4">Tóm tắt sơ yếu lý lịch / kinh nghiệm
                 <textarea value={form.resumeSummary} onChange={(e) => setForm({ ...form, resumeSummary: e.target.value })} placeholder="Trường tốt nghiệp, kinh nghiệm làm việc trước đó, chứng chỉ liên quan..." rows={2} className="border border-paper-line rounded px-2 py-1.5 text-sm resize-none" />
               </label>
-              <label className="text-xs text-muted flex flex-col gap-1">Ảnh CCCD mặt trước
-                <input type="file" accept="image/*,.pdf" onChange={(e) => handleDocFile(e, "idFrontData", "idFrontName")} className="border border-paper-line rounded px-2 py-1.5 text-sm bg-white" />
-                {form.idFrontName && <span className="text-[11px] text-ledger-green flex items-center gap-1 mt-1"><CheckCircle2 size={11} /> {form.idFrontName}</span>}
-              </label>
-              <label className="text-xs text-muted flex flex-col gap-1">Ảnh CCCD mặt sau
-                <input type="file" accept="image/*,.pdf" onChange={(e) => handleDocFile(e, "idBackData", "idBackName")} className="border border-paper-line rounded px-2 py-1.5 text-sm bg-white" />
-                {form.idBackName && <span className="text-[11px] text-ledger-green flex items-center gap-1 mt-1"><CheckCircle2 size={11} /> {form.idBackName}</span>}
-              </label>
+              {/* Ảnh CCCD 2 mặt: PREVIEW trực tiếp trong form — thấy ngay ảnh đã lưu, không phải
+                  đoán qua tên tệp; bấm ảnh/Xem lớn mở cửa sổ phóng to, Xóa gỡ ảnh khỏi hồ sơ. */}
+              {[
+                { side: "trước", dataKey: "idFrontData", nameKey: "idFrontName", typeKey: "idFrontType" },
+                { side: "sau", dataKey: "idBackData", nameKey: "idBackName", typeKey: "idBackType" },
+              ].map(({ side, dataKey, nameKey, typeKey }) => (
+                <div key={dataKey} className="text-xs text-muted flex flex-col gap-1">
+                  Ảnh CCCD mặt {side}
+                  <div className="overflow-hidden rounded-lg border border-paper-line bg-paper/40">
+                    {form[dataKey] ? (
+                      String(form[typeKey] || "").startsWith("image/") ? (
+                        <button type="button" onClick={() => setViewingDoc({ data: form[dataKey], name: form[nameKey] || `CCCD mặt ${side}`, type: form[typeKey] })} className="block w-full" title="Bấm để xem lớn">
+                          <img src={form[dataKey]} alt={`CCCD mặt ${side}`} className="aspect-[3/2] w-full object-cover" />
+                        </button>
+                      ) : (
+                        <div className="flex aspect-[3/2] items-center justify-center px-2 text-center text-[11px] text-ink">{form[nameKey] || "Tệp PDF"}</div>
+                      )
+                    ) : (
+                      <div className="flex aspect-[3/2] items-center justify-center text-[11px] text-muted">Chưa có ảnh</div>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="cursor-pointer rounded-md border border-paper-line px-2.5 py-1 text-[11px] font-semibold text-ink transition-colors hover:border-[#3C50E0]/50 hover:text-[#3C50E0]">
+                      {form[dataKey] ? "Đổi ảnh" : "Chọn ảnh"}
+                      <input type="file" accept="image/*,.pdf" className="hidden" onChange={(e) => handleDocFile(e, dataKey, nameKey)} />
+                    </label>
+                    {form[dataKey] && <button type="button" onClick={() => setViewingDoc({ data: form[dataKey], name: form[nameKey] || `CCCD mặt ${side}`, type: form[typeKey] })} className="text-[11px] text-ink-light underline">Xem lớn</button>}
+                    {form[dataKey] && <button type="button" onClick={() => setForm({ ...form, [dataKey]: "", [nameKey]: "", [typeKey]: "" })} className="text-[11px] text-stamp-red underline">Xóa</button>}
+                  </div>
+                </div>
+              ))}
               <label className="text-xs text-muted flex flex-col gap-1 md:col-span-2">File hồ sơ/sơ yếu lý lịch đính kèm (bản scan/nộp online của ứng viên)
                 <input type="file" accept="image/*,.pdf" onChange={(e) => handleDocFile(e, "resumeFileData", "resumeFileName")} className="border border-paper-line rounded px-2 py-1.5 text-sm bg-white" />
-                {form.resumeFileName && <span className="text-[11px] text-ledger-green flex items-center gap-1 mt-1"><CheckCircle2 size={11} /> {form.resumeFileName}</span>}
+                {form.resumeFileName && (
+                  <span className="text-[11px] text-ledger-green flex items-center gap-1.5 mt-1">
+                    <CheckCircle2 size={11} /> {form.resumeFileName}
+                    <button type="button" onClick={() => setViewingDoc({ data: form.resumeFileData, name: form.resumeFileName, type: form.resumeFileType })} className="text-ink-light underline">Xem</button>
+                    <button type="button" onClick={() => setForm({ ...form, resumeFileData: "", resumeFileName: "", resumeFileType: "" })} className="text-stamp-red underline">Xóa</button>
+                  </span>
+                )}
               </label>
             </div>
-            {(form.idFrontData || form.idBackData || form.resumeFileData) && (
-              <div className="flex gap-3 mt-2 flex-wrap">
-                {form.idFrontData && <button onClick={() => setViewingDoc({ data: form.idFrontData, name: form.idFrontName, type: form.idFrontType })} className="text-[11px] text-ink-light underline">Xem CCCD mặt trước</button>}
-                {form.idBackData && <button onClick={() => setViewingDoc({ data: form.idBackData, name: form.idBackName, type: form.idBackType })} className="text-[11px] text-ink-light underline">Xem CCCD mặt sau</button>}
-                {form.resumeFileData && <button onClick={() => setViewingDoc({ data: form.resumeFileData, name: form.resumeFileName, type: form.resumeFileType })} className="text-[11px] text-ink-light underline">Xem file hồ sơ</button>}
-              </div>
-            )}
           </div>
 
           <div className="mt-4 pt-4 border-t border-paper-line">
@@ -20057,9 +20207,9 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
         <table data-disable-generated-total="true" className="domix-db-table text-sm">
           <thead>
             <tr>
+              {/* 7 cột chuẩn hoá — chức vụ gộp vào cột Nhân viên; chi tiết cá nhân nằm ở "Hồ sơ đầy đủ". */}
               <th className="px-4 py-3 text-left">{ui("Nhân viên", "Employee")}</th>
-              <th className="px-4 py-3 text-left">{ui("Chức vụ / Phòng ban", "Position / Department")}</th>
-              <th className="hidden px-4 py-3 text-left 2xl:table-cell">{ui("Hợp đồng", "Contract")}</th>
+              <th className="hidden px-4 py-3 text-left xl:table-cell">{ui("Hợp đồng", "Contract")}</th>
               <th className="px-4 py-3 text-right">{ui("Công & lương", "Attendance & Salary")}</th>
               <th className="hidden px-4 py-3 text-left 2xl:table-cell">{ui("KPI chi tiết", "KPI details")}</th>
               <th className="px-4 py-3 text-left">{ui("Tài khoản", "Account")}</th>
@@ -20069,7 +20219,7 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
           </thead>
           <tbody>
             {visibleEmployees.length === 0 && accountsWithoutProfile.length === 0 && (
-              <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-muted">Chưa có dữ liệu nhân sự phù hợp với kỳ đang xem.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-muted">Chưa có dữ liệu nhân sự phù hợp với kỳ đang xem.</td></tr>
             )}
             {visibleEmployees.map((e) => {
               const months = tenureMonths(e.joined);
@@ -20078,41 +20228,36 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
               const cong = monthlyCongFor(e.attendance, reportYear, reportMonth);
               return (
                 <tr key={e.id}>
-                  <td className="px-4 py-3 min-w-[230px]">
+                  <td className="px-4 py-2.5 min-w-[230px]">
                     {isAdmin ? <EditableName value={e.name} onSave={(value) => updateTextField(e.id, "name", value)} className="font-semibold text-ink text-sm" /> : <div className="font-semibold text-ink text-sm">{e.name}</div>}
-                    <div className="mt-1 text-[11px] text-muted ktns-mono">{e.email || "Chưa có email"}</div>
-                    {e.phone && <div className="mt-1 text-[11px] text-muted">{e.phone}</div>}
-                    {onOpenProfile && <button type="button" onClick={() => onOpenProfile(e.id)} className="mt-1 text-[11px] font-semibold text-ink-light hover:text-ink hover:underline">Xem hồ sơ đầy đủ →</button>}
+                    <div className="mt-0.5 truncate text-[11px] text-charcoal">{e.position || ROLE_META[e.roleType]?.label || "—"} · <span className="text-muted">{e.dept || "Chưa gán phòng ban"}</span></div>
+                    <div className="mt-0.5 truncate text-[11px] text-muted ktns-mono">{e.email || "Chưa có email"}</div>
+                    {onOpenProfile && (
+                      <button type="button" onClick={() => onOpenProfile(e.id)} className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-[#3C50E0]/35 px-2 py-1 text-[11px] font-semibold text-[#3C50E0] transition-colors hover:bg-[#3C50E0]/5" title="Hồ sơ đầy đủ: SĐT, quê quán, ảnh CCCD 2 mặt, hợp đồng & lương, hiệu suất">
+                        <Eye size={12} /> Hồ sơ đầy đủ
+                      </button>
+                    )}
                   </td>
-                  <td className="px-4 py-3 min-w-[190px]">
-                    <div className="font-medium text-charcoal">{e.position || ROLE_META[e.roleType]?.label || "—"}</div>
-                    <div className="mt-1 text-xs text-muted">{e.dept || "Chưa gán phòng ban"}</div>
-                    <div className="mt-1 text-[10px] text-ink-light">Nhóm: {ROLE_META[e.roleType]?.label || "Khác"}</div>
-                  </td>
-                  <td className="hidden px-4 py-3 min-w-[150px] 2xl:table-cell">
+                  <td className="hidden px-4 py-2.5 min-w-[150px] xl:table-cell">
                     <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold text-white ${e.contractType === "ctv" ? "bg-gold" : e.contractType === "thu_viec" ? "bg-stamp-red" : "bg-ledger-green"}`}>
                       {CONTRACT_META[e.contractType]?.label || "Chính thức"}
                     </span>
-                    <div className="mt-2 text-[11px] text-muted">Thâm niên: {tenureLabel(months)}</div>
-                    <div className="mt-1 text-[11px] text-muted">Vào làm: {e.joined ? e.joined.split("-").reverse().join("/") : "—"}</div>
+                    <div className="mt-1.5 text-[11px] text-muted" title={`Thâm niên: ${tenureLabel(months)}`}>Vào làm: {e.joined ? e.joined.split("-").reverse().join("/") : "—"} · {tenureLabel(months)}</div>
                   </td>
-                  <td className="px-4 py-3 text-right min-w-[160px]">
-                    <div className="ktns-mono font-semibold text-ink">{fmtVND(pay.usesRevenueModel ? pay.mainSalary : pay.salaryByDays)}</div>
-                    <div className="mt-1 text-[11px] text-muted">Công: <span className="ktns-mono font-medium text-charcoal">{cong.toFixed(1)}/{standardWorkDaysFor(reportYear, reportMonth)}</span></div>
-                    <div className="mt-1 text-[10px] text-muted">Tháng {reportMonth}/{reportYear}</div>
+                  <td className="px-4 py-2.5 text-right min-w-[160px]">
                     {/* Lương tra THEO THÁNG đang xem (compensationHistory) — đổi lương tháng này
                         không làm cột này của tháng cũ nhảy theo. */}
-                    <div className="mt-1 text-[10px] text-muted">Cơ bản: {fmtVND(pay.baseSalary)} · Ngày: {fmtVND(pay.dailySalary || pay.daySalary)}</div>
+                    <div className="ktns-mono font-semibold text-ink" title={`Lương kỳ ${reportMonth}/${reportYear} · lương ngày ${fmtVND(pay.dailySalary || pay.daySalary)}`}>{fmtVND(pay.usesRevenueModel ? pay.mainSalary : pay.salaryByDays)}</div>
+                    <div className="mt-0.5 text-[11px] text-muted">Công <span className="ktns-mono font-medium text-charcoal">{cong.toFixed(1)}/{standardWorkDaysFor(reportYear, reportMonth)}</span> · Cơ bản {fmtVND(pay.baseSalary)}</div>
                   </td>
-                  <td className="hidden px-4 py-3 min-w-[175px] 2xl:table-cell">
-                    <div className="text-xs text-muted">Ngày công: <span className="ktns-mono font-medium text-charcoal">{cong.toFixed(1)}/{standardWorkDaysFor(reportYear, reportMonth)}</span></div>
-                    <div className="mt-2 flex items-center gap-2">
+                  <td className="hidden px-4 py-2.5 min-w-[165px] 2xl:table-cell">
+                    <div className="flex items-center gap-2">
                       <span className="text-xs text-muted">KPI</span>
                       {isAdmin ? <input type="number" value={e.kpi} onChange={(event) => updateField(e.id, "kpi", event.target.value)} className="w-16 border border-paper-line rounded px-2 py-1 text-right ktns-mono text-xs" /> : <span className="ktns-mono text-xs font-semibold text-ink">{Number(e.kpi || 0)}%</span>}
                     </div>
-                    <div className="mt-2"><KpiBar value={e.kpi} /></div>
+                    <div className="mt-1.5"><KpiBar value={e.kpi} /></div>
                   </td>
-                  <td className="px-4 py-3 min-w-[190px]">
+                  <td className="px-4 py-2.5 min-w-[190px]">
                     <div className={`text-xs font-semibold ${account ? (account.active ? "text-ledger-green" : "text-stamp-red") : "text-muted"}`}>
                       {account ? (account.active ? ui("Đang hoạt động", "Active") : ui("Đã khóa", "Locked")) : ui("Chưa liên kết", "Not linked")}
                     </div>
@@ -20153,11 +20298,10 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
                       </div>
                     )}
                   </td>
-                  <td className="px-4 py-3 min-w-[145px]">
+                  <td className="px-4 py-2.5 min-w-[145px]">
                     {e.status === "active" ? <StampBadge text={ui("ĐANG LÀM", "ACTIVE")} gold /> : <StampBadge text={e.resignedDate ? `${ui("NGHỈ TỪ", "INACTIVE SINCE")} ${e.resignedDate.split("-").reverse().join("/")}` : ui("NGHỈ VIỆC", "INACTIVE")} muted />}
-                    {e.hometown && <div className="mt-2 text-[11px] text-muted">{e.hometown}</div>}
                   </td>
-                  <td className="px-4 py-3 text-right min-w-[245px]">
+                  <td className="px-4 py-2.5 text-right min-w-[245px]">
                     {isAdmin ? <div className="flex flex-wrap justify-end gap-2">
                       {/* Thao tác lặp trên mọi dòng dùng kiểu outline — màu đặc chỉ dành cho CTA chính của trang. */}
                       <button onClick={() => startEdit(e)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-3 py-1.5 text-xs font-semibold text-ink hover:border-[#3C50E0]/60"><Pencil size={12} /> Sửa</button>
@@ -20188,7 +20332,7 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
                     <div className="font-semibold text-ink-light">{isSystemAdminAccount ? "Tài khoản hệ thống" : "Chưa có hồ sơ nhân sự"}</div>
                     <div className="mt-1 text-[11px] text-muted ktns-mono">{user.email}</div>
                   </td>
-                  <td className="px-4 py-3 text-xs text-muted" colSpan={4}>
+                  <td className="px-4 py-3 text-xs text-muted" colSpan={3}>
                     {isSystemAdminAccount
                       ? "Tài khoản quản trị không bắt buộc là nhân viên nhận lương. Chỉ tạo hồ sơ nếu người này cần chấm công và tính lương."
                       : "Tài khoản đăng nhập chưa liên kết hồ sơ. Hãy tạo hồ sơ trước khi giao việc, chấm công hoặc tính lương."}
@@ -20258,7 +20402,9 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
       )}
 
       {viewingDoc && (
-        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-8" onClick={() => setViewingDoc(null)}>
+        // z-[120]: phải nổi TRÊN form thêm/sửa (domix-inline-form-modal, z-85) — nếu thấp hơn,
+        // bấm "Xem lớn" trong form sẽ mở viewer chìm sau form, nhìn như không có gì xảy ra.
+        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-[120] p-8" onClick={() => setViewingDoc(null)}>
           <div className="bg-white rounded-lg p-4 max-w-2xl max-h-[85vh] overflow-y-auto shadow-xl" onClick={(ev) => ev.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="ktns-serif font-semibold text-ink text-sm">{viewingDoc.name}</h3>
@@ -26608,19 +26754,123 @@ function SystemTableEnhancer() {
       });
     };
 
+    // PHÂN TRANG DÙNG CHUNG — mọi bảng dữ liệu lớn chỉ hiển thị 50 dòng mỗi trang để bảng luôn
+    // gọn trong khung cố định; tổng tiền/số dòng ở thanh tổng vẫn tính trên TOÀN BỘ dữ liệu đã lọc.
+    const PAGINATION_PAGE_SIZE = 50;
+
+    const ensurePagination = (table) => {
+      // ÁP DỤNG CHO MỌI BẢNG (trừ vùng in, bảng footer nhân bản và bảng chủ động từ chối):
+      // chuẩn chung toàn app — quá 50 dòng là chia trang, không bảng nào đổ hết một lần.
+      if (table.matches(".domix-footer-table")) return;
+      if (table.closest(".ktns-print-area, .finance-table-footer-dock, [data-disable-pagination='true']")) return;
+
+      const key = table.dataset.domixTableKey || `system-table-${Date.now()}-${tableKeySeed += 1}`;
+      table.dataset.domixTableKey = key;
+      const findPager = () => document.querySelector(`.domix-table-pager[data-table-key="${key}"]`);
+
+      if (table.offsetParent === null) {
+        const hiddenPager = findPager();
+        if (hiddenPager) hiddenPager.style.display = "none";
+        return;
+      }
+
+      const headers = Array.from(table.querySelectorAll("thead tr:first-child > th"));
+      const bodyRows = Array.from(table.querySelectorAll("tbody > tr"));
+      // Phân loại dòng: dòng dữ liệu đếm vào trang; dòng "Tổng..." và dòng phụ (colspan — dòng
+      // mở rộng/empty-state) đi theo dòng dữ liệu đứng trước nó, không đếm riêng.
+      let dataIndex = -1;
+      const rowInfos = bodyRows.map((row) => {
+        const cells = Array.from(row.children).filter((cell) => cell.tagName === "TD");
+        // Bảng không có thead vẫn phải chia trang: khi đó mọi dòng không colspan là dòng dữ liệu.
+        const isAttachment = headers.length
+          ? (cells.length !== headers.length || cells.some((cell) => Number(cell.colSpan) > 1))
+          : (cells.length === 0 || cells.some((cell) => Number(cell.colSpan) > 1));
+        const firstText = (cells[0]?.textContent || "").trim().toLowerCase();
+        const isTotal = !isAttachment && /^tổng(\s|$|:|cộng)/.test(firstText);
+        if (!isAttachment && !isTotal) dataIndex += 1;
+        return { row, isTotal, isAttachment, index: dataIndex };
+      });
+      const dataCount = dataIndex + 1;
+
+      const showRow = (row) => {
+        if (row.dataset.domixPagerHidden) { row.style.display = ""; delete row.dataset.domixPagerHidden; }
+      };
+      const hideRow = (row) => {
+        if (!row.dataset.domixPagerHidden) { row.dataset.domixPagerHidden = "1"; row.style.display = "none"; }
+      };
+
+      if (dataCount <= PAGINATION_PAGE_SIZE) {
+        rowInfos.forEach(({ row }) => showRow(row));
+        delete table.dataset.domixPage;
+        findPager()?.remove();
+        return;
+      }
+
+      const scrollHost = findScrollHost(table);
+      const frame = scrollHost?.parentElement;
+      if (!scrollHost || !frame) return;
+
+      const totalPages = Math.ceil(dataCount / PAGINATION_PAGE_SIZE);
+      const page = Math.min(Math.max(1, Number(table.dataset.domixPage) || 1), totalPages);
+      table.dataset.domixPage = String(page);
+      const start = (page - 1) * PAGINATION_PAGE_SIZE;
+      const end = page * PAGINATION_PAGE_SIZE;
+
+      rowInfos.forEach(({ row, isTotal, index }) => {
+        const visible = isTotal || index < 0 || (index >= start && index < end);
+        if (visible) showRow(row); else hideRow(row);
+      });
+
+      let pager = findPager();
+      if (!pager) {
+        pager = document.createElement("div");
+        pager.className = "domix-table-pager shrink-0";
+        pager.dataset.tableKey = key;
+        pager.addEventListener("click", (event) => {
+          const button = event.target.closest("button[data-pager-dir]");
+          if (!button || button.disabled) return;
+          const ownTable = document.querySelector(`table[data-domix-table-key="${key}"]`);
+          if (!ownTable) return;
+          const current = Number(ownTable.dataset.domixPage) || 1;
+          const next = button.dataset.pagerDir === "next" ? current + 1 : current - 1;
+          ownTable.dataset.domixPage = String(next);
+          const host = findScrollHost(ownTable);
+          if (host) host.scrollTop = 0;
+          refreshTables();
+        });
+        frame.appendChild(pager);
+      }
+      pager.style.display = "";
+
+      const from = (start + 1).toLocaleString("vi-VN");
+      const to = Math.min(end, dataCount).toLocaleString("vi-VN");
+      const signature = `${page}/${totalPages}/${dataCount}`;
+      if (pager.dataset.signature !== signature) {
+        pager.dataset.signature = signature;
+        pager.innerHTML = `
+          <span class="domix-table-pager-info">Đang xem <strong>${from}–${to}</strong> / ${dataCount.toLocaleString("vi-VN")} dòng · ${PAGINATION_PAGE_SIZE} dòng mỗi trang</span>
+          <span class="domix-table-pager-controls">
+            <button type="button" data-pager-dir="prev" ${page <= 1 ? "disabled" : ""} aria-label="Trang trước">‹ Trước</button>
+            <span class="domix-table-pager-page">Trang <strong>${page}</strong> / ${totalPages}</span>
+            <button type="button" data-pager-dir="next" ${page >= totalPages ? "disabled" : ""} aria-label="Trang sau">Sau ›</button>
+          </span>`;
+      }
+    };
+
     const refreshTables = () => {
       cancelAnimationFrame(scheduledFrame);
       scheduledFrame = requestAnimationFrame(() => {
         const liveKeys = new Set();
         document.querySelectorAll(".ktns-app table").forEach((table) => {
           ensureGeneratedSummary(table);
+          ensurePagination(table);
           if (table.dataset.domixTableKey) liveKeys.add(table.dataset.domixTableKey);
         });
         // Vài trang dùng chung 1 khung cuộn cho nhiều bảng con đổi qua lại bằng cách gắn/gỡ hẳn
         // khỏi DOM (không phải ẩn/hiện bằng display) — bảng cũ biến mất nhưng thanh tổng tự sinh
         // (chèn bằng DOM thuần, ngoài tầm quản lý của React) bị bỏ quên, lơ lửng đè lên bảng mới.
-        // Dọn các thanh tổng không còn bảng gốc tương ứng.
-        document.querySelectorAll(".domix-generated-total-bar").forEach((bar) => {
+        // Dọn các thanh tổng/thanh phân trang không còn bảng gốc tương ứng.
+        document.querySelectorAll(".domix-generated-total-bar, .domix-table-pager").forEach((bar) => {
           if (!liveKeys.has(bar.dataset.tableKey)) bar.remove();
         });
       });
@@ -26628,7 +26878,7 @@ function SystemTableEnhancer() {
 
     refreshTables();
     const observer = new MutationObserver((mutations) => {
-      const onlyGeneratedChanges = mutations.every((mutation) => mutation.target.closest?.(".domix-generated-total-bar"));
+      const onlyGeneratedChanges = mutations.every((mutation) => mutation.target.closest?.(".domix-generated-total-bar, .domix-table-pager"));
       if (!onlyGeneratedChanges) refreshTables();
     });
     observer.observe(document.body, { childList: true, subtree: true, characterData: true });
@@ -26638,7 +26888,7 @@ function SystemTableEnhancer() {
       cancelAnimationFrame(scheduledFrame);
       observer.disconnect();
       window.removeEventListener("resize", refreshTables);
-      document.querySelectorAll(".domix-generated-total-bar").forEach((bar) => bar.remove());
+      document.querySelectorAll(".domix-generated-total-bar, .domix-table-pager").forEach((bar) => bar.remove());
     };
   }, []);
 

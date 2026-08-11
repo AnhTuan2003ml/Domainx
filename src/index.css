@@ -537,6 +537,135 @@ textarea {
   background: color-mix(in srgb, var(--domix-table-row-hover) 82%, transparent) !important;
 }
 
+/* THANH PHÂN TRANG dùng chung (tự sinh bởi SystemTableEnhancer): bảng lớn chia 50 dòng/trang,
+   thanh đứng cố định dưới chân khung bảng — người dùng luôn biết mình đang xem đoạn nào. */
+.domix-table-pager {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 42px;
+  padding: 6px 14px;
+  border-top: 1px solid var(--paper-line, #e2e8f0);
+  background: #fff;
+  font-size: 12px;
+  color: var(--muted, #64748b);
+}
+
+.domix-table-pager-info strong {
+  color: var(--ink, #1c2434);
+  font-weight: 700;
+}
+
+.domix-table-pager-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.domix-table-pager-page {
+  min-width: 86px;
+  text-align: center;
+}
+
+.domix-table-pager-page strong {
+  color: var(--ink, #1c2434);
+  font-weight: 700;
+}
+
+.domix-table-pager button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 5px 12px;
+  border: 1px solid var(--paper-line, #e2e8f0);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ink, #1c2434);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 140ms ease, background-color 140ms ease, color 140ms ease;
+}
+
+.domix-table-pager button:hover:not(:disabled) {
+  border-color: #3c50e0;
+  background: #f4f6ff;
+  color: #3c50e0;
+}
+
+.domix-table-pager button:focus-visible {
+  outline: 2px solid #3c50e0;
+  outline-offset: 1px;
+}
+
+.domix-table-pager button:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+
+.ktns-app.dark .domix-table-pager {
+  background: #151d2d;
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #aebbd0;
+}
+
+.ktns-app.dark .domix-table-pager-info strong,
+.ktns-app.dark .domix-table-pager-page strong {
+  color: #eef3fb;
+}
+
+.ktns-app.dark .domix-table-pager button {
+  background: #1b2538;
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #dbe4f2;
+}
+
+.ktns-app.dark .domix-table-pager button:hover:not(:disabled) {
+  border-color: #94afff;
+  background: rgba(148, 175, 255, 0.12);
+  color: #b9c9ff;
+}
+
+/* CỘT THAO TÁC GHIM PHẢI (opt-in bằng class trên <table>): nút sửa/xem của từng dòng luôn
+   trong tầm mắt, không phải cuộn ngang hết bảng rộng mới thấy. */
+.domix-sticky-actions th:last-child,
+.domix-sticky-actions td:last-child {
+  position: sticky;
+  right: 0;
+  z-index: 3;
+  background: #fff;
+  box-shadow: -10px 0 14px -10px rgba(15, 23, 42, 0.22);
+}
+
+.domix-sticky-actions thead th:last-child {
+  z-index: 6;
+  background: var(--paper, #f7f9fc);
+}
+
+.ktns-app.dark .domix-sticky-actions td:last-child { background: #151d2d; }
+.ktns-app.dark .domix-sticky-actions thead th:last-child { background: #1b2538; }
+
+/* Ô ghim phải phải luôn ĐẶC — kể cả khi hover (màu hover gốc pha transparent sẽ làm lộ chữ
+   của cột đang cuộn phía dưới ô ghim). */
+.domix-sales-orders-table.domix-sticky-actions tbody tr:hover > td:last-child {
+  background: color-mix(in srgb, var(--domix-table-row-hover) 82%, #fff) !important;
+}
+
+.ktns-app.dark .domix-sales-orders-table.domix-sticky-actions tbody tr:hover > td:last-child {
+  background: color-mix(in srgb, var(--domix-table-row-hover) 82%, #151d2d) !important;
+}
+
+/* DÒNG "CỦA TÔI" — người dùng nhìn bảng chung vẫn nhận ra ngay số liệu do mình phụ trách. */
+.domix-row-mine > td {
+  background: color-mix(in srgb, #3c50e0 5%, #fff);
+}
+
+.ktns-app.dark .domix-row-mine > td {
+  background: rgba(120, 150, 255, 0.07);
+}
+
 /* Nút tin nhắn có thể kéo tự do, luôn giữ trong vùng nhìn và ghi nhớ vị trí. */
 .domix-draggable-chat-button {
   touch-action: none;
