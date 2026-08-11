@@ -95,6 +95,7 @@ import {
   Menu,
   RotateCcw,
   History,
+  MoreHorizontal,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import CompanySidebar from "./components/layout/CompanySidebar";
@@ -6181,6 +6182,9 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
   const [filterStatus, setFilterStatus] = useState("all");
   const [searchText, setSearchText] = useState("");
   const [expandedTxId, setExpandedTxId] = useState(null);
+  // Panel phụ (Tổng hợp danh mục / In bảng kê) bung dạng POPOVER nổi từ thanh công cụ —
+  // triết lý: bảng là vùng lớn nhất, mọi mục phụ không được chiếm chiều cao cố định.
+  const [toolPanel, setToolPanel] = useState(null);
   const inRange = (t) => t.date >= rangeFrom && t.date <= rangeTo;
   const vatOutput = transactions.filter((t) => t.kind === "thu" && VAT_INVOICE_TYPES.includes(t.invoiceType) && inRange(t)).reduce((a, t) => a + splitVAT(t.amount, t.vatRate || 0).vatAmount, 0);
   const vatInput = transactions.filter((t) => t.kind === "chi" && VAT_INVOICE_TYPES.includes(t.invoiceType) && inRange(t)).reduce((a, t) => a + splitVAT(t.amount, t.vatRate || 0).vatAmount, 0);
@@ -6439,11 +6443,6 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
         />
       </div>
 
-      <div style={{ display: activeTableView === "transactions" ? "flex" : "none" }} className="shrink-0 justify-between items-center flex-wrap gap-2">
-        <p className="text-xs text-muted">Danh sách giao dịch và chứng từ trong kỳ.</p>
-        <button onClick={() => { setForm(blankTx); setEditingId(null); setShowForm(true); }} className="flex items-center gap-1.5 text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light"><Plus size={15} /> Thêm giao dịch</button>
-      </div>
-
       {showForm && (
         <div className="shrink-0 domix-inline-form-modal bg-white rounded-lg border border-paper-line p-5 relative">
           <button type="button" className="absolute top-3 right-3 inline-flex min-h-10 min-w-10 items-center justify-center text-muted" onClick={closeForm} aria-label="Đóng biểu mẫu" title="Đóng"><X size={16} /></button>
@@ -6515,27 +6514,62 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
         </div>
       )}
 
-      <div className="shrink-0 bg-white rounded-lg border border-paper-line p-3 flex items-center gap-2 flex-wrap">
+      {/* MỘT thanh công cụ duy nhất — bộ lọc + tìm kiếm + các mục phụ (Tổng hợp danh mục,
+          In bảng kê) bung dạng panel NỔI + nút thêm giao dịch. Bảng chiếm toàn bộ phần còn lại. */}
+      <div className="shrink-0 relative bg-white rounded-lg border border-paper-line px-2.5 py-1.5 flex items-center gap-2 flex-wrap">
         <RangeModePicker rangeMode={rangeMode} setRangeMode={setRangeMode} rangeFrom={rangeFrom} setRangeFrom={setRangeFrom} rangeTo={rangeTo} setRangeTo={setRangeTo} reportMonth={reportMonth} reportYear={reportYear} show={showRangePicker} setShow={setShowRangePicker} />
         <select value={filterKind} onChange={(e) => setFilterKind(e.target.value)} className="border border-paper-line rounded px-2.5 py-1.5 text-xs"><option value="all">Tất cả loại</option><option value="thu">Chỉ Thu</option><option value="chi">Chỉ Chi</option></select>
         <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="border border-paper-line rounded px-2.5 py-1.5 text-xs"><option value="all">Tất cả hóa đơn</option><option value="ok">Đã có hóa đơn</option><option value="missing">Chờ bổ sung hóa đơn</option></select>
-        <input value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder="Tìm theo mô tả, đối tác, SĐT, email... (tìm xuyên suốt mọi tháng)" className="border border-paper-line rounded px-2.5 py-1.5 text-xs flex-1 min-w-[200px]" />
+        <input value={searchText} onChange={(e) => setSearchText(e.target.value)} placeholder="Tìm theo mô tả, đối tác, SĐT, email... (tìm xuyên suốt mọi tháng)" className="border border-paper-line rounded px-2.5 py-1.5 text-xs flex-1 min-w-[180px]" />
         <span className="text-[11px] text-muted">{filteredTransactions.length}/{transactions.length} giao dịch</span>
-      </div>
+        {activeTableView === "transactions" && (
+          <>
+            <span className="hidden h-5 w-px bg-paper-line sm:block" />
+            {categoryBreakdown.length > 0 && (
+              <button type="button" onClick={() => setToolPanel(toolPanel === "summary" ? null : "summary")} aria-expanded={toolPanel === "summary"} className={`flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${toolPanel === "summary" ? "border-[#3C50E0]/60 bg-[#3C50E0]/5 text-[#3C50E0]" : "border-paper-line text-ink-light hover:text-ink"}`}>
+                <PieChart size={13} /> Tổng hợp danh mục <ChevronDown size={12} className={toolPanel === "summary" ? "rotate-180 transition-transform" : "transition-transform"} />
+              </button>
+            )}
+            <button type="button" onClick={() => setToolPanel(toolPanel === "print" ? null : "print")} aria-expanded={toolPanel === "print"} className={`flex items-center gap-1 rounded-md border px-2.5 py-1.5 text-xs font-semibold transition-colors ${toolPanel === "print" ? "border-[#3C50E0]/60 bg-[#3C50E0]/5 text-[#3C50E0]" : "border-paper-line text-ink-light hover:text-ink"}`}>
+              <Printer size={13} /> In bảng kê <ChevronDown size={12} className={toolPanel === "print" ? "rotate-180 transition-transform" : "transition-transform"} />
+            </button>
+            <button onClick={() => { setForm(blankTx); setEditingId(null); setShowForm(true); }} className="flex items-center gap-1 text-xs bg-ink text-white px-3 py-1.5 rounded-md hover:bg-ink-light"><Plus size={13} /> Thêm giao dịch</button>
+          </>
+        )}
 
-      {activeTableView === "transactions" && categoryBreakdown.length > 0 && (
-        <div className="bg-white rounded-lg border border-paper-line p-4">
-          <div className="mb-2 text-sm font-semibold text-ink">Tổng hợp theo danh mục<span className="ml-1 text-[11px] font-normal text-muted">theo bộ lọc hiện tại</span></div>
-          <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
-            {categoryBreakdown.map((c) => (
-              <div key={c.category} className="flex items-center justify-between text-xs border-b border-paper-line py-1">
-                <span className="text-charcoal">{c.label}</span>
-                <span className="ktns-mono">{c.thu > 0 && <span className="text-ledger-green">+{fmtVND(c.thu)}</span>}{c.thu > 0 && c.chi > 0 && " / "}{c.chi > 0 && <span className="text-stamp-red">-{fmtVND(c.chi)}</span>}</span>
-              </div>
-            ))}
+        {/* Panel nổi — đè lên bảng, KHÔNG chiếm chiều cao layout; bấm nút lần nữa hoặc ra ngoài để đóng. */}
+        {toolPanel === "summary" && categoryBreakdown.length > 0 && (
+          <div className="absolute right-0 top-full z-30 mt-1.5 w-[min(560px,92vw)] rounded-xl border border-paper-line bg-white p-4 shadow-2xl">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-sm font-semibold text-ink">Tổng hợp theo danh mục<span className="ml-1 text-[11px] font-normal text-muted">theo bộ lọc hiện tại</span></div>
+              <button type="button" onClick={() => setToolPanel(null)} className="rounded-full border border-paper-line p-1 text-muted hover:text-ink" aria-label="Đóng tổng hợp"><X size={12} /></button>
+            </div>
+            <div className="grid max-h-[45vh] grid-cols-1 gap-x-6 gap-y-1.5 overflow-y-auto sm:grid-cols-2">
+              {categoryBreakdown.map((c) => (
+                <div key={c.category} className="flex items-center justify-between border-b border-paper-line py-1 text-xs">
+                  <span className="text-charcoal">{c.label}</span>
+                  <span className="ktns-mono">{c.thu > 0 && <span className="text-ledger-green">+{fmtVND(c.thu)}</span>}{c.thu > 0 && c.chi > 0 && " / "}{c.chi > 0 && <span className="text-stamp-red">-{fmtVND(c.chi)}</span>}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        )}
+        {toolPanel === "print" && (
+          <div className="absolute right-0 top-full z-30 mt-1.5 w-[min(640px,92vw)] rounded-xl border border-paper-line bg-white p-4 shadow-2xl">
+            <div className="mb-2 flex items-center justify-between">
+              <div className="text-sm font-semibold text-ink">In bảng kê hóa đơn<span className="ml-1 text-[11px] font-normal text-muted">chọn khoảng ngày · phục vụ kiểm tra thuế</span></div>
+              <button type="button" onClick={() => setToolPanel(null)} className="rounded-full border border-paper-line p-1 text-muted hover:text-ink" aria-label="Đóng in bảng kê"><X size={12} /></button>
+            </div>
+            <div className="flex items-end gap-3 flex-wrap">
+              <label className="text-xs text-muted flex flex-col gap-1">Từ ngày<input type="date" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
+              <label className="text-xs text-muted flex flex-col gap-1">Đến ngày<input type="date" value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
+              <button onClick={printInvoicesInRange} className="text-sm bg-ink text-white px-4 py-2 rounded-md hover:bg-ink-light flex items-center gap-1.5"><Printer size={14} /> In / Lưu PDF bảng kê + ảnh hóa đơn</button>
+              <button onClick={downloadInvoiceStatement} className="text-sm border border-paper-line text-ink px-4 py-2 rounded-md hover:border-[#3C50E0]/60 flex items-center gap-1.5" title="Nếu nút In không hiện hộp thoại, dùng nút này — tải file về máy rồi mở bằng trình duyệt để in"><Download size={14} /> Tải file HTML để in</button>
+              <span className="text-[11px] text-muted">{transactions.filter((t) => t.date >= rangeFrom && t.date <= rangeTo).length} giao dịch trong khoảng ngày này</span>
+            </div>
+          </div>
+        )}
+      </div>
 
       {["vat_output", "vat_input"].includes(activeTableView) && (() => {
         // NGUỒN SỰ THẬT = SỔ CÁI (TK 3331 đầu ra / TK 133 đầu vào) — không tự cộng lại từ
@@ -6613,17 +6647,6 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
           </div>
         );
       })()}
-
-      <details style={{ display: activeTableView === "transactions" ? undefined : "none" }} className="shrink-0 rounded-lg border border-paper-line bg-white">
-        <summary className="flex cursor-pointer list-none items-center gap-1.5 px-4 py-3 text-sm font-semibold text-ink hover:bg-paper/60"><Printer size={13} className="text-ink-light" /> In bảng kê hóa đơn<span className="ml-1 text-[11px] font-normal text-muted">chọn khoảng ngày · phục vụ kiểm tra thuế</span><ChevronDown size={14} className="ml-auto text-muted" /></summary>
-        <div className="flex items-end gap-3 flex-wrap border-t border-paper-line px-4 py-3">
-          <label className="text-xs text-muted flex flex-col gap-1">Từ ngày<input type="date" value={rangeFrom} onChange={(e) => setRangeFrom(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-          <label className="text-xs text-muted flex flex-col gap-1">Đến ngày<input type="date" value={rangeTo} onChange={(e) => setRangeTo(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-          <button onClick={printInvoicesInRange} className="text-sm bg-ink text-white px-4 py-2 rounded-md hover:bg-ink-light flex items-center gap-1.5"><Printer size={14} /> In / Lưu PDF bảng kê + ảnh hóa đơn</button>
-          <button onClick={downloadInvoiceStatement} className="text-sm border border-paper-line text-ink px-4 py-2 rounded-md hover:border-[#3C50E0]/60 flex items-center gap-1.5" title="Nếu nút In không hiện hộp thoại, dùng nút này — tải file về máy rồi mở bằng trình duyệt để in"><Download size={14} /> Tải file HTML để in</button>
-          <span className="text-[11px] text-muted">{transactions.filter((t) => t.date >= rangeFrom && t.date <= rangeTo).length} giao dịch trong khoảng ngày này</span>
-        </div>
-      </details>
 
       <div style={{ display: activeTableView === "transactions" ? "flex" : "none" }} className="order-2 min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
         <div className="min-h-0 flex-1 overflow-auto">
@@ -17316,6 +17339,9 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
   // bảng/thống kê nhưng vẫn nằm nguyên trong DB làm dấu vết; setLogs vẫn thao tác trên danh
   // sách đầy đủ nên không mất bản ghi nào khi lưu.
   const logs = useMemo(() => (allLogs || []).filter((log) => !log.archived), [allLogs]);
+  // Đếm bản ghi bị lưu trữ để hiện chỉ báo — tránh cảnh "admin thấy 3, user thấy 2" gây
+  // hiểu lầm là phân quyền chặn, trong khi thực ra một bản ghi đã bị gỡ khỏi danh sách.
+  const archivedLogCount = (allLogs || []).length - logs.length;
   const canManageMarketing = normalizeAccountRole(authUser?.role) !== "user";
   const canWriteMarketingDaily = canManageMarketing || Boolean(positionAccess?.marketingWrite && currentEmployee?.id);
   const canEditMarketingLog = (log) => canManageMarketing || (canWriteMarketingDaily && Number(log?.employeeId) === Number(currentEmployee?.id));
@@ -17466,9 +17492,10 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
   }, [reportYear, reportMonth, rangeMode]);
   const [showRangePicker, setShowRangePicker] = useState(false);
   const [dailySearch, setDailySearch] = useState("");
-  // Nhân viên thường mặc định xem SỐ LIỆU CỦA MÌNH trước (chống "lú" khi dữ liệu mở toàn
-  // công ty) — bấm "Tất cả" vẫn xem được mọi người.
-  const [dailyEmployeeFilter, setDailyEmployeeFilter] = useState(() => (!canManageMarketing && currentEmployee?.id ? String(currentEmployee.id) : "all"));
+  // Bảng hiệu suất Marketing theo ngày là số liệu CHUNG: mọi nhân viên mặc định thấy TẤT CẢ
+  // (nhân viên không làm marketing mà mặc định lọc "của mình" sẽ thấy bảng trống — tưởng bị chặn).
+  // Ai muốn soi riêng mình thì tự chọn tên trong bộ lọc.
+  const [dailyEmployeeFilter, setDailyEmployeeFilter] = useState("all");
   const [dailyPageFilter, setDailyPageFilter] = useState("all");
   const visibleLogs = rangeMode === "all" ? logs : logs.filter((l) => l.date >= rangeFrom && l.date <= rangeTo);
   const defaultMarketingEmployeeId = canManageMarketing ? (mktEmployees[0]?.id || "") : (currentEmployee?.id || "");
@@ -17732,6 +17759,11 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
                 <input value={dailySearch} onChange={(event) => setDailySearch(event.target.value)} placeholder="Tìm nhân viên, Page, ghi chú..." className="h-9 w-full rounded-lg border border-paper-line bg-white pl-9 pr-3 text-xs text-ink outline-none transition focus:border-[#4f7ee8]" />
               </label>
               <span className="whitespace-nowrap text-[11px] text-muted">{dailyTableLogs.length}/{visibleLogs.length} dòng</span>
+              {archivedLogCount > 0 && (
+                <span className="whitespace-nowrap text-[11px] text-muted" title="Bản ghi đã gỡ khỏi danh sách (ví dụ bản trùng/lỗi ngày) — ẩn với MỌI vai trò, không phải do phân quyền; dữ liệu gốc vẫn lưu trong hệ thống làm dấu vết.">
+                  · {archivedLogCount} bản ghi đã lưu trữ (ẩn)
+                </span>
+              )}
             </>}
             {activeTableView !== "daily" && <span className="text-xs text-muted">{visibleLogs.length}/{logs.length} lượt ghi nhận trong kỳ.</span>}
           </div>
@@ -19505,6 +19537,7 @@ function EmployeeProfileModal({ employee, tasks = [], orders = [], marketingLogs
                       {infoItem("Số người phụ thuộc", String(employee.dependents ?? 0))}
                     </div>
                     <div>
+                      {infoItem("KPI thưởng", <span className="ktns-mono">{Number(employee.kpi || 0)}%</span>)}
                       {infoItem("Phụ cấp ăn trưa", <span className="ktns-mono">{fmtVND(employee.mealAllowance)}</span>)}
                       {infoItem("Phụ cấp chuyên cần", <span className="ktns-mono">{fmtVND(employee.attendanceBonus)}</span>)}
                       {infoItem("Ngân hàng", employee.bankName)}
@@ -19545,6 +19578,9 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
   const [showInactive, setShowInactive] = useState(false);
   const [expandedResume, setExpandedResume] = useState({});
   const [viewingDoc, setViewingDoc] = useState(null);
+  // Menu "⋯" của từng dòng nhân sự (Nghỉ việc / Khóa tài khoản / Xóa) — render fixed để
+  // không bị khung cuộn của bảng cắt mất.
+  const [rowMenu, setRowMenu] = useState(null);
   // Tài khoản đăng nhập (bảng users) — mỗi nhân sự gắn với một email/tài khoản.
   const [users, setUsers] = useState([]);
   const [accountMessage, setAccountMessage] = useState("");
@@ -19628,6 +19664,19 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
     const reader = new FileReader();
     reader.onload = () => setForm((f) => ({ ...f, [dataField]: reader.result, [nameField]: file.name, [dataField.replace("Data", "Type")]: file.type }));
     reader.readAsDataURL(file);
+  };
+
+  // Khóa/Mở tài khoản đăng nhập — gọi từ menu "⋯" của dòng (bảng không còn nút rời rạc).
+  const toggleAccountLock = async (emp) => {
+    if (!emp?.email) return;
+    if (emp.email === authUser?.email) { setAccountError("Không thể tự khóa tài khoản đang đăng nhập."); return; }
+    const account = accountForEmployee(emp);
+    try {
+      const active = account ? !account.active : 1;
+      const result = await saveUser({ email: emp.email.trim().toLowerCase(), role: normalizeAccountRole(account?.role || emp.accountRole || "user"), active, employeeId: emp.id, ...(!account ? { generatePassword: true } : {}) });
+      setUsers(result.users || []);
+      setAccountMessage(`${active ? "Đã mở" : "Đã khóa"} tài khoản ${emp.email}.`);
+    } catch (err) { setAccountError(err.message || "Không cập nhật được trạng thái tài khoản."); }
   };
   const [editingId, setEditingId] = useState(null);
 
@@ -20207,11 +20256,11 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
         <table data-disable-generated-total="true" className="domix-db-table text-sm">
           <thead>
             <tr>
-              {/* 7 cột chuẩn hoá — chức vụ gộp vào cột Nhân viên; chi tiết cá nhân nằm ở "Hồ sơ đầy đủ". */}
-              <th className="px-4 py-3 text-left">{ui("Nhân viên", "Employee")}</th>
+              {/* BẢNG CHỈ ĐỂ QUÉT NHANH — 6 cột thiết yếu: họ tên + vị trí, hợp đồng, lương cơ bản,
+                  tài khoản, trạng thái, thao tác. KPI/quyền/liên hệ... nằm sau nút "Chi tiết" và form Sửa. */}
+              <th className="px-4 py-3 text-left">{ui("Nhân viên · Vị trí", "Employee · Position")}</th>
               <th className="hidden px-4 py-3 text-left xl:table-cell">{ui("Hợp đồng", "Contract")}</th>
-              <th className="px-4 py-3 text-right">{ui("Công & lương", "Attendance & Salary")}</th>
-              <th className="hidden px-4 py-3 text-left 2xl:table-cell">{ui("KPI chi tiết", "KPI details")}</th>
+              <th className="px-4 py-3 text-right">{ui("Lương cơ bản", "Base salary")}</th>
               <th className="px-4 py-3 text-left">{ui("Tài khoản", "Account")}</th>
               <th className="px-4 py-3 text-left">{ui("Trạng thái", "Status")}</th>
               <th className="px-4 py-3 text-right">{ui("Thao tác", "Actions")}</th>
@@ -20219,7 +20268,7 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
           </thead>
           <tbody>
             {visibleEmployees.length === 0 && accountsWithoutProfile.length === 0 && (
-              <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-muted">Chưa có dữ liệu nhân sự phù hợp với kỳ đang xem.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-muted">Chưa có dữ liệu nhân sự phù hợp với kỳ đang xem.</td></tr>
             )}
             {visibleEmployees.map((e) => {
               const months = tenureMonths(e.joined);
@@ -20228,97 +20277,58 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
               const cong = monthlyCongFor(e.attendance, reportYear, reportMonth);
               return (
                 <tr key={e.id}>
-                  <td className="px-4 py-2.5 min-w-[230px]">
-                    {isAdmin ? <EditableName value={e.name} onSave={(value) => updateTextField(e.id, "name", value)} className="font-semibold text-ink text-sm" /> : <div className="font-semibold text-ink text-sm">{e.name}</div>}
-                    <div className="mt-0.5 truncate text-[11px] text-charcoal">{e.position || ROLE_META[e.roleType]?.label || "—"} · <span className="text-muted">{e.dept || "Chưa gán phòng ban"}</span></div>
-                    <div className="mt-0.5 truncate text-[11px] text-muted ktns-mono">{e.email || "Chưa có email"}</div>
-                    {onOpenProfile && (
-                      <button type="button" onClick={() => onOpenProfile(e.id)} className="mt-1.5 inline-flex items-center gap-1 rounded-md border border-[#3C50E0]/35 px-2 py-1 text-[11px] font-semibold text-[#3C50E0] transition-colors hover:bg-[#3C50E0]/5" title="Hồ sơ đầy đủ: SĐT, quê quán, ảnh CCCD 2 mặt, hợp đồng & lương, hiệu suất">
-                        <Eye size={12} /> Hồ sơ đầy đủ
-                      </button>
-                    )}
+                  <td className="px-4 py-2.5 min-w-[220px]">
+                    <div className="truncate font-semibold text-ink text-sm" title={e.email || undefined}>{e.name}</div>
+                    <div className="mt-0.5 truncate text-[11px] text-muted">{e.position || ROLE_META[e.roleType]?.label || "—"}{e.dept ? ` · ${e.dept}` : ""}</div>
                   </td>
                   <td className="hidden px-4 py-2.5 min-w-[150px] xl:table-cell">
                     <span className={`inline-flex rounded-full px-2 py-1 text-[10px] font-semibold text-white ${e.contractType === "ctv" ? "bg-gold" : e.contractType === "thu_viec" ? "bg-stamp-red" : "bg-ledger-green"}`}>
                       {CONTRACT_META[e.contractType]?.label || "Chính thức"}
                     </span>
-                    <div className="mt-1.5 text-[11px] text-muted" title={`Thâm niên: ${tenureLabel(months)}`}>Vào làm: {e.joined ? e.joined.split("-").reverse().join("/") : "—"} · {tenureLabel(months)}</div>
+                    <div className="mt-1 text-[11px] text-muted" title={`Thâm niên: ${tenureLabel(months)}`}>Vào làm: {e.joined ? e.joined.split("-").reverse().join("/") : "—"}</div>
                   </td>
-                  <td className="px-4 py-2.5 text-right min-w-[160px]">
+                  <td className="px-4 py-2.5 text-right min-w-[150px]">
                     {/* Lương tra THEO THÁNG đang xem (compensationHistory) — đổi lương tháng này
                         không làm cột này của tháng cũ nhảy theo. */}
-                    <div className="ktns-mono font-semibold text-ink" title={`Lương kỳ ${reportMonth}/${reportYear} · lương ngày ${fmtVND(pay.dailySalary || pay.daySalary)}`}>{fmtVND(pay.usesRevenueModel ? pay.mainSalary : pay.salaryByDays)}</div>
-                    <div className="mt-0.5 text-[11px] text-muted">Công <span className="ktns-mono font-medium text-charcoal">{cong.toFixed(1)}/{standardWorkDaysFor(reportYear, reportMonth)}</span> · Cơ bản {fmtVND(pay.baseSalary)}</div>
+                    <div className="ktns-mono font-semibold text-ink">{fmtVND(pay.baseSalary)}</div>
+                    <div className="mt-0.5 text-[11px] text-muted" title={`Lương kỳ ${reportMonth}/${reportYear} theo công thực tế`}>Kỳ này <span className="ktns-mono">{fmtVND(pay.usesRevenueModel ? pay.mainSalary : pay.salaryByDays)}</span> · Công {cong.toFixed(1)}/{standardWorkDaysFor(reportYear, reportMonth)}</div>
                   </td>
-                  <td className="hidden px-4 py-2.5 min-w-[165px] 2xl:table-cell">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-muted">KPI</span>
-                      {isAdmin ? <input type="number" value={e.kpi} onChange={(event) => updateField(e.id, "kpi", event.target.value)} className="w-16 border border-paper-line rounded px-2 py-1 text-right ktns-mono text-xs" /> : <span className="ktns-mono text-xs font-semibold text-ink">{Number(e.kpi || 0)}%</span>}
-                    </div>
-                    <div className="mt-1.5"><KpiBar value={e.kpi} /></div>
-                  </td>
-                  <td className="px-4 py-2.5 min-w-[190px]">
+                  <td className="px-4 py-2.5 min-w-[140px]">
+                    {/* Chỉ hiển thị TRẠNG THÁI + QUYỀN dạng chữ — đổi quyền ở form Sửa, Khóa/Mở ở menu ⋯. */}
                     <div className={`text-xs font-semibold ${account ? (account.active ? "text-ledger-green" : "text-stamp-red") : "text-muted"}`}>
                       {account ? (account.active ? ui("Đang hoạt động", "Active") : ui("Đã khóa", "Locked")) : ui("Chưa liên kết", "Not linked")}
                     </div>
-                    {isAdmin && e.email && (
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <select
-                          value={normalizeAccountRole(account?.role || e.accountRole || "user")}
-                          onChange={async (event) => {
-                            try {
-                              const nextRole = normalizeAccountRole(event.target.value);
-                              updateTextField(e.id, "accountRole", nextRole);
-                              const result = await saveUser({ email: e.email.trim().toLowerCase(), role: nextRole, active: account?.active ?? 1, employeeId: e.id, ...(!account ? { generatePassword: true } : {}) });
-                              setUsers(result.users || []);
-                              setAccountMessage(`Đã cập nhật quyền ${accountRoleLabel(event.target.value)} cho ${e.email}.`);
-                            } catch (err) { setAccountError(err.message || "Không cập nhật được quyền tài khoản."); }
-                          }}
-                          className="border border-paper-line rounded px-2 py-1 text-xs bg-white"
-                        >
-                          <option value="user">Nhân viên</option>
-                          <option value="accountant">Kế toán</option>
-                          <option value="admin">Quản trị/Admin</option>
-                        </select>
-                        <button
-                          onClick={async () => {
-                            if (e.email === authUser?.email) { setAccountError("Không thể tự khóa tài khoản đang đăng nhập."); return; }
-                            try {
-                              const active = account ? !account.active : 1;
-                              const result = await saveUser({ email: e.email.trim().toLowerCase(), role: normalizeAccountRole(account?.role || e.accountRole || "user"), active, employeeId: e.id, ...(!account ? { generatePassword: true } : {}) });
-                              setUsers(result.users || []);
-                              setAccountMessage(`${active ? "Đã mở" : "Đã khóa"} tài khoản ${e.email}.`);
-                            } catch (err) { setAccountError(err.message || "Không cập nhật được trạng thái tài khoản."); }
-                          }}
-                          disabled={e.email === authUser?.email}
-                          className="border border-paper-line rounded px-2 py-1 text-xs text-ink disabled:opacity-40"
-                        >
-                          {account?.active ? "Khóa" : "Mở"}
-                        </button>
-                      </div>
-                    )}
+                    {account && <div className="mt-0.5 text-[11px] text-muted">Quyền: {accountRoleLabel(account.role)}</div>}
                   </td>
                   <td className="px-4 py-2.5 min-w-[145px]">
                     {e.status === "active" ? <StampBadge text={ui("ĐANG LÀM", "ACTIVE")} gold /> : <StampBadge text={e.resignedDate ? `${ui("NGHỈ TỪ", "INACTIVE SINCE")} ${e.resignedDate.split("-").reverse().join("/")}` : ui("NGHỈ VIỆC", "INACTIVE")} muted />}
                   </td>
-                  <td className="px-4 py-2.5 text-right min-w-[245px]">
-                    {isAdmin ? <div className="flex flex-wrap justify-end gap-2">
-                      {/* Thao tác lặp trên mọi dòng dùng kiểu outline — màu đặc chỉ dành cho CTA chính của trang. */}
-                      <button onClick={() => startEdit(e)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-3 py-1.5 text-xs font-semibold text-ink hover:border-[#3C50E0]/60"><Pencil size={12} /> Sửa</button>
-                      <button onClick={() => (e.status === "active" ? startResign(e.id) : reactivate(e.id))} className="rounded-md border border-paper-line px-3 py-1.5 text-xs text-ink-light">
-                        {e.status === "active" ? "Nghỉ việc" : "Kích hoạt"}
-                      </button>
-                      {/* Nhân sự ĐANG LÀM không có nút xóa — phải qua "Nghỉ việc" trước (giữ dấu vết
-                          lương/chấm công); chỉ hồ sơ đã nghỉ mới xóa được (kèm xác nhận 2 bước sẵn có). */}
-                      <button
-                        onClick={() => requestDeleteEmployee(e)}
-                        disabled={e.status === "active" || String(e.email || "").trim().toLowerCase() === String(authUser?.email || "").trim().toLowerCase()}
-                        className="inline-flex items-center gap-1 rounded-md border border-stamp-red/30 bg-stamp-red/5 px-3 py-1.5 text-xs font-semibold text-stamp-red hover:bg-stamp-red/10 disabled:cursor-not-allowed disabled:opacity-40"
-                        title={e.status === "active" ? "Nhân sự đang làm việc — hãy dùng 'Nghỉ việc' trước, chỉ hồ sơ đã nghỉ mới được xóa" : "Xóa hồ sơ nhân sự và tài khoản đăng nhập liên kết (hồ sơ đã nghỉ)"}
-                      >
-                        <Trash2 size={13} /> Xóa
-                      </button>
-                    </div> : <span className="text-[10px] text-muted">Chỉ xem</span>}
+                  <td className="px-4 py-2.5 text-right min-w-[210px]">
+                    {/* 3 nút cố định: Chi tiết (xem sâu: liên hệ, CCCD, KPI, hiệu suất) · Sửa · menu ⋯
+                        (Nghỉ việc / Khóa tài khoản / Xóa) — bảng không còn control rời rạc. */}
+                    <div className="flex justify-end gap-1.5">
+                      {onOpenProfile && (
+                        <button type="button" onClick={() => onOpenProfile(e.id)} className="inline-flex items-center gap-1 rounded-md border border-[#3C50E0]/35 px-2.5 py-1.5 text-xs font-semibold text-[#3C50E0] transition-colors hover:bg-[#3C50E0]/5" title="Xem chi tiết: liên hệ, ảnh CCCD 2 mặt, hợp đồng & lương, KPI, hiệu suất">
+                          <Eye size={12} /> Chi tiết
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button type="button" onClick={() => startEdit(e)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2.5 py-1.5 text-xs font-semibold text-ink hover:border-[#3C50E0]/60" title="Sửa hồ sơ, lương, KPI, quyền tài khoản"><Pencil size={12} /> Sửa</button>
+                      )}
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={(ev) => {
+                            const rect = ev.currentTarget.getBoundingClientRect();
+                            setRowMenu(rowMenu?.id === e.id ? null : { id: e.id, x: rect.right, y: rect.bottom });
+                          }}
+                          className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-md border border-paper-line text-muted hover:border-ink/40 hover:text-ink"
+                          title="Thao tác khác: nghỉ việc, khóa tài khoản, xóa hồ sơ"
+                          aria-label={`Thao tác khác cho ${e.name}`}
+                        ><MoreHorizontal size={15} /></button>
+                      )}
+                      {!isAdmin && !onOpenProfile && <span className="text-[10px] text-muted">Chỉ xem</span>}
+                    </div>
                   </td>
                 </tr>
               );
@@ -20332,7 +20342,7 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
                     <div className="font-semibold text-ink-light">{isSystemAdminAccount ? "Tài khoản hệ thống" : "Chưa có hồ sơ nhân sự"}</div>
                     <div className="mt-1 text-[11px] text-muted ktns-mono">{user.email}</div>
                   </td>
-                  <td className="px-4 py-3 text-xs text-muted" colSpan={3}>
+                  <td className="px-4 py-3 text-xs text-muted" colSpan={2}>
                     {isSystemAdminAccount
                       ? "Tài khoản quản trị không bắt buộc là nhân viên nhận lương. Chỉ tạo hồ sơ nếu người này cần chấm công và tính lương."
                       : "Tài khoản đăng nhập chưa liên kết hồ sơ. Hãy tạo hồ sơ trước khi giao việc, chấm công hoặc tính lương."}
@@ -20357,6 +20367,45 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
         {accountsWithoutProfile.length > 0 && <span>{accountsWithoutProfile.length} {ui("tài khoản chưa liên kết hồ sơ", "accounts without employee profiles")}</span>}
       </div>
       </div>
+
+      {/* MENU "⋯" của dòng nhân sự — render fixed trên cùng, không bị khung cuộn bảng cắt. */}
+      {rowMenu && (() => {
+        const emp = employees.find((x) => Number(x.id) === Number(rowMenu.id));
+        if (!emp) return null;
+        const account = accountForEmployee(emp);
+        const isCurrentAccount = String(emp.email || "").trim().toLowerCase() === String(authUser?.email || "").trim().toLowerCase();
+        const menuItem = "flex w-full items-center gap-2 px-3 py-2 text-left text-xs font-medium text-ink hover:bg-paper disabled:cursor-not-allowed disabled:opacity-40";
+        return (
+          <div className="fixed inset-0 z-[95]" onClick={() => setRowMenu(null)}>
+            <div
+              className="absolute w-52 overflow-hidden rounded-lg border border-paper-line bg-white py-1 shadow-2xl"
+              style={{ top: Math.min(rowMenu.y + 4, (typeof window !== "undefined" ? window.innerHeight : 800) - 150), left: Math.max(8, rowMenu.x - 208) }}
+              onClick={(ev) => ev.stopPropagation()}
+              role="menu"
+              aria-label={`Thao tác cho ${emp.name}`}
+            >
+              <button type="button" role="menuitem" className={menuItem} onClick={() => { setRowMenu(null); if (emp.status === "active") startResign(emp.id); else reactivate(emp.id); }}>
+                <UserX size={13} /> {emp.status === "active" ? "Cho nghỉ việc" : "Kích hoạt lại"}
+              </button>
+              {emp.email && (
+                <button type="button" role="menuitem" className={menuItem} disabled={isCurrentAccount} title={isCurrentAccount ? "Không thể tự khóa tài khoản đang đăng nhập" : undefined} onClick={() => { setRowMenu(null); toggleAccountLock(emp); }}>
+                  <Lock size={13} /> {account?.active ? "Khóa tài khoản" : "Mở tài khoản"}
+                </button>
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                className={`${menuItem} text-stamp-red hover:bg-stamp-red/5`}
+                disabled={emp.status === "active" || isCurrentAccount}
+                title={emp.status === "active" ? "Nhân sự đang làm việc — dùng 'Cho nghỉ việc' trước, chỉ hồ sơ đã nghỉ mới xóa được" : "Xóa hồ sơ nhân sự và tài khoản đăng nhập liên kết"}
+                onClick={() => { setRowMenu(null); requestDeleteEmployee(emp); }}
+              >
+                <Trash2 size={13} /> Xóa hồ sơ
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {resigningId && (
         <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50">
