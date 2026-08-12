@@ -28,6 +28,7 @@ export default function CompanySidebar({
   attendancePendingCount,
   payrollActionSummary,
   opsBadgeCount,
+  leadsUnseenCount,
   isReviewer,
   onOpenSearch,
 }) {
@@ -54,6 +55,7 @@ export default function CompanySidebar({
     if (ids.includes("chamcong")) total += Number(attendancePendingCount) || 0;
     if (ids.includes("luong")) total += payrollActionCount;
     if (ids.includes("dieuhanh")) total += Number(opsBadgeCount) || 0;
+    if (ids.includes("leads")) total += Number(leadsUnseenCount) || 0;
     return total;
   };
 

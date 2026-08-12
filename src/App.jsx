@@ -3887,7 +3887,9 @@ function DomixApp({ authUser, onLogout }) {
   useEffect(() => {
     if (!authUser) return undefined;
     const timer = window.setInterval(() => {
-      ensureDataFields(["tasks", "supportCases", "attendanceRequests", "announcements"], { force: true });
+      // "leads" nằm trong vòng làm mới nền để khách tiềm năng người khác vừa thêm hiện ra
+      // trên máy mọi thành viên (kèm badge thông báo) mà không ai phải tải lại trang.
+      ensureDataFields(["tasks", "supportCases", "attendanceRequests", "announcements", "leads"], { force: true });
     }, 5000);
     return () => window.clearInterval(timer);
   }, [authUser, ensureDataFields]);
@@ -4623,6 +4625,69 @@ function DomixApp({ authUser, onLogout }) {
     }, 4000);
   }, [chatUnread, tab, taskSoundEnabled, showTaskReminder]);
 
+  // KHÁCH TIỀM NĂNG MỚI — báo giống tin nhắn chưa đọc: đếm khách được thêm SAU lần xem gần
+  // nhất (bỏ qua khách do chính mình thu thập); mở tab Khách hàng tiềm năng là badge tự hết.
+  // Mốc "đã xem" lưu localStorage theo từng tài khoản — không cần đổi schema máy chủ.
+  const leadsSeenStorageKey = `domix_leads_seen_at:${String(authUser?.email || "").trim().toLowerCase()}`;
+  const [leadsSeenAt, setLeadsSeenAt] = useState(0);
+  useEffect(() => {
+    if (!authUser?.email) { setLeadsSeenAt(0); return; }
+    let stored = 0;
+    try { stored = Number(window.localStorage.getItem(leadsSeenStorageKey)) || 0; } catch { stored = 0; }
+    if (!stored) {
+      // Lần đầu bật tính năng: coi mọi khách hiện có là đã xem — không dội badge dữ liệu cũ.
+      stored = Date.now();
+      try { window.localStorage.setItem(leadsSeenStorageKey, String(stored)); } catch { /* noop */ }
+    }
+    setLeadsSeenAt(stored);
+  }, [authUser?.email, leadsSeenStorageKey]);
+  // Thời điểm khách xuất hiện: ưu tiên dấu máy chủ collectedAt ("YYYY-MM-DD HH:MM:SS" giờ VN),
+  // rơi về id dạng Date.now() của client cho lead tạo cục bộ chưa kịp đóng dấu.
+  const leadArrivalMs = useCallback((lead) => {
+    const stamped = Date.parse(String(lead?.collectedAt || "").replace(" ", "T"));
+    if (Number.isFinite(stamped)) return stamped;
+    const numericId = Number(String(lead?.id ?? "").replace(/^lead:/, ""));
+    return Number.isFinite(numericId) ? numericId : 0;
+  }, []);
+  const leadsUnseenCount = useMemo(() => {
+    if (!leadsSeenAt) return 0;
+    const myEmail = String(authUser?.email || "").trim().toLowerCase();
+    return (leads || []).filter((lead) => (
+      leadArrivalMs(lead) > leadsSeenAt
+      && String(lead?.collectedByEmail || "").trim().toLowerCase() !== myEmail
+    )).length;
+  }, [leads, leadsSeenAt, leadArrivalMs, authUser?.email]);
+  const markLeadsSeen = useCallback(() => {
+    const now = Date.now();
+    setLeadsSeenAt(now);
+    try { window.localStorage.setItem(leadsSeenStorageKey, String(now)); } catch { /* noop */ }
+  }, [leadsSeenStorageKey]);
+  // Đứng trong tab Khách hàng tiềm năng thì khách mới đến cũng tự thành "đã xem" — badge tắt
+  // ngay khi người dùng đang nhìn bảng, đúng hành vi phòng tin nhắn đang mở.
+  useEffect(() => {
+    if (tab !== "leads" || !authUser?.email) return undefined;
+    const timer = window.setTimeout(markLeadsSeen, 1000);
+    return () => window.clearTimeout(timer);
+  }, [tab, authUser?.email, leads, markLeadsSeen]);
+  // Chuông + thẻ thông báo góc màn hình khi có khách tiềm năng mới (trừ khi đang xem tab đó).
+  const knownLeadsUnseenRef = useRef(null);
+  useEffect(() => {
+    const previous = knownLeadsUnseenRef.current;
+    knownLeadsUnseenRef.current = leadsUnseenCount;
+    if (!hasLoadedDbData.current || previous === null) return;
+    if (tab === "leads" || leadsUnseenCount <= previous) return;
+    const arrived = leadsUnseenCount - previous;
+    if (taskSoundEnabled) taskSoundPendingRef.current = !playTaskAlertSound();
+    showTaskReminder({
+      count: arrived,
+      title: arrived > 1 ? `${arrived} khách tiềm năng mới` : "Có khách tiềm năng mới",
+      text: `Đang có ${leadsUnseenCount} khách tiềm năng chưa xem — mở danh sách để chia nhau gọi.`,
+      subtitle: "Bấm để mở Khách hàng tiềm năng",
+      tone: "new",
+      target: "leads",
+    }, 4000);
+  }, [leadsUnseenCount, tab, taskSoundEnabled, showTaskReminder]);
+
   // Yêu cầu hỗ trợ khách hàng giao đích danh cũng là một việc mới — báo chuông và thẻ thông báo.
   useEffect(() => {
     if (!hasLoadedDbData.current || !payrollCurrentEmployee?.id) return;
@@ -5148,6 +5213,7 @@ function DomixApp({ authUser, onLogout }) {
         attendancePendingCount={attendancePendingCount}
         payrollActionSummary={payrollActionSummary}
         opsBadgeCount={opsBadgeCount}
+        leadsUnseenCount={leadsUnseenCount}
         isReviewer={payrollCurrentIsBoss || payrollCurrentIsAccountant}
         onOpenSearch={() => { setShowCommandPalette(true); setPaletteQuery(""); }}
       />
@@ -5290,7 +5356,8 @@ function DomixApp({ authUser, onLogout }) {
                   : child.id === "giaoviec" ? taskBadgeCount
                     : child.id === "chamcong" ? attendancePendingCount
                       : child.id === "luong" ? Number(payrollActionSummary?.total || 0)
-                        : 0;
+                        : child.id === "leads" ? leadsUnseenCount
+                          : 0;
                 return (
                   <button
                     key={child.id}
@@ -15098,10 +15165,13 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
   const toggleLeadSelect = (id) => setSelectedLeadIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   // Chuyển khách sang Sale khác — dùng khi 1 Sale quá tải gọi không hết (đẩy bớt cho người rảnh),
   // hoặc Sale đang nghỉ (số vẫn cần người khác chăm chứ không thể để đó chờ).
-  const reassignLead = (leadId, newSaleId) => setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, saleEmployeeId: Number(newSaleId) } : l)));
+  // "all" = giao cho TẤT CẢ nhân viên cùng gọi (không khóa theo 1 Sale) — giữ nguyên chuỗi,
+  // không ép Number để tránh biến thành NaN.
+  const normalizeLeadSaleId = (value) => (String(value) === "all" ? "all" : Number(value));
+  const reassignLead = (leadId, newSaleId) => setLeads((prev) => prev.map((l) => (l.id === leadId ? { ...l, saleEmployeeId: normalizeLeadSaleId(newSaleId) } : l)));
   const bulkReassign = () => {
     if (!bulkReassignTarget || selectedLeadIds.length === 0) return;
-    setLeads((prev) => prev.map((l) => (selectedLeadIds.includes(l.id) ? { ...l, saleEmployeeId: Number(bulkReassignTarget) } : l)));
+    setLeads((prev) => prev.map((l) => (selectedLeadIds.includes(l.id) ? { ...l, saleEmployeeId: normalizeLeadSaleId(bulkReassignTarget) } : l)));
     setSelectedLeadIds([]);
     setBulkReassignTarget("");
   };
@@ -15999,7 +16069,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
     setLeadFormError("");
     setLeads((prev) => [...prev, {
       id: Date.now(), date: leadForm.date, customerName: leadForm.customerName || "(Chưa rõ tên)", phone: leadForm.phone, email: "",
-      note: `Nguồn: ${LEAD_SOURCES[leadForm.source]}`, saleEmployeeId: Number(leadForm.saleEmployeeId),
+      note: `Nguồn: ${LEAD_SOURCES[leadForm.source]}`, saleEmployeeId: normalizeLeadSaleId(leadForm.saleEmployeeId),
       source: leadForm.source, status: "dang_cham_soc",
       contactLog: leadForm.note ? [{ date: nowStamp(), type: leadForm.contactType, note: leadForm.note }] : [],
     }]);
@@ -16019,7 +16089,8 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
   // Chuyển lead thành đơn hàng thật khi Sale đã chốt được — copy đúng thông tin khách qua form
   // Thêm đơn hàng, xoá khỏi danh sách lead (đã "tốt nghiệp" thành khách hàng thật).
   const convertLeadToOrder = (lead) => {
-    setForm((f) => ({ ...f, customerName: lead.customerName, phone: lead.phone, saleEmployeeId: lead.saleEmployeeId, note: lead.note }));
+    // Khách "Tất cả nhân viên" khi chốt đơn phải chọn đích danh 1 Sale hưởng doanh số.
+    setForm((f) => ({ ...f, customerName: lead.customerName, phone: lead.phone, saleEmployeeId: String(lead.saleEmployeeId) === "all" ? "" : lead.saleEmployeeId, note: lead.note }));
     setLeads((prev) => prev.filter((l) => l.id !== lead.id));
     setShowForm(true);
   };
@@ -16038,8 +16109,11 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
   // THỐNG KÊ NGƯỜI THU THẬP: máy chủ tự đóng dấu collectedBy* khi lead được tạo (không giả
   // mạo được) — đây là căn cứ "khách này do ai lấy được thông tin".
   const [leadCollectorFilter, setLeadCollectorFilter] = useState("");
-  // Sale mặc định thấy KHÁCH MÌNH PHỤ TRÁCH trước; bấm "Toàn công ty" xem hết.
-  const [leadScope, setLeadScope] = useState(() => (!canManageAllSales && currentEmployee?.roleType === "sale" ? "mine" : "all"));
+  // Khách tiềm năng là dữ liệu CHUNG: mặc định "Toàn công ty" cho mọi vai trò để ai thêm khách
+  // là cả phòng thấy ngay; nút "Tôi phụ trách" vẫn còn cho Sale lọc nhanh phần việc của mình.
+  const [leadScope, setLeadScope] = useState("all");
+  // Khách gán "Tất cả nhân viên" (saleEmployeeId = "all") tính là "của tôi" với MỌI người.
+  const leadIsMine = (l) => String(l.saleEmployeeId) === "all" || Number(l.saleEmployeeId) === Number(currentEmployee?.id);
   const leadCollectorKeyOf = (l) => String(l.collectedByEmail || l.collectedByName || "").trim().toLowerCase() || "__unknown";
   const leadCollectorStats = (() => {
     const byKey = new Map();
@@ -16056,7 +16130,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
   const filteredLeads = (() => {
     const q = leadSearch.trim().toLowerCase();
     return (leads || []).filter((l) => {
-      if (leadScope === "mine" && Number(l.saleEmployeeId) !== Number(currentEmployee?.id)) return false;
+      if (leadScope === "mine" && !leadIsMine(l)) return false;
       if (leadCollectorFilter && leadCollectorKeyOf(l) !== leadCollectorFilter) return false;
       if (q) {
         const inNote = (l.contactLog || []).some((c) => c.note?.toLowerCase().includes(q));
@@ -16168,6 +16242,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
             <label className="text-[10px] text-muted flex flex-col gap-0.5">Sale phụ trách *
               <select value={leadForm.saleEmployeeId} onChange={(e) => setLeadForm({ ...leadForm, saleEmployeeId: e.target.value })} className="w-full border border-paper-line rounded px-2 py-1.5 text-xs">
                 <option value="">— Chọn Sale —</option>
+                <option value="all">Tất cả nhân viên — ai cũng gọi tư vấn được</option>
                 {leadSaleOptions.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
               </select>
             </label>
@@ -16227,7 +16302,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
           <div className="text-xs font-semibold text-ink uppercase flex items-center gap-1.5"><Phone size={13} /> Báo cáo gọi/liên hệ khách hàng theo ngày</div>
           <div className="flex items-center gap-2">
             <input type="date" value={callReportDate} onChange={(e) => setCallReportDate(e.target.value)} className="border border-paper-line rounded px-2.5 py-1.5 text-xs ktns-mono" />
-            <button onClick={() => { setLeadForm((f) => ({ ...f, date: callReportDate, saleEmployeeId: f.saleEmployeeId || leadSaleOptions[0]?.id || "" })); setShowLeadForm(true); }} className="text-xs bg-ink text-white px-2.5 py-1.5 rounded-md hover:bg-ink-light flex items-center gap-1"><Plus size={12} /> Thêm khách cần gọi</button>
+            <button onClick={() => { setLeadForm((f) => ({ ...f, date: callReportDate, saleEmployeeId: f.saleEmployeeId || leadSaleOptions[0]?.id || "all" })); setShowLeadForm(true); }} className="text-xs bg-ink text-white px-2.5 py-1.5 rounded-md hover:bg-ink-light flex items-center gap-1"><Plus size={12} /> Thêm khách cần gọi</button>
             <button onClick={() => exportDailyCallReportExcel(dailyContacts, dailyBySale, callReportDate, nameOf)} className="text-xs border border-ledger-green/40 bg-ledger-green/10 text-ledger-green px-2.5 py-1.5 rounded-md hover:bg-ledger-green/20 flex items-center gap-1"><FileSpreadsheet size={12} /> Xuất Excel</button>
           </div>
         </div>
@@ -16252,7 +16327,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
             {dailyContacts.map((c, i) => (
               <tr key={i} className="border-t border-paper-line">
                 <td className="px-4 py-2 ktns-mono text-xs text-muted">{c.date.split(" ")[1] || c.date}</td>
-                <td className="px-4 py-2 text-xs font-medium">{nameOf(c.saleEmployeeId)}</td>
+                <td className="px-4 py-2 text-xs font-medium">{String(c.saleEmployeeId) === "all" ? "Tất cả nhân viên" : nameOf(c.saleEmployeeId)}</td>
                 <td className="px-4 py-2 text-xs">{c.customerName}</td>
                 <td className="px-4 py-2 ktns-mono text-xs">{c.phone}</td>
                 <td className="px-4 py-2 text-xs text-ink-light">{LEAD_SOURCES[c.source] || "—"}</td>
@@ -16334,7 +16409,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
           </div>
           {currentEmployee?.id != null && (
             <div className="flex shrink-0 overflow-hidden rounded-md border border-paper-line text-[11px] font-semibold" role="group" aria-label="Phạm vi khách tiềm năng">
-              <button type="button" onClick={() => setLeadScope("mine")} aria-pressed={leadScope === "mine"} className={`px-2.5 py-1.5 ${leadScope === "mine" ? "bg-ink text-white" : "text-muted hover:text-ink"}`}>Tôi phụ trách ({(leads || []).filter((l) => Number(l.saleEmployeeId) === Number(currentEmployee.id)).length})</button>
+              <button type="button" onClick={() => setLeadScope("mine")} aria-pressed={leadScope === "mine"} className={`px-2.5 py-1.5 ${leadScope === "mine" ? "bg-ink text-white" : "text-muted hover:text-ink"}`}>Tôi phụ trách ({(leads || []).filter(leadIsMine).length})</button>
               <button type="button" onClick={() => setLeadScope("all")} aria-pressed={leadScope === "all"} className={`px-2.5 py-1.5 ${leadScope === "all" ? "bg-ink text-white" : "text-muted hover:text-ink"}`}>Toàn công ty ({(leads || []).length})</button>
             </div>
           )}
@@ -16347,7 +16422,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
             <button key={f.id} onClick={() => setLeadFilter(f.id)} className={`text-[11px] px-2.5 py-1.5 rounded-md border ${leadFilter === f.id ? "bg-ink text-white border-ink" : "border-paper-line text-muted"}`}>{f.label}</button>
           ))}
           <span className="hidden h-5 w-px bg-paper-line sm:block" />
-          <button onClick={() => { setLeadForm((f) => ({ ...f, date: TODAY_STR, saleEmployeeId: f.saleEmployeeId || leadSaleOptions[0]?.id || "" })); setShowLeadForm(true); }} className="text-xs bg-ink text-white px-3 py-1.5 rounded-md hover:bg-ink-light flex items-center gap-1"><Plus size={13} /> Thêm khách tiềm năng</button>
+          <button onClick={() => { setLeadForm((f) => ({ ...f, date: TODAY_STR, saleEmployeeId: f.saleEmployeeId || leadSaleOptions[0]?.id || "all" })); setShowLeadForm(true); }} className="text-xs bg-ink text-white px-3 py-1.5 rounded-md hover:bg-ink-light flex items-center gap-1"><Plus size={13} /> Thêm khách tiềm năng</button>
         </div>
         {/* THỐNG KÊ NGƯỜI THU THẬP (phần phụ, không lấn bảng): ai lấy được bao nhiêu khách — bấm chip để lọc. */}
         <div className="px-4 py-2 border-b border-paper-line flex items-center gap-1.5 flex-wrap bg-paper/40">
@@ -16364,6 +16439,7 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
             <span className="text-xs text-charcoal">Đã chọn <strong>{selectedLeadIds.length}</strong> khách — chuyển hết cho:</span>
             <select value={bulkReassignTarget} onChange={(e) => setBulkReassignTarget(e.target.value)} className="border border-paper-line rounded px-2 py-1.5 text-xs bg-white">
               <option value="">— Chọn Sale —</option>
+              <option value="all">Tất cả nhân viên</option>
               {leadSaleOptions.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
             </select>
             <button onClick={bulkReassign} disabled={!bulkReassignTarget} className="text-xs bg-ink text-white px-3 py-1.5 rounded-md disabled:opacity-40">Chuyển ngay</button>
@@ -16373,10 +16449,12 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
         <div className="max-h-[420px] overflow-x-auto overflow-y-auto">
         {/* table-fixed + colgroup: bề rộng từng cột KHÓA CỨNG — tiêu đề và mọi hàng thẳng cột tuyệt đối. */}
         <table data-sticky-columns="true" data-mobile-cards="true" className="w-full min-w-[1180px] table-fixed text-sm">
+          {/* Cân đối bề rộng: cột hẹp (chọn/STT/ngày/SĐT) vừa khít nội dung, phần dư dồn cho
+              Tên khách (cột co giãn) — các cột nghiệp vụ còn lại chia đều, không cột nào thừa rỗng. */}
           <colgroup>
-            <col className="w-[36px]" /><col className="w-[52px]" /><col className="w-[92px]" /><col />
-            <col className="w-[108px]" /><col className="w-[150px]" /><col className="w-[140px]" />
-            <col className="w-[118px]" /><col className="w-[132px]" /><col className="w-[190px]" /><col className="w-[36px]" />
+            <col className="w-[32px]" /><col className="w-[44px]" /><col className="w-[88px]" /><col />
+            <col className="w-[100px]" /><col className="w-[148px]" /><col className="w-[148px]" />
+            <col className="w-[104px]" /><col className="w-[128px]" /><col className="w-[196px]" /><col className="w-[32px]" />
           </colgroup>
           <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-2 py-2"></th><th className="px-4 py-2">STT</th><th className="px-4 py-2">Ngày lấy</th><th className="px-4 py-2">Khách hàng</th><th className="px-4 py-2">SĐT</th><th className="px-4 py-2">Nguồn · Người thu thập</th><th className="px-4 py-2">Sale phụ trách</th><th className="px-4 py-2">Hẹn gọi lại</th><th className="px-4 py-2">Trạng thái</th><th className="px-4 py-2"></th><th className="px-2 py-2"></th></tr></thead>
           <tbody>
@@ -16403,12 +16481,13 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                   </td>
                   <td className="px-4 py-2 text-xs" onClick={(e) => e.stopPropagation()}>
                     <select value={l.saleEmployeeId || ""} onChange={(e) => reassignLead(l.id, e.target.value)} className="w-full border border-paper-line rounded px-1.5 py-1 text-[11px] bg-white">
+                      <option value="all">Tất cả nhân viên</option>
                       {leadSaleOptions.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
                     </select>
                   </td>
                   <td className="px-4 py-2 text-xs">
                     {l.nextFollowUpDate ? (
-                      <span className={isOverdue ? "text-stamp-red font-semibold" : "text-charcoal"}>{l.nextFollowUpDate}{isOverdue ? " — ĐẾN HẸN" : ""}</span>
+                      <span className={isOverdue ? "text-stamp-red font-semibold" : "text-charcoal"}>{formatDateVN(l.nextFollowUpDate)}{isOverdue ? " — ĐẾN HẸN" : ""}</span>
                     ) : <span className="text-muted">Chưa hẹn</span>}
                   </td>
                   <td className="px-4 py-2">
@@ -17390,7 +17469,8 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
   const isSelfAssignedSale = !canManageMarketing && currentEmployee?.roleType === "sale" && Boolean(currentEmployee?.id);
   const marketingLeads = (leads || []).filter((lead) => (
     isSelfAssignedSale
-      ? Number(lead.saleEmployeeId) === Number(currentEmployee.id)
+      // Khách gán "Tất cả nhân viên" cũng thuộc danh sách gọi của từng Sale.
+      ? Number(lead.saleEmployeeId) === Number(currentEmployee.id) || String(lead.saleEmployeeId) === "all"
       : lead.source === "marketing_ads" || lead.source === "pancake"
   ));
   const visibleMarketingLeads = marketingLeads;
@@ -17409,7 +17489,10 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
   }, [isSelfAssignedSale, currentEmployee?.id]);
   const addMarketingLead = () => {
     const phoneDigits = normalizedLeadPhoneDigits(leadForm.phone);
-    const assignedSaleId = isSelfAssignedSale ? Number(currentEmployee.id) : Number(leadForm.saleEmployeeId);
+    // "all" = giao cho TẤT CẢ nhân viên cùng tư vấn — giữ nguyên chuỗi, không ép Number.
+    const assignedSaleId = isSelfAssignedSale
+      ? Number(currentEmployee.id)
+      : (leadForm.saleEmployeeId === "all" ? "all" : Number(leadForm.saleEmployeeId));
     if (phoneDigits.length < 8 || phoneDigits.length > 15) {
       setLeadFormError("Số điện thoại không hợp lệ. Vui lòng nhập từ 8 đến 15 chữ số.");
       return;
@@ -17421,7 +17504,7 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
     const duplicated = (leads || []).some((lead) => (
       lead.status === "dang_cham_soc"
       && normalizedLeadPhoneDigits(lead.phone) === phoneDigits
-      && Number(lead.saleEmployeeId) === Number(assignedSaleId)
+      && String(lead.saleEmployeeId) === String(assignedSaleId)
     ));
     if (duplicated) {
       setLeadFormError("Số điện thoại này đang được Sale phụ trách chăm sóc. Không cần nhập lại.");
@@ -17453,7 +17536,9 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
     setLeadConsultError("");
     const updatedAt = new Date().toISOString();
     setLeads((previous) => previous.map((lead) => (
-      lead.id === leadId && Number(lead.saleEmployeeId) === Number(currentEmployee?.id)
+      // Khách gán "Tất cả nhân viên" thì ai cũng ghi nhận tư vấn được — từng lượt vẫn lưu
+      // đích danh người ghi (employeeId/Name/Email) nên không mất truy vết.
+      lead.id === leadId && (Number(lead.saleEmployeeId) === Number(currentEmployee?.id) || String(lead.saleEmployeeId) === "all")
         ? {
           ...lead,
           contactLog: [...(lead.contactLog || []), {
@@ -17475,7 +17560,7 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
   };
   const rejectOwnMarketingLead = (leadId) => {
     setLeads((previous) => previous.map((lead) => (
-      lead.id === leadId && Number(lead.saleEmployeeId) === Number(currentEmployee?.id)
+      lead.id === leadId && (Number(lead.saleEmployeeId) === Number(currentEmployee?.id) || String(lead.saleEmployeeId) === "all")
         ? { ...lead, status: "tu_choi", updatedAt: new Date().toISOString() }
         : lead
     )));
@@ -17994,6 +18079,7 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
               ) : (
                 <select value={leadForm.saleEmployeeId} onChange={(e) => setLeadForm({ ...leadForm, saleEmployeeId: e.target.value })} className="h-10 rounded-lg border border-paper-line bg-white px-3 text-sm outline-none transition focus:border-[#3C50E0]">
                   <option value="">— Chọn Sale —</option>
+                  <option value="all">Tất cả nhân viên — ai cũng gọi tư vấn được</option>
                   {saleEmpAll.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
                 </select>
               )}
