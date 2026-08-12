@@ -16448,15 +16448,16 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
         )}
         <div className="max-h-[420px] overflow-x-auto overflow-y-auto">
         {/* table-fixed + colgroup: bề rộng từng cột KHÓA CỨNG — tiêu đề và mọi hàng thẳng cột tuyệt đối. */}
-        <table data-sticky-columns="true" data-mobile-cards="true" className="w-full min-w-[1180px] table-fixed text-sm">
-          {/* Cân đối bề rộng: cột hẹp (chọn/STT/ngày/SĐT) vừa khít nội dung, phần dư dồn cho
-              Tên khách (cột co giãn) — các cột nghiệp vụ còn lại chia đều, không cột nào thừa rỗng. */}
+        <table data-sticky-columns="true" data-mobile-cards="true" className="w-full min-w-[1260px] table-fixed text-sm">
+          {/* Cân đối bề rộng: MỌI cột đều đặt width — màn rộng thì phần dư chia đều theo tỷ lệ,
+              không cột nào phình một mình để trống. Tên khách dài tự cắt, rê chuột xem đủ;
+              Sale phụ trách đủ chỗ hiện trọn "Tất cả nhân viên". */}
           <colgroup>
-            <col className="w-[32px]" /><col className="w-[44px]" /><col className="w-[88px]" /><col />
-            <col className="w-[100px]" /><col className="w-[148px]" /><col className="w-[148px]" />
-            <col className="w-[104px]" /><col className="w-[128px]" /><col className="w-[196px]" /><col className="w-[32px]" />
+            <col className="w-[32px]" /><col className="w-[44px]" /><col className="w-[96px]" /><col className="w-[190px]" />
+            <col className="w-[104px]" /><col className="w-[160px]" /><col className="w-[150px]" />
+            <col className="w-[104px]" /><col className="w-[132px]" /><col className="w-[220px]" /><col className="w-[28px]" />
           </colgroup>
-          <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted"><th className="px-2 py-2"></th><th className="px-4 py-2">STT</th><th className="px-4 py-2">Ngày lấy</th><th className="px-4 py-2">Khách hàng</th><th className="px-4 py-2">SĐT</th><th className="px-4 py-2">Nguồn · Người thu thập</th><th className="px-4 py-2">Sale phụ trách</th><th className="px-4 py-2">Hẹn gọi lại</th><th className="px-4 py-2">Trạng thái</th><th className="px-4 py-2"></th><th className="px-2 py-2"></th></tr></thead>
+          <thead className="sticky top-0 z-10"><tr className="bg-paper text-left text-xs uppercase text-muted whitespace-nowrap"><th className="px-2 py-2"></th><th className="px-2 py-2 text-center">STT</th><th className="px-3 py-2">Ngày lấy</th><th className="px-4 py-2">Khách hàng</th><th className="px-3 py-2">SĐT</th><th className="px-4 py-2">Nguồn · Người thu thập</th><th className="px-4 py-2">Sale phụ trách</th><th className="px-3 py-2">Hẹn gọi lại</th><th className="px-3 py-2">Trạng thái</th><th className="px-3 py-2 text-right">Thao tác</th><th className="px-2 py-2"></th></tr></thead>
           <tbody>
             {(() => {
               const filtered = filteredLeads;
@@ -16471,10 +16472,10 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                 <React.Fragment key={l.id}>
                 <tr className={`border-t border-paper-line cursor-pointer hover:bg-paper/40 ${isOverdue ? "ktns-warn-row" : ""}`} onClick={() => setExpandedLead((p) => ({ ...p, [l.id]: !p[l.id] }))}>
                   <td className="px-2 py-2" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={selectedLeadIds.includes(l.id)} onChange={() => toggleLeadSelect(l.id)} /></td>
-                  <td className="px-4 py-2 ktns-mono text-xs text-muted">{idx + 1}</td>
-                  <td className="px-4 py-2 ktns-mono text-xs text-muted">{formatDateVN(l.date)}</td>
+                  <td className="px-2 py-2 text-center ktns-mono text-xs text-muted">{idx + 1}</td>
+                  <td className="px-3 py-2 ktns-mono text-xs text-muted whitespace-nowrap">{formatDateVN(l.date)}</td>
                   <td className="px-4 py-2 font-medium"><div className="truncate" title={l.customerName}>{l.customerName}</div></td>
-                  <td className="px-4 py-2 ktns-mono text-xs">{l.phone}</td>
+                  <td className="px-3 py-2 ktns-mono text-xs whitespace-nowrap">{l.phone}</td>
                   <td className="px-4 py-2 text-xs">
                     <div className="truncate" title={`Nguồn: ${LEAD_SOURCES[l.source] || "—"}${l.collectedByName || l.collectedByEmail ? ` · Người thu thập: ${l.collectedByName || l.collectedByEmail}` : ""}`}>{LEAD_SOURCES[l.source]}</div>
                     {(l.collectedByName || l.collectedByEmail) && <div className="truncate text-[10px] text-muted">{l.collectedByName || l.collectedByEmail}</div>}
@@ -16485,24 +16486,25 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                       {leadSaleOptions.map((e) => (<option key={e.id} value={e.id}>{e.name}</option>))}
                     </select>
                   </td>
-                  <td className="px-4 py-2 text-xs">
+                  <td className="px-3 py-2 text-xs whitespace-nowrap">
                     {l.nextFollowUpDate ? (
                       <span className={isOverdue ? "text-stamp-red font-semibold" : "text-charcoal"}>{formatDateVN(l.nextFollowUpDate)}{isOverdue ? " — ĐẾN HẸN" : ""}</span>
                     ) : <span className="text-muted">Chưa hẹn</span>}
                   </td>
-                  <td className="px-4 py-2">
+                  <td className="px-3 py-2">
                     {l.status === "dang_cham_soc" && <StampBadge text="ĐANG CHĂM SÓC" gold />}
                     {l.status === "tu_choi" && <StampBadge text="TỪ CHỐI/KHÔNG MUA" muted />}
                   </td>
-                  <td className="px-4 py-2 text-right" onClick={(e) => e.stopPropagation()}>
-                    <div className="flex items-center justify-end gap-2">
+                  {/* Nút gọn 1 dòng — không cho bẻ chữ xuống 2 dòng làm hàng cao thấp lệch nhau. */}
+                  <td className="px-3 py-2 text-right" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
                       {l.status === "dang_cham_soc" && (
                         <>
-                          <button onClick={() => convertLeadToOrder(l)} className="text-[11px] text-ledger-green underline">Đã mua → Tạo đơn hàng</button>
-                          <button onClick={() => markLeadRejected(l.id)} className="text-[11px] text-muted underline">Không mua</button>
+                          <button onClick={() => convertLeadToOrder(l)} className="rounded-md border border-ledger-green/40 bg-ledger-green/10 px-2 py-1 text-[11px] font-semibold text-ledger-green hover:bg-ledger-green/20" title="Khách đã mua — chuyển thành đơn hàng thật bên Bán hàng">Đã mua → Tạo đơn</button>
+                          <button onClick={() => markLeadRejected(l.id)} className="rounded-md border border-paper-line px-2 py-1 text-[11px] text-muted hover:border-stamp-red/40 hover:text-stamp-red" title="Đánh dấu khách từ chối/không mua">Không mua</button>
                         </>
                       )}
-                      <button onClick={() => removeLead(l.id)} className="text-muted hover:text-stamp-red"><Trash2 size={13} /></button>
+                      <button onClick={() => removeLead(l.id)} className="rounded-md p-1 text-muted hover:text-stamp-red" title="Xóa khách tiềm năng"><Trash2 size={13} /></button>
                     </div>
                   </td>
                   <td className="px-2 py-2 text-center"><ChevronRight size={14} className={`text-muted transition-transform inline-block ${isExpanded ? "rotate-90" : ""}`} /></td>
