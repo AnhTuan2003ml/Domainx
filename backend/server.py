@@ -1284,6 +1284,44 @@ def _merge_regular_attendance_requests(old_requests, incoming_requests, employee
     return result
 
 
+def _merge_employee_inventory_stock_only(old_items, incoming_items):
+    """Nhân viên không được sửa danh mục kho trực tiếp: giữ nguyên danh sách sản phẩm và
+    mọi thông tin hiện có, CHỈ nhận thay đổi số tồn (stock) từ client — phục vụ luồng
+    bán hàng/tạo đơn/hủy đơn tự trừ hoặc hoàn kho. Không thêm mới, không xóa sản phẩm."""
+    old_list = [item for item in (old_items or []) if isinstance(item, dict)]
+    if not isinstance(incoming_items, list):
+        return old_list
+    incoming_by_id = {
+        str(item.get("id")): item
+        for item in incoming_items
+        if isinstance(item, dict) and item.get("id") is not None
+    }
+    result = []
+    for item in old_list:
+        candidate = incoming_by_id.get(str(item.get("id")))
+        updated = dict(item)
+        if isinstance(candidate, dict) and "stock" in candidate:
+            try:
+                updated["stock"] = max(0, int(float(candidate.get("stock"))))
+            except (TypeError, ValueError):
+                pass
+        result.append(updated)
+    return result
+
+
+_MANUAL_STOCK_ADJUSTMENT_TYPES = {"adjustment_in", "adjustment_out"}
+
+
+def _drop_manual_stock_adjustments(movements):
+    """Loại movement điều chỉnh tồn tay khỏi dữ liệu nhân viên gửi lên — chỉ Sếp/Admin
+    được điều chỉnh trực tiếp trong bảng kho."""
+    return [
+        item for item in (movements or [])
+        if isinstance(item, dict)
+        and str(item.get("movementType") or item.get("movement_type") or "") not in _MANUAL_STOCK_ADJUSTMENT_TYPES
+    ]
+
+
 _OT_TYPES = {"weekday", "weekend", "holiday"}
 
 
@@ -1536,15 +1574,19 @@ def preserve_restricted_state_fields(db_path, incoming_data, user, existing_data
         if "leads" in incoming_data:
             incoming_leads = incoming_data.get("leads")
             merged["leads"] = incoming_leads if isinstance(incoming_leads, list) else existing_data.get("leads", [])
-        # Chính sách kho mở: MỌI nhân viên được thêm/sửa/xóa sản phẩm và ghi nhật ký kho.
-        # Trách nhiệm truy vết bằng lịch sử chỉnh sửa (inventory_audit_service) + Delete Policy
-        # (sản phẩm có lịch sử nhập/xuất vẫn không thể xóa, chỉ được ngừng kinh doanh).
+        # KHO KHÓA QUYỀN SỬA TRỰC TIẾP: nhân viên KHÔNG thêm/xóa/sửa thông tin sản phẩm
+        # (giá, tên, hạn, phụ trách...). Chỉ SỐ TỒN được phép thay đổi từ client — để các
+        # luồng bán hàng/tạo đơn/hủy đơn của nhân viên vẫn tự trừ/hoàn kho như bình thường.
         if "inventory" in incoming_data:
-            incoming_inventory = incoming_data.get("inventory")
-            merged["inventory"] = incoming_inventory if isinstance(incoming_inventory, list) else existing_data.get("inventory", [])
+            merged["inventory"] = _merge_employee_inventory_stock_only(
+                existing_data.get("inventory", []), incoming_data.get("inventory", [])
+            )
         if "stockMovements" in incoming_data:
+            # Điều chỉnh tồn TAY (adjustment_in/out) là đặc quyền Sếp/Admin — movement
+            # bán hàng/nhập hàng/hoàn tồn của nhân viên vẫn ghi nhật ký bình thường.
             merged["stockMovements"] = _merge_append_only_stock_movements(
-                existing_data.get("stockMovements", []), incoming_data.get("stockMovements", [])
+                existing_data.get("stockMovements", []),
+                _drop_manual_stock_adjustments(incoming_data.get("stockMovements", [])),
             )
 
         merged["attendanceRequests"] = _merge_regular_attendance_requests(

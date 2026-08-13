@@ -26,8 +26,10 @@ from services.delete_policy_service import DeletePolicyError, audit_blocked_dele
 from services.inventory_audit_service import (
     apply_inventory_audit,
     detect_marketing_daily_events,
+    detect_new_sale_orders,
     notify_inventory_events,
     notify_marketing_events,
+    notify_sale_events,
 )
 from services.lead_audit_service import stamp_lead_collectors
 from services.ledger_sync_service import sync_after_save
@@ -322,6 +324,7 @@ def handle_put(handler, route, _parsed):
     actor_name = _actor_display_name(handler, user)
     inventory_events = []
     marketing_events = []
+    sale_events = []
 
     if route == "/api/data/fields":
         patch = body.get("data") if isinstance(body, dict) else None
@@ -351,6 +354,8 @@ def handle_put(handler, route, _parsed):
                 actor_email=(user or {}).get("email") or "", actor_name=actor_name,
             )
             detect_marketing_daily_events(existing_data, stamped, marketing_events)
+            # Đơn bán hàng MỚI → email chi tiết (ai bán, khách nào, món gì, tiền) về Sếp/Admin.
+            detect_new_sale_orders(existing_data, stamped, sale_events)
             return stamped
 
         try:
@@ -368,8 +373,12 @@ def handle_put(handler, route, _parsed):
         # Sổ cái hạch toán kép chạy song song: mọi bản ghi nghiệp vụ mới được đưa vào
         # journal qua Posting Service (idempotent) ngay sau khi lưu thành công.
         sync_after_save(handler.db_path, actor=(user or {}).get("email") or "system")
-        # Kho thay đổi → chỉ tin nhắn DOMIX + email; ticker dành cho tin nghiệp vụ module.
-        notify_inventory_events(handler.db_path, user, actor_name, inventory_events)
+        # Email "kho thay đổi" CHỈ khi quản trị (Sếp/Admin, Kế toán) sửa kho trực tiếp —
+        # kho tự trừ do nhân viên bán hàng KHÔNG spam email; đơn bán có email riêng bên dưới.
+        if handler.is_full_admin(user):
+            notify_inventory_events(handler.db_path, user, actor_name, inventory_events)
+        # Đơn bán hàng mới → email chi tiết đơn (người bán, khách, món, tiền, tình trạng) về Sếp/Admin.
+        notify_sale_events(handler.db_path, user, actor_name, sale_events)
         notify_marketing_events(handler.db_path, marketing_events)
         # Đăng ticker là một lần ghi PHỤ làm version tăng thêm — trả version MỚI NHẤT
         # để autosave kế tiếp của client không dính 409 oan.
@@ -413,6 +422,7 @@ def handle_put(handler, route, _parsed):
             actor_email=(user or {}).get("email") or "", actor_name=actor_name,
         )
         detect_marketing_daily_events(existing_data, stamped, marketing_events)
+        detect_new_sale_orders(existing_data, stamped, sale_events)
         return stamped
 
     try:
@@ -428,7 +438,10 @@ def handle_put(handler, route, _parsed):
         handler.send_json(error.payload(), 409)
         return True
     sync_after_save(handler.db_path, actor=(user or {}).get("email") or "system")
-    notify_inventory_events(handler.db_path, user, actor_name, inventory_events)
+    # Cùng chính sách với nhánh PATCH: email kho chỉ khi quản trị sửa; đơn bán có email riêng.
+    if handler.is_full_admin(user):
+        notify_inventory_events(handler.db_path, user, actor_name, inventory_events)
+    notify_sale_events(handler.db_path, user, actor_name, sale_events)
     notify_marketing_events(handler.db_path, marketing_events)
     if marketing_events:
         saved_state = read_state(handler.db_path) or saved_state
@@ -543,8 +556,11 @@ def handle_post(handler, route, _parsed):
         return True
 
     if route == "/api/company-data/inventory-product":
-        # CHÍNH SÁCH KHO MỞ: mọi nhân viên đã đăng nhập đều thêm/sửa được sản phẩm kho.
-        # Trách nhiệm truy vết bằng lịch sử chỉnh sửa + thông báo toàn công ty, không chặn quyền.
+        # KHO KHÓA QUYỀN SỬA: chỉ Sếp/Admin (và Kế toán hệ thống) được thêm/sửa sản phẩm.
+        # Nhân viên chỉ xem + nhận thông báo; kho vẫn tự trừ khi bán hàng/tạo đơn.
+        if not handler.is_full_admin(user):
+            handler.send_json({"error": "Chỉ Sếp/Admin được thêm hoặc sửa sản phẩm kho. Nhân viên chỉ xem và nhận thông báo."}, 403)
+            return True
         actor_name = _actor_display_name(handler, user)
         inventory_events = []
         product = body.get("product") if isinstance(body.get("product"), dict) else {}
@@ -574,6 +590,7 @@ def handle_post(handler, route, _parsed):
 
         actor_name = _actor_display_name(handler, user)
         inventory_events = []
+        sale_events = []
         result_box = {}
 
         def add_order(existing_data):
@@ -587,7 +604,10 @@ def handle_post(handler, route, _parsed):
                 allow_assign_any=full_access or position_role == "ads",
             )
             result_box["orderId"] = order_id
-            # Đơn bán xuất kho làm GIẢM tồn → cũng phải có lịch sử + thông báo kho.
+            # Đơn mới → email chi tiết đơn bán về Sếp/Admin (ai bán, khách, món, tiền, tình trạng).
+            detect_new_sale_orders(existing_data, saved, sale_events)
+            # Đơn bán xuất kho làm GIẢM tồn → vẫn ghi lịch sử kho (audit), nhưng KHÔNG
+            # email "kho thay đổi" cho toàn công ty — email đó chỉ dành cho Admin sửa kho tay.
             return apply_inventory_audit(
                 existing_data, saved,
                 actor_email=user.get("email") or "", actor_name=actor_name,
@@ -597,7 +617,7 @@ def handle_post(handler, route, _parsed):
         saved_state = update_state(handler.db_path, add_order)
         # Bán hàng → Nợ 131 / Có 511 + 3331; xuất kho → Nợ 632 / Có 156 (bình quân gia quyền).
         sync_after_save(handler.db_path, actor=user.get("email") or "system")
-        notify_inventory_events(handler.db_path, user, actor_name, inventory_events)
+        notify_sale_events(handler.db_path, user, actor_name, sale_events)
         visible_state = handler.filter_state(saved_state, user) or {}
         visible_data = visible_state.get("data") if isinstance(visible_state.get("data"), dict) else {}
         response_data = {

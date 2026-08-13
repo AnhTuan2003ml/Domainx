@@ -182,6 +182,77 @@ def send_inventory_change_alert(recipient_email, recipient_name, actor_name, eve
         smtp.send_message(message)
 
 
+def send_sale_order_alert(recipient_email, recipient_name, seller_name, order_event):
+    """Email báo ĐƠN BÁN HÀNG MỚI cho Sếp/Admin: ai bán, cho khách nào, món gì,
+    số lượng, giá tiền và tình trạng thanh toán/xuất kho."""
+    sender_email = (SMTP_EMAIL or "").strip()
+    app_password = (SMTP_APP_PASSWORD or "").replace(" ", "").strip()
+    missing = []
+    if not sender_email:
+        missing.append("DOMIX_SMTP_EMAIL")
+    if not app_password:
+        missing.append("DOMIX_SMTP_APP_PASSWORD")
+    if missing:
+        raise RuntimeError(
+            "Chưa cấu hình " + ", ".join(missing)
+            + ". Hãy khai báo trong file .env ở thư mục gốc rồi khởi động lại server."
+        )
+
+    event = order_event if isinstance(order_event, dict) else {}
+    customer = str(event.get("customerName") or "Khách hàng").strip()
+    amount_text = str(event.get("amountText") or "").strip() or "—"
+    subject = f"[DOMIX] Đơn hàng mới: {seller_name} bán cho {customer} — {amount_text}"
+    if len(subject) > 140:
+        subject = subject[:137] + "…"
+
+    detail_rows = [
+        ("Người bán", str(seller_name or "—")),
+        ("Khách hàng", customer),
+        ("Ngày bán", str(event.get("date") or "—")),
+        ("Sản phẩm", str(event.get("productSummary") or "—")),
+        ("Số lượng", str(event.get("quantityText") or "—")),
+        ("Tổng tiền", amount_text),
+        ("Thanh toán", str(event.get("paymentLabel") or "—")),
+        ("Tình trạng kho", str(event.get("inventoryLabel") or "—")),
+    ]
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = f"DOMIX <{sender_email}>"
+    message["To"] = recipient_email
+    message.set_content(
+        f"Xin chào {recipient_name or recipient_email},\n\n"
+        "DOMIX vừa ghi nhận một đơn bán hàng mới:\n\n"
+        + "\n".join(f"- {label}: {value}" for label, value in detail_rows)
+        + "\n\nMở DOMIX > Bán hàng để xem chi tiết đơn."
+    )
+
+    safe_name = html.escape(str(recipient_name or recipient_email or ""))
+    safe_rows = "".join(
+        '<tr>'
+        f'<td style="padding:8px 10px;color:#697386;border-bottom:1px solid #eef1f5;white-space:nowrap">{html.escape(label)}</td>'
+        f'<td style="padding:8px 10px;color:#18294a;font-weight:600;border-bottom:1px solid #eef1f5">{html.escape(value)}</td>'
+        '</tr>'
+        for label, value in detail_rows
+    )
+    message.add_alternative(
+        f"""
+        <div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;padding:24px;border:1px solid #e6e8ec;border-radius:14px;background:#ffffff">
+          <div style="font-size:12px;letter-spacing:2px;color:#657083">DOMIX · ĐƠN BÁN HÀNG MỚI</div>
+          <h2 style="margin:14px 0 8px;color:#18294a">{html.escape(str(seller_name or 'Nhân viên'))} vừa chốt một đơn hàng</h2>
+          <p style="color:#556070;line-height:1.6">Xin chào <strong>{safe_name}</strong>. Chi tiết đơn hàng:</p>
+          <table style="width:100%;border-collapse:collapse;font-size:14px">{safe_rows}</table>
+          <p style="margin-top:18px;color:#7a8492;font-size:13px;line-height:1.6">Mở DOMIX &gt; <strong style="color:#18294a">Bán hàng</strong> để xem chi tiết đơn và chứng từ liên quan.</p>
+        </div>
+        """,
+        subtype="html",
+    )
+
+    with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=SMTP_TIMEOUT_SECONDS) as smtp:
+        smtp.login(sender_email, app_password)
+        smtp.send_message(message)
+
+
 def send_password_reset_otp(recipient_email, otp_code, expires_minutes):
     sender_email = (SMTP_EMAIL or "").strip()
     app_password = (SMTP_APP_PASSWORD or "").replace(" ", "").strip()

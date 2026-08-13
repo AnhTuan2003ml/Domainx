@@ -2780,9 +2780,9 @@ function exportPayrollExcel(payrollRows, payments = [], midMonthRequests = [], p
     "Hoa hồng Sale/Marketing": Math.round(r.commission),
     "Hoa hồng upsale (Kỹ thuật)": Math.round(r.techUpsale),
     "Thưởng KPI": Math.round(r.kpiBonus),
-    "Giờ tăng ca đã duyệt": Number(r.otHours) || 0,
-    "Tiền tăng ca (150-300%)": Math.round(r.otPay || 0),
     "PC thâm niên": Math.round(r.seniorityAllowance),
+    "Giờ tăng ca đã duyệt": Number(r.otHours) || 0,
+    "PC tăng ca (150-300%)": Math.round(r.otPay || 0),
     "PC ăn trưa": Math.round(r.mealAllowance),
     "PC chuyên cần": Math.round(r.attendanceBonus), "Mất chuyên cần": r.hasAbsence ? "Có" : "Không",
     "Phụ cấp khác (xăng xe, OT, sinh con...)": Math.round(r.customAllowanceTotal || 0),
@@ -9402,11 +9402,11 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
   const [serverInventoryMovements, setServerInventoryMovements] = useState([]);
   const [inventoryLedgerStatus, setInventoryLedgerStatus] = useState({ balanced: true, issues: [] });
   const [movementLoadError, setMovementLoadError] = useState("");
-  // CHÍNH SÁCH KHO MỞ: mọi nhân viên đều xem TOÀN BỘ kho và được thêm/sửa/xóa sản phẩm.
-  // Trách nhiệm truy vết bằng lịch sử chỉnh sửa từng sản phẩm (nút Lịch sử) + thông báo
-  // toàn công ty khi thêm hàng/đổi số lượng — không chặn quyền theo phân công như trước.
-  const canManageInventory = true;
-  const canEditProduct = () => true;
+  // KHO KHÓA QUYỀN SỬA TRỰC TIẾP: chỉ Sếp/Admin được thêm/sửa/xóa sản phẩm và điều chỉnh
+  // tồn trong bảng. Nhân viên xem toàn bộ kho + nhận thông báo như cũ; kho vẫn TỰ trừ/hoàn
+  // khi họ tạo đơn, khai báo bán hàng hoặc hủy đơn (đi qua moveStock/endpoint đơn hàng).
+  const canManageInventory = isAdminRole(authUser?.role);
+  const canEditProduct = () => canManageInventory;
   const permittedInventory = inventory;
   // Sản phẩm NGỪNG KINH DOANH không bị xóa (giữ lịch sử 156/632) nhưng phải BIẾN MẤT khỏi
   // danh mục làm việc — muốn xem lại thì bật riêng khu "Ngừng kinh doanh" bên dưới.
@@ -9417,9 +9417,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
     : permittedInventory.filter((product) => !product.discontinued);
   const activeEmployeesWithEmail = (employees || []).filter((employee) => employee.status !== "inactive" && String(employee.email || "").includes("@"));
 
-  useEffect(() => {
-    if (!canManageInventory && activeTableView !== "inventory") setActiveTableView("inventory");
-  }, [canManageInventory, activeTableView]);
+  // Nhân viên vẫn XEM được đủ 4 bảng (danh mục, doanh thu, key, nhật ký) — chỉ mất quyền sửa.
   useEffect(() => {
     if (activeTableView !== "movements") return;
     let cancelled = false;
@@ -9719,14 +9717,12 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
     return { ...k, daysLeft, status };
   }).sort((a, b) => a.daysLeft - b.daysLeft);
 
-  const inventoryViewOptions = canManageInventory
-    ? [
-        { id: "inventory", label: "Danh mục sản phẩm", icon: Package, count: visibleInventory.length },
-        { id: "revenue", label: "Doanh thu sản phẩm", icon: TrendingUp, count: productRevenue.length },
-        { id: "keys", label: "Mã key / thời hạn", icon: CalendarCheck, count: keyLedger.length },
-        { id: "movements", label: "Nhật ký kho", icon: ClipboardList, count: movementRows.length },
-      ]
-    : [{ id: "inventory", label: "Danh mục sản phẩm", icon: Package, count: visibleInventory.length }];
+  const inventoryViewOptions = [
+    { id: "inventory", label: "Danh mục sản phẩm", icon: Package, count: visibleInventory.length },
+    { id: "revenue", label: "Doanh thu sản phẩm", icon: TrendingUp, count: productRevenue.length },
+    { id: "keys", label: "Mã key / thời hạn", icon: CalendarCheck, count: keyLedger.length },
+    { id: "movements", label: "Nhật ký kho", icon: ClipboardList, count: movementRows.length },
+  ];
 
   if (!lazyTableData.ready) {
     return (
@@ -9750,7 +9746,7 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
       <div style={{ display: activeTableView === "inventory" ? "flex" : "none" }} className="shrink-0 justify-between items-center flex-wrap gap-2">
         <p className="text-xs text-muted">
           {showDiscontinued ? `${discontinuedInventory.length} sản phẩm đã ngừng kinh doanh (giữ nguyên lịch sử kho).` : `${visibleInventory.length} sản phẩm.`}
-          {" "}<span className="cursor-help" title="Mọi nhân viên đều xem và thao tác được toàn bộ Kho hàng. Mỗi lần thêm/sửa đều được ghi lịch sử (ai, lúc nào) và thông báo cho toàn công ty.">ⓘ</span>
+          {" "}<span className="cursor-help" title="Mọi nhân viên xem được toàn bộ Kho và nhận thông báo; CHỈ Sếp/Admin được thêm/sửa/xóa sản phẩm và điều chỉnh tồn trực tiếp trong bảng. Khi nhân viên tạo đơn/khai báo bán hàng, kho vẫn tự trừ như bình thường. Mỗi thay đổi đều ghi lịch sử (ai, lúc nào).">ⓘ</span>
         </p>
         <div className="flex gap-2">
           {discontinuedInventory.length > 0 && (
@@ -9995,13 +9991,13 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
                         {p.supplierName && <div className="mt-0.5 text-[10px] text-muted">NCC nhập hàng: {p.supplierName}</div>}
                       </td>
                       <td className="px-4 py-2"><div className="flex flex-col items-start gap-1">{p.discontinued ? <StampBadge text="NGỪNG KINH DOANH" /> : low ? <StampBadge text="SẮP HẾT HÀNG" /> : <StampBadge text="CÒN HÀNG" gold />}{daysLeft !== null && daysLeft < 0 && <StampBadge text="ĐÃ HẾT HẠN" />}{daysLeft !== null && daysLeft >= 0 && daysLeft <= 5 && <StampBadge text="SẮP HẾT HẠN" />}{!p.expiryDate && Number(p.durationMonths) > 0 && <StampBadge text="CHƯA NHẬP HẠN" />}{!p.expiryDate && Number(p.durationMonths) <= 0 && <span className="rounded-full border border-paper-line px-2 py-0.5 text-[10px] font-semibold text-muted">KHÔNG QUẢN LÝ HẠN</span>}</div></td>
-                      <td className="px-4 py-2 text-right">{canEditProduct(p) && <div className="flex flex-wrap items-center justify-end gap-1.5"><button type="button" onClick={() => setHistoryProductId(p.id)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2 py-1 text-[11px] font-semibold text-muted hover:text-ink" title="Xem lịch sử chỉnh sửa: ai sửa, lúc nào, đổi gì" aria-label={`Lịch sử chỉnh sửa sản phẩm ${p.name}`}><History size={12} /> Lịch sử</button>{p.discontinued ? (
+                      <td className="px-4 py-2 text-right"><div className="flex flex-wrap items-center justify-end gap-1.5"><button type="button" onClick={() => setHistoryProductId(p.id)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2 py-1 text-[11px] font-semibold text-muted hover:text-ink" title="Xem lịch sử chỉnh sửa: ai sửa, lúc nào, đổi gì" aria-label={`Lịch sử chỉnh sửa sản phẩm ${p.name}`}><History size={12} /> Lịch sử</button>{canEditProduct(p) && (p.discontinued ? (
                         canManageInventory && <button type="button" onClick={() => setInventory((prev) => prev.map((item) => (item.id === p.id ? { ...item, discontinued: false, discontinuedAt: null } : item)))} className="inline-flex items-center gap-1 rounded-md border border-ledger-green/40 px-2 py-1 text-[11px] font-semibold text-ledger-green" title="Đưa sản phẩm trở lại danh mục đang bán — lịch sử kho giữ nguyên" aria-label={`Kinh doanh trở lại sản phẩm ${p.name}`}><RotateCcw size={12} /> Kinh doanh trở lại</button>
                       ) : (<><button type="button" onClick={() => openEditProduct(p)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2 py-1 text-[11px] font-semibold text-ink-light" title="Sửa sản phẩm được phân công" aria-label={`Sửa sản phẩm ${p.name}`}><Pencil size={12} /> Sửa</button>{canManageInventory && ((stockMovements || []).some((m) => String(m.productId) === String(p.id)) ? (
                         <button type="button" onClick={() => removeProduct(p.id)} className="inline-flex items-center gap-1 rounded-md border border-gold/40 px-2 py-1 text-[11px] font-semibold text-gold" title="Sản phẩm đã có lịch sử kho — không xóa được, chỉ ngừng kinh doanh (giữ nguyên lịch sử 156/632)" aria-label={`Ngừng kinh doanh sản phẩm ${p.name}`}><Archive size={12} /> Ngừng KD</button>
                       ) : (
                         <button type="button" onClick={() => removeProduct(p.id)} className="inline-flex items-center gap-1 rounded-md border border-stamp-red/30 px-2 py-1 text-[11px] font-semibold text-stamp-red" title="Xóa sản phẩm chưa có lịch sử kho" aria-label={`Xóa sản phẩm ${p.name}`}><Trash2 size={12} /> Xóa</button>
-                      ))}</>)}</div>}</td>
+                      ))}</>))}</div></td>
                     </tr>
                   );
                 })}
@@ -14307,9 +14303,9 @@ function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFin
     const staffGross = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.grossIncome) || 0), 0);
     const staffSalary = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.salaryByDays) || 0), 0);
     const staffBonus = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.commission) || 0) + (Number(row.kpiBonus) || 0)
-      + (Number(row.kpiMilestoneBonus) || 0) + (Number(row.compBonus) || 0) + (Number(row.techUpsale) || 0) + (Number(row.otherBonus) || 0) + (Number(row.otPay) || 0), 0);
+      + (Number(row.kpiMilestoneBonus) || 0) + (Number(row.compBonus) || 0) + (Number(row.techUpsale) || 0) + (Number(row.otherBonus) || 0), 0);
     const staffAllowance = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.mealAllowance) || 0)
-      + (Number(row.seniorityAllowance) || 0) + (Number(row.attendanceBonus) || 0) + (Number(row.customAllowanceTotal) || 0), 0);
+      + (Number(row.seniorityAllowance) || 0) + (Number(row.attendanceBonus) || 0) + (Number(row.customAllowanceTotal) || 0) + (Number(row.otPay) || 0), 0);
     const employerInsurance = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.employerInsurance) || 0), 0);
     const marketingSpend = periodMarketing.reduce((sum, log) => sum + (Number(log.adSpend) || 0), 0);
     // Khoản chi quảng cáo ĐÃ ghi ở sổ Thu Chi hiện thành dòng riêng bên dưới (txRows) —
@@ -21391,12 +21387,12 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
         + (Number(r.kpiBonus) || 0)
         + (Number(r.kpiMilestoneBonus) || 0)
         + (Number(r.otherBonus) || 0)
-        + (Number(r.otPay) || 0)
       ),
       requestedAllowance: existingNumbers?.requestedAllowance ?? (
         (Number(r.seniorityAllowance) || 0)
         + (Number(r.mealAllowance) || 0)
         + (Number(r.attendanceBonus) || 0)
+        + (Number(r.otPay) || 0) // tăng ca đã duyệt — thuộc nhóm phụ cấp
       ),
       requestedInsuranceDeduction: existingHasBreakdown ? existingNumbers.requestedInsuranceDeduction : (existing ? 0 : (Number(r.employeeInsurance) || 0)),
       requestedTaxDeduction: existingHasBreakdown ? existingNumbers.requestedTaxDeduction : (existing ? 0 : (Number(r.thueTNCN) || 0)),
@@ -22401,14 +22397,14 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
     const allowanceTotal = (Number(row.mealAllowance) || 0)
       + (Number(row.seniorityAllowance) || 0)
       + (Number(row.attendanceBonus) || 0)
-      + (Number(row.customAllowanceTotal) || 0);
+      + (Number(row.customAllowanceTotal) || 0)
+      + (Number(row.otPay) || 0); // tiền tăng ca đã duyệt — xếp vào nhóm PHỤ CẤP theo quy định công ty
     const bonusTotal = (Number(row.commission) || 0)
       + (Number(row.compBonus) || 0)
       + (Number(row.techUpsale) || 0)
       + (Number(row.kpiBonus) || 0)
       + (Number(row.kpiMilestoneBonus) || 0)
-      + (Number(row.otherBonus) || 0)
-      + (Number(row.otPay) || 0); // tiền tăng ca đã duyệt — nằm trong nhóm thưởng/thu nhập thêm
+      + (Number(row.otherBonus) || 0);
     const payment = paymentOf(row.id);
     const midMonthEntries = midMonthEntriesOf(row.id);
     const midMonthPaid = midMonthPaidOf(row.id);
@@ -22465,11 +22461,14 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
       // khiến bảng lương có 523.600đ thưởng mà tab KPI & Thưởng lại hiện 0.
       const commission = (Number(row.commission) || 0) + (Number(row.compBonus) || 0) + (Number(row.techUpsale) || 0);
       const otherBonus = Number(row.otherBonus) || 0;
+      // Tăng ca xếp vào PHỤ CẤP (không phải thưởng) — cột OT ở đây chỉ để thống kê,
+      // KHÔNG cộng vào Tổng thưởng, khớp đúng cột Thưởng ở Bảng lương tổng quát.
+      const otPay = Number(row.otPay) || 0;
       const totalBonus = kpiBonus + milestoneBonus + commission + otherBonus;
       const evaluation = evaluatePerformance(row);
       return {
         ...row, target, actual, achievedPct, kpiScore, kpiBonus, milestoneBonus,
-        commission, otherBonus, totalBonus, evaluation,
+        commission, otherBonus, otPay, totalBonus, evaluation,
       };
     })
     .sort((left, right) => right.totalBonus - left.totalBonus);
@@ -22479,8 +22478,10 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
     milestoneBonus: total.milestoneBonus + row.milestoneBonus,
     commission: total.commission + row.commission,
     otherBonus: total.otherBonus + row.otherBonus,
+    otPay: total.otPay + row.otPay,
+    otHours: total.otHours + (Number(row.otHours) || 0),
     totalBonus: total.totalBonus + row.totalBonus,
-  }), { kpiBonus: 0, milestoneBonus: 0, commission: 0, otherBonus: 0, totalBonus: 0 });
+  }), { kpiBonus: 0, milestoneBonus: 0, commission: 0, otherBonus: 0, otPay: 0, otHours: 0, totalBonus: 0 });
 
   const canEditKpi = currentIsBoss || currentIsAccountant;
   const openKpiEdit = (row) => {
@@ -22570,7 +22571,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
     })
     .map((row) => {
       const custom = Array.isArray(row.customAllowances) ? row.customAllowances : [];
-      const fixedTotal = (Number(row.mealAllowance) || 0) + (Number(row.seniorityAllowance) || 0) + (Number(row.attendanceBonus) || 0);
+      // Tăng ca đã duyệt xếp vào nhóm phụ cấp hệ thống (cùng ăn trưa/thâm niên/chuyên cần).
+      const fixedTotal = (Number(row.mealAllowance) || 0) + (Number(row.seniorityAllowance) || 0) + (Number(row.attendanceBonus) || 0) + (Number(row.otPay) || 0);
       return {
         ...row,
         custom,
@@ -22755,7 +22757,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
         </div>
 
         <InlineStats dark items={[
-          { label: "Phụ cấp cố định", value: fmtVND(allowanceTotals.fixed), className: "text-[#f4c76a]", sub: "ăn trưa · thâm niên · chuyên cần" },
+          { label: "Phụ cấp cố định", value: fmtVND(allowanceTotals.fixed), className: "text-[#f4c76a]", sub: "ăn trưa · thâm niên · chuyên cần · tăng ca" },
           { label: "Khai báo thêm", value: fmtVND(allowanceTotals.custom), className: "text-[#86efac]", sub: "xăng xe · OT · sinh con…" },
           { label: "Tổng thực nhận", value: fmtVND(allowanceTotals.grand), className: "text-white" },
           { label: "Trừ do nghỉ", value: fmtVND(allowanceTotals.deducted), className: "text-[#f6b6bd]" },
@@ -22791,6 +22793,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                       {row.mealAllowance > 0 && <span className="rounded-full border border-[#f4c76a]/30 bg-[#f4c76a]/10 px-2 py-0.5 text-[10px] text-[#f4c76a]">Ăn trưa {fmtVND(row.mealAllowance)}</span>}
                       {row.seniorityAllowance > 0 && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-[#dbe4f1]">Thâm niên {fmtVND(row.seniorityAllowance)}</span>}
                       {row.attendanceBonus > 0 && <span className="rounded-full border border-white/15 bg-white/5 px-2 py-0.5 text-[10px] text-[#dbe4f1]">Chuyên cần {fmtVND(row.attendanceBonus)}</span>}
+                      {row.otPay > 0 && <span className="rounded-full border border-[#c4b5fd]/40 bg-[#c4b5fd]/10 px-2 py-0.5 text-[10px] text-[#c4b5fd]">Tăng ca {row.otHours || 0}h {fmtVND(Math.round(row.otPay))}</span>}
                       {row.fixedTotal === 0 && <span className="text-[10px] text-[#8fa4c8]">—</span>}
                     </div>
                   </td>
@@ -22931,6 +22934,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
           { label: "Thưởng KPI", value: fmtVND(kpiTotals.kpiBonus), className: "text-[#f4c76a]" },
           { label: "Thưởng mốc doanh số", value: fmtVND(kpiTotals.milestoneBonus), className: "text-[#86efac]" },
           { label: "Hoa hồng", value: fmtVND(kpiTotals.commission), className: "text-[#a9c4ff]" },
+          { label: "Tăng ca đã duyệt (phụ cấp)", value: fmtVND(kpiTotals.otPay), className: "text-[#c4b5fd]", sub: `${kpiTotals.otHours}h · cộng ở cột Phụ cấp` },
           { label: "Tổng thưởng kỳ", value: fmtVND(kpiTotals.totalBonus), className: "text-white", sub: `thưởng khác ${fmtVND(kpiTotals.otherBonus)}` },
         ]} />
 
@@ -22947,6 +22951,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                 <th className="px-3 py-2 text-right">Thưởng KPI</th>
                 <th className="px-3 py-2 text-right">Thưởng mốc</th>
                 <th className="px-3 py-2 text-right">Hoa hồng</th>
+                <th className="px-3 py-2 text-right">Tăng ca (phụ cấp)</th>
                 <th className="px-3 py-2 text-right">Thưởng khác</th>
                 <th className="px-3 py-2 text-right">Tổng thưởng</th>
                 <th className="px-3 py-2 text-right">Chấm KPI</th>
@@ -22954,7 +22959,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
             </thead>
             <tbody>
               {kpiRows.length === 0 && (
-                <tr><td colSpan={12} className="px-3 py-6 text-center text-[11px] text-[#8fa4c8]">Không tìm thấy nhân sự phù hợp trong kỳ này.</td></tr>
+                <tr><td colSpan={13} className="px-3 py-6 text-center text-[11px] text-[#8fa4c8]">Không tìm thấy nhân sự phù hợp trong kỳ này.</td></tr>
               )}
               {kpiRows.map((row) => {
                 const status = row.evaluation?.status || "chua_co_du_lieu";
@@ -22982,6 +22987,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                     <td className="px-3 py-2 text-right ktns-mono text-[#f4c76a]">{row.kpiBonus > 0 ? fmtVND(row.kpiBonus) : "—"}<div className="text-[9px] text-[#8fa4c8]">Mục tiêu {fmtVND(row.bonusTarget || 0)}</div></td>
                     <td className="px-3 py-2 text-right ktns-mono text-[#86efac]">{row.milestoneBonus > 0 ? fmtVND(row.milestoneBonus) : "—"}{row.kpiMilestonePct > 0 && <div className="text-[9px] text-[#8fa4c8]">{row.kpiMilestonePct}% mốc</div>}</td>
                     <td className="px-3 py-2 text-right ktns-mono text-[#a9c4ff]">{row.commission > 0 ? fmtVND(row.commission) : "—"}</td>
+                    <td className="px-3 py-2 text-right ktns-mono text-[#c4b5fd]">{row.otPay > 0 ? fmtVND(row.otPay) : "—"}{row.otHours > 0 && <div className="text-[9px] text-[#8fa4c8]">{row.otHours}h đã duyệt</div>}</td>
                     <td className="px-3 py-2 text-right ktns-mono text-[#dbe4f1]">{row.otherBonus > 0 ? fmtVND(row.otherBonus) : "—"}</td>
                     <td className="px-3 py-2 text-right ktns-mono font-bold text-white">{fmtVND(row.totalBonus)}</td>
                     <td className="px-3 py-2 text-right">
@@ -23005,6 +23011,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                   <td className="px-3 py-2 text-right ktns-mono text-[#f4c76a]">{fmtVND(kpiTotals.kpiBonus)}</td>
                   <td className="px-3 py-2 text-right ktns-mono text-[#86efac]">{fmtVND(kpiTotals.milestoneBonus)}</td>
                   <td className="px-3 py-2 text-right ktns-mono text-[#a9c4ff]">{fmtVND(kpiTotals.commission)}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-[#c4b5fd]">{fmtVND(kpiTotals.otPay)}</td>
                   <td className="px-3 py-2 text-right ktns-mono">{fmtVND(kpiTotals.otherBonus)}</td>
                   <td className="px-3 py-2 text-right ktns-mono">{fmtVND(kpiTotals.totalBonus)}</td>
                   <td className="px-3 py-2"></td>
@@ -23206,9 +23213,12 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                   <td className="px-3 py-2.5 text-right ktns-mono text-ink">{fmtVND(row.mainSalary || 0)}</td>
                   <td className="px-3 py-2.5 text-right ktns-mono text-[#92610A]">
                     {row.allowanceTotal > 0 ? (
-                      <button type="button" onClick={() => setBreakdownPopup({ row, type: "allowance" })} className="inline-flex items-center gap-1 font-semibold underline decoration-dotted underline-offset-2 hover:text-[#6b4707]" title="Xem chi tiết từng khoản phụ cấp">
+                      <>
+                        <button type="button" onClick={() => setBreakdownPopup({ row, type: "allowance" })} className="inline-flex items-center gap-1 font-semibold underline decoration-dotted underline-offset-2 hover:text-[#6b4707]" title="Xem chi tiết từng khoản phụ cấp (gồm cả tiền tăng ca đã duyệt)">
                         {fmtVND(row.allowanceTotal)}<Eye size={11} />
-                      </button>
+                        </button>
+                        {row.otPay > 0 && <div className="font-sans text-[9px] text-muted">gồm tăng ca {row.otHours || 0}h · {fmtVND(Math.round(row.otPay))}</div>}
+                      </>
                     ) : "—"}
                   </td>
                   <td className="px-3 py-2.5 text-right ktns-mono text-ledger-green">
@@ -23367,6 +23377,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
             row.mealAllowance > 0 && { label: `Ăn trưa (${row.fullWorkDays || 0} ngày đủ công × ${fmtVND(row.mealAllowancePerDay || 0)})`, amount: row.mealAllowance },
             row.seniorityAllowance > 0 && { label: "Thâm niên", amount: row.seniorityAllowance },
             row.attendanceBonus > 0 && { label: "Chuyên cần (đi làm đủ, không nghỉ)", amount: row.attendanceBonus },
+            row.otPay > 0 && { label: `Tăng ca ${row.otHours || 0}h đã duyệt (150–300% × lương giờ ${fmtVND(Math.round(row.otHourlyRate || 0))})`, amount: row.otPay },
             ...(row.customAllowances || []).filter((item) => item.amount > 0).map((item) => ({ label: `${item.label}${item.note ? ` — ${item.note}` : ""}${item.prorate ? " (chia theo ngày công)" : ""}`, amount: item.amount })),
           ].filter(Boolean)
           : [
@@ -23376,7 +23387,6 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
             row.kpiBonus > 0 && { label: "Thưởng KPI", amount: row.kpiBonus },
             row.kpiMilestoneBonus > 0 && { label: `Thưởng mốc doanh số (${row.kpiMilestonePct || 0}%)`, amount: row.kpiMilestoneBonus },
             row.otherBonus > 0 && { label: "Thưởng khác", amount: row.otherBonus },
-            row.otPay > 0 && { label: `Tăng ca ${row.otHours || 0}h đã duyệt (150–300% × lương giờ ${fmtVND(Math.round(row.otHourlyRate || 0))})`, amount: row.otPay },
           ].filter(Boolean);
         const total = entries.reduce((sum, item) => sum + item.amount, 0);
         return (
@@ -23617,7 +23627,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                             <div className="flex justify-between"><span className="text-muted font-sans">Phụ cấp ăn trưa</span>{fmtVND(r.mealAllowance)}</div>
                             <div className="flex justify-between"><span className="text-muted font-sans">Phụ cấp chuyên cần {r.hasAbsence ? "(mất — có ngày nghỉ)" : ""}</span>{fmtVND(r.attendanceBonus)}</div>
                             {r.kpiMilestoneBonus > 0 && <div className="flex justify-between"><span className="text-muted font-sans">Thưởng KPI mốc doanh số ({r.kpiMilestonePct}%)</span>{fmtVND(r.kpiMilestoneBonus)}</div>}
-                            {r.otPay > 0 && <div className="flex justify-between"><span className="text-muted font-sans">Tăng ca {r.otHours || 0}h đã duyệt (150–300% lương giờ)</span>{fmtVND(r.otPay)}</div>}
+                            {r.otPay > 0 && <div className="flex justify-between"><span className="text-muted font-sans">Phụ cấp tăng ca {r.otHours || 0}h đã duyệt (150–300% lương giờ)</span>{fmtVND(r.otPay)}</div>}
                             <div className="flex justify-between font-semibold border-t border-paper-line pt-1 mt-1"><span className="font-sans">Tổng thu nhập</span>{fmtVND(r.grossIncome)}</div>
                           </div>
                         </div>
@@ -23820,8 +23830,11 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                   <MoneyInput value={proposalForm.requestedBonus} onChange={(v) => setProposalForm({ ...proposalForm, requestedBonus: v })} />
                 </label>
                 <label className="text-xs text-muted flex flex-col gap-1.5">
-                  Phụ cấp đề nghị
+                  Phụ cấp đề nghị (gồm tăng ca)
                   <MoneyInput value={proposalForm.requestedAllowance} onChange={(v) => setProposalForm({ ...proposalForm, requestedAllowance: v })} />
+                  {Number(proposalTarget?.otPay) > 0 && (
+                    <span className="text-[10px] text-[#8fa4c8]">Số hệ thống tham chiếu đã gồm tăng ca <strong className="ktns-mono text-[#c4b5fd]">{proposalTarget.otHours}h đã duyệt = {fmtVND(Math.round(proposalTarget.otPay))}</strong> (xem chi tiết ở tab Chấm công › Tăng ca).</span>
+                  )}
                 </label>
 
                 <div className="md:col-span-2 rounded-xl border border-paper-line bg-paper/30 p-4">
@@ -24164,13 +24177,13 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                   {(r.kpiBonus ?? 0) > 0 && <Row label="Thưởng KPI" value={fmtVND(r.kpiBonus)} />}
                   {(r.kpiMilestoneBonus ?? 0) > 0 && <Row label={`Thưởng KPI mốc doanh số (${r.kpiMilestonePct}%)`} value={fmtVND(r.kpiMilestoneBonus)} />}
                   {(r.otherBonus ?? 0) > 0 && <Row label="Thưởng khác" value={fmtVND(r.otherBonus)} />}
-                  {(r.otPay ?? 0) > 0 && <Row label={`Tăng ca ${r.otHours || 0}h đã duyệt (150–300% lương giờ)`} value={fmtVND(r.otPay)} />}
                   <Row label={`Phụ cấp ăn trưa (${fmtVND(r.mealAllowancePerDay || 0)}/ngày đủ công × ${r.fullWorkDays || 0} ngày)`} value={fmtVND(r.mealAllowance || 0)} />
                   {(r.seniorityAllowance ?? 0) > 0 && <Row label="Phụ cấp thâm niên" value={fmtVND(r.seniorityAllowance)} />}
                   {(r.customAllowances || []).map((item) => (
                     <Row key={item.id} label={`Phụ cấp ${item.label}${item.deducted > 0 ? " (đã trừ theo ngày nghỉ)" : ""}`} value={fmtVND(item.amount)} />
                   ))}
                   <Row label={`Chuyên cần${r.hasAbsence ? " (mất do có ngày nghỉ)" : ""}`} value={r.hasAbsence ? "0đ" : fmtVND(r.attendanceBonus || 0)} />
+                  {(r.otPay ?? 0) > 0 && <Row label={`Phụ cấp tăng ca ${r.otHours || 0}h đã duyệt (150–300% lương giờ)`} value={fmtVND(r.otPay)} />}
                   <Row label="TỔNG THU NHẬP" value={fmtVND(r.grossIncome)} strong />
                 </div>
                 <div className="bg-paper/50 rounded-lg border border-paper-line p-4">

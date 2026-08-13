@@ -350,6 +350,114 @@ def notify_marketing_events(db_path, events):
             print(f"[MARKETING NOTIFY] Không đăng được thông báo: {exc}")
 
 
+_PAYMENT_LABELS = {
+    "paid": "Đã thanh toán đủ",
+    "partial": "Thanh toán một phần",
+    "unpaid": "Chưa thanh toán",
+}
+_INVENTORY_STATUS_LABELS = {
+    "fulfilled": "Đã xuất kho",
+    "pending_stock": "Chờ hàng (vượt tồn)",
+    "not_applicable": "Dịch vụ — không quản kho",
+}
+
+
+def _fmt_vnd(value):
+    try:
+        return f"{int(round(float(value))):,}".replace(",", ".") + "đ"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def detect_new_sale_orders(existing_data, new_data, events_box):
+    """Đơn bán hàng MỚI trong ``orders`` → sự kiện email cho Sếp/Admin:
+    ai bán, cho khách nào, món gì, số lượng, tiền, tình trạng thanh toán/kho."""
+    events_box.clear()
+    if not isinstance(new_data, dict) or not isinstance(new_data.get("orders"), list):
+        return
+    old_ids = {
+        str(o.get("id")) for o in (existing_data or {}).get("orders") or []
+        if isinstance(o, dict) and o.get("id") is not None
+    }
+    for order in new_data["orders"]:
+        if not isinstance(order, dict) or order.get("id") is None or str(order.get("id")) in old_ids:
+            continue
+        items = [it for it in (order.get("items") or []) if isinstance(it, dict)]
+        if items:
+            product_summary = "; ".join(
+                f"{it.get('description') or '—'} × {_qty(it.get('quantity') or 0)}"
+                + (f" × {_fmt_vnd(it.get('unitPrice'))}" if it.get("unitPrice") else "")
+                for it in items
+            )
+            quantity_text = _qty(sum(float(it.get("quantity") or 0) for it in items))
+        else:
+            product_summary = str(order.get("productName") or order.get("product") or "—")
+            quantity_text = _qty(float(order.get("quantity") or 1))
+        events_box.append({
+            "orderId": order.get("id"),
+            "date": str(order.get("date") or ""),
+            "customerName": str(order.get("customerName") or order.get("customer") or "Khách hàng"),
+            "productSummary": product_summary,
+            "quantityText": quantity_text,
+            "amountText": _fmt_vnd(order.get("amount")),
+            "paymentLabel": _PAYMENT_LABELS.get(str(order.get("customerPaymentStatus") or "unpaid"), "Chưa thanh toán"),
+            "inventoryLabel": _INVENTORY_STATUS_LABELS.get(str(order.get("inventoryStatus") or ""), "—"),
+            "sellerEmployeeId": order.get("saleEmployeeId") or order.get("employeeId"),
+        })
+
+
+def notify_sale_events(db_path, actor_user, actor_name, events):
+    """Email ĐƠN BÁN HÀNG MỚI về cho các tài khoản Sếp/Admin — chạy nền, lỗi chỉ ghi log."""
+    events = [event for event in (events or []) if isinstance(event, dict)]
+    if not events:
+        return
+    actor_name = str(actor_name or "").strip() or str((actor_user or {}).get("email") or "").strip() or "Nhân viên"
+    thread = threading.Thread(
+        target=_send_sale_emails_background,
+        args=(db_path, actor_name, events),
+        daemon=True,
+    )
+    thread.start()
+
+
+def _send_sale_emails_background(db_path, actor_name, events):
+    try:
+        from services import email_service, employee_service, user_service
+
+        employee_names = {}
+        try:
+            employee_names = {
+                str(e.get("id")): str(e.get("name") or "").strip()
+                for e in employee_service.list_employees(db_path)
+            }
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Người nhận: các tài khoản QUẢN TRỊ (Sếp/Admin) đang hoạt động có email.
+        recipients = {}
+        for account in user_service.list_users(db_path):
+            if not isinstance(account, dict) or not account.get("active"):
+                continue
+            if str(account.get("role") or "").strip().lower() != "admin":
+                continue
+            email = str(account.get("email") or "").strip().lower()
+            if "@" in email:
+                recipients.setdefault(email, str(account.get("name") or "").strip() or email)
+
+        for event in events:
+            seller_name = employee_names.get(str(event.get("sellerEmployeeId"))) or actor_name
+            for email, name in recipients.items():
+                try:
+                    email_service.send_sale_order_alert(email, name, seller_name, event)
+                except RuntimeError as exc:
+                    print(f"[SALE NOTIFY] Bỏ qua email đơn hàng: {exc}")
+                    return
+                except Exception as exc:  # noqa: BLE001
+                    print(f"[SALE NOTIFY] Không gửi được email cho {email}: {exc}")
+    except Exception as exc:  # noqa: BLE001
+        print(f"[SALE NOTIFY] Lỗi gửi email nền: {exc}")
+
+
 def _send_emails_background(db_path, actor_name, lines):
     try:
         from services import email_service, employee_service
