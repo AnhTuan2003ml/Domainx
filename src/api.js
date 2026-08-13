@@ -378,6 +378,15 @@ export async function createCrmOrder(payload) {
   });
 }
 
+// Xóa đơn CRM nguyên tử (chỉ Admin): server tự hủy đơn (hoàn tồn + bút toán đảo) rồi xóa
+// hẳn đơn cùng giao dịch thu/công nợ/đơn phân phối liên quan trong MỘT request.
+export async function deleteCrmOrder(orderId) {
+  return requestJson("/api/company-data/crm-orders/delete", {
+    method: "POST",
+    body: JSON.stringify({ orderId }),
+  });
+}
+
 export async function sendChatGroupMessage(groupId, body) {
   return requestJson("/api/chat/group-messages", {
     method: "POST",

@@ -148,6 +148,11 @@ def guard_state_removals(db_path, existing_data, new_data, user_role=None):
         transactions = _by_id(existing_data.get("transactions"))
         for tx_id in removed:
             tx = transactions.get(tx_id) or {}
+            # ADMIN xóa đơn CRM sẽ kéo theo giao dịch thu sinh từ đơn đó — cho phép,
+            # vì bút toán gốc + bút toán đảo (khi hủy đơn) đã triệt tiêu nhau trên sổ cái.
+            tx_source = str(tx.get("sourceModule") or tx.get("source") or "").lower()
+            if str(user_role or "") == "admin" and tx_source == "crm":
+                continue
             if ("manual_tx", tx_id) in _posted():
                 raise DeletePolicyError(
                     REVERSAL_REQUIRED,
@@ -177,9 +182,16 @@ def guard_state_removals(db_path, existing_data, new_data, user_role=None):
                 for movement in (existing_data.get("stockMovements") or [])
                 if isinstance(movement, dict) and str(movement.get("movementType") or "") in {"sale", "sale_out"}
             }
+            _cancelled_statuses = {"cancelled", "canceled", "deleted", "huy", "da_huy", "đã hủy"}
             for oid in removed:
                 order = orders.get(oid) or {}
                 record = {"type": "order", "id": oid, "name": str(order.get("customerName") or "")}
+                # ADMIN được xóa VĨNH VIỄN đơn ĐÃ HỦY (dọn đơn test): lúc hủy, kho đã tự
+                # hoàn tồn và sổ cái đã tạo bút toán đảo (gốc + đảo triệt tiêu nhau, vẫn
+                # nằm nguyên trong journal làm dấu vết) — xóa bản ghi đơn không làm lệch số.
+                is_cancelled = str(order.get("status") or "").strip().lower() in _cancelled_statuses
+                if is_cancelled and str(user_role or "") == "admin":
+                    continue
                 if ("order", oid) in _posted():
                     raise DeletePolicyError(
                         REVERSAL_REQUIRED,

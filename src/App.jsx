@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback, useLayoutEffect } from "react";
-import { approveSupportCase as approveSupportCaseApi, assignSupportRequest, changePassword, clearChatConversation, clearChatGroupConversation, confirmSupportRequest, createChatGroup, createCrmOrder, createDebtPayment, createPayrollPayment, resolvePayrollReconciliation, deleteChatGroup, deleteChatGroupMessage, deleteChatMessage, deleteDebtPayment, deleteEmployee, deleteUser, fetchChatConversations, fetchChatGroupMessages, fetchChatGroups, fetchChatMessages, fetchChatReadReceipts, fetchChatUnread, fetchPayrollWorkflow, fetchTasks, fetchFinancialSummary, fetchFinancialSummarySeries, fetchDebtPaymentHistory, fetchInventoryMovements, getCurrentUser, listEmployees, listUsers, loadAppFields, login, logout, markChatGroupRead, markChatRead, requestPasswordResetOtp, requestRegistrationOtp, resetPasswordWithOtp, saveAppData, saveAppFields, saveEmployees, saveUser, sendChatGroupMessage, sendChatMessage, setDirectorPassword, updateChatGroupMembers, upsertEmployeeWithAccount, upsertInventoryProduct, verifyDirectorPassword, verifyRegistrationOtp, sendAiMessage, reportSupportCase as reportSupportCaseApi, rejectSupportCase as rejectSupportCaseApi, fetchAccountingJournal, fetchTrialBalance, fetchVatBooks, fetchLedgerReconciliation, fetchAccountingPeriods, syncAccountingLedger, reverseJournalEntry, lockAccountingPeriod, unlockAccountingPeriod, fetchInventoryReconciliation, fetchOpeningInventoryBatches, suggestOpeningInventory, createOpeningInventoryBatch, reviewOpeningInventoryBatch, postOpeningInventoryBatch, reverseOpeningInventoryBatch, deleteDraftOpeningInventoryBatch } from "./api";
+import { approveSupportCase as approveSupportCaseApi, assignSupportRequest, changePassword, clearChatConversation, clearChatGroupConversation, confirmSupportRequest, createChatGroup, createCrmOrder, deleteCrmOrder, createDebtPayment, createPayrollPayment, resolvePayrollReconciliation, deleteChatGroup, deleteChatGroupMessage, deleteChatMessage, deleteDebtPayment, deleteEmployee, deleteUser, fetchChatConversations, fetchChatGroupMessages, fetchChatGroups, fetchChatMessages, fetchChatReadReceipts, fetchChatUnread, fetchPayrollWorkflow, fetchTasks, fetchFinancialSummary, fetchFinancialSummarySeries, fetchDebtPaymentHistory, fetchInventoryMovements, getCurrentUser, listEmployees, listUsers, loadAppFields, login, logout, markChatGroupRead, markChatRead, requestPasswordResetOtp, requestRegistrationOtp, resetPasswordWithOtp, saveAppData, saveAppFields, saveEmployees, saveUser, sendChatGroupMessage, sendChatMessage, setDirectorPassword, updateChatGroupMembers, upsertEmployeeWithAccount, upsertInventoryProduct, verifyDirectorPassword, verifyRegistrationOtp, sendAiMessage, reportSupportCase as reportSupportCaseApi, rejectSupportCase as rejectSupportCaseApi, fetchAccountingJournal, fetchTrialBalance, fetchVatBooks, fetchLedgerReconciliation, fetchAccountingPeriods, syncAccountingLedger, reverseJournalEntry, lockAccountingPeriod, unlockAccountingPeriod, fetchInventoryReconciliation, fetchOpeningInventoryBatches, suggestOpeningInventory, createOpeningInventoryBatch, reviewOpeningInventoryBatch, postOpeningInventoryBatch, reverseOpeningInventoryBatch, deleteDraftOpeningInventoryBatch } from "./api";
 import {
   roundVND, normalizePartner, normalizeDistributionOrder, normalizeDebt,
   calculateDistributionFinancials, eligibleOrdersForSettlement, buildSettlementDraft,
@@ -9560,17 +9560,20 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
       setProductSaving(false);
     }
   };
-  // Điều chỉnh tay = movement adjustment_in/out có nhật ký + người thao tác — không sửa số trực tiếp.
-  // Luôn yêu cầu nhập lý do (qua modal pendingAdjust) để Nhật ký kho biết "vì sao" chứ không chỉ "bao nhiêu".
-  const [pendingAdjust, setPendingAdjust] = useState(null); // { id, delta, productName }
-  const [adjustReason, setAdjustReason] = useState("");
+  // Điều chỉnh tay = movement adjustment_in/out có nhật ký + người thao tác — không sửa số lặng lẽ.
+  // Chỉ Admin được điều chỉnh nên KHÔNG bắt nhập lý do nữa: bấm là áp dụng ngay,
+  // Nhật ký kho vẫn ghi ai/lúc nào/bao nhiêu để tra cứu.
   // Modal LỊCH SỬ CHỈNH SỬA: ai sửa, lúc nào, đổi field nào — dữ liệu máy chủ ghi, client chỉ đọc.
   const [historyProductId, setHistoryProductId] = useState(null);
   const historyProduct = historyProductId === null ? null : inventory.find((product) => String(product.id) === String(historyProductId)) || null;
   const requestAdjustStock = (product, delta) => {
-    if (!canEditProduct(product) || !moveStock) return;
-    setPendingAdjust({ id: product.id, delta, productName: product.name, currentStock: Number(product.stock) || 0 });
-    setAdjustReason("");
+    if (!canEditProduct(product) || !moveStock || !delta) return;
+    moveStock({
+      productId: product.id, movementType: delta > 0 ? "adjustment_in" : "adjustment_out",
+      quantity: Math.abs(delta), sourceModule: "kho",
+      sourceId: Date.now() + Math.floor(Math.random() * 1000),
+      note: "Điều chỉnh trực tiếp trong bảng kho", createdBy: authUser?.email || "",
+    });
   };
   // SỬA TỒN TRỰC TIẾP: bấm vào con số tồn kho để gõ số mới — hệ thống tự tính chênh lệch
   // và vẫn đi qua ĐÚNG luồng movement adjustment_in/out + lý do, không ghi đè số lặng lẽ.
@@ -9603,17 +9606,6 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
     const delta = target - (Number(product.stock) || 0);
     if (delta === 0) return;
     requestAdjustStock(product, delta); // vẫn bắt buộc nhập lý do như nút +/−
-  };
-  const confirmAdjustStock = () => {
-    if (!pendingAdjust || !adjustReason.trim()) return;
-    moveStock({
-      productId: pendingAdjust.id, movementType: pendingAdjust.delta > 0 ? "adjustment_in" : "adjustment_out",
-      quantity: Math.abs(pendingAdjust.delta), sourceModule: "kho",
-      sourceId: Date.now() + Math.floor(Math.random() * 1000),
-      note: adjustReason.trim(), createdBy: authUser?.email || "",
-    });
-    setPendingAdjust(null);
-    setAdjustReason("");
   };
   const removeProduct = async (id) => {
     if (!canManageInventory) return;
@@ -9798,31 +9790,6 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
         </div>
       )}
 
-      {pendingAdjust && (
-        <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-4" onClick={() => setPendingAdjust(null)}>
-          <div className="bg-white rounded-lg p-5 w-full max-w-sm shadow-xl" onClick={(ev) => ev.stopPropagation()}>
-            <h3 className="ktns-serif font-semibold text-ink mb-1">{pendingAdjust.delta > 0 ? "Cộng thêm" : "Trừ bớt"} {Math.abs(pendingAdjust.delta)} {pendingAdjust.productName}</h3>
-            <p className="text-xs text-muted mb-1">Tồn kho: <span className="ktns-mono font-semibold text-ink">{pendingAdjust.currentStock}</span> → <span className="ktns-mono font-semibold text-[#3C50E0]">{Math.max(0, pendingAdjust.currentStock + pendingAdjust.delta)}</span></p>
-            <p className="text-xs text-muted mb-3">Bắt buộc nhập lý do — Nhật ký kho lưu lại để tra cứu vì sao tồn kho thay đổi.</p>
-            <label className="text-xs text-muted flex flex-col gap-1">
-              Lý do điều chỉnh
-              <input
-                autoFocus
-                value={adjustReason}
-                onChange={(e) => setAdjustReason(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && adjustReason.trim()) confirmAdjustStock(); }}
-                placeholder="VD: Kiểm kê phát hiện lệch, hàng lỗi huỷ bỏ, tặng khách..."
-                className="border border-paper-line rounded px-2 py-1.5 text-sm"
-              />
-            </label>
-            <div className="domix-form-actions">
-              <button type="button" onClick={() => setPendingAdjust(null)} className="domix-btn-secondary">Hủy</button>
-              <button type="button" disabled={!adjustReason.trim()} onClick={confirmAdjustStock} className="domix-btn-primary">Xác nhận điều chỉnh</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {historyProduct && (
         <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-4" onClick={() => setHistoryProductId(null)}>
           <div className="bg-white rounded-lg w-full max-w-2xl shadow-xl flex max-h-[80vh] flex-col" onClick={(ev) => ev.stopPropagation()}>
@@ -9955,10 +9922,10 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
                       <td className="px-4 py-2 ktns-mono text-xs text-muted">{p.sku}</td>
                       <td className="px-4 py-2 font-medium">{p.name} <span className="text-[11px] text-muted">/{p.unit}</span></td>
                       <td className="px-4 py-2 text-right">
-                        {/* Ô INPUT cố định — gõ số tồn mới rồi Enter/rời ô; chênh lệch vẫn đi qua
-                            modal lý do + nhật ký kho. Nút −/+ chỉnh nhanh 1 đơn vị hai bên. */}
+                        {/* Ô INPUT cố định — gõ số tồn mới rồi Enter/rời ô là áp dụng ngay;
+                            nhật ký kho tự ghi ai/lúc nào. Nút −/+ chỉnh nhanh 1 đơn vị hai bên. */}
                         <div className="flex items-center justify-end gap-1">
-                          {canEditProduct(p) && <button onClick={() => requestAdjustStock(p, -1)} title="Trừ 1 (nhập lý do)" aria-label={`Trừ 1 tồn kho ${p.name}`} className="h-7 w-7 shrink-0 rounded border border-paper-line text-muted hover:border-stamp-red hover:text-stamp-red text-sm font-semibold">−</button>}
+                          {canEditProduct(p) && <button onClick={() => requestAdjustStock(p, -1)} title="Trừ 1" aria-label={`Trừ 1 tồn kho ${p.name}`} className="h-7 w-7 shrink-0 rounded border border-paper-line text-muted hover:border-stamp-red hover:text-stamp-red text-sm font-semibold">−</button>}
                           <input
                             type="number"
                             min="0"
@@ -9968,11 +9935,11 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
                             onChange={(e) => setStockEditValue(e.target.value)}
                             onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { cancelStockEdit(); e.currentTarget.blur(); } }}
                             onBlur={() => commitStockEdit(p)}
-                            title={canEditProduct(p) ? "Gõ số tồn kho mới rồi Enter — hệ thống tự tính chênh lệch và ghi nhật ký kèm lý do" : undefined}
+                            title={canEditProduct(p) ? "Gõ số tồn kho mới rồi Enter — áp dụng ngay, hệ thống tự tính chênh lệch và ghi nhật ký kho" : undefined}
                             aria-label={`Tồn kho ${p.name}`}
                             className="h-7 w-16 shrink-0 rounded border border-paper-line bg-white px-1 text-center text-sm ktns-mono focus:border-[#3C50E0] focus:ring-1 focus:ring-[#3C50E0] outline-none disabled:border-transparent disabled:bg-transparent"
                           />
-                          {canEditProduct(p) && <button onClick={() => requestAdjustStock(p, 1)} title="Cộng 1 (nhập lý do)" aria-label={`Cộng 1 tồn kho ${p.name}`} className="h-7 w-7 shrink-0 rounded border border-paper-line text-muted hover:border-ledger-green hover:text-ledger-green text-sm font-semibold">+</button>}
+                          {canEditProduct(p) && <button onClick={() => requestAdjustStock(p, 1)} title="Cộng 1" aria-label={`Cộng 1 tồn kho ${p.name}`} className="h-7 w-7 shrink-0 rounded border border-paper-line text-muted hover:border-ledger-green hover:text-ledger-green text-sm font-semibold">+</button>}
                         </div>
                       </td>
                       <td className="px-4 py-2 text-right ktns-mono text-muted">{fmtVND(p.costPrice)}</td>
@@ -16034,6 +16001,34 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
       : o)));
   };
 
+  // MỘT NÚT XÓA cho Admin — bấm MỘT lần trên BẤT KỲ đơn nào. Gọi endpoint NGUYÊN TỬ
+  // /crm-orders/delete: server tự hủy đơn (hoàn tồn kho + bút toán đảo) rồi xóa hẳn đơn
+  // cùng giao dịch thu/công nợ/đơn phân phối liên quan trong cùng một request — không
+  // phụ thuộc autosave nên không bao giờ phải bấm lần hai. Hồ sơ KHÁCH HÀNG giữ nguyên.
+  const [deletingOrderId, setDeletingOrderId] = useState(null);
+  const deleteOrderFull = async (id) => {
+    const order = orders.find((o) => o.id === id);
+    if (!order || !isAdminRole(authUser?.role) || deletingOrderId !== null) return;
+    const accepted = await confirmOverlay(
+      `Xóa đơn của "${order.customerName || ""}" (${fmtVND(Number(order.amount) || 0)}) cùng TOÀN BỘ dữ liệu liên quan?\n\n- Kho tự hoàn tồn, sổ cái tự tạo bút toán đảo\n- Giao dịch thu, công nợ và đơn phân phối liên kết bị xóa theo\n- Hồ sơ khách hàng được GIỮ LẠI\n\nKhông khôi phục được sau khi xóa.`,
+      { title: "Xóa đơn hàng", confirmLabel: "Xóa đơn", tone: "danger" },
+    );
+    if (!accepted) return;
+    setDeletingOrderId(id);
+    try {
+      const result = await deleteCrmOrder(id);
+      if (result?.data && dataLoader?.applyAppData) {
+        dataLoader.applyAppData(result.data, { markPersisted: true });
+      } else {
+        setOrders((prev) => prev.filter((o) => o.id !== id));
+      }
+    } catch (error) {
+      await noticeOverlay(error.message || "Không xóa được đơn hàng.", { title: "Xóa đơn thất bại" });
+    } finally {
+      setDeletingOrderId(null);
+    }
+  };
+
   const removeOrder = async (id) => {
     const order = orders.find((o) => o.id === id);
     const linkedDist = (distOrders || []).find((d) => d.sourceCrmOrderId === id);
@@ -17082,19 +17077,29 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                       )}
                     </td>
                     <td className="px-3 py-1.5 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                      <button onClick={() => setDetailOrderId(o.id)} className="text-muted hover:text-[#3C50E0] mr-2" title="Xem chi tiết — email, thời hạn gói, lịch sử chăm sóc, thao tác nhanh"><Eye size={13} /></button>
-                      {isOrderCancelled(o) ? (
-                        <span className="text-[9px] font-semibold text-muted" title="Đơn đã hủy — giữ lại làm dấu vết, kho và sổ cái đã tự đảo">Lưu vết</span>
-                      ) : (
-                        <>
-                          <button onClick={() => startEditOrder(o)} className="text-muted hover:text-ink mr-2" title="Sửa đơn hàng"><Pencil size={13} /></button>
-                          {orderIsDeletable(o) ? (
-                            <button onClick={() => removeOrder(o.id)} className="text-muted hover:text-stamp-red" title="Xóa đơn nháp (chưa phát sinh kho/tiền/hóa đơn)"><Trash2 size={14} /></button>
-                          ) : (
-                            <button onClick={() => cancelOrder(o.id)} className="text-muted hover:text-stamp-red" title="Hủy đơn — kho tự hoàn tồn, sổ cái tự tạo bút toán đảo (không xóa dữ liệu)"><RotateCcw size={14} /></button>
-                          )}
-                        </>
-                      )}
+                      {/* Icon thẳng hàng: MỘT hàng flex căn giữa, cùng cỡ 14px — không dùng margin lệch. */}
+                      <div className="inline-flex items-center justify-end gap-2 align-middle">
+                        <button onClick={() => setDetailOrderId(o.id)} className="inline-flex items-center text-muted hover:text-[#3C50E0]" title="Xem chi tiết — email, thời hạn gói, lịch sử chăm sóc, thao tác nhanh"><Eye size={14} /></button>
+                        {isOrderCancelled(o) ? (
+                          <>
+                            <span className="text-[9px] font-semibold leading-none text-muted" title="Đơn đã hủy — giữ lại làm dấu vết, kho và sổ cái đã tự đảo">Lưu vết</span>
+                            {isAdminRole(authUser?.role) && (
+                              <button disabled={deletingOrderId !== null} onClick={() => deleteOrderFull(o.id)} className="inline-flex items-center text-muted hover:text-stamp-red disabled:opacity-40" title="Xóa hẳn đơn đã hủy cùng dữ liệu liên quan (giữ hồ sơ khách)" aria-label={`Xóa đơn đã hủy của ${o.customerName || "khách"}`}>{deletingOrderId === o.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}</button>
+                            )}
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => startEditOrder(o)} className="inline-flex items-center text-muted hover:text-ink" title="Sửa đơn hàng"><Pencil size={14} /></button>
+                            {isAdminRole(authUser?.role) ? (
+                              <button disabled={deletingOrderId !== null} onClick={() => deleteOrderFull(o.id)} className="inline-flex items-center text-muted hover:text-stamp-red disabled:opacity-40" title="Xóa đơn + toàn bộ dữ liệu liên quan: hoàn tồn kho, đảo sổ cái, gỡ giao dịch thu/công nợ (giữ hồ sơ khách)" aria-label={`Xóa đơn của ${o.customerName || "khách"}`}>{deletingOrderId === o.id ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />}</button>
+                            ) : orderIsDeletable(o) ? (
+                              <button onClick={() => removeOrder(o.id)} className="inline-flex items-center text-muted hover:text-stamp-red" title="Xóa đơn nháp (chưa phát sinh kho/tiền/hóa đơn)"><Trash2 size={14} /></button>
+                            ) : (
+                              <button onClick={() => cancelOrder(o.id)} className="inline-flex items-center text-muted hover:text-stamp-red" title="Hủy đơn — kho tự hoàn tồn, sổ cái tự tạo bút toán đảo (không xóa dữ liệu)"><RotateCcw size={14} /></button>
+                            )}
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 </React.Fragment>

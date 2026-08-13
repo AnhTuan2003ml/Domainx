@@ -471,6 +471,7 @@ def handle_post(handler, route, _parsed):
         "/api/company-data/debt-payments",
         "/api/company-data/inventory-product",
         "/api/company-data/crm-orders",
+        "/api/company-data/crm-orders/delete",
         "/api/company-data/payroll-payments",
         "/api/company-data/payroll-reconciliation",
         "/api/company-data/director-password",
@@ -638,6 +639,79 @@ def handle_post(handler, route, _parsed):
             "updatedAt": visible_state.get("updatedAt"),
             "version": visible_state.get("version", 0),
         })
+        return True
+
+    if route == "/api/company-data/crm-orders/delete":
+        # MỘT NÚT XÓA của Admin — NGUYÊN TỬ trong một request, không phụ thuộc autosave
+        # nên chỉ cần bấm MỘT lần: (1) hủy đơn để reconcile hoàn tồn + posting tạo bút toán
+        # đảo, (2) xóa hẳn đơn cùng giao dịch thu/công nợ/đơn phân phối liên quan.
+        # Hồ sơ KHÁCH HÀNG giữ nguyên.
+        if _role(user) != "admin":
+            handler.send_json({"error": "Chỉ Sếp/Admin được xóa đơn hàng cùng dữ liệu liên quan."}, 403)
+            return True
+        order_id = str(body.get("orderId") or "").strip()
+        if not order_id:
+            handler.send_json({"error": "Thiếu mã đơn hàng."}, 400)
+            return True
+
+        cancelled_statuses = {"cancelled", "canceled", "deleted", "huy", "da_huy", "đã hủy"}
+        info_box = {}
+
+        def cancel_order_step(existing_data):
+            result = dict(existing_data)
+            orders = [dict(o) if isinstance(o, dict) else o for o in result.get("orders") or []]
+            target = next((o for o in orders if isinstance(o, dict) and str(o.get("id")) == order_id), None)
+            if target is None:
+                raise ValueError("Không tìm thấy đơn hàng cần xóa.")
+            linked_dist = next((d for d in result.get("distributionOrders") or []
+                                if isinstance(d, dict) and str(d.get("sourceCrmOrderId")) == order_id), None)
+            if isinstance(linked_dist, dict) and linked_dist.get("settlementId"):
+                raise ValueError("Đơn đã thuộc hồ sơ quyết toán với đối tác — hủy hồ sơ quyết toán ở tab Hợp tác phân phối trước, rồi mới xóa được.")
+            info_box["linkedTxId"] = target.get("linkedTxId")
+            if str(target.get("status") or "").strip().lower() not in cancelled_statuses:
+                target["status"] = "cancelled"
+                target["orderStatus"] = "cancelled"
+                target["cancelledAt"] = datetime.now(timezone.utc).isoformat()
+                target["cancelledBy"] = user.get("email") or ""
+            result["orders"] = orders
+            return reconcile_company_data(result)
+
+        try:
+            update_state(handler.db_path, cancel_order_step)
+        except ValueError as exc:
+            handler.send_json({"error": str(exc)}, 409)
+            return True
+        # Bút toán đảo doanh thu/giá vốn phải được ghi TRƯỚC khi bản ghi đơn biến mất.
+        sync_after_save(handler.db_path, actor=user.get("email") or "system")
+
+        def purge_order_step(existing_data):
+            result = dict(existing_data)
+            result["orders"] = [
+                o for o in result.get("orders") or []
+                if not (isinstance(o, dict) and str(o.get("id")) == order_id)
+            ]
+            linked_tx_id = info_box.get("linkedTxId")
+            result["transactions"] = [
+                t for t in result.get("transactions") or []
+                if not (isinstance(t, dict) and (
+                    (linked_tx_id is not None and t.get("id") == linked_tx_id)
+                    or (str(t.get("sourceModule") or t.get("source") or "").lower() == "crm"
+                        and str(t.get("sourceOrderId") if t.get("sourceOrderId") is not None else t.get("sourceId")) == order_id)
+                ))
+            ]
+            result["debts"] = [
+                d for d in result.get("debts") or []
+                if not (isinstance(d, dict) and str(d.get("sourceModule") or "") == "crm" and str(d.get("sourceId")) == order_id)
+            ]
+            result["distributionOrders"] = [
+                d for d in result.get("distributionOrders") or []
+                if not (isinstance(d, dict) and str(d.get("sourceCrmOrderId")) == order_id)
+            ]
+            return reconcile_company_data(result)
+
+        saved_state = update_state(handler.db_path, purge_order_step)
+        sync_after_save(handler.db_path, actor=user.get("email") or "system")
+        _send_synced_fields(handler, saved_state, user, ("orders", "transactions", "debts", "inventory", "stockMovements", "distributionOrders"))
         return True
 
     if not handler.is_full_admin(user):
