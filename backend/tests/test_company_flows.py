@@ -51,6 +51,11 @@ class DataApiHandler:
         return data
 
     @staticmethod
+    def is_full_admin(_user):
+        # Trả False để test không đi vào nhánh gửi email kho.
+        return False
+
+    @staticmethod
     def filter_state(state, _user):
         return state
 

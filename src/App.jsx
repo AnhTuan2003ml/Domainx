@@ -20791,13 +20791,13 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
               return (
                 <tr key={`acc-${user.email}`} className="bg-paper/40">
                   <td className="px-4 py-3">
-                    <div className="font-semibold text-ink-light">{isSystemAdminAccount ? "Tài khoản hệ thống" : "Chưa có hồ sơ nhân sự"}</div>
+                    <div className="font-semibold text-ink-light">{isSystemAdminAccount ? "Tài khoản hệ thống" : "Tài khoản tạm thời · chờ cấp hồ sơ"}</div>
                     <div className="mt-1 text-[11px] text-muted ktns-mono">{user.email}</div>
                   </td>
                   <td className="px-4 py-3 text-xs text-muted" colSpan={2}>
                     {isSystemAdminAccount
                       ? "Tài khoản quản trị không bắt buộc là nhân viên nhận lương. Chỉ tạo hồ sơ nếu người này cần chấm công và tính lương."
-                      : "Tài khoản đăng nhập chưa liên kết hồ sơ. Hãy tạo hồ sơ trước khi giao việc, chấm công hoặc tính lương."}
+                      : "Tài khoản đang bị chặn: không xem được bất kỳ dữ liệu nào cho tới khi được liên kết hồ sơ nhân sự. Liên kết hồ sơ để cấp quyền tham gia hệ thống."}
                   </td>
                   <td className="px-4 py-3 text-xs">Quyền: <strong>{accountRoleLabel(user.role)}</strong></td>
                   <td className="px-4 py-3"><span className={user.active ? "text-ledger-green text-xs font-semibold" : "text-stamp-red text-xs font-semibold"}>{user.active ? ui("Đang hoạt động", "Active") : ui("Đã khóa", "Locked")}</span></td>
@@ -27418,6 +27418,15 @@ function SystemTableEnhancer() {
   return null;
 }
 
+function PendingApprovalBanner() {
+  return (
+    <div className="fixed left-1/2 top-5 z-[100] flex w-[calc(100%-2rem)] max-w-xl -translate-x-1/2 items-start gap-2.5 rounded-lg border border-gold/40 bg-[#201a0d] px-4 py-2.5 text-sm text-[#f4cf72] shadow-xl">
+      <Clock size={16} className="mt-0.5 shrink-0" />
+      <span>Tài khoản đang <strong>chờ quản trị viên cấp hồ sơ nhân sự</strong> — bạn có thể xem giao diện, dữ liệu sẽ hiển thị sau khi được duyệt.</span>
+    </div>
+  );
+}
+
 export default function App() {
   const [authUser, setAuthUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -27447,6 +27456,21 @@ export default function App() {
       });
     return () => { cancelled = true; };
   }, []);
+
+  // Tài khoản chờ duyệt: tự hỏi lại server mỗi 30 giây; khi admin liên kết hồ sơ,
+  // authUser mất cờ pending và DomixApp remount để tải dữ liệu thật.
+  useEffect(() => {
+    if (!authUser?.pending) return undefined;
+    const timer = window.setInterval(async () => {
+      try {
+        const result = await getCurrentUser();
+        if (result?.user && !result.user.pending) setAuthUser(result.user);
+      } catch {
+        // Phiên hết hạn (401) đã được api.js phát sự kiện domix:auth-expired xử lý.
+      }
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, [authUser?.pending]);
 
   const handleLogin = async (email, password) => {
     const user = await login(email, password);
@@ -27478,8 +27502,17 @@ export default function App() {
         {sessionExpiredMessage && <div className="fixed left-1/2 top-5 z-[100] -translate-x-1/2 rounded-lg border border-gold/40 bg-[#201a0d] px-4 py-2.5 text-sm text-[#f4cf72] shadow-xl">{sessionExpiredMessage}</div>}
       </>
     );
+  } else if (authUser.pending) {
+    // Tài khoản tạm thời vẫn vào được giao diện nhân viên; backend trả dữ liệu rỗng.
+    // key riêng để khi được duyệt, DomixApp remount và tải lại toàn bộ dữ liệu thật.
+    screen = (
+      <>
+        <DomixApp key="domix-pending" authUser={authUser} onLogout={handleLogout} />
+        <PendingApprovalBanner />
+      </>
+    );
   } else {
-    screen = <DomixApp authUser={authUser} onLogout={handleLogout} />;
+    screen = <DomixApp key="domix-active" authUser={authUser} onLogout={handleLogout} />;
   }
 
   return (

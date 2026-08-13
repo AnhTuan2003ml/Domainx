@@ -24,6 +24,22 @@ def handle_get(handler, route, parsed):
     if not user:
         return True
 
+    if user.get("pending"):
+        # Tài khoản tạm thời: không thấy danh bạ, nhóm hay tin nhắn nào.
+        empty_by_route = {
+            "/api/chat/conversations": {"contacts": [], "unread": 0},
+            "/api/chat/groups": {"groups": [], "unread": 0},
+            "/api/chat/unread": {"unread": 0},
+            "/api/chat/messages": {"messages": []},
+            "/api/chat/group-messages": {"messages": []},
+            "/api/chat/messages/read-receipts": {"receipts": []},
+        }
+        payload = empty_by_route.get(route)
+        if payload is None:
+            return False
+        handler.send_json(payload)
+        return True
+
     if route == "/api/chat/conversations":
         handler.send_json(chat_service.conversations(handler.db_path, user))
         return True

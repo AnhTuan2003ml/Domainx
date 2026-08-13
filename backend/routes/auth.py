@@ -4,7 +4,9 @@ from services import auth_service, password_reset_service, registration_service
 def handle_get(handler, route, _parsed):
     if route != "/api/auth/me":
         return False
-    user = handler.require_user()
+    # allow_pending: tài khoản tạm thời vẫn cần biết trạng thái của chính mình
+    # để giao diện hiển thị màn hình "chờ cấp hồ sơ".
+    user = handler.require_user(allow_pending=True)
     if user:
         handler.send_json({"user": user})
     return True
@@ -57,6 +59,7 @@ def handle_post(handler, route, _parsed):
         except ValueError as exc:
             handler.send_json({"error": str(exc)}, 400)
         else:
+            result["user"] = handler.effective_user(result.get("user"), persist=False)
             handler.send_json(result)
         return True
 
@@ -102,7 +105,7 @@ def handle_post(handler, route, _parsed):
         return True
 
     if route == "/api/auth/password":
-        user = handler.require_user()
+        user = handler.require_user(allow_pending=True)
         if not user:
             return True
         data = handler.read_json()

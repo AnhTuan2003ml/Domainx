@@ -215,9 +215,11 @@ def _effective_user(db_path, user, persist=True):
     normalized_role = _normalized_account_role(effective.get("role"))
     if normalized_role == "admin":
         effective["role"] = "admin"
+        effective["pending"] = False
         return effective
     if normalized_role == "accountant":
         effective["role"] = "accountant"
+        effective["pending"] = False
         return effective
 
     try:
@@ -227,6 +229,7 @@ def _effective_user(db_path, user, persist=True):
 
     if profile_is_accountant or _employee_is_accountant(employee):
         effective["role"] = "accountant"
+        effective["pending"] = False
         if persist and effective.get("email"):
             try:
                 user_service.update_role(db_path, effective.get("email"), "accountant")
@@ -234,12 +237,27 @@ def _effective_user(db_path, user, persist=True):
                 pass
     else:
         effective["role"] = "user"
+        # Tài khoản tự đăng ký chưa được admin cấp/liên kết hồ sơ nhân sự
+        # là tài khoản TẠM THỜI: đăng nhập được nhưng không đọc được dữ liệu.
+        effective["pending"] = employee is None
         if persist and effective.get("email") and normalized_role != "user":
             try:
                 user_service.update_role(db_path, effective.get("email"), "user")
             except (ValueError, OSError):
                 pass
     return effective
+
+
+# Tài khoản tạm thời (pending) chỉ được ĐỌC các API dựng khung giao diện nhân viên.
+# Dữ liệu của các route này đã bị lọc RỖNG cho pending ở filter_state_for_user,
+# filter_employees_for_user, _filter_payroll_data_for_user và routes/chat.py —
+# thêm route mới vào đây bắt buộc phải có tầng lọc tương ứng.
+_PENDING_READABLE_EXACT = {"/api/data", "/api/data/fields", "/api/tasks", "/api/payroll/workflow", "/api/employees"}
+_PENDING_READABLE_PREFIXES = ("/api/chat/",)
+
+
+def _pending_route_readable(path):
+    return path in _PENDING_READABLE_EXACT or any(path.startswith(prefix) for prefix in _PENDING_READABLE_PREFIXES)
 
 
 def _record_employee_id(record):
@@ -270,6 +288,15 @@ def _own_records(records, employee_id):
 def _filter_payroll_data_for_user(db_path, data, user):
     if not isinstance(data, dict) or _is_admin(user):
         return data
+    if user.get("pending"):
+        # Tài khoản tạm thời không có hồ sơ: mọi dữ liệu lương/Thu Chi đều rỗng.
+        filtered = dict(data)
+        for field in PAYROLL_WORKFLOW_FIELDS:
+            if field in filtered:
+                filtered[field] = []
+        if "transactions" in filtered:
+            filtered["transactions"] = []
+        return filtered
     _, employee, is_accountant = _employee_context(db_path, user)
     if is_accountant:
         return data
@@ -310,6 +337,9 @@ def _filter_payroll_data_for_user(db_path, data, user):
 def filter_employees_for_user(db_path, employees, user):
     if _is_full_admin(user):
         return employees
+    if user.get("pending"):
+        # Tài khoản tạm thời chưa được tham gia: không thấy danh bạ nhân sự.
+        return []
     _, current_employee, is_accountant = _employee_context(db_path, user)
     if is_accountant:
         return employees
@@ -443,6 +473,13 @@ def filter_state_for_user(db_path, state, user):
     data = state.get("data")
     if not isinstance(data, dict):
         return state
+
+    # Chốt chặn dự phòng: tài khoản tạm thời (chưa được cấp hồ sơ) không nhận
+    # bất kỳ dữ liệu nghiệp vụ nào, kể cả khi một route nào đó quên chặn ở require_user.
+    if user.get("pending"):
+        filtered_state = dict(state)
+        filtered_state["data"] = {}
+        return filtered_state
 
     role = _normalized_account_role(user.get("role"))
     if role in {"admin", "accountant"}:
@@ -1859,12 +1896,24 @@ class DomixHandler(BaseHTTPRequestHandler):
             return ""
         return auth.removeprefix("Bearer ").strip()
 
-    def require_user(self, roles=None):
+    def require_user(self, roles=None, allow_pending=False):
         user = auth_service.current_user(self.db_path, self.bearer_token())
         if not user:
             self.send_json({"error": "Chưa đăng nhập"}, 401)
             return None
         user = _effective_user(self.db_path, user, persist=True)
+        if user.get("pending") and not allow_pending:
+            # Tài khoản tạm thời (chưa được admin cấp hồ sơ nhân sự) vẫn vào được
+            # giao diện: chỉ các API ĐỌC trong allowlist được đi qua (dữ liệu đã bị
+            # lọc rỗng ở filter_state/filter_employees/chat); mọi API khác — gồm
+            # toàn bộ thao tác ghi — bị chặn.
+            path = (self.path or "").split("?", 1)[0]
+            if self.command != "GET" or not _pending_route_readable(path):
+                self.send_json({
+                    "error": "Tài khoản của bạn đang chờ quản trị viên cấp hồ sơ nhân sự. Vui lòng liên hệ Sếp/Admin để được tham gia hệ thống.",
+                    "pendingApproval": True,
+                }, 403)
+                return None
         if roles:
             allowed = {_normalized_account_role(role) for role in ({roles} if isinstance(roles, str) else set(roles))}
             if _normalized_account_role(user.get("role")) not in allowed:
