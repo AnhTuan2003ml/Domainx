@@ -426,6 +426,14 @@ def _user_visible_data(db_path, data, user):
             item for item in attendance_requests
             if _record_belongs_to_employee(item, employee_id, "employeeId")
         ]
+
+    # Sổ tăng ca (otRecords): nhân viên chỉ thấy bản ghi OT của chính mình.
+    ot_records = data.get("otRecords")
+    if isinstance(ot_records, list):
+        filtered["otRecords"] = [
+            item for item in ot_records
+            if _record_belongs_to_employee(item, employee_id, "employeeId")
+        ]
     return filtered
 
 
@@ -1276,6 +1284,73 @@ def _merge_regular_attendance_requests(old_requests, incoming_requests, employee
     return result
 
 
+_OT_TYPES = {"weekday", "weekend", "holiday"}
+
+
+def _merge_regular_ot_records(old_records, incoming_records, employee_id):
+    """Nhân viên chỉ được TẠO yêu cầu tăng ca của chính mình (luôn ở trạng thái chờ duyệt)
+    và RÚT LẠI yêu cầu đang chờ của chính mình. Bản ghi đã duyệt/từ chối hoặc của người
+    khác luôn giữ nguyên — chỉ Sếp/Kế toán duyệt để tiền OT được cộng vào lương.
+    """
+    old_list = [item for item in (old_records or []) if isinstance(item, dict)]
+    if employee_id is None or not isinstance(incoming_records, list):
+        return old_list
+
+    incoming_ids = {
+        str(item.get("id")) for item in incoming_records
+        if isinstance(item, dict) and item.get("id") is not None
+    }
+    result = []
+    for item in old_list:
+        is_own_pending = (
+            _record_belongs_to_employee(item, employee_id, "employeeId")
+            and item.get("status") == "pending"
+        )
+        if is_own_pending and str(item.get("id")) not in incoming_ids:
+            continue  # nhân viên rút lại yêu cầu đang chờ của chính mình
+        result.append(item)
+
+    old_ids = {str(item.get("id")) for item in old_list if item.get("id") is not None}
+    today = date.today()
+    for item in incoming_records:
+        if not isinstance(item, dict):
+            continue
+        if item.get("id") is not None and str(item.get("id")) in old_ids:
+            continue  # bản ghi lịch sử frontend gửi lại — không tạo trùng
+        try:
+            item_employee_id = int(item.get("employeeId"))
+        except (TypeError, ValueError):
+            continue
+        if item_employee_id != int(employee_id):
+            continue
+        date_text = str(item.get("date") or "")
+        try:
+            item_date = date.fromisoformat(date_text)
+        except ValueError:
+            continue
+        if item_date > today:
+            continue  # không đăng ký OT cho ngày chưa tới
+        try:
+            hours = float(item.get("hours"))
+        except (TypeError, ValueError):
+            continue
+        if not 0 < hours <= 12:
+            continue  # tổng giờ làm + OT không quá 12h/ngày (Bộ luật Lao động 2019)
+        result.append({
+            "id": item.get("id") or int(datetime.now(timezone.utc).timestamp() * 1000),
+            "employeeId": int(employee_id),
+            "employeeName": str(item.get("employeeName") or "").strip(),
+            "date": date_text,
+            "hours": hours,
+            "type": item.get("type") if item.get("type") in _OT_TYPES else "weekday",
+            "note": str(item.get("note") or "").strip(),
+            "status": "pending",
+            "submittedAt": datetime.now(timezone.utc).isoformat(),
+            "submittedByEmail": str(item.get("submittedByEmail") or "").strip().lower(),
+        })
+    return result
+
+
 def preserve_restricted_state_fields(db_path, incoming_data, user, existing_data_override=None):
     if not isinstance(incoming_data, dict):
         return incoming_data
@@ -1298,9 +1373,11 @@ def preserve_restricted_state_fields(db_path, incoming_data, user, existing_data
     old_mid = existing_data.get("midMonthRequests", [])
     old_payments = existing_data.get("payrollPayments", [])
     old_attendance_requests = existing_data.get("attendanceRequests", [])
+    old_ot_records = existing_data.get("otRecords", [])
 
     if _is_admin(user):
         merged["attendanceRequests"] = incoming_data.get("attendanceRequests", old_attendance_requests)
+        merged["otRecords"] = incoming_data.get("otRecords", old_ot_records)
         incoming_approvals = incoming_data.get("payrollApprovals", [])
         incoming_mid = incoming_data.get("midMonthRequests", [])
         incoming_approval_ids = set(_index_records(incoming_approvals))
@@ -1420,6 +1497,7 @@ def preserve_restricted_state_fields(db_path, incoming_data, user, existing_data
     employee_id = int(employee["id"]) if employee else None
     if is_accountant:
         merged["attendanceRequests"] = incoming_data.get("attendanceRequests", old_attendance_requests)
+        merged["otRecords"] = incoming_data.get("otRecords", old_ot_records)
         # Tài khoản role accountant có toàn quyền với dữ liệu hệ thống giống Sếp/Admin.
         # Riêng hồ sơ lương vẫn đi qua bộ trộn Kế toán để không thể tự ghi luôn chữ ký Sếp
         # và vẫn giữ đúng lịch sử hai cấp thẩm định.
@@ -1471,6 +1549,9 @@ def preserve_restricted_state_fields(db_path, incoming_data, user, existing_data
 
         merged["attendanceRequests"] = _merge_regular_attendance_requests(
             old_attendance_requests, incoming_data.get("attendanceRequests", []), employee_id
+        )
+        merged["otRecords"] = _merge_regular_ot_records(
+            old_ot_records, incoming_data.get("otRecords", []), employee_id
         )
         merged["payrollApprovals"] = _merge_regular_payroll_approvals(old_approvals, incoming_data.get("payrollApprovals", []), user, employee)
         merged["midMonthRequests"] = _merge_regular_mid_month(old_mid, incoming_data.get("midMonthRequests", []), user, employee_id)

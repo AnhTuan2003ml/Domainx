@@ -20,14 +20,14 @@ export const ALL_APP_DATA_FIELDS = [
   "payrollPayments", "kpiTiers", "cvReviews", "marketingPages", "contracts", "fixedAssets",
   "leads", "supportCases", "announcements", "chatMessages", "payrollApprovals",
   "midMonthRequests", "customers", "distributionSettlements", "stockMovements", "attendanceRequests",
-  "paymentLedger", "securityAuditLog",
+  "otRecords", "paymentLedger", "securityAuditLog",
 ];
 
 export const TAB_DEFAULT_FIELDS = {
   dashboard: [
     "transactions", "orders", "marketingLogs", "debts", "inventory", "stockMovements",
     "distributionOrders", "distributionSettlements", "payrollPayments", "payrollApprovals",
-    "capitalContributions", "contracts", "leads", "cvReviews", "kpiTiers", "paymentLedger",
+    "capitalContributions", "contracts", "leads", "cvReviews", "kpiTiers", "paymentLedger", "otRecords",
   ],
   settings: ["company"],
   "task-reminder-settings": ["company", "announcements"],
@@ -35,7 +35,7 @@ export const TAB_DEFAULT_FIELDS = {
   dieuhanh: [
     "transactions", "orders", "marketingLogs", "debts", "inventory", "stockMovements",
     "distributionOrders", "distributionSettlements", "payrollPayments", "payrollApprovals",
-    "capitalContributions", "contracts", "leads", "cvReviews", "kpiTiers", "paymentLedger",
+    "capitalContributions", "contracts", "leads", "cvReviews", "kpiTiers", "paymentLedger", "otRecords",
   ],
   thuchi: ["transactions", "orders", "marketingLogs", "payrollPayments", "debts", "paymentLedger"],
   congno: ["debts", "transactions", "orders", "paymentLedger", "distributionOrders", "distributionSettlements", "customers"],
@@ -57,11 +57,11 @@ export const TAB_DEFAULT_FIELDS = {
   marketing: ["marketingLogs", "marketingPages", "orders", "inventory", "leads"],
   nhansu: [],
   tuyendung: ["cvReviews"],
-  chamcong: ["unlockedMonths", "company", "attendanceRequests"],
+  chamcong: ["unlockedMonths", "company", "attendanceRequests", "otRecords"],
   hieusuat: ["supportCases", "orders", "marketingLogs"],
-  luong: ["payrollApprovals", "payrollPayments", "midMonthRequests", "transactions", "orders", "marketingLogs", "kpiTiers"],
-  quy: ["transactions", "orders", "marketingLogs", "payrollPayments", "kpiTiers"],
-  hoachdinh: ["transactions", "orders", "marketingLogs", "payrollPayments", "kpiTiers"],
+  luong: ["payrollApprovals", "payrollPayments", "midMonthRequests", "transactions", "orders", "marketingLogs", "kpiTiers", "otRecords"],
+  quy: ["transactions", "orders", "marketingLogs", "payrollPayments", "kpiTiers", "otRecords"],
+  hoachdinh: ["transactions", "orders", "marketingLogs", "payrollPayments", "kpiTiers", "otRecords"],
   ai: ["transactions", "orders", "kpiTiers"],
   phaply: ["company", "contracts", "capitalContributions"],
   taikhoan: [],

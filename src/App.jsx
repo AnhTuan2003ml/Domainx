@@ -96,6 +96,7 @@ import {
   RotateCcw,
   History,
   MoreHorizontal,
+  Zap,
 } from "lucide-react";
 import * as XLSX from "xlsx";
 import CompanySidebar from "./components/layout/CompanySidebar";
@@ -1997,6 +1998,96 @@ const ATTENDANCE_CODE_LABELS_EN = {
   L: "Paid public holiday", O: "Rest-day overtime", CN: "Sunday off (automatic)",
 };
 
+// ---------- TĂNG CA (OT) — theo Bộ luật Lao động 2019 ----------
+// Hệ số trả lương làm thêm giờ TỐI THIỂU: ngày thường 150%, ngày nghỉ hằng tuần 200%,
+// ngày lễ/Tết hưởng lương 300%. Giới hạn: tổng giờ làm + giờ OT không quá 12h/ngày,
+// OT không quá 40h/tháng và 200h/năm. Mỗi lần tăng ca là MỘT BẢN GHI riêng trong
+// otRecords (db ot) — theo dõi được lịch sử từng người theo thời gian, có duyệt.
+const OT_RATES = { weekday: 150, weekend: 200, holiday: 300 };
+const OT_TYPE_LABELS = { weekday: "Ngày thường", weekend: "Ngày nghỉ tuần", holiday: "Lễ/Tết" };
+const OT_TYPE_LABELS_EN = { weekday: "Regular day", weekend: "Weekly rest day", holiday: "Public holiday" };
+const OT_STANDARD_DAY_HOURS = 8;
+const OT_DAY_TOTAL_CAP_HOURS = 12;
+const OT_MONTH_CAP_HOURS = 40;
+const OT_YEAR_CAP_HOURS = 200;
+
+// Loại ngày OT suy từ LỊCH + BẢNG CÔNG thật: ngày có mã "L" (nghỉ lễ/Tết hưởng lương)
+// = lễ 300%; Chủ nhật = ngày nghỉ tuần 200%; còn lại là ngày thường 150%.
+function otTypeForDate(employee, dateStr) {
+  const parts = calendarDateParts(dateStr);
+  if (!parts) return "weekday";
+  const record = employee?.attendance?.[monthKey(parts.year, parts.month)];
+  const code = record?.[parts.day] || record?.[String(parts.day)];
+  if (code === "L") return "holiday";
+  if (isSundayVN(parts.year, parts.month, parts.day)) return "weekend";
+  return "weekday";
+}
+
+// Lương 1 GIỜ tăng ca — công thức CỐ ĐỊNH theo quy định công ty:
+// LƯƠNG CƠ BẢN ÷ 26 công = tiền 1 ngày; tiền 1 ngày ÷ 8 tiếng = tiền 1 giờ.
+// VD lương 5.000.000đ → 1 ngày 192.308đ → 1 giờ 24.038đ; OT ngày thường × 150%.
+// (baseSalary tra theo tháng qua compensationHistory để xem lại tháng cũ vẫn đúng mức lương khi ấy.)
+const OT_STANDARD_MONTH_DAYS = 26;
+function otHourlyRateFor(employee, year, month) {
+  const resolved = employeeCompForMonth(employee, year, month);
+  return (Number(resolved.baseSalary) || 0) / OT_STANDARD_MONTH_DAYS / OT_STANDARD_DAY_HOURS;
+}
+
+// Số giờ OT tối đa còn đăng ký được trong NGÀY: tổng giờ làm thường + OT ≤ 12h.
+// Làm đủ công (X/L/O = 8h) → tối đa 4h OT; nửa công (P = 4h) → 8h; ngày không đi làm
+// (nghỉ/Chủ nhật) → tối đa 12h.
+function otMaxHoursForDate(employee, dateStr) {
+  const parts = calendarDateParts(dateStr);
+  if (!parts) return 0;
+  const record = employee?.attendance?.[monthKey(parts.year, parts.month)];
+  const code = record?.[parts.day] || record?.[String(parts.day)];
+  const workedValue = code ? (ATTENDANCE_CODES[code]?.value ?? 0) : 0;
+  return Math.max(0, OT_DAY_TOTAL_CAP_HOURS - workedValue * OT_STANDARD_DAY_HOURS);
+}
+
+function otRecordsForEmployee(otRecords, employeeId) {
+  return (otRecords || []).filter((record) => Number(record?.employeeId) === Number(employeeId));
+}
+function otRecordInMonth(record, year, month) {
+  const parts = calendarDateParts(record?.date);
+  return Boolean(parts && parts.year === year && parts.month === month);
+}
+function otRecordInYear(record, year) {
+  const parts = calendarDateParts(record?.date);
+  return Boolean(parts && parts.year === year);
+}
+// Tổng giờ OT đã ghi nhận (chờ duyệt + đã duyệt) — dùng để CHẶN vượt trần khi đăng ký thêm;
+// bản ghi bị từ chối không tính.
+function otCountedHours(records) {
+  return (records || [])
+    .filter((record) => record && record.status !== "rejected")
+    .reduce((sum, record) => sum + (Number(record.hours) || 0), 0);
+}
+// Tiền OT của 1 bản ghi = giờ × lương giờ (theo tháng của ngày OT) × hệ số loại ngày.
+function otRecordAmount(employee, record) {
+  const parts = calendarDateParts(record?.date);
+  if (!parts) return 0;
+  const rate = OT_RATES[record?.type] || OT_RATES.weekday;
+  return (Number(record?.hours) || 0) * otHourlyRateFor(employee, parts.year, parts.month) * (rate / 100);
+}
+// Tổng hợp OT ĐÃ DUYỆT của 1 nhân viên trong tháng — nguồn duy nhất cộng vào Bảng lương.
+function computeOtPay(employee, otRecords, year, month) {
+  const hourlyRate = otHourlyRateFor(employee, year, month);
+  const rows = otRecordsForEmployee(otRecords, employee?.id)
+    .filter((record) => record.status === "approved" && otRecordInMonth(record, year, month));
+  let hours = 0;
+  let amount = 0;
+  const byType = { weekday: 0, weekend: 0, holiday: 0 };
+  rows.forEach((record) => {
+    const recordHours = Number(record.hours) || 0;
+    const type = OT_RATES[record.type] ? record.type : "weekday";
+    hours += recordHours;
+    byType[type] += recordHours;
+    amount += recordHours * hourlyRate * (OT_RATES[type] / 100);
+  });
+  return { hours, amount, byType, hourlyRate, records: rows };
+}
+
 // Sinh bảng chấm công mặc định cho 1 tháng bất kỳ: chỉ tự đặt Chủ nhật = "CN" (sự thật lịch,
 // không phải giả định làm việc). Mọi ngày khác để TRỐNG cho tới khi thực sự chấm công —
 // chưa chấm thì chưa tính công, tránh hiện lương cho ngày chưa ai làm việc thật.
@@ -2369,7 +2460,7 @@ function employeeKpiTiers(e, roleTiers) {
   return Array.isArray(e?.kpiTiersOverride) && e.kpiTiersOverride.length > 0 ? e.kpiTiersOverride : roleTiers;
 }
 
-function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAULT_KPI_TIERS) {
+function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAULT_KPI_TIERS, otRecords = []) {
   e = employeeCompForMonth(e, year, month);
   const contract = CONTRACT_META[e.contractType] || CONTRACT_META.chinh_thuc;
   const months = tenureMonths(e.joined);
@@ -2383,6 +2474,7 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
       customAllowances: [], customAllowanceTotal: 0, customAllowanceConfigured: 0, customAllowanceDeducted: 0,
       months, standardDays, actualDays: 0, fullWorkDays: 0, daySalary: (Number(e.dailySalary) > 0 ? Number(e.dailySalary) : e.baseSalary / standardDays), salaryByDays: 0, kpiBonus: 0, seniorityAllowance: 0, mealAllowance: 0, mealAllowancePerDay: standardDays > 0 ? (Number(e.mealAllowance) || 0) / standardDays : 0, mealAllowanceDeducted: Number(e.mealAllowance) || 0, configuredMealAllowance: Number(e.mealAllowance) || 0, otherBonus: 0, advance: 0, attendanceBonus: 0, hasAbsence: false, kpiMilestoneBonus: 0, kpiMilestonePct: 0, kpiMilestoneNetRevenue: 0, grossIncome: 0,
       usesRevenueModel: e.roleType === "sale" || e.roleType === "ads", mainSalary: 0, commission: 0, compBonus: 0, techUpsale: 0, compStatusLabel: "Tháng chưa bắt đầu — chưa có dữ liệu", compRate: null, revenueUsed: 0,
+      otHours: 0, otPay: 0, otHourlyRate: 0, otByType: { weekday: 0, weekend: 0, holiday: 0 },
       bhxhNV: 0, bhytNV: 0, bhtnNV: 0, employeeInsurance: 0,
       bhxhDN: 0, bhytDN: 0, bhtnDN: 0, bhtnldBnnDN: 0, employerInsurance: 0,
       personalDeduction: 0, taxableIncome: 0, thueTNCN: 0,
@@ -2460,7 +2552,12 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
   }
   mainSalary *= probationRate; // thử việc: nhân hệ số % lương chính thức
 
-  const grossIncome = mainSalary + kpiBonus + commission + compBonus + techUpsale + seniorityAllowance + mealAllowance + otherBonus + attendanceBonus + kpiMilestoneBonus + customAllowances.total;
+  // Tiền tăng ca (OT) — chỉ bản ghi ĐÃ DUYỆT trong tháng, hệ số 150/200/300% trên lương giờ
+  // (lương ngày ÷ 8h) — cùng một gốc lương ngày với salaryByDays nên luôn khớp logic lương.
+  const ot = computeOtPay(e, otRecords, year, month);
+  const otPay = ot.amount * probationRate;
+
+  const grossIncome = mainSalary + kpiBonus + commission + compBonus + techUpsale + seniorityAllowance + mealAllowance + otherBonus + attendanceBonus + kpiMilestoneBonus + customAllowances.total + otPay;
 
   // Bảo hiểm chỉ áp dụng cho hợp đồng chính thức VÀ đủ NGƯỠNG ≥14 ngày công trong tháng (Điều 42
   // Quyết định 595/QĐ-BHXH: NLĐ nghỉ không lương từ 14 ngày làm việc trở lên trong tháng thì
@@ -2513,6 +2610,7 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
     customAllowances: customAllowances.items, customAllowanceTotal: customAllowances.total,
     customAllowanceConfigured: customAllowances.configuredTotal, customAllowanceDeducted: customAllowances.deductedTotal,
     usesRevenueModel, mainSalary, commission, compBonus, techUpsale, compStatusLabel, compRate, revenueUsed,
+    otHours: ot.hours, otPay, otHourlyRate: ot.hourlyRate, otByType: ot.byType,
     bhxhNV, bhytNV, bhtnNV, employeeInsurance, insuranceFixed,
     bhxhDN, bhytDN, bhtnDN, bhtnldBnnDN, employerInsurance,
     personalDeduction, taxableIncome: Math.max(taxableIncome, 0), thueTNCN,
@@ -2682,6 +2780,8 @@ function exportPayrollExcel(payrollRows, payments = [], midMonthRequests = [], p
     "Hoa hồng Sale/Marketing": Math.round(r.commission),
     "Hoa hồng upsale (Kỹ thuật)": Math.round(r.techUpsale),
     "Thưởng KPI": Math.round(r.kpiBonus),
+    "Giờ tăng ca đã duyệt": Number(r.otHours) || 0,
+    "Tiền tăng ca (150-300%)": Math.round(r.otPay || 0),
     "PC thâm niên": Math.round(r.seniorityAllowance),
     "PC ăn trưa": Math.round(r.mealAllowance),
     "PC chuyên cần": Math.round(r.attendanceBonus), "Mất chuyên cần": r.hasAbsence ? "Có" : "Không",
@@ -3151,7 +3251,7 @@ function summarizeMarketingFinance(marketingLogs = [], year, month) {
   }, { revenue: 0, spend: 0 });
 }
 
-function computeMonthSnapshot(year, month, { transactions = [], orders = [], marketingLogs = [], distributionOrders = [], employees = [], inventory = [], kpiTiers = DEFAULT_KPI_TIERS }) {
+function computeMonthSnapshot(year, month, { transactions = [], orders = [], marketingLogs = [], distributionOrders = [], employees = [], inventory = [], kpiTiers = DEFAULT_KPI_TIERS, otRecords = [] }) {
   const inMonth = (dateStr) => {
     const d = new Date(dateStr);
     return !Number.isNaN(d.getTime()) && d.getFullYear() === year && d.getMonth() + 1 === month;
@@ -3183,7 +3283,7 @@ function computeMonthSnapshot(year, month, { transactions = [], orders = [], mar
     if (e.roleType === "sale") effective = { ...effective, salesActual: revenueByEmployee[e.id] || 0 };
     if (e.roleType === "ads") effective = { ...effective, adSpend: marketingByEmployee[e.id]?.adSpend || 0, adRevenue: marketingByEmployee[e.id]?.adRevenue || 0, conversions: marketingByEmployee[e.id]?.conversions || 0 };
     if (e.roleType === "ky_thuat") effective = { ...effective, upsaleValue: upsaleByEmployee[e.id] || 0 };
-    return { ...e, ...computePayroll(effective, year, month, kpiTiers) };
+    return { ...e, ...computePayroll(effective, year, month, kpiTiers, otRecords) };
   });
   const payrollTotal = payrollRows.reduce((a, r) => a + r.net, 0);
   const employeeInsurance = payrollRows.reduce((a, r) => a + r.employeeInsurance, 0);
@@ -3606,6 +3706,9 @@ function DomixApp({ authUser, onLogout }) {
   // chừng cần thanh toán sớm, không đợi tới cuối tháng).
   const [payrollApprovals, setPayrollApprovals] = useState([]);
   const [attendanceRequests, setAttendanceRequests] = useState([]);
+  // Sổ tăng ca (db ot) — mỗi lần OT một bản ghi {employeeId, date, hours, type, status...},
+  // nhân viên gửi chờ duyệt, Sếp/Kế toán duyệt thì tiền OT tự cộng vào Bảng lương.
+  const [otRecords, setOtRecords] = useState([]);
   const [midMonthRequests, setMidMonthRequests] = useState([]);
   const [kpiTiers, setKpiTiers] = useState(DEFAULT_KPI_TIERS);
   const [cvReviews, setCvReviews] = useState([]);
@@ -3749,13 +3852,13 @@ function DomixApp({ authUser, onLogout }) {
     unlockedMonths: Array.from(unlockedMonths),
     capitalContributions, distributionPartners, distributionOrders, payrollPayments, kpiTiers,
     cvReviews, marketingPages, contracts, fixedAssets, leads, supportCases, announcements,
-    chatMessages, payrollApprovals, attendanceRequests, midMonthRequests,
+    chatMessages, payrollApprovals, attendanceRequests, otRecords, midMonthRequests,
     customers, distributionSettlements, stockMovements, paymentLedger, securityAuditLog,
   }), [
     transactions, orders, marketingLogs, debts, inventory, tasks, lang, company, unlockedMonths,
     capitalContributions, distributionPartners, distributionOrders, payrollPayments, kpiTiers,
     cvReviews, marketingPages, contracts, fixedAssets, leads, supportCases, announcements,
-    chatMessages, payrollApprovals, attendanceRequests, midMonthRequests,
+    chatMessages, payrollApprovals, attendanceRequests, otRecords, midMonthRequests,
     customers, distributionSettlements, stockMovements, paymentLedger, securityAuditLog,
   ]);
   const appDataSnapshotRef = useRef(appDataSnapshot);
@@ -3769,7 +3872,7 @@ function DomixApp({ authUser, onLogout }) {
     setTransactions([]); setOrders([]); setMarketingLogs([]); setDebts([]); setInventory([]); setTasks([]);
     setCapitalContributions([]); setDistributionPartners([]); setDistributionOrders([]); setPayrollPayments([]);
     setKpiTiers([]); setCvReviews([]); setMarketingPages([]); setContracts([]); setFixedAssets([]);
-    setLeads([]); setSupportCases([]); setChatMessages([]); setPayrollApprovals([]); setAttendanceRequests([]); setMidMonthRequests([]);
+    setLeads([]); setSupportCases([]); setChatMessages([]); setPayrollApprovals([]); setAttendanceRequests([]); setOtRecords([]); setMidMonthRequests([]);
     setCustomers([]); setDistributionSettlements([]); setStockMovements([]);
     setPaymentLedger([]); setSecurityAuditLog([]);
     // SỐNG CÒN: state vừa bị đưa về rỗng thì các field đó phải coi là CHƯA TẢI LẠI.
@@ -3820,6 +3923,7 @@ function DomixApp({ authUser, onLogout }) {
     if (has("chatMessages")) setChatMessages(data.chatMessages || []);
     if (has("payrollApprovals")) setPayrollApprovals(data.payrollApprovals || []);
     if (has("attendanceRequests")) setAttendanceRequests(data.attendanceRequests || []);
+    if (has("otRecords")) setOtRecords(data.otRecords || []);
     if (has("midMonthRequests")) setMidMonthRequests(data.midMonthRequests || []);
     if (has("customers")) setCustomers(data.customers || []);
     if (has("distributionSettlements")) setDistributionSettlements(data.distributionSettlements || []);
@@ -4343,8 +4447,8 @@ function DomixApp({ authUser, onLogout }) {
   const isCurrentPeriod = reportYear === ATT_YEAR && reportMonth === ATT_MONTH;
 
   const snapshot = useMemo(
-    () => computeMonthSnapshot(reportYear, reportMonth, { transactions, orders, marketingLogs, distributionOrders, employees, inventory, kpiTiers }),
-    [reportYear, reportMonth, transactions, orders, marketingLogs, distributionOrders, employees, inventory, kpiTiers]
+    () => computeMonthSnapshot(reportYear, reportMonth, { transactions, orders, marketingLogs, distributionOrders, employees, inventory, kpiTiers, otRecords }),
+    [reportYear, reportMonth, transactions, orders, marketingLogs, distributionOrders, employees, inventory, kpiTiers, otRecords]
   );
   // Biểu đồ 6 tháng lấy từ cùng FinancialSummaryService với các thẻ Tổng quan.
   // Không tự cộng ở frontend vì sẽ tạo ra một định nghĩa tài chính thứ hai.
@@ -4482,8 +4586,8 @@ function DomixApp({ authUser, onLogout }) {
   // Số liệu tháng trước — dùng để đề xuất phân bổ ngân sách/nhân sự cho tháng đang xem.
   const prevPeriod = reportMonth === 1 ? { year: reportYear - 1, month: 12 } : { year: reportYear, month: reportMonth - 1 };
   const prevSnapshot = useMemo(
-    () => computeMonthSnapshot(prevPeriod.year, prevPeriod.month, { transactions, orders, marketingLogs, distributionOrders, employees, inventory }),
-    [prevPeriod.year, prevPeriod.month, transactions, orders, marketingLogs, employees, inventory]
+    () => computeMonthSnapshot(prevPeriod.year, prevPeriod.month, { transactions, orders, marketingLogs, distributionOrders, employees, inventory, otRecords }),
+    [prevPeriod.year, prevPeriod.month, transactions, orders, marketingLogs, employees, inventory, otRecords]
   );
   const roleGroupStats = useMemo(() => {
     const groups = {};
@@ -5407,12 +5511,12 @@ function DomixApp({ authUser, onLogout }) {
           {tab === "hotro-khach" && <CustomerDirectory currentEmployee={payrollCurrentEmployee} customers={customers} orders={orders} supportCases={supportCases} employees={activeEmployees} setTab={setTab} onCreateSupport={createSupportFromContext} onCreateOrder={createOrderFromContext} onCreateTask={assignTaskFromOps} inventory={inventory} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} canCreateOrder={payrollCurrentIsBoss || payrollCurrentIsAccountant || ["sale", "ky_thuat", "ads"].includes(payrollCurrentEmployee?.roleType)} />}
           {tab === "hotro-congno" && <CongNo key="hotro-congno" debts={debts} setDebts={setDebts} setTransactions={setTransactions} transactions={transactions} paymentLedger={paymentLedger} distributionOrders={distributionOrders} distributionPartners={distributionPartners} setTab={setTab} authUser={effectiveAuthUser} allEmployees={employees} payDebt={payDebt} unpayDebt={unpayDebt} customers={customers} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
           {tab === "chat" && <ChatPage authUser={effectiveAuthUser} onUnreadChange={setChatUnread} employees={employees} tasks={tasks} setTasks={setTasks} setTab={setTab} supportCases={supportCases} setSupportCases={setSupportCases} dataLoader={{ ensureDataFields, applyAppData }} />}
-          {(tab === "donhang" || tab === "hotro-donhang") && <RevenueFinanceHub key={tab} ordersOnly={tab === "hotro-donhang"} recordFocus={recordFocus} onRecordFocusConsumed={() => setRecordFocus(null)} onReturnToOps={returnToOps} orderPrefill={orderPrefill} onOrderPrefillConsumed={() => setOrderPrefill(null)} financialSummary={financialSummary} financialSummaryError={financialSummaryError} refreshFinancialSummary={refreshFinancialSummary} transactions={transactions} setTransactions={setTransactions} orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} payrollRows={payrollRows} kpiTiers={kpiTiers} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} revenueByEmployee={revenueByEmployee} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} debts={debts} setDebts={setDebts} company={company} unlockedMonths={unlockedMonths} onOpenReceivables={() => setTab("congno")} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
-          {tab === "crm" && <RevenueFinanceHub onOpenReceivables={() => setTab("congno")} financialSummary={financialSummary} financialSummaryError={financialSummaryError} refreshFinancialSummary={refreshFinancialSummary} transactions={transactions} setTransactions={setTransactions} orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} payrollRows={payrollRows} kpiTiers={kpiTiers} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} revenueByEmployee={revenueByEmployee} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} debts={debts} setDebts={setDebts} company={company} unlockedMonths={unlockedMonths} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
+          {(tab === "donhang" || tab === "hotro-donhang") && <RevenueFinanceHub key={tab} otRecords={otRecords} ordersOnly={tab === "hotro-donhang"} recordFocus={recordFocus} onRecordFocusConsumed={() => setRecordFocus(null)} onReturnToOps={returnToOps} orderPrefill={orderPrefill} onOrderPrefillConsumed={() => setOrderPrefill(null)} financialSummary={financialSummary} financialSummaryError={financialSummaryError} refreshFinancialSummary={refreshFinancialSummary} transactions={transactions} setTransactions={setTransactions} orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} payrollRows={payrollRows} kpiTiers={kpiTiers} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} revenueByEmployee={revenueByEmployee} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} debts={debts} setDebts={setDebts} company={company} unlockedMonths={unlockedMonths} onOpenReceivables={() => setTab("congno")} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
+          {tab === "crm" && <RevenueFinanceHub otRecords={otRecords} onOpenReceivables={() => setTab("congno")} financialSummary={financialSummary} financialSummaryError={financialSummaryError} refreshFinancialSummary={refreshFinancialSummary} transactions={transactions} setTransactions={setTransactions} orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} payrollRows={payrollRows} kpiTiers={kpiTiers} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} revenueByEmployee={revenueByEmployee} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} debts={debts} setDebts={setDebts} company={company} unlockedMonths={unlockedMonths} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
           {tab === "marketing" && <MarketingDaily logs={marketingLogs} setLogs={setMarketingLogs} employees={activeEmployees} marketingByEmployee={marketingByEmployee} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setPages={setMarketingPages} orders={orders} inventory={inventory} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} positionAccess={positionAccess} leads={leads} setLeads={setLeads} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
-          {tab === "nhansu" && <NhanSu authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} onEmployeesPersisted={applyPersistedEmployees} refreshEmployees={refreshEmployees} showForm={showEmpForm} setShowForm={setShowEmpForm} reportYear={reportYear} reportMonth={reportMonth} prefillEmployee={prefillEmployee} setPrefillEmployee={setPrefillEmployee} onOpenProfile={setProfileEmployeeId} lang={lang} />}
+          {tab === "nhansu" && <NhanSu authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} onEmployeesPersisted={applyPersistedEmployees} refreshEmployees={refreshEmployees} showForm={showEmpForm} setShowForm={setShowEmpForm} reportYear={reportYear} reportMonth={reportMonth} prefillEmployee={prefillEmployee} setPrefillEmployee={setPrefillEmployee} onOpenProfile={setProfileEmployeeId} lang={lang} otRecords={otRecords} />}
           {tab === "tuyendung" && <><BetaFeatureNotice /><TuyenDungAI cvReviews={cvReviews} setCvReviews={setCvReviews} employees={activeEmployees} masterRanking={masterRanking} company={company} queue={cvQueue} setQueue={setCvQueue} processing={cvProcessing} setProcessing={setCvProcessing} progress={cvProgress} setProgress={setCvProgress} setPrefillEmployee={setPrefillEmployee} setTab={setTab} setShowEmpForm={setShowEmpForm} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} /></>}
-          {tab === "chamcong" && <ChamCong authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} refreshEmployees={refreshEmployees} employeesSyncing={employeesSyncing} employeeSyncError={employeeSyncError} attendanceRequests={attendanceRequests} setAttendanceRequests={setAttendanceRequests} unlockedMonths={unlockedMonths} setUnlockedMonths={setUnlockedMonths} company={company} lang={lang} dataLoader={{ ensureDataFields }} />}
+          {tab === "chamcong" && <ChamCong authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} refreshEmployees={refreshEmployees} employeesSyncing={employeesSyncing} employeeSyncError={employeeSyncError} attendanceRequests={attendanceRequests} setAttendanceRequests={setAttendanceRequests} otRecords={otRecords} setOtRecords={setOtRecords} unlockedMonths={unlockedMonths} setUnlockedMonths={setUnlockedMonths} company={company} lang={lang} reportYear={reportYear} reportMonth={reportMonth} dataLoader={{ ensureDataFields }} />}
           {tab === "hieusuat" && <HieuSuat employees={effectiveActiveEmployees} masterRanking={masterRanking} supportCases={supportCases} financialSummary={financialSummary} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} onOpenProfile={setProfileEmployeeId} currentEmployeeId={payrollCurrentEmployee?.id ?? null} />}
           {tab === "luong" && <BangLuong payrollRows={payrollRows} totalPayroll={totalPayroll} setEmployees={setEmployees} reportYear={reportYear} reportMonth={reportMonth} setTransactions={setTransactions} payrollPayments={payrollPayments} setPayrollPayments={setPayrollPayments} company={company} kpiTiers={kpiTiers} setKpiTiers={setKpiTiers} payrollApprovals={payrollApprovals} setPayrollApprovals={setPayrollApprovals} midMonthRequests={midMonthRequests} setMidMonthRequests={setMidMonthRequests} employees={employees} authUser={effectiveAuthUser} applyAppData={applyAppData} refreshFinancialSummary={refreshFinancialSummary} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
           {tab === "quy" && <QuarterReport transactions={transactions} orders={orders} marketingLogs={marketingLogs} employees={employees} reportYear={reportYear} reportMonth={reportMonth} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
@@ -5555,7 +5659,7 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
   // mọi cảnh báo dẫn về đúng màn hình nguồn, không sửa dữ liệu chuyên môn tại chỗ.
   const [activeTableView, setActiveTableView] = useState(initialView || "finance");
   const lazyTableData = useLazyTableData(activeTableView, {
-    finance: ["transactions", "orders", "marketingLogs", "debts", "capitalContributions", "kpiTiers", "inventory", "stockMovements", "distributionOrders", "payrollPayments", "payrollApprovals", "supportCases", "tasks", "attendanceRequests"],
+    finance: ["transactions", "orders", "marketingLogs", "debts", "capitalContributions", "kpiTiers", "inventory", "stockMovements", "distributionOrders", "payrollPayments", "payrollApprovals", "supportCases", "tasks", "attendanceRequests", "otRecords"],
     actions: ["orders", "distributionOrders", "inventory", "stockMovements", "cvReviews", "debts", "contracts", "transactions", "leads", "supportCases", "tasks", "attendanceRequests"],
     recent: ["transactions"],
   }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
@@ -6577,7 +6681,10 @@ function ThuChi({ transactions, setTransactions, showForm, setShowForm, company,
           )}
           {form.invoiceType === "Chưa xác định" && <div className="mt-3 text-xs text-stamp-red flex items-center gap-1.5"><AlertTriangle size={13} /> Giao dịch sẽ được đánh dấu "chờ bổ sung hóa đơn" cho đến khi cập nhật loại hóa đơn.</div>}
           {blockedMsg && <div className="mt-3 text-xs text-stamp-red flex items-center gap-1.5"><AlertTriangle size={13} /> {blockedMsg}</div>}
-          <button onClick={addTx} className="mt-4 bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">{editingId ? "Cập nhật giao dịch" : "Lưu giao dịch"}</button>
+          <div className="domix-form-actions">
+            <button type="button" onClick={closeForm} className="domix-btn-secondary">Hủy</button>
+            <button type="button" onClick={addTx} className="domix-btn-primary">{editingId ? "Cập nhật giao dịch" : "Lưu giao dịch"}</button>
+          </div>
         </div>
       )}
 
@@ -7031,7 +7138,7 @@ function VonGop({ contributions, setContributions, company, setCompany, totalCon
             <p className="mt-2 text-[11px] text-gold flex items-center gap-1.5"><AlertTriangle size={12} /> Tài sản góp vốn không phải tiền mặt phải được định giá bởi thành viên/cổ đông sáng lập hoặc tổ chức thẩm định giá (Điều 36 Luật Doanh nghiệp 2020).</p>
           )}
           {saveError && <p className="mt-2 text-xs text-stamp-red flex items-center gap-1"><AlertTriangle size={12} /> {saveError}</p>}
-          <button onClick={saveContribution} className="mt-4 bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">{editingContributionId ? "Cập nhật lượt góp vốn" : "Lưu lượt góp vốn"}</button>
+          <div className="domix-form-actions"><button onClick={saveContribution} className="domix-btn-primary">{editingContributionId ? "Cập nhật lượt góp vốn" : "Lưu lượt góp vốn"}</button></div>
         </div>
       )}
 
@@ -8027,9 +8134,9 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
             )}
 
             {partnerFormError && <p className="mt-2 text-xs text-stamp-red flex items-center gap-1"><AlertTriangle size={12} /> {partnerFormError}</p>}
-            <div className="flex gap-2 mt-3">
-              <button onClick={addPartner} className="text-xs bg-ledger-green text-white px-3 py-1.5 rounded-md">{editingPartnerId ? "Cập nhật đối tác" : "Lưu đối tác"}</button>
-              <button onClick={closePartnerForm} className="text-xs border border-paper-line px-3 py-1.5 rounded-md text-muted">Huỷ</button>
+            <div className="domix-form-actions">
+              <button onClick={closePartnerForm} className="domix-btn-secondary">Huỷ</button>
+              <button onClick={addPartner} className="domix-btn-primary">{editingPartnerId ? "Cập nhật đối tác" : "Lưu đối tác"}</button>
             </div>
           </div>
         )}
@@ -8168,7 +8275,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
             );
           })()}
           {orderFormError && <p className="mt-2 text-xs text-stamp-red flex items-center gap-1"><AlertTriangle size={12} /> {orderFormError}</p>}
-          <button onClick={addDistOrder} className="mt-4 bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">Lưu đơn</button>
+          <div className="domix-form-actions"><button onClick={addDistOrder} className="domix-btn-primary">Lưu đơn</button></div>
         </div>
       )}
 
@@ -8214,7 +8321,7 @@ function HopTacPhanPhoi({ partners, setPartners, distOrders, setDistOrders, setT
             );
           })()}
           {purchaseErr && <p className="text-xs text-stamp-red mt-2 flex items-center gap-1"><AlertTriangle size={12} /> {purchaseErr}</p>}
-          <button onClick={addPurchase} className="mt-4 bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">Lưu đơn nhập hàng</button>
+          <div className="domix-form-actions"><button onClick={addPurchase} className="domix-btn-primary">Lưu đơn nhập hàng</button></div>
         </div>
       )}
 
@@ -8505,9 +8612,9 @@ function HopDong({ contracts, setContracts, partners, employees }) {
             <label className="text-xs text-muted flex flex-col gap-1 col-span-3">Ghi chú<input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
           </div>
           {saveError && <p className="mt-2 text-xs text-stamp-red flex items-center gap-1"><AlertTriangle size={12} /> {saveError}</p>}
-          <div className="flex gap-2 mt-3">
-            <button onClick={saveContract} className="bg-ledger-green text-white text-sm px-3 py-1.5 rounded-md">{editingContractId ? "Cập nhật" : "Lưu"}</button>
-            <button onClick={async () => { if ((form.name || form.partyName) && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setSaveError(""); setShowForm(false); }} className="border border-paper-line text-sm px-3 py-1.5 rounded-md text-muted">Huỷ</button>
+          <div className="domix-form-actions">
+            <button onClick={async () => { if ((form.name || form.partyName) && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setSaveError(""); setShowForm(false); }} className="domix-btn-secondary">Huỷ</button>
+            <button onClick={saveContract} className="domix-btn-primary">{editingContractId ? "Cập nhật hợp đồng" : "Lưu hợp đồng"}</button>
           </div>
         </div>
       )}
@@ -8929,7 +9036,7 @@ function CongNo({ debts, setDebts, setTransactions, transactions, paymentLedger 
             <label className="text-xs text-muted flex flex-col gap-1 col-span-2">Ghi chú<input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
           </div>
           {saveError && <p className="mt-3 text-xs text-stamp-red flex items-center gap-1"><AlertTriangle size={12} /> {saveError}</p>}
-          <button onClick={saveDebt} className="mt-4 bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">{editingDebtId ? "Cập nhật công nợ" : "Lưu công nợ"}</button>
+          <div className="domix-form-actions"><button onClick={saveDebt} className="domix-btn-primary">{editingDebtId ? "Cập nhật công nợ" : "Lưu công nợ"}</button></div>
         </div>
       )}
 
@@ -9215,9 +9322,9 @@ function TaiSanCoDinh({ assets, setAssets, setTransactions, reportYear, reportMo
             <p className="text-[11px] text-ink-light mt-2">Khấu hao/phân bổ mỗi tháng: <strong className="ktns-mono">{fmtVND(Number(form.cost) / Number(form.usefulMonths))}</strong></p>
           )}
           {saveError && <p className="mt-2 text-xs text-stamp-red flex items-center gap-1"><AlertTriangle size={12} /> {saveError}</p>}
-          <div className="flex gap-2 mt-3">
-            <button onClick={saveAsset} className="bg-ledger-green text-white text-sm px-3 py-1.5 rounded-md">{editingAssetId ? "Cập nhật" : "Lưu"}</button>
-            <button onClick={async () => { if ((form.name || form.cost) && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setSaveError(""); setShowForm(false); }} className="border border-paper-line text-sm px-3 py-1.5 rounded-md text-muted">Huỷ</button>
+          <div className="domix-form-actions">
+            <button onClick={async () => { if ((form.name || form.cost) && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; setSaveError(""); setShowForm(false); }} className="domix-btn-secondary">Huỷ</button>
+            <button onClick={saveAsset} className="domix-btn-primary">{editingAssetId ? "Cập nhật tài sản" : "Lưu tài sản"}</button>
           </div>
         </div>
       )}
@@ -9464,8 +9571,40 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
   const historyProduct = historyProductId === null ? null : inventory.find((product) => String(product.id) === String(historyProductId)) || null;
   const requestAdjustStock = (product, delta) => {
     if (!canEditProduct(product) || !moveStock) return;
-    setPendingAdjust({ id: product.id, delta, productName: product.name });
+    setPendingAdjust({ id: product.id, delta, productName: product.name, currentStock: Number(product.stock) || 0 });
     setAdjustReason("");
+  };
+  // SỬA TỒN TRỰC TIẾP: bấm vào con số tồn kho để gõ số mới — hệ thống tự tính chênh lệch
+  // và vẫn đi qua ĐÚNG luồng movement adjustment_in/out + lý do, không ghi đè số lặng lẽ.
+  const [stockEditProductId, setStockEditProductId] = useState(null);
+  const [stockEditValue, setStockEditValue] = useState("");
+  // Escape hủy sửa: blur ngay sau đó KHÔNG được commit giá trị đang gõ dở.
+  const stockEditSkipCommitRef = useRef(false);
+  const startStockEdit = (product) => {
+    if (!canEditProduct(product) || !moveStock) return;
+    stockEditSkipCommitRef.current = false;
+    setStockEditProductId(product.id);
+    setStockEditValue(String(product.stock ?? 0));
+  };
+  const cancelStockEdit = () => {
+    stockEditSkipCommitRef.current = true;
+    setStockEditProductId(null);
+    setStockEditValue("");
+  };
+  const commitStockEdit = (product) => {
+    if (stockEditSkipCommitRef.current) {
+      stockEditSkipCommitRef.current = false;
+      return;
+    }
+    const raw = String(stockEditProductId) === String(product.id) ? stockEditValue : "";
+    setStockEditProductId(null);
+    setStockEditValue("");
+    if (raw === "" || raw === null) return;
+    const target = Math.round(Number(raw));
+    if (!Number.isFinite(target) || target < 0) return;
+    const delta = target - (Number(product.stock) || 0);
+    if (delta === 0) return;
+    requestAdjustStock(product, delta); // vẫn bắt buộc nhập lý do như nút +/−
   };
   const confirmAdjustStock = () => {
     if (!pendingAdjust || !adjustReason.trim()) return;
@@ -9600,8 +9739,6 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2">
-      <div style={{ display: activeTableView === "inventory" ? undefined : "none" }} className="shrink-0 rounded-lg border border-paper-line bg-white px-3 py-2 text-xs text-muted">Mọi nhân viên đều xem và thao tác được toàn bộ Kho hàng. Mỗi lần thêm/sửa đều được ghi lịch sử (ai, lúc nào) và thông báo cho toàn công ty.</div>
-
       <div className="shrink-0">
         <SectionViewSwitcher
           value={activeTableView}
@@ -9611,7 +9748,10 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
       </div>
 
       <div style={{ display: activeTableView === "inventory" ? "flex" : "none" }} className="shrink-0 justify-between items-center flex-wrap gap-2">
-        <p className="text-xs text-muted">{showDiscontinued ? `${discontinuedInventory.length} sản phẩm đã ngừng kinh doanh (giữ nguyên lịch sử kho).` : `${visibleInventory.length} sản phẩm bạn được phép xem.`}</p>
+        <p className="text-xs text-muted">
+          {showDiscontinued ? `${discontinuedInventory.length} sản phẩm đã ngừng kinh doanh (giữ nguyên lịch sử kho).` : `${visibleInventory.length} sản phẩm.`}
+          {" "}<span className="cursor-help" title="Mọi nhân viên đều xem và thao tác được toàn bộ Kho hàng. Mỗi lần thêm/sửa đều được ghi lịch sử (ai, lúc nào) và thông báo cho toàn công ty.">ⓘ</span>
+        </p>
         <div className="flex gap-2">
           {discontinuedInventory.length > 0 && (
             <button onClick={() => setShowDiscontinued((v) => !v)} className={`flex items-center gap-1.5 text-sm px-3.5 py-2 rounded-md border ${showDiscontinued ? "border-gold bg-gold/15 text-[#92610A] font-semibold" : "border-paper-line text-ink-light hover:border-gold/60"}`} title="Sản phẩm ngừng kinh doanh được ẩn khỏi danh mục làm việc — bấm để xem/khôi phục">
@@ -9655,14 +9795,18 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
             </div>
           )}
           {productSaveError && <p className="mt-3 text-xs text-stamp-red">{productSaveError}</p>}
-          <button type="button" onClick={saveProduct} disabled={productSaving} className="mt-4 bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">{productSaving ? "Đang lưu..." : editingProductId !== null ? "Lưu thay đổi" : "Lưu sản phẩm"}</button>
+          <div className="domix-form-actions">
+            <button type="button" onClick={async () => { const dirty = JSON.stringify(form) !== productFormBaselineRef.current; if (dirty && !(await confirmOverlay("Chưa lưu — đóng lại sẽ mất thông tin vừa nhập. Vẫn muốn đóng?", { title: "Dữ liệu chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return; resetProductForm(); }} className="domix-btn-secondary">Hủy</button>
+            <button type="button" onClick={saveProduct} disabled={productSaving} className="domix-btn-primary">{productSaving ? "Đang lưu..." : editingProductId !== null ? "Lưu thay đổi" : "Lưu sản phẩm"}</button>
+          </div>
         </div>
       )}
 
       {pendingAdjust && (
         <div className="fixed inset-0 bg-ink/40 flex items-center justify-center z-50 p-4" onClick={() => setPendingAdjust(null)}>
           <div className="bg-white rounded-lg p-5 w-full max-w-sm shadow-xl" onClick={(ev) => ev.stopPropagation()}>
-            <h3 className="ktns-serif font-semibold text-ink mb-1">{pendingAdjust.delta > 0 ? "Cộng thêm" : "Trừ bớt"} 1 {pendingAdjust.productName}</h3>
+            <h3 className="ktns-serif font-semibold text-ink mb-1">{pendingAdjust.delta > 0 ? "Cộng thêm" : "Trừ bớt"} {Math.abs(pendingAdjust.delta)} {pendingAdjust.productName}</h3>
+            <p className="text-xs text-muted mb-1">Tồn kho: <span className="ktns-mono font-semibold text-ink">{pendingAdjust.currentStock}</span> → <span className="ktns-mono font-semibold text-[#3C50E0]">{Math.max(0, pendingAdjust.currentStock + pendingAdjust.delta)}</span></p>
             <p className="text-xs text-muted mb-3">Bắt buộc nhập lý do — Nhật ký kho lưu lại để tra cứu vì sao tồn kho thay đổi.</p>
             <label className="text-xs text-muted flex flex-col gap-1">
               Lý do điều chỉnh
@@ -9675,9 +9819,9 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
                 className="border border-paper-line rounded px-2 py-1.5 text-sm"
               />
             </label>
-            <div className="flex justify-end gap-2 mt-4">
-              <button type="button" onClick={() => setPendingAdjust(null)} className="text-sm px-3.5 py-2 rounded-md border border-paper-line text-muted hover:text-ink">Hủy</button>
-              <button type="button" disabled={!adjustReason.trim()} onClick={confirmAdjustStock} className="text-sm bg-ink text-white px-3.5 py-2 rounded-md hover:bg-ink-light disabled:opacity-50 disabled:cursor-not-allowed">Xác nhận</button>
+            <div className="domix-form-actions">
+              <button type="button" onClick={() => setPendingAdjust(null)} className="domix-btn-secondary">Hủy</button>
+              <button type="button" disabled={!adjustReason.trim()} onClick={confirmAdjustStock} className="domix-btn-primary">Xác nhận điều chỉnh</button>
             </div>
           </div>
         </div>
@@ -9815,10 +9959,24 @@ function KhoHang({ inventory, setInventory, orders, distOrders, distPartners, mo
                       <td className="px-4 py-2 ktns-mono text-xs text-muted">{p.sku}</td>
                       <td className="px-4 py-2 font-medium">{p.name} <span className="text-[11px] text-muted">/{p.unit}</span></td>
                       <td className="px-4 py-2 text-right">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {canEditProduct(p) && <button onClick={() => requestAdjustStock(p, -1)} className="w-5 h-5 rounded border border-paper-line text-muted hover:border-stamp-red hover:text-stamp-red text-xs">−</button>}
-                          <span className="ktns-mono w-10 text-center">{p.stock}</span>
-                          {canEditProduct(p) && <button onClick={() => requestAdjustStock(p, 1)} className="w-5 h-5 rounded border border-paper-line text-muted hover:border-ledger-green hover:text-ledger-green text-xs">+</button>}
+                        {/* Ô INPUT cố định — gõ số tồn mới rồi Enter/rời ô; chênh lệch vẫn đi qua
+                            modal lý do + nhật ký kho. Nút −/+ chỉnh nhanh 1 đơn vị hai bên. */}
+                        <div className="flex items-center justify-end gap-1">
+                          {canEditProduct(p) && <button onClick={() => requestAdjustStock(p, -1)} title="Trừ 1 (nhập lý do)" aria-label={`Trừ 1 tồn kho ${p.name}`} className="h-7 w-7 shrink-0 rounded border border-paper-line text-muted hover:border-stamp-red hover:text-stamp-red text-sm font-semibold">−</button>}
+                          <input
+                            type="number"
+                            min="0"
+                            value={String(stockEditProductId) === String(p.id) ? stockEditValue : String(p.stock ?? 0)}
+                            disabled={!canEditProduct(p)}
+                            onFocus={() => startStockEdit(p)}
+                            onChange={(e) => setStockEditValue(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { cancelStockEdit(); e.currentTarget.blur(); } }}
+                            onBlur={() => commitStockEdit(p)}
+                            title={canEditProduct(p) ? "Gõ số tồn kho mới rồi Enter — hệ thống tự tính chênh lệch và ghi nhật ký kèm lý do" : undefined}
+                            aria-label={`Tồn kho ${p.name}`}
+                            className="h-7 w-16 shrink-0 rounded border border-paper-line bg-white px-1 text-center text-sm ktns-mono focus:border-[#3C50E0] focus:ring-1 focus:ring-[#3C50E0] outline-none disabled:border-transparent disabled:bg-transparent"
+                          />
+                          {canEditProduct(p) && <button onClick={() => requestAdjustStock(p, 1)} title="Cộng 1 (nhập lý do)" aria-label={`Cộng 1 tồn kho ${p.name}`} className="h-7 w-7 shrink-0 rounded border border-paper-line text-muted hover:border-ledger-green hover:text-ledger-green text-sm font-semibold">+</button>}
                         </div>
                       </td>
                       <td className="px-4 py-2 text-right ktns-mono text-muted">{fmtVND(p.costPrice)}</td>
@@ -13408,8 +13566,8 @@ Nhiệm vụ đã có lịch sử (nhận việc/báo cáo/duyệt) — xóa s�
             </div>
 
             <div className="px-6 py-4 border-t border-paper-line bg-paper/30 flex justify-end gap-3">
-              <button onClick={closeForm} className="border border-paper-line text-ink px-5 py-2.5 rounded-lg text-sm">Hủy</button>
-              <button onClick={addTask} className="bg-ledger-green text-white px-5 py-2.5 rounded-lg text-sm font-semibold">{editingTaskId ? "Lưu thay đổi" : "Giao việc"}</button>
+              <button onClick={closeForm} className="domix-btn-secondary">Hủy</button>
+              <button onClick={addTask} className="domix-btn-primary">{editingTaskId ? "Lưu thay đổi" : "Giao việc"}</button>
             </div>
           </div>
         </div>
@@ -13920,7 +14078,7 @@ function FinanceScrollableTable({ children, minWidth = 980, className = "" }) {
   );
 }
 
-function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFinancialSummary, transactions, setTransactions, orders, setOrders, leads, setLeads, employees, payrollRows, kpiTiers, marketingLogs, reportYear, reportMonth, authUser, currentEmployee, revenueByEmployee, inventory, setInventory, distPartners, distOrders, setDistOrders, pages, setSupportCases, customers, setCustomers, moveStock, debts, setDebts, company, unlockedMonths, ordersOnly = false, onOpenReceivables, recordFocus, onRecordFocusConsumed, onReturnToOps, orderPrefill, onOrderPrefillConsumed, dataLoader }) {
+function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFinancialSummary, transactions, setTransactions, orders, setOrders, leads, setLeads, employees, payrollRows, kpiTiers, marketingLogs, reportYear, reportMonth, authUser, currentEmployee, revenueByEmployee, inventory, setInventory, distPartners, distOrders, setDistOrders, pages, setSupportCases, customers, setCustomers, moveStock, debts, setDebts, company, unlockedMonths, ordersOnly = false, onOpenReceivables, recordFocus, onRecordFocusConsumed, onReturnToOps, orderPrefill, onOrderPrefillConsumed, dataLoader, otRecords = [] }) {
   const isFullAccess = isAdminRole(authUser?.role) || isAccountantRole(authUser?.role);
   const canManageSalesOrders = isFullAccess || ["sale", "ky_thuat"].includes(currentEmployee?.roleType);
   const ownEmployeeId = currentEmployee?.id ? Number(currentEmployee.id) : null;
@@ -14023,8 +14181,8 @@ function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFin
     if (Number(periodYear) === Number(reportYear) && Number(periodMonth) === Number(reportMonth)) return payrollRows || [];
     return (employees || [])
       .filter((employee) => isEmployeeActiveInMonth(employee, periodYear, periodMonth))
-      .map((employee) => ({ ...employee, ...computePayroll(employee, periodYear, periodMonth, kpiTiers || DEFAULT_KPI_TIERS) }));
-  }, [payrollRows, employees, kpiTiers, periodYear, periodMonth, reportYear, reportMonth]);
+      .map((employee) => ({ ...employee, ...computePayroll(employee, periodYear, periodMonth, kpiTiers || DEFAULT_KPI_TIERS, otRecords) }));
+  }, [payrollRows, employees, kpiTiers, periodYear, periodMonth, reportYear, reportMonth, otRecords]);
   const visiblePayrollRows = useMemo(() => periodPayrollRows.filter((row) => canSeeEmployee(row.id)), [periodPayrollRows, canSeeEmployee]);
 
   const incomeRows = useMemo(() => periodTransactions.filter((item) => item.kind === "thu"), [periodTransactions]);
@@ -14149,7 +14307,7 @@ function RevenueFinanceHub({ financialSummary, financialSummaryError, refreshFin
     const staffGross = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.grossIncome) || 0), 0);
     const staffSalary = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.salaryByDays) || 0), 0);
     const staffBonus = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.commission) || 0) + (Number(row.kpiBonus) || 0)
-      + (Number(row.kpiMilestoneBonus) || 0) + (Number(row.compBonus) || 0) + (Number(row.techUpsale) || 0) + (Number(row.otherBonus) || 0), 0);
+      + (Number(row.kpiMilestoneBonus) || 0) + (Number(row.compBonus) || 0) + (Number(row.techUpsale) || 0) + (Number(row.otherBonus) || 0) + (Number(row.otPay) || 0), 0);
     const staffAllowance = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.mealAllowance) || 0)
       + (Number(row.seniorityAllowance) || 0) + (Number(row.attendanceBonus) || 0) + (Number(row.customAllowanceTotal) || 0), 0);
     const employerInsurance = visiblePayrollRows.reduce((sum, row) => sum + (Number(row.employerInsurance) || 0), 0);
@@ -16255,9 +16413,9 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
           </div>
           <p className="mt-2 text-[11px] text-muted">Hệ thống tự ghi nhận <strong className="text-ink">bạn là người thu thập</strong> thông tin khách này — dùng cho thống kê nguồn khai thác, không sửa được.</p>
           {leadFormError && <p className="mt-1 text-xs text-stamp-red flex items-center gap-1"><AlertTriangle size={12} /> {leadFormError}</p>}
-          <div className="flex gap-2 mt-2">
-            <button onClick={addLead} className="text-xs bg-ledger-green text-white px-3 py-1.5 rounded-md hover:opacity-90">Lưu khách hàng tiềm năng</button>
-            <button onClick={closeLeadForm} className="text-xs border border-paper-line px-3 py-1.5 rounded-md text-muted">Huỷ</button>
+          <div className="domix-form-actions">
+            <button onClick={closeLeadForm} className="domix-btn-secondary">Huỷ</button>
+            <button onClick={addLead} className="domix-btn-primary">Lưu khách hàng tiềm năng</button>
           </div>
         </div>
       )}
@@ -16805,9 +16963,9 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                 if (hasInput && !(await confirmOverlay("Bạn đã nhập thông tin đơn hàng nhưng chưa bấm Lưu — đóng lại sẽ MẤT hết thông tin vừa nhập. Vẫn muốn đóng?", { title: "Đơn hàng chưa được lưu", confirmLabel: "Đóng form", tone: "danger" }))) return;
                 setShowForm(false);
               }}
-              className="rounded-md border border-paper-line px-4 py-2 text-sm text-muted transition-colors hover:text-ink"
+              className="domix-btn-secondary"
             >Hủy</button>
-            <button type="button" onClick={addOrder} className="min-h-[40px] rounded-md bg-ledger-green px-5 py-2 text-sm font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-45" disabled={orderSubmitting}>{orderSubmitting ? "Đang lưu..." : "Lưu đơn hàng"}</button>
+            <button type="button" onClick={addOrder} className="domix-btn-primary" disabled={orderSubmitting}>{orderSubmitting ? "Đang lưu..." : "Lưu đơn hàng"}</button>
           </div>
         </div>
       )}
@@ -17268,10 +17426,10 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                 ))}
               </div>
             )}
-            <div className="flex gap-2 mt-4 items-center">
-              <button onClick={saveOrderEdit} className="bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">Lưu thay đổi</button>
-              <button onClick={() => { setEditingOrder(null); startEditCustomer(editingOrder); }} className="border border-paper-line text-sm px-4 py-2 rounded-md text-ink hover:border-[#3C50E0]/60">Sửa hồ sơ khách hàng</button>
-              <button onClick={() => setEditingOrder(null)} className="border border-paper-line text-sm px-4 py-2 rounded-md text-muted ml-auto">Đóng</button>
+            <div className="domix-form-actions">
+              <button onClick={() => { setEditingOrder(null); startEditCustomer(editingOrder); }} className="domix-btn-secondary mr-auto">Sửa hồ sơ khách hàng</button>
+              <button onClick={() => setEditingOrder(null)} className="domix-btn-secondary">Đóng</button>
+              <button onClick={saveOrderEdit} className="domix-btn-primary">Lưu thay đổi</button>
             </div>
           </div>
         </div>
@@ -17359,9 +17517,9 @@ function DoanhThuCRM({ orders, setOrders, leads, setLeads, employees, currentEmp
                 ))}
               </div>
             )}
-            <div className="flex gap-2 mt-4">
-              <button onClick={saveCustomer} className="bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90">Lưu hồ sơ khách</button>
-              <button onClick={() => setEditingCustomer(null)} className="border border-paper-line text-sm px-4 py-2 rounded-md text-muted">Đóng</button>
+            <div className="domix-form-actions">
+              <button onClick={() => setEditingCustomer(null)} className="domix-btn-secondary">Đóng</button>
+              <button onClick={saveCustomer} className="domix-btn-primary">Lưu hồ sơ khách</button>
             </div>
           </div>
         </div>
@@ -17952,9 +18110,9 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
             </div>
             <p className="text-[10px] text-muted mt-2">Danh sách trên luôn lấy đúng người đang làm việc thật ở tab Nhân sự — thêm nhân sự Sale/Marketing mới thì mở "Sửa Page" là thấy ngay, tick thêm là xong, không cần tạo lại Page.</p>
             {pageFormError && <p className="mt-2 text-xs text-stamp-red flex items-center gap-1"><AlertTriangle size={12} /> {pageFormError}</p>}
-            <div className="flex gap-2 mt-3">
-              <button onClick={addPage} className="text-xs bg-ledger-green text-white px-3 py-1.5 rounded-md">{editingPageId ? "Cập nhật Page" : "Lưu Page"}</button>
-              <button onClick={closePageForm} className="text-xs border border-paper-line px-3 py-1.5 rounded-md text-muted">Huỷ</button>
+            <div className="domix-form-actions">
+              <button onClick={closePageForm} className="domix-btn-secondary">Huỷ</button>
+              <button onClick={addPage} className="domix-btn-primary">{editingPageId ? "Cập nhật Page" : "Lưu Page"}</button>
             </div>
           </div>
         )}
@@ -18263,7 +18421,7 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
           </div>
 
           {logFormError && <p className="mt-2 text-xs text-stamp-red flex items-center gap-1"><AlertTriangle size={12} /> {logFormError}</p>}
-          <button onClick={addLog} disabled={logSaving} className="mt-4 bg-ledger-green text-white text-sm px-4 py-2 rounded-md hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60">{logSaving ? "Đang lưu & tạo đơn..." : editingLogId !== null ? "Lưu cập nhật" : "Lưu"}</button>
+          <div className="domix-form-actions"><button onClick={addLog} disabled={logSaving} className="domix-btn-primary">{logSaving ? "Đang lưu & tạo đơn..." : editingLogId !== null ? "Lưu cập nhật" : "Lưu số liệu ngày"}</button></div>
         </div>
       )}
 
@@ -18369,7 +18527,7 @@ function MarketingDaily({ logs: allLogs, setLogs, employees, marketingByEmployee
 }
 
 // ---------- Chấm công ----------
-function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employeesSyncing = false, employeeSyncError = "", attendanceRequests = [], setAttendanceRequests, unlockedMonths, setUnlockedMonths, company, lang = "vi", dataLoader }) {
+function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employeesSyncing = false, employeeSyncError = "", attendanceRequests = [], setAttendanceRequests, otRecords = [], setOtRecords, unlockedMonths, setUnlockedMonths, company, lang = "vi", reportYear = ATT_YEAR, reportMonth = ATT_MONTH, dataLoader }) {
   const ui = (vi, en) => lang === "en" ? en : vi;
   const attendanceLabel = (code) => lang === "en" ? (ATTENDANCE_CODE_LABELS_EN[code] || code) : (ATTENDANCE_CODES[code]?.label || code);
   const attendanceMonthLabel = (year, month) => lang === "en"
@@ -18379,8 +18537,10 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
   const currentIsBoss = isAdminRole(authUser?.role);
   const currentIsAccountant = !currentIsBoss && (isAccountantRole(authUser?.role) || employeeIsAccountant(currentEmployee));
   const canReviewAttendance = currentIsBoss || currentIsAccountant;
-  const [viewYear, setViewYear] = useState(ATT_YEAR);
-  const [viewMonth, setViewMonth] = useState(ATT_MONTH);
+  // MỘT bộ chọn kỳ duy nhất: dùng kỳ báo cáo toàn cục trên header (Tháng x/yyyy) —
+  // không đặt thêm lịch chọn tháng riêng trong trang để tránh 2 nơi chọn thời gian.
+  const viewYear = Number(reportYear) || ATT_YEAR;
+  const viewMonth = Number(reportMonth) || ATT_MONTH;
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(currentEmployee?.id || "");
   const [selectedDay, setSelectedDay] = useState(null);
   const [selectedCode, setSelectedCode] = useState("X");
@@ -18697,6 +18857,125 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
     noticeOverlay(ui(`Đã ghi giờ ra ca lúc ${formatTime(nowIso)}.`, `Checked out at ${formatTime(nowIso)}.`), { title: ui("Ra ca", "Check-out") });
   };
 
+  // ---------- TĂNG CA (OT) — sổ otRecords: đăng ký → duyệt → tự cộng tiền vào Bảng lương ----------
+  const otTypeLabel = (type) => lang === "en" ? (OT_TYPE_LABELS_EN[type] || type) : (OT_TYPE_LABELS[type] || type);
+  const [otForm, setOtForm] = useState({ employeeId: "", date: TODAY_STR, hours: "1", note: "" });
+  const [otError, setOtError] = useState("");
+  // Nhân viên thường chỉ đăng ký cho chính mình; Sếp/Kế toán chọn người và ghi nhận trực tiếp.
+  const otTargetEmployee = canReviewAttendance
+    ? activeEmployeesAll.find((employee) => Number(employee.id) === Number(otForm.employeeId)) || null
+    : currentEmployee;
+  const otEmployeeById = (employeeId) => (employees || []).find((employee) => Number(employee.id) === Number(employeeId)) || null;
+  const otVisibleRecords = (canReviewAttendance ? (otRecords || []) : otRecordsForEmployee(otRecords, currentEmployee?.id))
+    .filter((record) => otRecordInMonth(record, viewYear, viewMonth))
+    .sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || (Number(b.id) || 0) - (Number(a.id) || 0));
+  const otPendingRecords = otVisibleRecords.filter((record) => record.status === "pending");
+  const otApprovedRecords = otVisibleRecords.filter((record) => record.status === "approved");
+  const otApprovedHoursTotal = otApprovedRecords.reduce((sum, record) => sum + (Number(record.hours) || 0), 0);
+  const otApprovedAmountTotal = otApprovedRecords.reduce((sum, record) => {
+    const employee = otEmployeeById(record.employeeId);
+    return sum + (employee ? otRecordAmount(employee, record) : 0);
+  }, 0);
+  // Trần luật lao động của NGƯỜI đang chọn: đã dùng bao nhiêu / 40h tháng / 200h năm.
+  const otTargetRecords = otTargetEmployee ? otRecordsForEmployee(otRecords, otTargetEmployee.id).filter((record) => record.status !== "rejected") : [];
+  const otFormParts = calendarDateParts(String(otForm.date || "").slice(0, 10));
+  const otTargetMonthHours = otFormParts ? otCountedHours(otTargetRecords.filter((record) => otRecordInMonth(record, otFormParts.year, otFormParts.month))) : 0;
+  const otTargetYearHours = otFormParts ? otCountedHours(otTargetRecords.filter((record) => otRecordInYear(record, otFormParts.year))) : 0;
+  const otFormType = otTargetEmployee && otForm.date ? otTypeForDate(otTargetEmployee, otForm.date) : "weekday";
+  const otFormHourly = otTargetEmployee && otFormParts ? otHourlyRateFor(otTargetEmployee, otFormParts.year, otFormParts.month) : 0;
+  const otFormPreviewAmount = otFormHourly * (Math.max(0, Number(otForm.hours) || 0)) * ((OT_RATES[otFormType] || 150) / 100);
+
+  const submitOtRecord = () => {
+    setOtError("");
+    if (!otTargetEmployee) {
+      setOtError(ui("Hãy chọn nhân viên tăng ca.", "Select the employee who worked overtime."));
+      return;
+    }
+    const dateText = String(otForm.date || "").slice(0, 10);
+    const parts = calendarDateParts(dateText);
+    if (!parts) {
+      setOtError(ui("Ngày tăng ca không hợp lệ.", "The overtime date is invalid."));
+      return;
+    }
+    if (new Date(`${dateText}T23:59:59`) > new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate(), 23, 59, 59)) {
+      setOtError(ui("Không đăng ký tăng ca cho ngày chưa tới.", "Overtime cannot be registered for a future date."));
+      return;
+    }
+    // Làm tròn tới 0,5 giờ — tránh bản ghi lẻ 1,2345 giờ khó đối soát.
+    const hours = Math.round((Number(otForm.hours) || 0) * 2) / 2;
+    if (!(hours > 0)) {
+      setOtError(ui("Số giờ tăng ca phải lớn hơn 0.", "Overtime hours must be greater than zero."));
+      return;
+    }
+    const personRecords = otRecordsForEmployee(otRecords, otTargetEmployee.id).filter((record) => record.status !== "rejected");
+    const dayCap = otMaxHoursForDate(otTargetEmployee, dateText);
+    const dayHours = otCountedHours(personRecords.filter((record) => String(record.date) === dateText));
+    if (dayHours + hours > dayCap + 1e-9) {
+      setOtError(ui(
+        `Vượt trần 12h/ngày: ngày ${formatDateVN(dateText)} chỉ còn đăng ký được tối đa ${Math.max(0, dayCap - dayHours)}h OT (đã làm ${dayHours}h OT, tổng giờ làm + OT không quá 12h/ngày).`,
+        `Exceeds the 12h/day cap: only ${Math.max(0, dayCap - dayHours)}h OT left for ${dateText}.`,
+      ));
+      return;
+    }
+    const monthHours = otCountedHours(personRecords.filter((record) => otRecordInMonth(record, parts.year, parts.month)));
+    if (monthHours + hours > OT_MONTH_CAP_HOURS + 1e-9) {
+      setOtError(ui(
+        `Vượt trần ${OT_MONTH_CAP_HOURS}h/tháng (Bộ luật Lao động 2019): tháng ${parts.month}/${parts.year} đã ghi nhận ${monthHours}h, chỉ còn ${Math.max(0, OT_MONTH_CAP_HOURS - monthHours)}h.`,
+        `Exceeds the ${OT_MONTH_CAP_HOURS}h/month cap: ${monthHours}h already recorded for ${parts.month}/${parts.year}.`,
+      ));
+      return;
+    }
+    const yearHours = otCountedHours(personRecords.filter((record) => otRecordInYear(record, parts.year)));
+    if (yearHours + hours > OT_YEAR_CAP_HOURS + 1e-9) {
+      setOtError(ui(
+        `Vượt trần ${OT_YEAR_CAP_HOURS}h/năm (Bộ luật Lao động 2019): năm ${parts.year} đã ghi nhận ${yearHours}h, chỉ còn ${Math.max(0, OT_YEAR_CAP_HOURS - yearHours)}h.`,
+        `Exceeds the ${OT_YEAR_CAP_HOURS}h/year cap: ${yearHours}h already recorded in ${parts.year}.`,
+      ));
+      return;
+    }
+    const nowIso = new Date().toISOString();
+    const record = {
+      id: Date.now(),
+      employeeId: Number(otTargetEmployee.id),
+      employeeName: otTargetEmployee.name,
+      date: dateText,
+      hours,
+      // Loại ngày chốt NGAY LÚC GHI theo lịch + bảng công (L=lễ 300%, CN=nghỉ tuần 200%, còn lại 150%).
+      type: otTypeForDate(otTargetEmployee, dateText),
+      note: String(otForm.note || "").trim(),
+      status: canReviewAttendance ? "approved" : "pending",
+      submittedAt: nowIso,
+      submittedByEmail: String(authUser?.email || "").trim().toLowerCase(),
+      ...(canReviewAttendance ? { reviewedAt: nowIso, reviewedBy: authUser?.email || "" } : {}),
+    };
+    setOtRecords((previous) => [...(previous || []), record]);
+    setOtForm((form) => ({ ...form, hours: "1", note: "" }));
+    noticeOverlay(
+      canReviewAttendance
+        ? ui(`Đã ghi nhận ${hours}h tăng ca ${otTypeLabel(record.type)} (${OT_RATES[record.type]}%) cho ${otTargetEmployee.name} — tiền OT tự cộng vào Bảng lương tháng ${parts.month}/${parts.year}.`, `${hours}h of overtime recorded for ${otTargetEmployee.name}.`)
+        : ui(`Đã gửi ${hours}h tăng ca ngày ${formatDateVN(dateText)} chờ Sếp/Kế toán duyệt. Sau khi duyệt, tiền OT tự cộng vào lương.`, `${hours}h of overtime submitted for approval.`),
+      { title: canReviewAttendance ? ui("Đã ghi nhận tăng ca", "Overtime recorded") : ui("Đã gửi chờ duyệt", "Submitted for approval") },
+    );
+  };
+
+  const reviewOtRecord = (record, status) => {
+    if (!canReviewAttendance || record.status !== "pending") return;
+    const nowIso = new Date().toISOString();
+    setOtRecords((previous) => (previous || []).map((item) => Number(item.id) === Number(record.id)
+      ? { ...item, status, reviewedAt: nowIso, reviewedBy: authUser?.email || "" }
+      : item));
+  };
+
+  const removeOtRecord = async (record) => {
+    const isOwnPending = Number(record.employeeId) === Number(currentEmployee?.id) && record.status === "pending";
+    if (!canReviewAttendance && !isOwnPending) return;
+    const confirmed = await confirmOverlay(
+      ui(`Xóa bản ghi tăng ca ${record.hours}h ngày ${formatDateVN(record.date)} của ${record.employeeName || "nhân viên"}?`, `Delete the ${record.hours}h overtime record on ${record.date}?`),
+      { title: ui("Xóa tăng ca", "Delete overtime"), confirmLabel: ui("Xóa", "Delete"), tone: "danger" },
+    );
+    if (confirmed) setOtRecords((previous) => (previous || []).filter((item) => Number(item.id) !== Number(record.id)));
+  };
+
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col gap-3 overflow-hidden">
       {/* 3 khu làm việc tách bạch: thao tác trong ngày / bảng công cả tháng / duyệt điều chỉnh. */}
@@ -18704,6 +18983,7 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
         <SectionViewSwitcher value={attendanceView} onChange={setAttendanceView} options={[
           { id: "today", label: ui("Hôm nay", "Today"), icon: Clock },
           { id: "month", label: ui("Bảng công tháng", "Monthly timesheet"), icon: CalendarCheck },
+          { id: "ot", label: ui("Tăng ca", "Overtime"), icon: Zap, count: otPendingRecords.length },
           { id: "requests", label: ui("Yêu cầu điều chỉnh", "Adjustment requests"), icon: ClipboardList, count: canReviewAttendance ? pendingRequests.length : selectedPendingCount },
         ]} />
       </div>
@@ -18763,20 +19043,6 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
               {employeesSyncing ? ui("Đang cập nhật", "Updating") : ui("Cập nhật nhân sự", "Refresh employees")}
             </button>
           )}
-          <select
-            value={key}
-            onChange={(event) => {
-              const option = MONTH_OPTIONS.find((item) => monthKey(item.year, item.month) === event.target.value);
-              if (option) {
-                setViewYear(option.year);
-                setViewMonth(option.month);
-                setShowDayModal(false);
-              }
-            }}
-            className="rounded-lg border border-paper-line bg-white px-3 py-2 text-sm ktns-mono"
-          >
-            {MONTH_OPTIONS.map((option) => <option key={monthKey(option.year, option.month)} value={monthKey(option.year, option.month)}>{attendanceMonthLabel(option.year, option.month)}{option.year === ATT_YEAR && option.month === ATT_MONTH ? ui(" (hiện tại)", " (current)") : ""}</option>)}
-          </select>
           {canReviewAttendance && locked && <button onClick={openUnlockModal} className="inline-flex items-center gap-1.5 rounded-lg bg-stamp-red px-3 py-2 text-xs font-semibold text-white"><KeyRound size={14} /> {ui("Mở khóa kỳ", "Unlock period")}</button>}
         </div>
       </div>}
@@ -18911,6 +19177,103 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
       </div>}
 
       {/* Tab YÊU CẦU ĐIỀU CHỈNH: toàn bộ yêu cầu chấm công (chờ duyệt + đã xử lý) một chỗ. */}
+      {attendanceView === "ot" && (
+        <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden">
+          {/* MỘT thanh nhập gọn — kỳ xem lấy từ bộ chọn tháng trên header, không có lịch riêng.
+              Bảng dữ liệu bên dưới là trung tâm; hệ số/trần luật gói vào tooltip ⓘ. */}
+          <div className="shrink-0 rounded-lg border border-paper-line bg-white px-3 py-2">
+            <div className="flex flex-wrap items-end gap-2">
+              {canReviewAttendance ? (
+                <select value={otForm.employeeId} onChange={(event) => { setOtForm((form) => ({ ...form, employeeId: event.target.value })); setOtError(""); }} aria-label={ui("Nhân viên tăng ca", "Overtime employee")} className="min-w-[200px] rounded-md border border-paper-line bg-white px-2.5 py-2 text-sm">
+                  <option value="">{ui("— Chọn nhân viên —", "— Select employee —")}</option>
+                  {activeEmployeesAll.map((employee) => <option key={employee.id} value={employee.id}>{employee.name}</option>)}
+                </select>
+              ) : (
+                <div className="rounded-md border border-paper-line bg-paper px-2.5 py-2 text-sm font-semibold text-ink">{currentEmployee?.name || ui("Chưa có hồ sơ nhân sự", "No employee profile")}</div>
+              )}
+              <input type="date" value={otForm.date} max={TODAY_STR} onChange={(event) => { setOtForm((form) => ({ ...form, date: event.target.value })); setOtError(""); }} aria-label={ui("Ngày tăng ca", "OT date")} className="rounded-md border border-paper-line bg-white px-2.5 py-2 text-sm ktns-mono" />
+              <input type="number" min="0.5" max="12" step="0.5" value={otForm.hours} onChange={(event) => { setOtForm((form) => ({ ...form, hours: event.target.value })); setOtError(""); }} aria-label={ui("Số giờ tăng ca", "OT hours")} title={ui("Số giờ (bước 0,5h)", "Hours (0.5 steps)")} className="w-20 rounded-md border border-paper-line bg-white px-2.5 py-2 text-sm ktns-mono" />
+              <input value={otForm.note} onChange={(event) => setOtForm((form) => ({ ...form, note: event.target.value }))} placeholder={ui("Ghi chú...", "Note...")} aria-label={ui("Ghi chú tăng ca", "OT note")} className="min-w-[160px] flex-1 rounded-md border border-paper-line bg-white px-2.5 py-2 text-sm" />
+              <button type="button" onClick={submitOtRecord} className="inline-flex items-center gap-1.5 rounded-md bg-[#3C50E0] px-4 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#3247c9]"><Zap size={14} /> {canReviewAttendance ? ui("Ghi nhận", "Record") : ui("Gửi duyệt", "Submit")}</button>
+              <span className="cursor-help text-muted" title={ui("Hệ số tối thiểu (Bộ luật Lao động 2019): ngày thường 150% · ngày nghỉ tuần 200% · lễ/Tết 300% lương giờ (lương cơ bản ÷ 26 công ÷ 8 tiếng). Trần: 40h/tháng, 200h/năm, tổng giờ làm + OT ≤ 12h/ngày.", "Rates: 150% regular · 200% rest day · 300% holiday (base ÷ 26 ÷ 8). Caps: 40h/month, 200h/year, 12h/day total.")}>ⓘ</span>
+            </div>
+            {otTargetEmployee && (
+              <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-0.5 text-[11px] text-muted">
+                <span>{otTypeLabel(otFormType)} · <strong className="text-ink">{OT_RATES[otFormType]}%</strong></span>
+                <span>{ui("Lương giờ", "Hourly")}: <strong className="ktns-mono text-ink">{fmtVND(Math.round(otFormHourly))}</strong></span>
+                <span>{ui("Tạm tính", "Est.")}: <strong className="ktns-mono text-ledger-green">{fmtVND(Math.round(otFormPreviewAmount))}</strong></span>
+                <span className={otTargetMonthHours >= OT_MONTH_CAP_HOURS ? "text-stamp-red font-semibold" : ""}>{otTargetMonthHours}/{OT_MONTH_CAP_HOURS}h {ui("tháng", "mo")} · {otTargetYearHours}/{OT_YEAR_CAP_HOURS}h {ui("năm", "yr")}</span>
+              </div>
+            )}
+            {otError && <div className="mt-1.5 text-xs font-semibold text-stamp-red">{otError}</div>}
+          </div>
+
+          {/* Bảng theo dõi tăng ca — trung tâm của trang, tổng hợp nằm ở thanh chân bảng. */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-paper-line bg-white">
+            <div className="min-h-0 flex-1 overflow-auto">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 z-10">
+                <tr className="bg-paper text-left text-[10px] uppercase text-muted">
+                  <th className="px-3 py-2">{ui("Ngày", "Date")}</th>
+                  <th className="px-3 py-2">{ui("Nhân viên", "Employee")}</th>
+                  <th className="px-3 py-2">{ui("Loại ngày · hệ số", "Day type · rate")}</th>
+                  <th className="px-3 py-2 text-right">{ui("Giờ", "Hours")}</th>
+                  <th className="px-3 py-2 text-right">{ui("Tiền OT", "OT pay")}</th>
+                  <th className="px-3 py-2">{ui("Ghi chú", "Note")}</th>
+                  <th className="px-3 py-2">{ui("Trạng thái", "Status")}</th>
+                  <th className="px-3 py-2 text-right">{ui("Thao tác", "Actions")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {otVisibleRecords.length === 0 && (
+                  <tr><td colSpan={8} className="px-4 py-8 text-center text-muted">{ui("Chưa có bản ghi tăng ca nào trong tháng này.", "No overtime records this month.")}</td></tr>
+                )}
+                {otVisibleRecords.map((record) => {
+                  const employee = otEmployeeById(record.employeeId);
+                  const amount = employee ? otRecordAmount(employee, record) : 0;
+                  const canDelete = canReviewAttendance || (Number(record.employeeId) === Number(currentEmployee?.id) && record.status === "pending");
+                  return (
+                    <tr key={record.id} className={`border-t border-paper-line ${record.status === "pending" ? "ktns-warn-row" : ""}`}>
+                      <td className="px-3 py-2 ktns-mono text-muted">{formatDateVN(record.date)}</td>
+                      <td className="px-3 py-2 font-medium text-ink">{record.employeeName || employee?.name || "—"}</td>
+                      <td className="px-3 py-2">{otTypeLabel(record.type)} · <span className="ktns-mono font-semibold">{OT_RATES[record.type] || 150}%</span></td>
+                      <td className="px-3 py-2 text-right ktns-mono">{record.hours}h</td>
+                      <td className="px-3 py-2 text-right ktns-mono text-ledger-green">{fmtVND(Math.round(amount))}</td>
+                      <td className="max-w-[220px] truncate px-3 py-2 text-muted" title={record.note || undefined}>{record.note || "—"}</td>
+                      <td className="px-3 py-2">
+                        {record.status === "pending" && <span className="rounded-full border border-gold/40 bg-gold/10 px-2 py-0.5 text-[9px] font-bold text-gold">{ui("CHỜ DUYỆT", "PENDING")}</span>}
+                        {record.status === "approved" && <span className="rounded-full border border-ledger-green/40 bg-ledger-green/10 px-2 py-0.5 text-[9px] font-bold text-ledger-green">{ui("ĐÃ DUYỆT", "APPROVED")}</span>}
+                        {record.status === "rejected" && <span className="rounded-full border border-stamp-red/40 bg-stamp-red/10 px-2 py-0.5 text-[9px] font-bold text-stamp-red">{ui("TỪ CHỐI", "REJECTED")}</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <div className="inline-flex items-center gap-1.5">
+                          {canReviewAttendance && record.status === "pending" && (
+                            <>
+                              <button onClick={() => reviewOtRecord(record, "approved")} className="rounded-md bg-ledger-green px-2.5 py-1 text-[11px] font-semibold text-white hover:opacity-90">{ui("Duyệt", "Approve")}</button>
+                              <button onClick={() => reviewOtRecord(record, "rejected")} className="rounded-md border border-stamp-red/50 px-2.5 py-1 text-[11px] font-semibold text-stamp-red hover:bg-stamp-red/5">{ui("Từ chối", "Reject")}</button>
+                            </>
+                          )}
+                          {canDelete && <button onClick={() => removeOtRecord(record)} className="rounded-md border border-paper-line px-2 py-1 text-[11px] text-muted hover:border-stamp-red hover:text-stamp-red" title={ui("Xóa bản ghi", "Delete record")} aria-label={ui("Xóa bản ghi tăng ca", "Delete overtime record")}><Trash2 size={12} /></button>}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            </div>
+            <div className="domix-table-total-bar shrink-0 border-t border-paper-line bg-paper px-4 py-2 font-semibold">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
+                <span className="text-muted">{ui("Bản ghi", "Records")}: <strong className="text-ink">{otVisibleRecords.length}</strong></span>
+                <span className="text-muted">{ui("Giờ đã duyệt", "Approved hours")}: <strong className="text-ledger-green">{otApprovedHoursTotal}h</strong></span>
+                <span className="text-muted">{ui("Tiền OT đã duyệt", "Approved OT pay")}: <strong className="text-ledger-green">{fmtVND(Math.round(otApprovedAmountTotal))}</strong></span>
+                <span className={otPendingRecords.length > 0 ? "text-gold" : "text-muted"}>{ui("Chờ duyệt", "Pending")}: <strong>{otPendingRecords.length}</strong></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {attendanceView === "requests" && (
         <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-paper-line bg-white">
           <table className="w-full text-xs">
@@ -19147,9 +19510,9 @@ function CustomerDirectory({ customers = [], orders = [], supportCases = [], emp
                 <label className="flex items-center gap-1.5 text-xs text-muted"><input type="checkbox" checked={qoForm.paid} onChange={(e) => setQoForm({ ...qoForm, paid: e.target.checked })} /> Khách đã thanh toán đủ</label>
               </div>
               {qoError && <p className="mt-2 text-xs text-stamp-red">{qoError}</p>}
-              <div className="mt-4 flex justify-end gap-2">
-                <button type="button" onClick={() => setQuickOrder(null)} className="rounded-md border border-paper-line px-3.5 py-2 text-sm text-muted hover:text-ink">Hủy</button>
-                <button type="button" disabled={qoSaving} onClick={saveQuickOrder} className="rounded-md bg-ledger-green px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60">{qoSaving ? "Đang tạo đơn..." : "Tạo đơn"}</button>
+              <div className="domix-form-actions">
+                <button type="button" onClick={() => setQuickOrder(null)} className="domix-btn-secondary">Hủy</button>
+                <button type="button" disabled={qoSaving} onClick={saveQuickOrder} className="domix-btn-primary">{qoSaving ? "Đang tạo đơn..." : "Tạo đơn"}</button>
               </div>
             </div>
           </div>
@@ -19661,7 +20024,7 @@ function EmployeeProfileModal({ employee, tasks = [], orders = [], marketingLogs
 }
 
 // ---------- Nhân sự ----------
-function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refreshEmployees, showForm, setShowForm, reportYear, reportMonth, prefillEmployee, setPrefillEmployee, onOpenProfile, lang = "vi" }) {
+function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refreshEmployees, showForm, setShowForm, reportYear, reportMonth, prefillEmployee, setPrefillEmployee, onOpenProfile, lang = "vi", otRecords = [] }) {
   const ui = (vi, en) => lang === "en" ? en : vi;
   const [showInactive, setShowInactive] = useState(false);
   const [expandedResume, setExpandedResume] = useState({});
@@ -20301,8 +20664,8 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
                   người dùng cho tới khi họ tự đóng form, khiến tưởng bấm Lưu không có phản hồi. */}
               {accountError && <div className="rounded-lg border border-stamp-red/20 bg-stamp-red/10 px-3 py-2 text-xs text-stamp-red">{accountError}</div>}
               <div className="flex justify-end gap-3">
-                <button onClick={closeForm} disabled={accountLoading} className="border border-paper-line text-ink px-5 py-2.5 rounded-lg text-sm disabled:opacity-50">Hủy</button>
-                <button onClick={saveEmp} disabled={accountLoading} className="bg-ledger-green text-white text-sm px-5 py-2.5 rounded-lg hover:opacity-90 disabled:opacity-60 flex items-center gap-1.5">{accountLoading && <Loader2 size={14} className="animate-spin" />} {accountLoading ? "Đang lưu..." : editingId ? "Cập nhật nhân viên" : "Lưu nhân viên"}</button>
+                <button onClick={closeForm} disabled={accountLoading} className="domix-btn-secondary">Hủy</button>
+                <button onClick={saveEmp} disabled={accountLoading} className="domix-btn-primary">{accountLoading && <Loader2 size={14} className="animate-spin" />} {accountLoading ? "Đang lưu..." : editingId ? "Cập nhật nhân viên" : "Lưu nhân viên"}</button>
               </div>
             </div>
           </div>
@@ -20360,7 +20723,7 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
             )}
             {visibleEmployees.map((e) => {
               const months = tenureMonths(e.joined);
-              const pay = computePayroll(e, reportYear, reportMonth);
+              const pay = computePayroll(e, reportYear, reportMonth, DEFAULT_KPI_TIERS, otRecords);
               const account = accountForEmployee(e);
               const cong = monthlyCongFor(e.attendance, reportYear, reportMonth);
               return (
@@ -21028,6 +21391,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
         + (Number(r.kpiBonus) || 0)
         + (Number(r.kpiMilestoneBonus) || 0)
         + (Number(r.otherBonus) || 0)
+        + (Number(r.otPay) || 0)
       ),
       requestedAllowance: existingNumbers?.requestedAllowance ?? (
         (Number(r.seniorityAllowance) || 0)
@@ -22043,7 +22407,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
       + (Number(row.techUpsale) || 0)
       + (Number(row.kpiBonus) || 0)
       + (Number(row.kpiMilestoneBonus) || 0)
-      + (Number(row.otherBonus) || 0);
+      + (Number(row.otherBonus) || 0)
+      + (Number(row.otPay) || 0); // tiền tăng ca đã duyệt — nằm trong nhóm thưởng/thu nhập thêm
     const payment = paymentOf(row.id);
     const midMonthEntries = midMonthEntriesOf(row.id);
     const midMonthPaid = midMonthPaidOf(row.id);
@@ -23011,6 +23376,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
             row.kpiBonus > 0 && { label: "Thưởng KPI", amount: row.kpiBonus },
             row.kpiMilestoneBonus > 0 && { label: `Thưởng mốc doanh số (${row.kpiMilestonePct || 0}%)`, amount: row.kpiMilestoneBonus },
             row.otherBonus > 0 && { label: "Thưởng khác", amount: row.otherBonus },
+            row.otPay > 0 && { label: `Tăng ca ${row.otHours || 0}h đã duyệt (150–300% × lương giờ ${fmtVND(Math.round(row.otHourlyRate || 0))})`, amount: row.otPay },
           ].filter(Boolean);
         const total = entries.reduce((sum, item) => sum + item.amount, 0);
         return (
@@ -23251,6 +23617,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                             <div className="flex justify-between"><span className="text-muted font-sans">Phụ cấp ăn trưa</span>{fmtVND(r.mealAllowance)}</div>
                             <div className="flex justify-between"><span className="text-muted font-sans">Phụ cấp chuyên cần {r.hasAbsence ? "(mất — có ngày nghỉ)" : ""}</span>{fmtVND(r.attendanceBonus)}</div>
                             {r.kpiMilestoneBonus > 0 && <div className="flex justify-between"><span className="text-muted font-sans">Thưởng KPI mốc doanh số ({r.kpiMilestonePct}%)</span>{fmtVND(r.kpiMilestoneBonus)}</div>}
+                            {r.otPay > 0 && <div className="flex justify-between"><span className="text-muted font-sans">Tăng ca {r.otHours || 0}h đã duyệt (150–300% lương giờ)</span>{fmtVND(r.otPay)}</div>}
                             <div className="flex justify-between font-semibold border-t border-paper-line pt-1 mt-1"><span className="font-sans">Tổng thu nhập</span>{fmtVND(r.grossIncome)}</div>
                           </div>
                         </div>
@@ -23797,6 +24164,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                   {(r.kpiBonus ?? 0) > 0 && <Row label="Thưởng KPI" value={fmtVND(r.kpiBonus)} />}
                   {(r.kpiMilestoneBonus ?? 0) > 0 && <Row label={`Thưởng KPI mốc doanh số (${r.kpiMilestonePct}%)`} value={fmtVND(r.kpiMilestoneBonus)} />}
                   {(r.otherBonus ?? 0) > 0 && <Row label="Thưởng khác" value={fmtVND(r.otherBonus)} />}
+                  {(r.otPay ?? 0) > 0 && <Row label={`Tăng ca ${r.otHours || 0}h đã duyệt (150–300% lương giờ)`} value={fmtVND(r.otPay)} />}
                   <Row label={`Phụ cấp ăn trưa (${fmtVND(r.mealAllowancePerDay || 0)}/ngày đủ công × ${r.fullWorkDays || 0} ngày)`} value={fmtVND(r.mealAllowance || 0)} />
                   {(r.seniorityAllowance ?? 0) > 0 && <Row label="Phụ cấp thâm niên" value={fmtVND(r.seniorityAllowance)} />}
                   {(r.customAllowances || []).map((item) => (
