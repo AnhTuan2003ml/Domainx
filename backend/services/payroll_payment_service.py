@@ -337,6 +337,10 @@ def record_payroll_payment(data, payload, actor_email="", actor_name="", employe
         raise ValueError("Số tiền lương được duyệt phải lớn hơn 0.")
     if requested_amount > 0 and abs(requested_amount - amount) > 0.5:
         raise ValueError("Số tiền chi trả không khớp số tiền đã được duyệt.")
+    # Chi lương luôn TRÒN VỀ ĐỒNG trước khi ghi sổ. Lương tính từ ngày công có thể ra số lẻ
+    # (VD 3.480.384,615đ); nếu ghi số lẻ vào payment/transaction thì tổng chi ở cash_transactions
+    # và dữ liệu nghiệp vụ có thể làm tròn khác nhau 1đ, khiến FinancialSummary báo "sổ không cân".
+    amount = float(round(amount))
 
     paid_at = _now_iso()
     paid_date = str((payload or {}).get("date") or date.today().isoformat())[:10]

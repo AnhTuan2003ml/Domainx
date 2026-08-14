@@ -16,6 +16,7 @@
     "docker:logs": "docker compose logs -f --tail=200"
   },
   "dependencies": {
+    "html2pdf.js": "^0.14.0",
     "lucide-react": "^1.24.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

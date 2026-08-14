@@ -99,6 +99,7 @@ import {
   Zap,
 } from "lucide-react";
 import * as XLSX from "xlsx";
+import html2pdf from "html2pdf.js";
 import CompanySidebar from "./components/layout/CompanySidebar";
 import { buildNavigationGroups } from "./features/navigation/config";
 import { searchNavEntries } from "./features/navigation/menuData";
@@ -2862,6 +2863,521 @@ function exportPayrollExcel(payrollRows, payments = [], midMonthRequests = [], p
   XLSX.writeFile(wb, `DOMIX_Bang_luong_${TODAY_STR}.xlsx`);
 }
 
+// Xuất Excel riêng cho tab BẢO HIỂM — mỗi nhân viên một dòng, tách phần NV đóng / DN đóng.
+function exportInsuranceExcel(payrollRows, period = {}) {
+  const wb = XLSX.utils.book_new();
+  const rows = payrollRows.map((r) => ({
+    "Họ tên": r.name,
+    "Chức vụ": r.position || "",
+    "Loại hợp đồng": r.contractLabel,
+    "Cơ chế": r.insuranceFixed ? "Số tiền cố định" : "% theo luật",
+    "Lương đóng BH": Math.round(r.baseSalary),
+    "Ngày công": `${Number(r.actualDays || 0).toFixed(1)}/${r.standardDays}`,
+    "BHXH 8% (NV)": Math.round(r.bhxhNV || 0),
+    "BHYT 1.5% (NV)": Math.round(r.bhytNV || 0),
+    "BHTN 1% (NV)": Math.round(r.bhtnNV || 0),
+    "Tổng NV đóng": Math.round(r.employeeInsurance || 0),
+    "BHXH 17% (DN)": Math.round(r.bhxhDN || 0),
+    "BHYT 3% (DN)": Math.round(r.bhytDN || 0),
+    "BHTN 1% (DN)": Math.round(r.bhtnDN || 0),
+    "BH TNLĐ-BNN 0.5% (DN)": Math.round(r.bhtnldBnnDN || 0),
+    "Tổng DN đóng": Math.round(r.employerInsurance || 0),
+    "Tổng nộp cơ quan BH": Math.round((r.employeeInsurance || 0) + (r.employerInsurance || 0)),
+  }));
+  rows.push({
+    "Họ tên": "TỔNG CỘNG",
+    "Tổng NV đóng": Math.round(payrollRows.reduce((s, r) => s + (Number(r.employeeInsurance) || 0), 0)),
+    "Tổng DN đóng": Math.round(payrollRows.reduce((s, r) => s + (Number(r.employerInsurance) || 0), 0)),
+    "Tổng nộp cơ quan BH": Math.round(payrollRows.reduce((s, r) => s + (Number(r.employeeInsurance) || 0) + (Number(r.employerInsurance) || 0), 0)),
+  });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws["!cols"] = new Array(16).fill({ wch: 16 });
+  XLSX.utils.book_append_sheet(wb, ws, "Bảo hiểm xã hội");
+  XLSX.writeFile(wb, `DOMIX_Bao_hiem_T${period.month || ATT_MONTH}-${period.year || ATT_YEAR}.xlsx`);
+}
+
+// ---------- PHIẾU LƯƠNG PDF TỪNG NHÂN VIÊN ----------
+// Đọc số tiền VND thành chữ tiếng Việt (làm tròn về đồng) để in trên phiếu lương.
+const VN_DIGIT_WORDS = ["không", "một", "hai", "ba", "bốn", "năm", "sáu", "bảy", "tám", "chín"];
+function readVnHundreds(num, needZeroHundred) {
+  const tram = Math.floor(num / 100), chuc = Math.floor((num % 100) / 10), donvi = num % 10;
+  const parts = [];
+  if (tram > 0 || needZeroHundred) parts.push(`${VN_DIGIT_WORDS[tram]} trăm`);
+  if (chuc > 1) {
+    parts.push(`${VN_DIGIT_WORDS[chuc]} mươi`);
+    if (donvi === 1) parts.push("mốt");
+    else if (donvi === 4) parts.push("tư");
+    else if (donvi === 5) parts.push("lăm");
+    else if (donvi > 0) parts.push(VN_DIGIT_WORDS[donvi]);
+  } else if (chuc === 1) {
+    parts.push("mười");
+    if (donvi === 5) parts.push("lăm");
+    else if (donvi > 0) parts.push(VN_DIGIT_WORDS[donvi]);
+  } else if (donvi > 0) {
+    if (parts.length) parts.push("lẻ");
+    parts.push(VN_DIGIT_WORDS[donvi]);
+  }
+  return parts.join(" ");
+}
+function vndInWords(amount) {
+  const value = Math.round(Number(amount) || 0);
+  let n = Math.abs(value);
+  if (n === 0) return "Không đồng";
+  const unitNames = ["", " nghìn", " triệu", " tỷ", " nghìn tỷ"];
+  const groups = [];
+  while (n > 0) { groups.push(n % 1000); n = Math.floor(n / 1000); }
+  const parts = [];
+  for (let i = groups.length - 1; i >= 0; i -= 1) {
+    if (groups[i] === 0) continue;
+    parts.push(readVnHundreds(groups[i], i !== groups.length - 1) + unitNames[i]);
+  }
+  const text = `${value < 0 ? "âm " : ""}${parts.join(" ")} đồng`;
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+const payslipEscape = (value) => String(value ?? "")
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+// CSS khổ A4 dùng chung cho MỌI tài liệu PDF (phiếu lương, bảng bảo hiểm, hồ sơ nhân sự).
+// Toàn bộ selector gắn tiền tố .payslip-root — khi render PDF phải chèn tạm vào trang app,
+// không được để ảnh hưởng giao diện đang mở.
+const PAYSLIP_BASE_CSS = `
+  .payslip-root, .payslip-root * { box-sizing: border-box; }
+  .payslip-root { font-family: "Times New Roman", "Noto Serif", serif; color: #111; font-size: 12.5px; margin: 0 auto; padding: 20px 26px; background: #fff; width: 794px; max-width: 100%; }
+  .payslip-root h1 { font-size: 20px; text-align: center; margin: 14px 0 2px; letter-spacing: 1px; }
+  .payslip-root .sub { text-align: center; margin: 0 0 14px; font-size: 12px; }
+  .payslip-root .co { display: flex; justify-content: space-between; gap: 16px; font-size: 12px; border-bottom: 2px solid #111; padding-bottom: 8px; }
+  .payslip-root .co b { font-size: 14px; }
+  .payslip-root h2 { font-size: 13px; margin: 16px 0 6px; text-transform: uppercase; }
+  .payslip-root table.grid { width: 100%; min-width: 742px; border-collapse: collapse; }
+  .payslip-root .grid tr { page-break-inside: avoid; }
+  .payslip-root .grid th, .payslip-root .grid td { border: 1px solid #333; padding: 6px 8px; vertical-align: middle; word-wrap: break-word; }
+  .payslip-root .grid th { background: #ececec; font-size: 11px; text-transform: uppercase; text-align: left; }
+  .payslip-root .grid th.c, .payslip-root .grid th.num { text-align: center; }
+  .payslip-root .info td { border: 1px solid #333; }
+  .payslip-root .info .k { width: 21%; color: #333; background: #f7f7f7; font-size: 11px; }
+  .payslip-root .c { text-align: center; }
+  .payslip-root .r { text-align: right; white-space: nowrap; }
+  .payslip-root .num { text-align: right; white-space: nowrap; font-family: "Courier New", monospace; }
+  .payslip-root .desc { color: #444; font-size: 11px; font-family: Arial, sans-serif; }
+  .payslip-root .mono { font-family: "Courier New", monospace; font-weight: bold; }
+  .payslip-root .note { font-size: 10.5px; color: #555; font-family: Arial, sans-serif; font-weight: normal; }
+  .payslip-root .unit { text-align: right; font-style: italic; font-size: 11px; margin: 10px 0 -10px; }
+  .payslip-root .meta { display: flex; flex-wrap: wrap; margin: 14px 0 4px; }
+  .payslip-root .meta .mitem { width: 50%; padding: 7px 0; font-size: 13px; }
+  .payslip-root .meta .mlabel { display: inline-block; min-width: 185px; color: #555; font-size: 12px; }
+  .payslip-root .grid th.hl, .payslip-root .grid td.hl { background: #e8e8e8; font-weight: bold; }
+  .payslip-root .total td { background: #f2f2f2; font-weight: bold; }
+  .payslip-root .grand td { background: #e8e8e8; font-weight: bold; font-size: 14px; }
+  .payslip-root .grand .num { font-size: 15px; }
+  .payslip-root .sign-date { text-align: right; font-style: italic; margin-top: 16px; font-size: 12px; }
+  .payslip-root .net { border: 2px solid #111; margin-top: 14px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; }
+  .payslip-root .net .amount { font-size: 20px; font-weight: bold; font-family: "Courier New", monospace; }
+  .payslip-root .words { margin-top: 6px; font-style: italic; font-size: 12px; }
+  .payslip-root .sign { width: 100%; margin-top: 26px; border-collapse: collapse; page-break-inside: avoid; }
+  .payslip-root .sign td { width: 33.33%; text-align: center; vertical-align: top; padding: 4px 8px; border: none; }
+  .payslip-root .sign .role { font-weight: bold; text-transform: uppercase; font-size: 12px; }
+  .payslip-root .sign .hint { font-size: 10.5px; color: #555; font-style: italic; }
+  .payslip-root .sign .who { margin-top: 8px; font-weight: bold; }
+  .payslip-root .sign .when { font-size: 10.5px; color: #444; }
+  .payslip-root .ok { color: #14532d; font-weight: bold; border: 2px solid #14532d; border-radius: 6px; display: inline-block; padding: 3px 12px; margin: 10px 0 4px; transform: rotate(-6deg); }
+  .payslip-root .pending { color: #777; font-style: italic; margin: 14px 0 4px; }
+  .payslip-root .stamp { width: 138px; height: 138px; border: 3px double #c81e1e; border-radius: 50%; color: #c81e1e; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; transform: rotate(-12deg); margin: 8px auto 4px; padding: 10px; }
+  .payslip-root .stamp .s1 { font-weight: bold; font-size: 15px; letter-spacing: 1px; }
+  .payslip-root .stamp .s2 { font-size: 9px; font-weight: bold; text-transform: uppercase; margin-top: 3px; }
+  .payslip-root .stamp .s3 { font-size: 9.5px; margin-top: 3px; }
+  .payslip-root .stamp.empty { border: 2px dashed #aaa; color: #999; transform: none; }
+  .payslip-root .foot { margin-top: 18px; font-size: 10px; color: #666; border-top: 1px solid #ccc; padding-top: 6px; }
+`;
+
+// Render { css, body } thành trang A4 ẩn ngoài màn hình rồi tải thẳng file .pdf về máy —
+// dùng chung cho phiếu lương, bảng bảo hiểm và hồ sơ nhân sự. Lỗi thì rơi về tải HTML tự bật in.
+async function saveA4Pdf({ css = PAYSLIP_BASE_CSS, body, filename, fallbackHtml = "", orientation = "portrait" }) {
+  // A4 ở 96dpi: dọc ~794px, ngang ~1123px — bề ngang holder phải khớp khổ giấy để bố cục không vỡ.
+  const pageWidth = orientation === "landscape" ? 1123 : 794;
+  const holder = document.createElement("div");
+  holder.style.position = "fixed";
+  holder.style.left = "-10000px";
+  holder.style.top = "0";
+  holder.style.width = `${pageWidth}px`;
+  holder.style.background = "#fff";
+  holder.innerHTML = `<style>${css}</style><div class="payslip-root" style="width:${pageWidth}px">${body}</div>`;
+  document.body.appendChild(holder);
+  try {
+    await html2pdf()
+      .set({
+        margin: [8, 6, 10, 6],
+        filename: `${filename}.pdf`,
+        image: { type: "jpeg", quality: 0.96 },
+        html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: pageWidth },
+        jsPDF: { unit: "mm", format: "a4", orientation },
+        pagebreak: { mode: ["css", "legacy"] },
+      })
+      .from(holder.querySelector(".payslip-root"))
+      .save();
+  } catch (err) {
+    console.error("Xuất PDF lỗi, chuyển sang bản HTML in dự phòng:", err);
+    const html = fallbackHtml || `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><title>${filename}</title><style>body{margin:0}${css}</style></head><body><div class="payslip-root">${body}</div></body></html>`;
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${filename}.html`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } finally {
+    holder.remove();
+  }
+}
+
+// Dựng NỘI DUNG phiếu lương khổ A4 cho MỘT nhân viên: liệt kê từng khoản ĐƯỢC NHẬN, từng khoản BỊ TRỪ,
+// thực tế nhận + số tiền bằng chữ, STK ngân hàng nhận lương và khối Kế toán duyệt / Sếp duyệt đóng dấu.
+// Trả về { css, body } để vừa render ra file PDF trực tiếp, vừa dựng được bản HTML in dự phòng.
+function buildPayslipParts(row, { company = {}, period = {}, approval = null, payment = null, midMonthEntries = [], midMonthPaid = 0, statusLabel = "" } = {}) {
+  const month = Number(period.month) || ATT_MONTH;
+  const year = Number(period.year) || ATT_YEAR;
+  const dmy = (iso) => String(iso || "").slice(0, 10).split("-").reverse().join("/");
+  const money = (n) => `${Math.round(Number(n) || 0).toLocaleString("vi-VN")}đ`;
+
+  const incomeItems = [
+    { label: "Lương theo ngày công", note: `${money(row.daySalary)}/ngày × ${Number(row.actualDays || 0).toFixed(1)} công${row.probationRate && row.probationRate < 1 ? ` × ${Math.round(row.probationRate * 100)}% thử việc` : ""}`, amount: row.mainSalary || 0, always: true },
+    { label: "Hoa hồng doanh số", note: row.compStatusLabel || "", amount: row.commission || 0 },
+    { label: "Thưởng doanh số", note: "", amount: row.compBonus || 0 },
+    { label: "Hoa hồng upsale kỹ thuật (7%)", note: "", amount: row.techUpsale || 0 },
+    { label: "Thưởng KPI", note: "", amount: row.kpiBonus || 0 },
+    { label: "Thưởng mốc doanh số", note: row.kpiMilestonePct ? `${row.kpiMilestonePct}% doanh thu tháng` : "", amount: row.kpiMilestoneBonus || 0 },
+    { label: "Thưởng khác", note: "", amount: row.otherBonus || 0 },
+    { label: "Phụ cấp ăn trưa", note: `${money(row.mealAllowancePerDay)}/ngày đủ công × ${row.fullWorkDays || 0} ngày`, amount: row.mealAllowance || 0 },
+    { label: "Phụ cấp thâm niên", note: "", amount: row.seniorityAllowance || 0 },
+    { label: "Phụ cấp chuyên cần", note: row.hasAbsence ? "Mất do có ngày nghỉ trong tháng" : "Đi làm đủ, không nghỉ", amount: row.hasAbsence ? 0 : (row.attendanceBonus || 0) },
+    { label: "Phụ cấp tăng ca (OT)", note: `${row.otHours || 0}h đã duyệt · hệ số 150–300% lương giờ`, amount: row.otPay || 0 },
+    ...(Array.isArray(row.customAllowances) ? row.customAllowances : []).map((item) => ({
+      label: `Phụ cấp ${item.label || "khác"}`, note: item.note || (item.prorate ? "Chia theo ngày công" : ""), amount: item.amount || 0,
+    })),
+  ].filter((item) => item.always || (Number(item.amount) || 0) > 0);
+
+  const deductionItems = [
+    ...(row.insuranceFixed
+      ? [{ label: "Bảo hiểm NV đóng (mức cố định khai riêng)", note: "", amount: row.employeeInsurance || 0 }]
+      : [
+        { label: "BHXH nhân viên đóng (8%)", note: `Trên lương cơ bản ${money(row.baseSalary)}`, amount: row.bhxhNV || 0 },
+        { label: "BHYT nhân viên đóng (1,5%)", note: "", amount: row.bhytNV || 0 },
+        { label: "BHTN nhân viên đóng (1%)", note: "", amount: row.bhtnNV || 0 },
+      ]),
+    { label: "Thuế thu nhập cá nhân", note: `Thu nhập tính thuế ${money(row.taxableIncome)}${row.personalDeduction > 0 ? ` · giảm trừ gia cảnh ${money(row.personalDeduction)}` : ""}`, amount: row.thueTNCN || 0 },
+    { label: "Tạm ứng / khấu trừ trên hồ sơ", note: "", amount: row.advance || 0 },
+    ...(Array.isArray(midMonthEntries) ? midMonthEntries : []).map((entry) => ({
+      label: `Đã ứng lương giữa tháng ngày ${dmy(entry.date)}`, note: entry.reason || "", amount: entry.amount || 0,
+    })),
+  ].filter((item) => (Number(item.amount) || 0) > 0);
+
+  const grossIncome = Number(row.grossIncome) || 0;
+  const totalDeduction = deductionItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const netFinal = grossIncome - totalDeduction; // = thực lĩnh − đã ứng giữa tháng
+
+  // Số tiền trong bảng in TRẦN theo chuẩn chứng từ (đầu bảng đã ghi "Đơn vị tính: đồng").
+  const num = (n) => Math.round(Number(n) || 0).toLocaleString("vi-VN");
+  // Mỗi dòng 4 cột: STT · Khoản mục · Diễn giải (cột riêng) · Thành tiền — không chen chú thích dưới tên.
+  const itemRows = (items) => items.map((item, index) => `
+    <tr>
+      <td class="c">${index + 1}</td>
+      <td>${payslipEscape(item.label)}</td>
+      <td class="desc">${payslipEscape(item.note || "")}</td>
+      <td class="num">${num(item.amount)}</td>
+    </tr>`).join("");
+
+  const accountantApproved = Boolean(approval?.accountantApprovedAt);
+  const bossApproved = Boolean(approval?.bossApprovedAt);
+  const companyName = company?.name || "CÔNG TY DOMIX";
+
+  const css = PAYSLIP_BASE_CSS;
+
+  const body = `
+<div class="co">
+  <div>
+    <b>${payslipEscape(companyName)}</b><br>
+    ${payslipEscape(company?.address || "")}<br>
+    ${company?.taxCode ? `MST: ${payslipEscape(company.taxCode)}` : ""}${company?.phone ? ` · ĐT: ${payslipEscape(company.phone)}` : ""}
+  </div>
+  <div style="text-align:right">
+    Số phiếu: <b>PL-${year}${String(month).padStart(2, "0")}-${payslipEscape(row.id)}</b><br>
+    Kỳ lương: <b>tháng ${month}/${year}</b><br>
+    Trạng thái: ${payslipEscape(statusLabel || "—")}
+  </div>
+</div>
+<h1>PHIẾU LƯƠNG NHÂN VIÊN</h1>
+<p class="sub">Kỳ lương tháng ${month} năm ${year}</p>
+
+<h2>I. Người nhận lương &amp; tài khoản nhận</h2>
+<table class="grid info" style="width:742px">
+  <tr><td class="k">Họ và tên</td><td><b>${payslipEscape(row.name)}</b></td><td class="k">Ngày công thực tế</td><td>${Number(row.actualDays || 0).toFixed(1)}/${row.standardDays} công chuẩn</td></tr>
+  <tr><td class="k">Ngân hàng nhận lương</td><td>${payslipEscape(row.bankName || "Chưa khai báo")}</td><td class="k">Số tài khoản nhận</td><td class="mono">${payslipEscape(row.bankAccount || "Chưa khai báo")}</td></tr>
+  <tr><td class="k">Chủ tài khoản</td><td>${payslipEscape(row.name)}</td><td class="k">Lương cơ bản</td><td class="mono">${money(row.baseSalary)}</td></tr>
+</table>
+
+<div class="unit">Đơn vị tính: đồng</div>
+<h2>II. Các khoản được nhận</h2>
+<table class="grid" style="width:742px">
+  <tr><th class="c" style="width:42px">STT</th><th style="width:32%">Khoản mục</th><th>Diễn giải</th><th class="num" style="width:118px">Thành tiền</th></tr>
+  ${itemRows(incomeItems)}
+  <tr class="total"><td class="c"></td><td colspan="2">CỘNG CÁC KHOẢN ĐƯỢC NHẬN (A)</td><td class="num">${num(grossIncome)}</td></tr>
+</table>
+
+<h2>III. Các khoản khấu trừ</h2>
+<table class="grid" style="width:742px">
+  <tr><th class="c" style="width:42px">STT</th><th style="width:32%">Khoản mục</th><th>Diễn giải</th><th class="num" style="width:118px">Số tiền trừ</th></tr>
+  ${deductionItems.length ? itemRows(deductionItems) : `<tr><td class="c">—</td><td>Không phát sinh khoản khấu trừ</td><td class="desc">Kỳ này không có bảo hiểm, thuế hay tạm ứng nào bị trừ</td><td class="num">0</td></tr>`}
+  <tr class="total"><td class="c"></td><td colspan="2">CỘNG CÁC KHOẢN KHẤU TRỪ (B)</td><td class="num">(${num(totalDeduction)})</td></tr>
+</table>
+
+<h2>IV. Tổng hợp thanh toán</h2>
+<table class="grid" style="width:742px">
+  <tr><td class="c" style="width:42px">A</td><td>Tổng các khoản được nhận</td><td class="num" style="width:150px">${num(grossIncome)}</td></tr>
+  <tr><td class="c">B</td><td>Tổng các khoản khấu trừ${midMonthPaid > 0 ? ` <span class="desc">(gồm ${num(midMonthPaid)} đã ứng giữa tháng)</span>` : ""}</td><td class="num">(${num(totalDeduction)})</td></tr>
+  <tr class="grand"><td class="c"></td><td>THỰC LĨNH KỲ NÀY (A − B)</td><td class="num">${num(netFinal)}</td></tr>
+</table>
+<div class="words">(Bằng chữ: <b>${payslipEscape(vndInWords(netFinal))}</b>)</div>
+
+<h2>V. Thông tin chi trả &amp; chi phí doanh nghiệp</h2>
+<table class="grid info" style="width:742px">
+  <tr>
+    <td class="k">Tình trạng chi trả</td>
+    <td>${payment ? `<b>Đã chi trả ${money(payment.amount)}</b><br>${payment.paymentMethod === "tien_mat" ? "Tiền mặt" : "Chuyển khoản"} · ngày ${dmy(payment.paidDate || payment.paidAt)}` : "<b>Chưa chi trả</b>"}</td>
+    <td class="k">Người chi trả</td>
+    <td>${payslipEscape(payment?.paidByName || payment?.paidByEmail || "—")}</td>
+  </tr>
+  <tr>
+    <td class="k">Số chứng từ</td>
+    <td>${payslipEscape(payment?.referenceNo || "—")}</td>
+    <td class="k">Hình thức nhận</td>
+    <td>${row.bankAccount ? `Chuyển khoản — ${payslipEscape(row.bankName || "")} · <span class="mono">${payslipEscape(row.bankAccount)}</span>` : "Tiền mặt / chưa khai báo STK"}</td>
+  </tr>
+  <tr>
+    <td class="k">BH doanh nghiệp đóng</td>
+    <td><span class="mono">${money(row.employerInsurance)}</span> <span class="note">(không trừ vào lương)</span></td>
+    <td class="k">Tổng chi phí doanh nghiệp</td>
+    <td class="mono">${money(row.employerTotalCost)}</td>
+  </tr>
+</table>
+
+<div class="sign-date">Ngày ${new Date().getDate()} tháng ${new Date().getMonth() + 1} năm ${new Date().getFullYear()}</div>
+<table class="sign">
+  <tr>
+    <td>
+      <div class="role">Nhân viên đề xuất</div>
+      <div class="hint">(Ký, ghi rõ họ tên)</div>
+      <div style="height:64px"></div>
+      <div class="who">${payslipEscape(approval?.submittedByName || row.name)}</div>
+      ${approval?.submittedAt ? `<div class="when">Gửi lúc ${payslipEscape(approval.submittedAt)}</div>` : ""}
+    </td>
+    <td>
+      <div class="role">Kế toán duyệt</div>
+      <div class="hint">(Ký, ghi rõ họ tên)</div>
+      ${accountantApproved
+        ? `<div class="ok">✓ ĐÃ DUYỆT</div><div class="who">${payslipEscape(approval.accountantApprovedByName || approval.accountantApprovedByEmail || "Kế toán")}</div><div class="when">${payslipEscape(approval.accountantApprovedAt || "")}</div>`
+        : `<div class="pending">Chưa duyệt</div>`}
+    </td>
+    <td>
+      <div class="role">Giám đốc duyệt &amp; đóng dấu</div>
+      <div class="hint">(Ký tên, đóng dấu)</div>
+      ${bossApproved
+        ? `<div class="stamp"><div class="s1">ĐÃ DUYỆT</div><div class="s2">${payslipEscape(companyName)}</div><div class="s3">${payslipEscape(approval.bossApprovedAt || "")}</div></div><div class="who">${payslipEscape(approval.bossApprovedByName || approval.bossApprovedByEmail || "Giám đốc")}</div>`
+        : `<div class="stamp empty"><div class="s1">CHƯA<br>ĐÓNG DẤU</div></div>`}
+    </td>
+  </tr>
+</table>
+
+<div class="foot">Phiếu lương được lập tự động từ hệ thống quản trị ${payslipEscape(companyName)} ngày ${dmy(new Date().toISOString())}. Mọi thắc mắc về số liệu vui lòng liên hệ bộ phận Kế toán trong vòng 07 ngày kể từ ngày nhận phiếu.</div>`;
+
+  return { css, body, month, year };
+}
+
+// Bản HTML đầy đủ — chỉ dùng làm DỰ PHÒNG khi không tạo được PDF trực tiếp (mở lên là tự bật hộp thoại in).
+function buildPayslipHtml(row, options = {}) {
+  const { css, body, month, year } = buildPayslipParts(row, options);
+  const autoPrint = "<scr" + "ipt>window.addEventListener('load', function () { setTimeout(function () { window.print(); }, 350); });</scr" + "ipt>";
+  return `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8">
+<title>Phieu luong T${month}-${year} - ${payslipEscape(row.name)}</title>
+<style>@page { size: A4; margin: 12mm; } body { margin: 0; } @media print { .payslip-root { padding: 0; } }${css}</style></head>
+<body><div class="payslip-root">${body}</div>${autoPrint}</body></html>`;
+}
+
+const payslipFileBase = (row, period = {}) =>
+  `DOMIX_Phieu_luong_T${period.month || ATT_MONTH}-${period.year || ATT_YEAR}_${String(row.name || "nhan_vien").trim().replace(/\s+/g, "_")}`;
+
+// Xuất TRỰC TIẾP file .pdf phiếu lương của MỘT nhân viên — không cần qua hộp thoại in.
+async function exportPayslipPdf(row, options = {}) {
+  const { css, body } = buildPayslipParts(row, options);
+  await saveA4Pdf({
+    css,
+    body,
+    filename: payslipFileBase(row, options.period),
+    fallbackHtml: buildPayslipHtml(row, options),
+  });
+}
+
+// Xuất PDF BẢNG KÊ BẢO HIỂM cả kỳ (tab Bảo hiểm của Bảng lương): mỗi nhân viên một dòng,
+// tách phần NHÂN VIÊN đóng / DOANH NGHIỆP đóng, có tổng cộng và khối ký duyệt.
+async function exportInsurancePdf(payrollRows, { company = {}, period = {} } = {}) {
+  const month = Number(period.month) || ATT_MONTH;
+  const year = Number(period.year) || ATT_YEAR;
+  const money = (n) => `${Math.round(Number(n) || 0).toLocaleString("vi-VN")}đ`;
+  const companyName = company?.name || "CÔNG TY DOMIX";
+  const totalNV = payrollRows.reduce((s, r) => s + (Number(r.employeeInsurance) || 0), 0);
+  const totalDN = payrollRows.reduce((s, r) => s + (Number(r.employerInsurance) || 0), 0);
+  const rowsHtml = payrollRows.map((r, index) => `
+    <tr>
+      <td class="c">${index + 1}</td>
+      <td>${payslipEscape(r.name)}<div class="note">${payslipEscape(r.position || ROLE_META[r.roleType]?.label || "Nhân viên")} · ${payslipEscape(r.contractLabel || "—")} · công ${Number(r.actualDays || 0).toFixed(1)}/${r.standardDays}</div></td>
+      <td>${r.insuranceFixed ? "Số tiền cố định" : "% theo luật"}${Number(r.actualDays || 0) < INSURANCE_MIN_WORKDAYS ? `<div class="note">&lt;14 ngày công — kỳ này chưa phát sinh</div>` : ""}</td>
+      <td class="r mono">${money(r.baseSalary)}</td>
+      <td class="r mono">${money(r.employeeInsurance)}${!r.insuranceFixed && (Number(r.employeeInsurance) || 0) > 0 ? `<div class="note">BHXH ${money(r.bhxhNV)} · BHYT ${money(r.bhytNV)} · BHTN ${money(r.bhtnNV)}</div>` : ""}</td>
+      <td class="r mono">${money(r.employerInsurance)}${!r.insuranceFixed && (Number(r.employerInsurance) || 0) > 0 ? `<div class="note">BHXH 17 · BHYT 3 · BHTN 1 · TNLĐ 0,5 (%)</div>` : ""}</td>
+      <td class="r mono">${money((Number(r.employeeInsurance) || 0) + (Number(r.employerInsurance) || 0))}</td>
+    </tr>`).join("");
+  const body = `
+<div class="co">
+  <div>
+    <b>${payslipEscape(companyName)}</b><br>
+    ${payslipEscape(company?.address || "")}<br>
+    ${company?.taxCode ? `MST: ${payslipEscape(company.taxCode)}` : ""}
+  </div>
+  <div style="text-align:right">Kỳ: <b>tháng ${month}/${year}</b><br>Số nhân sự: <b>${payrollRows.length}</b></div>
+</div>
+<h1>BẢNG KÊ BẢO HIỂM XÃ HỘI</h1>
+<p class="sub">BHXH · BHYT · BHTN · BH TNLĐ-BNN — kỳ tháng ${month} năm ${year}</p>
+<table class="grid">
+  <tr><th class="c">STT</th><th>Nhân viên</th><th>Cơ chế</th><th class="r">Lương đóng BH</th><th class="r">NV đóng (10,5%)</th><th class="r">DN đóng (21,5%)</th><th class="r">Tổng nộp</th></tr>
+  ${rowsHtml || `<tr><td class="c">—</td><td colspan="6">Không có nhân sự trong kỳ này.</td></tr>`}
+  <tr class="total"><td></td><td colspan="3">TỔNG CỘNG</td><td class="r mono">${money(totalNV)}</td><td class="r mono">${money(totalDN)}</td><td class="r mono">${money(totalNV + totalDN)}</td></tr>
+</table>
+<p class="note" style="margin-top:8px">Phần NV đóng trừ vào thực lĩnh của nhân viên; phần DN đóng tính vào chi phí doanh nghiệp, không trừ vào lương. Bảo hiểm chỉ phát sinh khi đủ ≥14 ngày công/tháng theo Điều 42 QĐ 595/QĐ-BHXH.</p>
+<table class="sign">
+  <tr>
+    <td style="width:50%">
+      <div class="role">Người lập biểu (Kế toán)</div>
+      <div class="hint">(Ký, ghi rõ họ tên)</div>
+      <div style="height:70px"></div>
+    </td>
+    <td style="width:50%">
+      <div class="role">Giám đốc</div>
+      <div class="hint">(Ký tên, đóng dấu)</div>
+      <div style="height:70px"></div>
+    </td>
+  </tr>
+</table>
+<div class="foot">Bảng kê được lập tự động từ hệ thống quản trị ${payslipEscape(companyName)} ngày ${new Date().toISOString().slice(0, 10).split("-").reverse().join("/")}.</div>`;
+  await saveA4Pdf({ body, filename: `DOMIX_Bao_hiem_T${month}-${year}` });
+}
+
+// Xuất PDF LƯƠNG & BẢO HIỂM của MỘT nhân viên (bảng Nhân sự) — form A4 NGANG:
+// thông tin nhân viên/kỳ/tài khoản là TEXT phía trên; phần thống kê thu–chi là MỘT BẢNG
+// mỗi cột một khoản, có cột tổng thu nhập, tổng trừ và THỰC NHẬN.
+async function exportEmployeeProfilePdf(employee, { company = {}, pay = {}, period = {}, account = null, cong = 0, standardDays = 26, approval = null, payment = null } = {}) {
+  const month = Number(period.month) || ATT_MONTH;
+  const year = Number(period.year) || ATT_YEAR;
+  const money = (n) => `${Math.round(Number(n) || 0).toLocaleString("vi-VN")}đ`;
+  const num = (n) => Math.round(Number(n) || 0).toLocaleString("vi-VN");
+  const dmy = (iso) => String(iso || "").slice(0, 10).split("-").reverse().join("/");
+  const companyName = company?.name || "CÔNG TY DOMIX";
+
+  // Gom số liệu thu–chi của KỲ đang xem từ computePayroll (pay).
+  const allowanceTotal = (Number(pay.mealAllowance) || 0) + (Number(pay.seniorityAllowance) || 0)
+    + (Number(pay.attendanceBonus) || 0) + (Number(pay.customAllowanceTotal) || 0) + (Number(pay.otPay) || 0);
+  const bonusTotal = (Number(pay.commission) || 0) + (Number(pay.compBonus) || 0) + (Number(pay.techUpsale) || 0)
+    + (Number(pay.kpiBonus) || 0) + (Number(pay.kpiMilestoneBonus) || 0) + (Number(pay.otherBonus) || 0);
+  const grossIncome = Number(pay.grossIncome) || 0;
+  const totalDeduction = (Number(pay.employeeInsurance) || 0) + (Number(pay.thueTNCN) || 0) + (Number(pay.advance) || 0);
+  const netFinal = grossIncome - totalDeduction;
+
+  const body = `
+<div class="co">
+  <div>
+    <b>${payslipEscape(companyName)}</b><br>
+    ${payslipEscape(company?.address || "")}<br>
+    ${company?.taxCode ? `MST: ${payslipEscape(company.taxCode)}` : ""}
+  </div>
+  <div style="text-align:right">Mã phiếu: <b>NS-${payslipEscape(employee.id)}</b><br>Kỳ lương: <b>tháng ${month}/${year}</b></div>
+</div>
+<h1>PHIẾU LƯƠNG &amp; BẢO HIỂM NHÂN VIÊN</h1>
+<p class="sub">Kỳ lương tháng ${month} năm ${year}</p>
+
+<div class="meta">
+  <div class="mitem"><span class="mlabel">Họ và tên:</span> <b>${payslipEscape(employee.name)}</b></div>
+  <div class="mitem"><span class="mlabel">Hợp đồng:</span> ${payslipEscape(CONTRACT_META[employee.contractType]?.label || "Chính thức")}</div>
+  <div class="mitem"><span class="mlabel">Ngày công kỳ này:</span> ${Number(cong || 0).toFixed(1)}/${standardDays} công chuẩn</div>
+  <div class="mitem"><span class="mlabel">Đơn giá ngày:</span> ${money(pay.daySalary)}</div>
+  <div class="mitem"><span class="mlabel">Ngân hàng nhận lương:</span> ${payslipEscape(employee.bankName || "Chưa khai báo")}</div>
+  <div class="mitem"><span class="mlabel">Số tài khoản nhận:</span> <span class="mono">${payslipEscape(employee.bankAccount || "Chưa khai báo")}</span></div>
+  <div class="mitem"><span class="mlabel">Chủ tài khoản:</span> ${payslipEscape(employee.name)}</div>
+  <div class="mitem"><span class="mlabel">Ngày lập phiếu:</span> ${dmy(new Date().toISOString())}</div>
+</div>
+
+<div class="unit">Đơn vị tính: đồng</div>
+<h2>Thống kê lương kỳ tháng ${month}/${year} — mỗi cột một khoản</h2>
+<table class="grid">
+  <tr>
+    <th class="c">Lương cơ bản</th>
+    <th class="c">Lương theo công</th>
+    <th class="c">Phụ cấp<div class="note">ăn trưa · chuyên cần · thâm niên · OT</div></th>
+    <th class="c">Thưởng &amp; hoa hồng</th>
+    <th class="c hl">TỔNG NHẬN (A)</th>
+    <th class="c">BH nhân viên đóng</th>
+    <th class="c">Thuế TNCN</th>
+    <th class="c">Tạm ứng</th>
+    <th class="c hl">TỔNG TRỪ (B)</th>
+    <th class="c hl">THỰC NHẬN (A − B)</th>
+    <th class="c">BH doanh nghiệp đóng<div class="note">không trừ vào lương</div></th>
+  </tr>
+  <tr>
+    <td class="num">${num(pay.baseSalary)}</td>
+    <td class="num">${num(pay.mainSalary)}</td>
+    <td class="num">${num(allowanceTotal)}</td>
+    <td class="num">${num(bonusTotal)}</td>
+    <td class="num hl">${num(grossIncome)}</td>
+    <td class="num">(${num(pay.employeeInsurance)})</td>
+    <td class="num">(${num(pay.thueTNCN)})</td>
+    <td class="num">(${num(pay.advance)})</td>
+    <td class="num hl">(${num(totalDeduction)})</td>
+    <td class="num hl">${num(netFinal)}</td>
+    <td class="num">${num(pay.employerInsurance)}</td>
+  </tr>
+</table>
+<div class="words">(Bằng chữ — thực nhận: <b>${payslipEscape(vndInWords(netFinal))}</b>)</div>
+
+<table class="sign">
+  <tr>
+    <td style="width:33.33%">
+      <div class="role">Người làm đơn</div>
+      <div class="hint">(Ký, ghi rõ họ tên)</div>
+      <div style="height:56px"></div>
+      <div class="who">${payslipEscape(approval?.submittedByName || employee.name)}</div>
+      ${approval?.submittedAt ? `<div class="when">Gửi lúc ${payslipEscape(approval.submittedAt)}</div>` : ""}
+    </td>
+    <td style="width:33.33%">
+      <div class="role">Kế toán chi trả</div>
+      <div class="hint">(Ký, ghi rõ họ tên)</div>
+      ${payment
+        ? `<div class="ok">✓ ĐÃ CHI TRẢ</div><div class="who">${payslipEscape(payment.paidByName || payment.paidByEmail || "Kế toán")}</div><div class="when">Ngày ${payslipEscape(String(payment.paidDate || payment.paidAt || "").slice(0, 10).split("-").reverse().join("/"))} · ${money(payment.amount)}</div>`
+        : `<div class="pending">Chưa chi trả</div>`}
+    </td>
+    <td style="width:33.33%">
+      <div class="role">Giám đốc duyệt &amp; đóng dấu</div>
+      <div class="hint">(Ký tên, đóng dấu)</div>
+      ${approval?.bossApprovedAt
+        ? `<div class="stamp"><div class="s1">ĐÃ DUYỆT</div><div class="s2">${payslipEscape(companyName)}</div><div class="s3">${payslipEscape(approval.bossApprovedAt)}</div></div><div class="who">${payslipEscape(approval.bossApprovedByName || approval.bossApprovedByEmail || "Giám đốc")}</div>`
+        : `<div class="stamp empty"><div class="s1">CHƯA<br>ĐÓNG DẤU</div></div>`}
+    </td>
+  </tr>
+</table>
+<div class="foot">Phiếu được xuất tự động từ hệ thống quản trị ${payslipEscape(companyName)} ngày ${dmy(new Date().toISOString())}.</div>`;
+  await saveA4Pdf({
+    body,
+    filename: `DOMIX_Luong_bao_hiem_${String(employee.name || "nhan_vien").trim().replace(/\s+/g, "_")}`,
+    orientation: "landscape",
+  });
+}
+
 // ---------- Small components ----------
 function StampBadge({ text, gold, muted }) {
   return (
@@ -5175,9 +5691,14 @@ function DomixApp({ authUser, onLogout }) {
   const paletteMatches = searchNavEntries(nav, paletteQuery);
   // Badge "Việc cần xử lý" — CÙNG hàm đếm buildOperationsRows với Tổng quan/màn Việc cần xử lý,
   // tự tính lại khi dữ liệu nguồn đổi (mutation nào cũng đi qua state chung nên badge cập nhật ngay).
+  const opsViewer = useMemo(() => ({
+    isBoss: payrollCurrentIsBoss,
+    isAccountant: payrollCurrentIsAccountant,
+    employeeId: payrollCurrentEmployee?.id ?? null,
+  }), [payrollCurrentIsBoss, payrollCurrentIsAccountant, payrollCurrentEmployee?.id]);
   const opsBadgeCount = useMemo(
-    () => buildOperationsRows({ orders, debts, supportCases, tasks, inventory, employees: activeEmployees, attendanceRequests, transactions }).length,
-    [orders, debts, supportCases, tasks, inventory, activeEmployees, attendanceRequests, transactions],
+    () => buildOperationsRows({ orders, debts, supportCases, tasks, inventory, employees: activeEmployees, attendanceRequests, transactions, payrollApprovals, midMonthRequests, otRecords, viewer: opsViewer }).length,
+    [orders, debts, supportCases, tasks, inventory, activeEmployees, attendanceRequests, transactions, payrollApprovals, midMonthRequests, otRecords, opsViewer],
   );
   const activeTabRequiredFields = activeTabAllowed ? (TAB_DEFAULT_FIELDS[tab] || []) : [];
   const activeTabDataReady = dbReady && areDataFieldsReady(activeTabRequiredFields);
@@ -5491,8 +6012,8 @@ function DomixApp({ authUser, onLogout }) {
               onRetry={() => ensureDataFields(activeTabRequiredFields, { force: true })}
             />
           ) : (<>
-          {tab === "dashboard" && <Dashboard totals={totals} financialSummary={financialSummary} financialSummaryLoading={financialSummaryLoading} financialSummaryError={financialSummaryError} financialSummaryIncidentId={financialSummaryIncidentId} financialSeriesError={financialSeriesError} refreshFinancialSummary={refreshFinancialSummary} transactions={transactions} payrollRows={payrollRows} totalPayroll={totalPayroll} activeEmployees={effectiveActiveEmployees} warnCount={warnCount} warnNames={warnNames} cashBalance={cashBalance} totalReceivable={totalReceivable} totalPayable={totalPayable} overdueDebts={overdueDebts} t={t} lang={lang} totalCharterCapitalContributed={totalCharterCapitalContributed} registeredCharterCapital={company.registeredCharterCapital} monthlyChart={monthlyChart} orders={orders} distributionOrders={distributionOrders} cvReviews={cvReviews} masterRanking={masterRanking} inventory={inventory} debts={debts} setTab={setTab} pendingDistRevenue={pendingDistRevenue} contracts={contracts} leads={leads} perfWarningApprovedAt={perfWarningApprovedAt} setPerfWarningApprovedAt={setPerfWarningApprovedAt} announcements={announcements} setAnnouncements={setAnnouncements} totalEmployerCost={totalEmployerCost} supportCases={supportCases} tasks={tasks} attendanceRequests={attendanceRequests} employees={activeEmployees} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
-          {tab === "dieuhanh" && <OperationsCenter orders={orders} debts={debts} supportCases={supportCases} tasks={tasks} inventory={inventory} employees={activeEmployees} attendanceRequests={attendanceRequests} transactions={transactions} setTab={setTab} onAssignTask={assignTaskFromOps} onOpenRecord={openRecordFromOps} typeFilter={opsTypeFilter} onTypeFilterChange={setOpsTypeFilter} isManager={["admin", "accountant"].includes(normalizeAccountRole(effectiveAuthUser?.role))} />}
+          {tab === "dashboard" && <Dashboard totals={totals} financialSummary={financialSummary} financialSummaryLoading={financialSummaryLoading} financialSummaryError={financialSummaryError} financialSummaryIncidentId={financialSummaryIncidentId} financialSeriesError={financialSeriesError} refreshFinancialSummary={refreshFinancialSummary} transactions={transactions} payrollRows={payrollRows} totalPayroll={totalPayroll} activeEmployees={effectiveActiveEmployees} warnCount={warnCount} warnNames={warnNames} cashBalance={cashBalance} totalReceivable={totalReceivable} totalPayable={totalPayable} overdueDebts={overdueDebts} t={t} lang={lang} totalCharterCapitalContributed={totalCharterCapitalContributed} registeredCharterCapital={company.registeredCharterCapital} monthlyChart={monthlyChart} orders={orders} distributionOrders={distributionOrders} cvReviews={cvReviews} masterRanking={masterRanking} inventory={inventory} debts={debts} setTab={setTab} pendingDistRevenue={pendingDistRevenue} contracts={contracts} leads={leads} perfWarningApprovedAt={perfWarningApprovedAt} setPerfWarningApprovedAt={setPerfWarningApprovedAt} announcements={announcements} setAnnouncements={setAnnouncements} totalEmployerCost={totalEmployerCost} supportCases={supportCases} tasks={tasks} attendanceRequests={attendanceRequests} employees={activeEmployees} payrollApprovals={payrollApprovals} payrollPayments={payrollPayments} midMonthRequests={midMonthRequests} otRecords={otRecords} opsViewer={opsViewer} company={company} reportYear={reportYear} reportMonth={reportMonth} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
+          {tab === "dieuhanh" && <OperationsCenter orders={orders} debts={debts} supportCases={supportCases} tasks={tasks} inventory={inventory} employees={activeEmployees} attendanceRequests={attendanceRequests} transactions={transactions} payrollApprovals={payrollApprovals} midMonthRequests={midMonthRequests} otRecords={otRecords} viewer={opsViewer} setTab={setTab} onAssignTask={assignTaskFromOps} onOpenRecord={openRecordFromOps} typeFilter={opsTypeFilter} onTypeFilterChange={setOpsTypeFilter} isManager={["admin", "accountant"].includes(normalizeAccountRole(effectiveAuthUser?.role))} />}
           {tab === "settings" && <CaiDatCongTy company={company} setCompany={setCompany} authUser={authUser} t={t} lang={lang} exportAllData={exportAllData} importAllData={importAllData} announcements={announcements} setAnnouncements={setAnnouncements} applyAppData={applyAppData} />}
           {tab === "task-reminder-settings" && <CauHinhNhacViec company={company} setCompany={setCompany} authUser={effectiveAuthUser} announcements={announcements} setAnnouncements={setAnnouncements} />}
           {tab === "socai" && <SoCaiKeToan authUser={effectiveAuthUser} />}
@@ -5514,7 +6035,7 @@ function DomixApp({ authUser, onLogout }) {
           {(tab === "donhang" || tab === "hotro-donhang") && <RevenueFinanceHub key={tab} otRecords={otRecords} ordersOnly={tab === "hotro-donhang"} recordFocus={recordFocus} onRecordFocusConsumed={() => setRecordFocus(null)} onReturnToOps={returnToOps} orderPrefill={orderPrefill} onOrderPrefillConsumed={() => setOrderPrefill(null)} financialSummary={financialSummary} financialSummaryError={financialSummaryError} refreshFinancialSummary={refreshFinancialSummary} transactions={transactions} setTransactions={setTransactions} orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} payrollRows={payrollRows} kpiTiers={kpiTiers} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} revenueByEmployee={revenueByEmployee} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} debts={debts} setDebts={setDebts} company={company} unlockedMonths={unlockedMonths} onOpenReceivables={() => setTab("congno")} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
           {tab === "crm" && <RevenueFinanceHub otRecords={otRecords} onOpenReceivables={() => setTab("congno")} financialSummary={financialSummary} financialSummaryError={financialSummaryError} refreshFinancialSummary={refreshFinancialSummary} transactions={transactions} setTransactions={setTransactions} orders={orders} setOrders={setOrders} leads={leads} setLeads={setLeads} employees={activeEmployees} payrollRows={payrollRows} kpiTiers={kpiTiers} marketingLogs={marketingLogs} reportYear={reportYear} reportMonth={reportMonth} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} revenueByEmployee={revenueByEmployee} inventory={inventory} setInventory={setInventory} distPartners={distributionPartners} distOrders={distributionOrders} setDistOrders={setDistributionOrders} pages={marketingPages} setSupportCases={setSupportCases} customers={customers} setCustomers={setCustomers} moveStock={moveStock} debts={debts} setDebts={setDebts} company={company} unlockedMonths={unlockedMonths} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError, applyAppData }} />}
           {tab === "marketing" && <MarketingDaily logs={marketingLogs} setLogs={setMarketingLogs} employees={activeEmployees} marketingByEmployee={marketingByEmployee} reportYear={reportYear} reportMonth={reportMonth} pages={marketingPages} setPages={setMarketingPages} orders={orders} inventory={inventory} authUser={effectiveAuthUser} currentEmployee={payrollCurrentEmployee} positionAccess={positionAccess} leads={leads} setLeads={setLeads} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} />}
-          {tab === "nhansu" && <NhanSu authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} onEmployeesPersisted={applyPersistedEmployees} refreshEmployees={refreshEmployees} showForm={showEmpForm} setShowForm={setShowEmpForm} reportYear={reportYear} reportMonth={reportMonth} prefillEmployee={prefillEmployee} setPrefillEmployee={setPrefillEmployee} onOpenProfile={setProfileEmployeeId} lang={lang} otRecords={otRecords} />}
+          {tab === "nhansu" && <NhanSu authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} onEmployeesPersisted={applyPersistedEmployees} refreshEmployees={refreshEmployees} showForm={showEmpForm} setShowForm={setShowEmpForm} reportYear={reportYear} reportMonth={reportMonth} prefillEmployee={prefillEmployee} setPrefillEmployee={setPrefillEmployee} onOpenProfile={setProfileEmployeeId} lang={lang} otRecords={otRecords} company={company} payrollRows={payrollRows} payrollApprovals={payrollApprovals} payrollPayments={payrollPayments} />}
           {tab === "tuyendung" && <><BetaFeatureNotice /><TuyenDungAI cvReviews={cvReviews} setCvReviews={setCvReviews} employees={activeEmployees} masterRanking={masterRanking} company={company} queue={cvQueue} setQueue={setCvQueue} processing={cvProcessing} setProcessing={setCvProcessing} progress={cvProgress} setProgress={setCvProgress} setPrefillEmployee={setPrefillEmployee} setTab={setTab} setShowEmpForm={setShowEmpForm} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} /></>}
           {tab === "chamcong" && <ChamCong authUser={effectiveAuthUser} employees={employees} setEmployees={setEmployees} refreshEmployees={refreshEmployees} employeesSyncing={employeesSyncing} employeeSyncError={employeeSyncError} attendanceRequests={attendanceRequests} setAttendanceRequests={setAttendanceRequests} otRecords={otRecords} setOtRecords={setOtRecords} unlockedMonths={unlockedMonths} setUnlockedMonths={setUnlockedMonths} company={company} lang={lang} reportYear={reportYear} reportMonth={reportMonth} dataLoader={{ ensureDataFields }} />}
           {tab === "hieusuat" && <HieuSuat employees={effectiveActiveEmployees} masterRanking={masterRanking} supportCases={supportCases} financialSummary={financialSummary} dataLoader={{ ensureDataFields, areDataFieldsReady, areDataFieldsLoading, dataLoadError }} onOpenProfile={setProfileEmployeeId} currentEmployeeId={payrollCurrentEmployee?.id ?? null} />}
@@ -5654,7 +6175,7 @@ function QuickAnnouncementBox({ announcements, setAnnouncements }) {
   );
 }
 
-function Dashboard({ totals, financialSummary, financialSummaryLoading, financialSummaryError, financialSummaryIncidentId, financialSeriesError, refreshFinancialSummary, transactions, payrollRows, totalPayroll, activeEmployees, warnCount, warnNames, cashBalance, totalReceivable, totalPayable, overdueDebts, t, lang, totalCharterCapitalContributed, registeredCharterCapital, monthlyChart, orders, distributionOrders, cvReviews, masterRanking, inventory, debts, setTab, pendingDistRevenue, contracts, leads, perfWarningApprovedAt, setPerfWarningApprovedAt, announcements, setAnnouncements, totalEmployerCost, dataLoader, initialView, supportCases, tasks, attendanceRequests, employees }) {
+function Dashboard({ totals, financialSummary, financialSummaryLoading, financialSummaryError, financialSummaryIncidentId, financialSeriesError, refreshFinancialSummary, transactions, payrollRows, totalPayroll, activeEmployees, warnCount, warnNames, cashBalance, totalReceivable, totalPayable, overdueDebts, t, lang, totalCharterCapitalContributed, registeredCharterCapital, monthlyChart, orders, distributionOrders, cvReviews, masterRanking, inventory, debts, setTab, pendingDistRevenue, contracts, leads, perfWarningApprovedAt, setPerfWarningApprovedAt, announcements, setAnnouncements, totalEmployerCost, dataLoader, initialView, supportCases, tasks, attendanceRequests, employees, payrollApprovals = [], payrollPayments = [], midMonthRequests = [], otRecords = [], opsViewer = null, company = null, reportYear = ATT_YEAR, reportMonth = ATT_MONTH }) {
   // Menu "Điều hành" tái dùng đúng trung tâm này nhưng mở thẳng khu "Việc cần xử lý" —
   // mọi cảnh báo dẫn về đúng màn hình nguồn, không sửa dữ liệu chuyên môn tại chỗ.
   const [activeTableView, setActiveTableView] = useState(initialView || "finance");
@@ -5665,8 +6186,8 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
   }, dataLoader?.ensureDataFields, dataLoader?.areDataFieldsReady, dataLoader?.areDataFieldsLoading);
   // Đếm "việc cần xử lý" bằng CHUNG một hàm với Trung tâm vận hành — hai màn không lệch số.
   const opsRows = useMemo(
-    () => buildOperationsRows({ orders, debts, supportCases, tasks, inventory, employees, attendanceRequests, transactions }),
-    [orders, debts, supportCases, tasks, inventory, employees, attendanceRequests, transactions],
+    () => buildOperationsRows({ orders, debts, supportCases, tasks, inventory, employees, attendanceRequests, transactions, payrollApprovals, midMonthRequests, otRecords, viewer: opsViewer }),
+    [orders, debts, supportCases, tasks, inventory, employees, attendanceRequests, transactions, payrollApprovals, midMonthRequests, otRecords, opsViewer],
   );
   const opsHighCount = opsRows.filter((row) => row.priority === "Cao").length;
   const lowKpi = payrollRows.filter((r) => r.kpi < 80).length;
@@ -5674,6 +6195,32 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
   const [showLowKpiList, setShowLowKpiList] = useState(false);
   const [showWarnList, setShowWarnList] = useState(false);
   const [showFinancialDetails, setShowFinancialDetails] = useState(false);
+  // Xuất nhanh PHIẾU LƯƠNG PDF ngay từ Tổng quan — chọn nhân viên rồi bấm, không cần mở Bảng lương.
+  const [quickPayslipEmployeeId, setQuickPayslipEmployeeId] = useState("");
+  const exportQuickPayslip = () => {
+    const row = payrollRows.find((r) => String(r.id) === String(quickPayslipEmployeeId)) || payrollRows[0];
+    if (!row) return;
+    const approval = (payrollApprovals || []).find((a) => (
+      Number(a.employeeId) === Number(row.id) && Number(a.year) === Number(reportYear) && Number(a.month) === Number(reportMonth)
+    )) || null;
+    const payment = (payrollPayments || []).find((p) => (
+      Number(p.employeeId) === Number(row.id) && Number(p.year) === Number(reportYear) && Number(p.month) === Number(reportMonth)
+    )) || null;
+    const midEntries = (midMonthRequests || []).filter((m) => (
+      Number(m.employeeId) === Number(row.id) && m.paid
+      && new Date(m.date).getFullYear() === Number(reportYear)
+      && new Date(m.date).getMonth() + 1 === Number(reportMonth)
+    ));
+    exportPayslipPdf(row, {
+      company,
+      period: { year: reportYear, month: reportMonth },
+      approval,
+      payment,
+      midMonthEntries: midEntries,
+      midMonthPaid: midEntries.reduce((sum, m) => sum + (Number(m.amount) || 0), 0),
+      statusLabel: payment ? "Đã chi trả" : (approval ? "Đang xét duyệt" : "Chưa gửi xét duyệt"),
+    });
+  };
 
   // Gom cảnh báo/việc cần xử lý từ KHẮP hệ thống về đúng 1 chỗ — đúng thứ sếp cần thấy ngay khi
   // mở app, không phải tự đi từng tab kiểm tra riêng lẻ.
@@ -5875,6 +6422,24 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
               </div>
             )}
           </div>
+          {payrollRows.length > 0 && (
+            <div className="rounded-lg border border-paper-line bg-paper/40 p-2.5">
+              <div className="mb-1.5 text-[10px] font-semibold uppercase text-muted">Xuất phiếu lương PDF nhanh · kỳ {reportMonth}/{reportYear}</div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={quickPayslipEmployeeId || String(payrollRows[0]?.id ?? "")}
+                  onChange={(e) => setQuickPayslipEmployeeId(e.target.value)}
+                  className="min-w-0 flex-1 rounded-md border border-paper-line bg-white px-2 py-1.5 text-xs text-ink"
+                  aria-label="Chọn nhân viên để xuất phiếu lương PDF"
+                >
+                  {payrollRows.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+                <button type="button" onClick={exportQuickPayslip} className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-stamp-red/40 bg-stamp-red/10 px-3 py-1.5 text-xs font-semibold text-stamp-red hover:bg-stamp-red/20" title="Tải phiếu lương PDF của nhân viên đã chọn — đầy đủ khoản nhận, khoản trừ, thực nhận, STK ngân hàng và dấu duyệt">
+                  <Printer size={13} /> Xuất PDF
+                </button>
+              </div>
+            </div>
+          )}
           <LinkChip>{t("see_details_perf_payroll")}</LinkChip>
         </div>
       </div>
@@ -19668,9 +20233,55 @@ const OPS_PRIORITY_STYLE = {
 // NGUỒN SỰ THẬT DUY NHẤT cho "việc cần xử lý" — Tổng quan và Trung tâm vận hành cùng gọi
 // hàm này nên hai màn không bao giờ lệch số. Mỗi bản ghi nguồn chưa xử lý xuất hiện đúng
 // MỘT lần; bản ghi đã hoàn thành/đã hủy không được đếm.
-function buildOperationsRows({ orders = [], debts = [], supportCases = [], tasks = [], inventory = [], employees = [], attendanceRequests = [], transactions = [] }) {
+function buildOperationsRows({ orders = [], debts = [], supportCases = [], tasks = [], inventory = [], employees = [], attendanceRequests = [], transactions = [], payrollApprovals = [], midMonthRequests = [], otRecords = [], viewer = null }) {
   const employeeName = (id) => (employees || []).find((e) => Number(e.id) === Number(id))?.name || "—";
   const list = [];
+  // ---- MỌI MỤC CẦN DUYỆT hiển thị theo đúng QUYỀN người xem ----
+  // viewer = { isBoss, isAccountant, employeeId }. Không truyền viewer (chỗ gọi cũ) → thấy hết như trước.
+  const viewerIsBoss = Boolean(viewer?.isBoss);
+  const viewerIsAccountant = Boolean(viewer?.isAccountant);
+  const viewerEmployeeId = viewer?.employeeId;
+  const seesEverything = !viewer;
+  (payrollApprovals || []).forEach((a) => {
+    const period = `kỳ ${a.month}/${a.year}`;
+    const who = a.employeeName || employeeName(a.employeeId);
+    const base = { subject: who, ref: `ĐX #${String(a.id ?? `${a.employeeId}-${a.month}`).slice(-6)}`, owner: who, target: "luong", assignee: a.employeeId };
+    if ((seesEverything || viewerIsAccountant) && a.status === "cho_ke_toan_duyet") {
+      list.push({ id: `pr-kt-${a.employeeId}-${a.year}-${a.month}`, type: "Duyệt lương", content: `Đề xuất lương ${period} đang chờ Kế toán duyệt`, dept: "Kế toán", priority: "Cao", due: "", status: "Chờ Kế toán duyệt", warn: "", ...base });
+    }
+    if ((seesEverything || viewerIsBoss) && a.status === "cho_sep_xac_nhan") {
+      list.push({ id: `pr-sep-${a.employeeId}-${a.year}-${a.month}`, type: "Duyệt lương", content: `Đề xuất lương ${period} đã qua Kế toán — chờ Sếp duyệt & đóng dấu`, dept: "Ban giám đốc", priority: "Cao", due: "", status: "Chờ Sếp duyệt", warn: "", ...base });
+    }
+    if ((seesEverything || viewerIsAccountant) && ["da_duyet_cho_thanh_toan", "cho_ke_toan_chi_tra"].includes(String(a.status || ""))) {
+      list.push({ id: `pr-chi-${a.employeeId}-${a.year}-${a.month}`, type: "Duyệt lương", content: `Lương ${period} Sếp đã duyệt — chờ Kế toán chi trả (chi xong tự tải phiếu lương PDF)`, dept: "Kế toán", priority: "Cao", due: "", status: "Chờ chi trả", warn: "", ...base });
+    }
+    if (viewerEmployeeId != null && Number(a.employeeId) === Number(viewerEmployeeId) && a.status === "tra_ve_nhan_vien") {
+      list.push({ id: `pr-tv-${a.employeeId}-${a.year}-${a.month}`, type: "Duyệt lương", content: `Đề xuất lương ${period} bị trả về — sửa và gửi lại`, dept: "Nhân sự", priority: "Cao", due: "", status: "Bị trả về", warn: "", ...base });
+    }
+  });
+  (midMonthRequests || []).forEach((m) => {
+    if (m.paid) return;
+    const who = m.employeeName || employeeName(m.employeeId);
+    const base = { subject: who, ref: `TƯ #${String(m.id).slice(-6)}`, owner: who, target: "luong", assignee: m.employeeId, due: m.date };
+    if ((seesEverything || viewerIsAccountant) && m.status === "cho_ke_toan_duyet") {
+      list.push({ id: `mm-kt-${m.id}`, type: "Tạm ứng lương", content: `Đề xuất tạm ứng giữa tháng ${fmtVND(Number(m.amount) || 0)} chờ Kế toán duyệt`, dept: "Kế toán", priority: "Cao", status: "Chờ Kế toán duyệt", warn: "", ...base });
+    }
+    if ((seesEverything || viewerIsBoss) && m.status === "cho_sep_xac_nhan") {
+      list.push({ id: `mm-sep-${m.id}`, type: "Tạm ứng lương", content: `Tạm ứng giữa tháng ${fmtVND(Number(m.amount) || 0)} chờ Sếp duyệt`, dept: "Ban giám đốc", priority: "Cao", status: "Chờ Sếp duyệt", warn: "", ...base });
+    }
+    if ((seesEverything || viewerIsAccountant) && ["da_duyet_cho_thanh_toan", "cho_ke_toan_chi_tra"].includes(String(m.status || ""))) {
+      list.push({ id: `mm-chi-${m.id}`, type: "Tạm ứng lương", content: `Tạm ứng ${fmtVND(Number(m.amount) || 0)} Sếp đã duyệt — chờ Kế toán chi trả`, dept: "Kế toán", priority: "Cao", status: "Chờ chi trả", warn: "", ...base });
+    }
+    if (viewerEmployeeId != null && Number(m.employeeId) === Number(viewerEmployeeId) && m.status === "tra_ve_nhan_vien") {
+      list.push({ id: `mm-tv-${m.id}`, type: "Tạm ứng lương", content: `Đề xuất tạm ứng ${fmtVND(Number(m.amount) || 0)} bị trả về — sửa và gửi lại`, dept: "Nhân sự", priority: "Cao", status: "Bị trả về", warn: "", ...base });
+    }
+  });
+  (otRecords || []).forEach((r) => {
+    if (r.status !== "pending") return;
+    if (!(seesEverything || viewerIsBoss || viewerIsAccountant)) return;
+    const who = employeeName(r.employeeId);
+    list.push({ id: `ot-${r.id}`, type: "Tăng ca", content: `Đăng ký tăng ca ${Number(r.hours) || 0}h ngày ${formatDateVN(r.date)} đang chờ duyệt`, subject: who, ref: `OT #${String(r.id).slice(-6)}`, dept: "Nhân sự", owner: who, priority: "Trung bình", due: r.date, status: "Chờ duyệt", warn: "", target: "chamcong", assignee: r.employeeId });
+  });
   (orders || []).forEach((o) => {
       if (isOrderCancelled(o)) return;
       const ref = `Đơn #${String(o.id).slice(-6)}`;
@@ -19740,13 +20351,13 @@ function buildOperationsRows({ orders = [], debts = [], supportCases = [], tasks
   return list.sort((a, b) => (priorityRank[a.priority] ?? 9) - (priorityRank[b.priority] ?? 9) || String(a.due || "").localeCompare(String(b.due || "")));
 }
 
-function OperationsCenter({ orders = [], debts = [], supportCases = [], tasks = [], inventory = [], employees = [], attendanceRequests = [], transactions = [], setTab, onAssignTask, onOpenRecord, typeFilter = "all", onTypeFilterChange, isManager }) {
+function OperationsCenter({ orders = [], debts = [], supportCases = [], tasks = [], inventory = [], employees = [], attendanceRequests = [], transactions = [], payrollApprovals = [], midMonthRequests = [], otRecords = [], viewer = null, setTab, onAssignTask, onOpenRecord, typeFilter = "all", onTypeFilterChange, isManager }) {
   const setTypeFilter = onTypeFilterChange || (() => {});
   const employeeName = (id) => (employees || []).find((e) => Number(e.id) === Number(id))?.name || "—";
 
   const rows = useMemo(
-    () => buildOperationsRows({ orders, debts, supportCases, tasks, inventory, employees, attendanceRequests, transactions }),
-    [orders, supportCases, tasks, debts, inventory, employees, attendanceRequests, transactions],
+    () => buildOperationsRows({ orders, debts, supportCases, tasks, inventory, employees, attendanceRequests, transactions, payrollApprovals, midMonthRequests, otRecords, viewer }),
+    [orders, supportCases, tasks, debts, inventory, employees, attendanceRequests, transactions, payrollApprovals, midMonthRequests, otRecords, viewer],
   );
 
   const types = ["all", ...Array.from(new Set(rows.map((r) => r.type)))];
@@ -20025,7 +20636,7 @@ function EmployeeProfileModal({ employee, tasks = [], orders = [], marketingLogs
 }
 
 // ---------- Nhân sự ----------
-function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refreshEmployees, showForm, setShowForm, reportYear, reportMonth, prefillEmployee, setPrefillEmployee, onOpenProfile, lang = "vi", otRecords = [] }) {
+function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refreshEmployees, showForm, setShowForm, reportYear, reportMonth, prefillEmployee, setPrefillEmployee, onOpenProfile, lang = "vi", otRecords = [], company = null, payrollRows = [], payrollApprovals = [], payrollPayments = [] }) {
   const ui = (vi, en) => lang === "en" ? en : vi;
   const [showInactive, setShowInactive] = useState(false);
   const [expandedResume, setExpandedResume] = useState({});
@@ -20764,6 +21375,21 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
                           <Eye size={12} /> Chi tiết
                         </button>
                       )}
+                      {/* Dữ liệu lương lấy từ payrollRows (đã gộp doanh số/hoa hồng/OT) để phiếu khớp 1-1 với Bảng lương;
+                          hồ sơ không có trong payrollRows (đã nghỉ...) mới rơi về bản tính tại chỗ. */}
+                      <button type="button" onClick={() => exportEmployeeProfilePdf(e, {
+                        company,
+                        pay: payrollRows.find((x) => Number(x.id) === Number(e.id)) || pay,
+                        period: { year: reportYear, month: reportMonth },
+                        account,
+                        cong,
+                        standardDays: standardWorkDaysFor(reportYear, reportMonth),
+                        // Khối ký lấy dấu duyệt/chi trả THẬT của kỳ đang xem — người làm đơn, Sếp đóng dấu, Kế toán chi trả.
+                        approval: payrollApprovals.find((a) => Number(a.employeeId) === Number(e.id) && Number(a.year) === Number(reportYear) && Number(a.month) === Number(reportMonth)) || null,
+                        payment: payrollPayments.find((p) => Number(p.employeeId) === Number(e.id) && Number(p.year) === Number(reportYear) && Number(p.month) === Number(reportMonth)) || null,
+                      })} className="inline-flex items-center gap-1 rounded-md border border-stamp-red/35 px-2.5 py-1.5 text-xs font-semibold text-stamp-red transition-colors hover:bg-stamp-red/5" title="Tải PDF lương & bảo hiểm kỳ này của nhân viên + STK ngân hàng nhận lương (không kèm thông tin cá nhân/hợp đồng)">
+                        <Printer size={12} /> PDF
+                      </button>
                       {isAdmin && (
                         <button type="button" onClick={() => startEdit(e)} className="inline-flex items-center gap-1 rounded-md border border-paper-line px-2.5 py-1.5 text-xs font-semibold text-ink hover:border-[#3C50E0]/60" title="Sửa hồ sơ, lương, KPI, quyền tài khoản"><Pencil size={12} /> Sửa</button>
                       )}
@@ -21931,7 +22557,29 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
       if (result.data && applyAppData) applyAppData(result.data, { markPersisted: true });
       await refreshFinancialSummary?.();
       setPayrollPaymentTarget(null);
-      noticeOverlay(`Đã chi trả ${fmtVND(approvedAmount)} và tạo đúng một bút toán Chi liên kết.`, { title: "Chi trả thành công" });
+      noticeOverlay(`Đã chi trả ${fmtVND(approvedAmount)} và tạo đúng một bút toán Chi liên kết. Phiếu lương PDF đang được tải về máy.`, { title: "Chi trả thành công" });
+      // Chi trả xong là XUẤT LUÔN phiếu lương PDF của người này — phiếu ghi trạng thái "Đã chi trả".
+      // State payrollPayments chưa kịp cập nhật trong closure nên tự dựng thông tin chi trả vừa ghi.
+      try {
+        exportPayslipPdf(r, {
+          company,
+          period: { year: reportYear, month: reportMonth },
+          approval,
+          payment: {
+            amount: approvedAmount,
+            paymentMethod: payrollPaymentForm.paymentMethod,
+            paidDate: payrollPaymentForm.date,
+            paidByName: actor.name,
+            paidByEmail: actor.email,
+            referenceNo: String(payrollPaymentForm.bankReference || "").trim(),
+          },
+          midMonthEntries: midMonthEntriesOf(r.id),
+          midMonthPaid: midMonthPaidOf(r.id),
+          statusLabel: "Đã chi trả",
+        });
+      } catch (exportError) {
+        console.error("Chi trả thành công nhưng xuất phiếu lương PDF lỗi:", exportError);
+      }
     } catch (error) {
       noticeOverlay(error.message || "Không thể chi trả lương.", { title: "Chi trả thất bại" });
     } finally {
@@ -22430,6 +23078,21 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
     };
   });
   const sumOverview = (field) => payrollOverviewRows.reduce((sum, row) => sum + (Number(row[field]) || 0), 0);
+  // Xuất PHIẾU LƯƠNG PDF cho TỪNG nhân viên được chọn — đầy đủ khoản nhận/khoản trừ,
+  // thực tế nhận, STK ngân hàng nhận lương, Kế toán duyệt và Sếp duyệt đóng dấu.
+  const exportPayslip = (row) => {
+    const approval = approvalOf(row.id);
+    const paid = paymentOf(row.id);
+    exportPayslipPdf(row, {
+      company,
+      period: { year: reportYear, month: reportMonth },
+      approval,
+      payment: paid,
+      midMonthEntries: midMonthEntriesOf(row.id),
+      midMonthPaid: midMonthPaidOf(row.id),
+      statusLabel: approvalStatusLabel(approval, paid),
+    });
+  };
   const overviewTotalRevenue = sumOverview("revenueUsed");
   const overviewTotalNet = sumOverview("net");
   const overviewTotalCompanyCost = sumOverview("employerTotalCost");
@@ -22653,7 +23316,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
     { id: "detail", label: "Chi tiết quy đổi & khấu trừ", icon: FileSpreadsheet },
     // Bảo hiểm: bảng riêng 2 cột NV đóng / DN đóng cho từng nhân viên — Sếp/Kế toán chỉnh được.
     ...(canViewAllPayroll ? [{ id: "insurance", label: "Bảo hiểm", icon: ShieldCheck }] : []),
-    { id: "proposals", label: `Đề xuất lương${monthlyPendingCount + midMonthPendingCount > 0 ? ` (${monthlyPendingCount + midMonthPendingCount})` : ""}`, icon: FileText },
+    // Chấm đỏ số hồ sơ đang chờ xử lý — hiển thị kiểu badge như mục Tin nhắn (chỉ hiện khi > 0).
+    { id: "proposals", label: "Đề xuất lương", count: (monthlyPendingCount + midMonthPendingCount) > 0 ? monthlyPendingCount + midMonthPendingCount : undefined, icon: FileText },
     // Tab đánh giá KPI dành cho Sếp và Kế toán — nhân viên xem KPI của mình trong phiếu lương.
     ...(canViewAllPayroll ? [{ id: "kpi", label: "KPI & Thưởng", icon: Target }] : []),
     ...(canViewAllPayroll ? [{ id: "allowance", label: "Phụ cấp", icon: Coins }] : []),
@@ -22687,7 +23351,15 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
             <div className="flex items-center gap-2 text-sm font-bold"><ShieldCheck size={15} className="text-[#86efac]" /> Bảo hiểm · phần nhân viên và doanh nghiệp đóng</div>
             <div className="mt-1 text-[11px] text-[#8fa4c8]">Khai số tiền CỐ ĐỊNH riêng từng nhân viên hoặc dùng % luật (NV 10,5% · DN 21,5%) · kỳ {reportMonth}/{reportYear}</div>
           </div>
-          <span className="rounded-full border border-[#315fae]/40 bg-[#315fae]/15 px-2.5 py-1 text-[10px] font-semibold text-[#a9c4ff]">{payrollRows.length} nhân viên</span>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-[#315fae]/40 bg-[#315fae]/15 px-2.5 py-1 text-[10px] font-semibold text-[#a9c4ff]">{payrollRows.length} nhân viên</span>
+            <button type="button" onClick={() => exportInsuranceExcel(payrollRows, { year: reportYear, month: reportMonth })} className="inline-flex items-center gap-1.5 rounded-md border border-[#86efac]/40 bg-[#86efac]/10 px-3 py-1.5 text-[11px] font-semibold text-[#86efac] hover:bg-[#86efac]/20" title="Xuất bảng bảo hiểm kỳ này ra Excel — tách phần NV đóng và DN đóng từng người">
+              <FileSpreadsheet size={13} /> Xuất Excel bảo hiểm
+            </button>
+            <button type="button" onClick={() => exportInsurancePdf(payrollRows, { company, period: { year: reportYear, month: reportMonth } })} className="inline-flex items-center gap-1.5 rounded-md border border-[#fca5a5]/40 bg-[#fca5a5]/10 px-3 py-1.5 text-[11px] font-semibold text-[#fca5a5] hover:bg-[#fca5a5]/20" title="Tải bảng kê bảo hiểm kỳ này về máy dưới dạng file PDF — có tổng cộng và khối ký duyệt">
+              <Printer size={13} /> Xuất PDF bảo hiểm
+            </button>
+          </div>
         </div>
         <InlineStats dark items={[
           { label: "Tổng NV đóng kỳ này", value: fmtVND(payrollRows.reduce((s, r) => s + (Number(r.employeeInsurance) || 0), 0)), className: "text-[#fca5a5]" },
@@ -23180,6 +23852,11 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
               </div>
             )}
             <span className="rounded-full border border-[#3C50E0]/30 bg-[#3C50E0]/10 px-2.5 py-1 text-[10px] font-semibold text-[#3C50E0]">{payrollOverviewRows.length} nhân viên</span>
+            {canViewAllPayroll && (
+              <button type="button" onClick={() => exportPayrollExcel(payrollOverviewRows, payrollPayments, midMonthRequests, { year: reportYear, month: reportMonth })} className="inline-flex items-center gap-1.5 rounded-md border border-ledger-green/40 bg-ledger-green/10 px-3 py-1.5 text-[11px] font-semibold text-ledger-green hover:opacity-90" title="Xuất toàn bộ bảng lương, bảo hiểm, thuế và danh sách chuyển khoản ra Excel">
+                <FileSpreadsheet size={13} /> Xuất Excel
+              </button>
+            )}
           </div>
         </div>
         <InlineStats items={[
@@ -23253,9 +23930,14 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                     ) : <span className="text-[10px] text-muted">Chưa chi</span>}
                   </td>
                   <td className="px-3 py-2.5 text-right">
-                    <button type="button" onClick={() => setDetailRowId(row.id)} className="inline-flex items-center gap-1 rounded-md border border-[#3C50E0]/35 bg-[#3C50E0]/5 px-2.5 py-1 text-[11px] font-semibold text-[#3C50E0] hover:bg-[#3C50E0]/10">
-                      <FileText size={11} /> Phiếu lương
-                    </button>
+                    <div className="inline-flex flex-col items-stretch gap-1">
+                      <button type="button" onClick={() => setDetailRowId(row.id)} className="inline-flex items-center justify-center gap-1 rounded-md border border-[#3C50E0]/35 bg-[#3C50E0]/5 px-2.5 py-1 text-[11px] font-semibold text-[#3C50E0] hover:bg-[#3C50E0]/10">
+                        <FileText size={11} /> Phiếu lương
+                      </button>
+                      <button type="button" onClick={() => exportPayslip(row)} className="inline-flex items-center justify-center gap-1 rounded-md border border-stamp-red/35 bg-stamp-red/5 px-2.5 py-1 text-[11px] font-semibold text-stamp-red hover:bg-stamp-red/10" title="Xuất phiếu lương PDF riêng của nhân viên này — đầy đủ khoản nhận, khoản trừ, thực nhận, STK ngân hàng và dấu duyệt">
+                        <Printer size={11} /> Xuất PDF
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -24274,6 +24956,9 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
               <div className="shrink-0 px-6 py-3.5 border-t border-paper-line bg-paper/60 flex items-center justify-between gap-3">
                 <span className="text-xs text-muted">Tổng đề xuất nhân viên: <strong className="ktns-mono text-ink text-sm">{fmtVND(approval ? proposalNumbersOf(approval).amount : 0)}</strong> <span className="ml-2 text-[10px]">· Hệ thống tham chiếu: {fmtVND(r.net)}</span></span>
                 <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  <button onClick={() => exportPayslip(r)} className="inline-flex items-center gap-1.5 text-xs font-semibold border border-stamp-red/40 bg-stamp-red/10 text-stamp-red px-3 py-2 rounded-md hover:bg-stamp-red/20" title="Xuất phiếu lương PDF của nhân viên này — đầy đủ khoản nhận, khoản trừ, thực nhận, STK ngân hàng và dấu duyệt">
+                    <Printer size={13} /> Xuất PDF phiếu lương
+                  </button>
                   {renderPayrollApprovalAction(r, false)}
                   <button onClick={() => setDetailRowId(null)} className="text-xs border border-paper-line text-muted px-3 py-2 rounded-md">Đóng</button>
                 </div>

@@ -1162,11 +1162,31 @@ def create_crm_order(data, payload, actor_email, actor_employee_id=None, allow_a
     return reconcile_company_data(result), order_id
 
 
+def _round_payroll_money(result):
+    """Tiền chi LƯƠNG luôn tròn về đồng ở cả payrollPayments lẫn dòng chi trong transactions.
+
+    Lương tính theo ngày công có thể ra số lẻ (VD 3.480.384,615đ). Cột amount của
+    cash_transactions là REAL (float4 trên PostgreSQL) nên số lẻ bị mất độ chính xác,
+    hai sổ tròn khác nhau 1đ và FinancialSummary chặn báo cáo "sổ không cân".
+    Chuẩn hóa tại reconcile để bản ghi CŨ đã lỡ ghi số lẻ cũng được sửa ở lần lưu kế tiếp.
+    """
+    for payment in _as_list(result.get("payrollPayments")):
+        if isinstance(payment, dict) and payment.get("amount") is not None:
+            payment["amount"] = float(round(_number(payment.get("amount"))))
+    for tx in _as_list(result.get("transactions")):
+        if not isinstance(tx, dict) or tx.get("amount") is None:
+            continue
+        source = str(tx.get("sourceModule") or tx.get("source") or "").lower()
+        if source in {"payroll", "payroll_payment", "bangluong"}:
+            tx["amount"] = float(round(_number(tx.get("amount"))))
+
+
 def reconcile_company_data(data):
     if not isinstance(data, dict):
         return data
 
     result = normalise_payment_ledger(dict(data))
+    _round_payroll_money(result)
     orders, debts, transactions = _synchronise_sales_finance(
         _as_list(result.get("orders")),
         _as_list(result.get("debts")),
