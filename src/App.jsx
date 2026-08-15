@@ -3479,92 +3479,126 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
     </tr>`).join("");
 
   const css = `${PAYSLIP_BASE_CSS}
-    .payslip-root { width: 794px; padding: 11px 15px 9px; font-family: Arial, "Helvetica Neue", Helvetica, sans-serif; color: #10233f; font-size: 9.2px; line-height: 1.35; }
-    .payslip-root .employee-slip { width: 100%; page-break-inside: avoid; }
+    /* Toàn phiếu dùng Times New Roman (VnTime) theo chuẩn văn bản hành chính Việt Nam. */
+    .payslip-root { width: 794px; padding: 6px 15px 8px; font-family: "Times New Roman", "Nimbus Roman No9 L", "Liberation Serif", Times, serif; color: #10233f; font-size: 10.6px; line-height: 1.4; }
+    /* KHÔNG đặt page-break-inside: avoid cho cả phiếu — html2pdf sẽ đẩy nguyên khối cao gần
+       bằng trang sang trang sau, sinh ra một trang trắng ở đầu. Chỉ khối chữ ký mới cần avoid. */
+    .payslip-root .employee-slip { width: 100%; }
     .payslip-root .slip-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; }
-    .payslip-root .brand-block { width: 42%; }
-    .payslip-root .brand-logo { font-size: 29px; line-height: .95; font-weight: 950; color: #0c3d91; letter-spacing: .8px; }
-    .payslip-root .company-name { margin-top: 4px; font-size: 10.7px; font-weight: 800; color: #1e293b; text-transform: uppercase; }
-    .payslip-root .company-line { margin-top: 6px; font-size: 8.7px; color: #475569; line-height: 1.45; }
-    .payslip-root .title-block { width: 58%; text-align: right; }
-    .payslip-root .slip-title { margin: 0; font-size: 19px; font-weight: 900; color: #123f93; letter-spacing: .25px; }
-    .payslip-root .period-pill { display: inline-block; margin-top: 5px; background: #0c3d91; color: #fff; border-radius: 7px; padding: 5px 14px; font-weight: 800; font-size: 9.2px; }
-    .payslip-root .slip-meta { margin-top: 9px; color: #334155; font-size: 8.6px; line-height: 1.55; }
+    .payslip-root .brand-block { width: 60%; }
+    .payslip-root .brand-logo { font-size: 30px; line-height: .95; font-weight: 700; color: #0c3d91; letter-spacing: .8px; }
+    .payslip-root .company-name { margin-top: 4px; font-size: 11.6px; font-weight: 700; color: #1e293b; text-transform: uppercase; }
+    .payslip-root .company-line { margin-top: 5px; font-size: 9.6px; color: #475569; line-height: 1.45; }
+    .payslip-root .title-block { margin-top: 4px; text-align: center; }
+    .payslip-root .slip-title { margin: 0; font-size: 23px; font-weight: 700; color: #123f93; letter-spacing: .4px; text-align: center; }
+    .payslip-root .period-pill { display: inline-flex; align-items: center; justify-content: center; margin-top: 8px; min-height: 26px; background: #0c3d91; color: #fff; border-radius: 8px; padding: 6px 22px; font-weight: 700; font-size: 10.6px; line-height: 1.4; letter-spacing: .3px; text-align: center; }
+    .payslip-root .slip-meta { width: 40%; text-align: right; color: #334155; font-size: 9.6px; line-height: 1.6; }
     .payslip-root .slip-meta b { color: #0f172a; }
     .payslip-root .period-note { margin-top: 8px; border: 1px solid #edd184; background: #fff9e9; color: #8a6513; border-radius: 7px; padding: 5px 8px; font-size: 8px; font-weight: 700; line-height: 1.35; }
 
     .payslip-root .employee-info { margin-top: 9px; display: grid; grid-template-columns: 1.08fr 1.2fr .72fr .86fr; border: 1px solid #d8e0ec; border-radius: 12px; overflow: hidden; }
-    .payslip-root .info-box { padding: 8px 10px; min-height: 58px; border-right: 1px solid #e2e8f0; background: #fff; }
+    /* Mọi ô đều canh GIỮA theo chiều dọc, chữ không dính vào đường kẻ. */
+    .payslip-root .info-box { padding: 9px 10px; min-height: 58px; border-right: 1px solid #e2e8f0; background: #fff; display: flex; flex-direction: column; justify-content: center; }
     .payslip-root .info-box:last-child { border-right: none; }
-    .payslip-root .info-label { font-size: 7.8px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: .35px; }
-    .payslip-root .info-value { margin-top: 5px; color: #0f172a; font-size: 10px; line-height: 1.35; font-weight: 800; }
+    .payslip-root .info-label { font-size: 9.2px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: .35px; line-height: 1.3; }
+    .payslip-root .info-value { margin-top: 5px; color: #0f172a; font-size: 12px; line-height: 1.4; font-weight: 700; }
 
     .payslip-root .money-tables { margin-top: 11px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
     .payslip-root .money-panel { border: 1px solid #d8e0ec; border-radius: 12px; overflow: hidden; background: #fff; }
-    .payslip-root .money-head { display: flex; align-items: center; gap: 7px; background: #0b3d91; color: #fff; padding: 7px 10px; font-size: 10.6px; font-weight: 900; text-transform: uppercase; }
-    .payslip-root .money-icon { width: 20px; height: 20px; border-radius: 50%; background: #fff; color: #0b3d91; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 900; }
+    .payslip-root .money-head { display: flex; align-items: center; gap: 7px; background: #0b3d91; color: #fff; padding: 7px 10px; font-size: 11.6px; font-weight: 700; text-transform: uppercase; }
+    .payslip-root .money-icon { width: 20px; height: 20px; border-radius: 50%; background: #fff; color: #0b3d91; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
     .payslip-root table.emp-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .payslip-root .emp-table th, .payslip-root .emp-table td { border: 1px solid #e3e8f1; padding: 6px 7px; vertical-align: top; }
-    .payslip-root .emp-table thead th { background: #f7f9fc; color: #475569; font-size: 7.7px; font-weight: 800; text-transform: uppercase; }
+    .payslip-root .emp-table th, .payslip-root .emp-table td { border: 1px solid #e3e8f1; padding: 8.4px 9px; vertical-align: middle; }
+    .payslip-root .emp-table thead th { background: #f7f9fc; color: #475569; font-size: 9.4px; font-weight: 700; text-transform: uppercase; padding: 8px 9px; line-height: 1.3; }
     .payslip-root .emp-table .idx { width: 32px; text-align: center; color: #475569; }
-    .payslip-root .emp-table .amount { width: 105px; text-align: right; white-space: nowrap; font-size: 9.5px; font-weight: 800; }
+    .payslip-root .emp-table .amount { width: 108px; text-align: right; white-space: nowrap; font-size: 11.6px; font-weight: 700; }
     .payslip-root .emp-table .amount.income { color: #047857; }
     .payslip-root .emp-table .amount.deduct { color: #c62828; }
-    .payslip-root .entry-label { font-size: 9.2px; font-weight: 800; color: #0f172a; line-height: 1.28; }
-    .payslip-root .entry-note { margin-top: 2px; color: #64748b; font-size: 7.5px; line-height: 1.35; }
-    .payslip-root .emp-total td { background: #f4f7fb; font-size: 9.4px; font-weight: 900; text-transform: uppercase; }
+    .payslip-root .entry-label { font-size: 11.2px; font-weight: 700; color: #0f172a; line-height: 1.42; }
+    .payslip-root .entry-note { margin-top: 3px; color: #5b6b80; font-size: 9.6px; line-height: 1.5; }
+    /* Dòng tổng của mỗi bảng: nền nhạt đậm hơn + kẻ trên rõ để nổi khỏi các dòng chi tiết. */
+    .payslip-root .emp-total td { background: #e9f0fa; border-top: 1.6px solid #b9cce8; font-size: 11.6px; font-weight: 700; text-transform: uppercase; padding: 8.5px 9px; color: #0b3d91; }
 
-    .payslip-root .net-banner { margin-top: 10px; min-height: 58px; border-radius: 12px; background: linear-gradient(90deg,#0b3d91,#08479d); color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 10px 15px; }
-    .payslip-root .net-label { font-size: 11px; font-weight: 900; text-transform: uppercase; }
-    .payslip-root .net-formula { margin-top: 2px; font-size: 7.8px; opacity: .95; }
-    .payslip-root .net-money { font-size: 28px; line-height: 1; font-weight: 950; letter-spacing: .4px; white-space: nowrap; }
-    .payslip-root .words-line { margin-top: 6px; font-size: 8.3px; color: #334155; line-height: 1.35; }
+    .payslip-root .net-banner { margin-top: 9px; min-height: 54px; border-radius: 12px; background: linear-gradient(90deg,#0b3d91,#08479d); color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 10px 15px; }
+    .payslip-root .net-label { font-size: 13.2px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
+    .payslip-root .net-formula { margin-top: 3px; font-size: 9.6px; opacity: .95; }
+    .payslip-root .net-money { font-size: 30px; line-height: 1; font-weight: 700; letter-spacing: .4px; white-space: nowrap; }
+    .payslip-root .words-line { margin-top: 7px; font-size: 10.4px; color: #334155; line-height: 1.4; }
 
     .payslip-root .quick-summary { margin-top: 7px; display: grid; grid-template-columns: repeat(4,1fr); border: 1px solid #d8e0ec; border-radius: 10px; overflow: hidden; background: #f9fbfe; }
-    .payslip-root .quick-cell { padding: 6px 8px; text-align: center; border-right: 1px solid #e2e8f0; }
+    .payslip-root .quick-cell { padding: 8px; min-height: 45px; text-align: center; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: center; }
     .payslip-root .quick-cell:last-child { border-right: none; }
-    .payslip-root .quick-label { font-size: 7.2px; color: #64748b; text-transform: uppercase; font-weight: 700; }
-    .payslip-root .quick-value { margin-top: 3px; font-size: 9.7px; font-weight: 900; color: #10233f; }
-    .payslip-root .quick-value.takehome { color: #0b3d91; font-size: 10.8px; }
+    .payslip-root .quick-label { font-size: 8.8px; color: #64748b; text-transform: uppercase; font-weight: 700; line-height: 1.3; }
+    .payslip-root .quick-value { margin-top: 4px; font-size: 11.6px; font-weight: 700; color: #10233f; line-height: 1.35; }
+    .payslip-root .quick-value.takehome { color: #0b3d91; font-size: 12.8px; }
 
     .payslip-root .bank-strip { margin-top: 7px; border: 1px solid #d8e0ec; border-radius: 10px; overflow: hidden; }
-    .payslip-root .bank-title { padding: 5px 9px; background: #f4f7fb; color: #0b3d91; font-size: 8px; font-weight: 900; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; }
-    .payslip-root .bank-grid { display: grid; grid-template-columns: .9fr 1.05fr 1.2fr .85fr; }
-    .payslip-root .bank-item { padding: 6px 8px; min-height: 42px; border-right: 1px solid #e2e8f0; }
+    .payslip-root .bank-title { padding: 6px 10px; background: #f4f7fb; color: #0b3d91; font-size: 9.8px; font-weight: 700; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; }
+    .payslip-root .bank-grid { display: grid; grid-template-columns: .95fr 1fr 1.05fr 1.05fr; }
+    .payslip-root .bank-item { padding: 8px 9px; min-height: 49px; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: center; }
     .payslip-root .bank-item:last-child { border-right: none; }
-    .payslip-root .bank-label { font-size: 7px; text-transform: uppercase; color: #64748b; font-weight: 700; }
-    .payslip-root .bank-value { margin-top: 3px; font-size: 8.8px; line-height: 1.3; color: #0f172a; font-weight: 800; word-break: break-word; }
-    .payslip-root .reconcile-note { margin-top: 5px; border-radius: 7px; padding: 4px 7px; background: #fff6e8; border: 1px solid #f2d5a5; color: #9a6700; font-size: 7.5px; line-height: 1.3; }
+    .payslip-root .bank-label { font-size: 8.6px; text-transform: uppercase; color: #64748b; font-weight: 700; line-height: 1.3; }
+    .payslip-root .bank-value { margin-top: 4px; font-size: 10.6px; line-height: 1.4; color: #0f172a; font-weight: 700; word-break: break-word; }
+    .payslip-root .bank-method { margin-top: 3px; font-size: 8.8px; font-weight: 400; color: #64748b; line-height: 1.3; }
+    .payslip-root .bank-amount { margin-top: 1px; font-size: 12.4px; font-weight: 700; color: #0b3d91; line-height: 1.3; white-space: nowrap; }
+    .payslip-root .reconcile-note { margin-top: 5px; border-radius: 7px; padding: 4px 7px; background: #fff6e8; border: 1px solid #f2d5a5; color: #9a6700; font-size: 8.5px; line-height: 1.3; }
 
     .payslip-root .signature-block { margin-top: 9px; border-top: 1px solid #e2e8f0; padding-top: 7px; page-break-inside: avoid; }
-    .payslip-root .sign-date { text-align: right; color: #64748b; font-size: 7.5px; font-style: italic; margin: 0; }
-    .payslip-root .sign-grid { margin-top: 6px; display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
-    .payslip-root .sign-cell { text-align: center; min-height: 92px; }
-    .payslip-root .sign-role { font-size: 8.5px; font-weight: 900; text-transform: uppercase; color: #10233f; }
-    .payslip-root .sign-hint { margin-top: 1px; font-size: 7px; color: #64748b; font-style: italic; }
-    .payslip-root .sign-space { height: 38px; }
-    .payslip-root .sign-who { margin-top: 4px; font-size: 8.8px; font-weight: 800; color: #1f2937; }
-    .payslip-root .sign-when { margin-top: 1px; font-size: 6.8px; color: #64748b; }
-    .payslip-root .ok { color: #166534; border: 1.7px solid #16a34a; display: inline-block; border-radius: 6px; padding: 3px 10px; margin-top: 9px; font-size: 8px; font-weight: 900; transform: rotate(-5deg); }
-    .payslip-root .pending { margin-top: 13px; color: #64748b; font-size: 7.5px; font-style: italic; }
+    .payslip-root .sign-date { text-align: right; color: #64748b; font-size: 9.4px; font-style: italic; margin: 0; }
+    .payslip-root .sign-grid { margin-top: 8px; display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+    .payslip-root .sign-cell { text-align: center; min-height: 94px; }
+    .payslip-root .sign-role { font-size: 10.6px; font-weight: 700; text-transform: uppercase; color: #10233f; }
+    .payslip-root .sign-hint { margin-top: 2px; font-size: 8.8px; color: #64748b; font-style: italic; }
+    .payslip-root .sign-space { height: 42px; }
+    .payslip-root .sign-who { margin-top: 6px; font-size: 10.6px; font-weight: 700; color: #1f2937; }
+    .payslip-root .sign-when { margin-top: 2px; font-size: 8.6px; color: #64748b; }
+    .payslip-root .ok { color: #166534; border: 1.7px solid #16a34a; display: inline-block; border-radius: 6px; padding: 3px 10px; margin-top: 9px; font-size: 9px; font-weight: 700; transform: rotate(-5deg); }
+    .payslip-root .pending { margin-top: 13px; color: #64748b; font-size: 8.5px; font-style: italic; }
     .payslip-root .stamp { width: 66px; height: 66px; border: 1.8px double #c62828; border-radius: 50%; color: #c62828; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 5px; margin: 4px auto 0; transform: rotate(-9deg); }
-    .payslip-root .stamp .s1 { font-size: 7.4px; font-weight: 900; line-height: 1.18; }
-    .payslip-root .stamp .s2 { margin-top: 1px; font-size: 4.5px; font-weight: 900; text-transform: uppercase; line-height: 1.15; }
-    .payslip-root .stamp .s3 { margin-top: 1px; font-size: 4.4px; line-height: 1.15; }
+    .payslip-root .stamp .s1 { font-size: 8.2px; font-weight: 700; line-height: 1.18; }
+    .payslip-root .stamp .s2 { margin-top: 1px; font-size: 5px; font-weight: 700; text-transform: uppercase; line-height: 1.15; }
+    .payslip-root .stamp .s3 { margin-top: 1px; font-size: 4.9px; line-height: 1.15; }
     .payslip-root .stamp.empty { border-style: dashed; color: #94a3b8; transform: none; }
-    .payslip-root .employee-foot { margin-top: 5px; border-top: 1px solid #e2e8f0; padding-top: 4px; color: #64748b; font-size: 6.7px; line-height: 1.3; }
+    .payslip-root .employee-foot { margin-top: 8px; border-top: 1px solid #e2e8f0; padding-top: 6px; color: #64748b; font-size: 9px; line-height: 1.4; text-align: center; }
 
-    .payslip-root .employee-slip.dense .emp-table th, .payslip-root .employee-slip.dense .emp-table td { padding: 4.7px 6px; }
-    .payslip-root .employee-slip.dense .entry-label { font-size: 8.6px; }
-    .payslip-root .employee-slip.dense .entry-note { font-size: 7px; }
-    .payslip-root .employee-slip.dense .sign-cell { min-height: 84px; }
-    .payslip-root .employee-slip.ultra-dense .emp-table th, .payslip-root .employee-slip.ultra-dense .emp-table td { padding: 3.8px 5px; }
-    .payslip-root .employee-slip.ultra-dense .entry-label { font-size: 8.1px; }
-    .payslip-root .employee-slip.ultra-dense .entry-note { font-size: 6.5px; line-height: 1.25; }
-    .payslip-root .employee-slip.ultra-dense .net-banner { margin-top: 7px; min-height: 52px; padding: 8px 13px; }
+    /* Nhân viên nhiều khoản: co dần để giữ đúng MỘT trang A4 mà chữ vẫn đọc được. */
+    .payslip-root .employee-slip.dense .emp-table th, .payslip-root .employee-slip.dense .emp-table td { padding: 7px 8px; }
+    .payslip-root .employee-slip.dense .entry-label { font-size: 10.4px; }
+    .payslip-root .employee-slip.dense .entry-note { font-size: 9px; line-height: 1.4; }
+    .payslip-root .employee-slip.dense .info-box { min-height: 56px; padding: 8px 9px; }
+    .payslip-root .employee-slip.dense .quick-cell { min-height: 44px; padding: 7px; }
+    .payslip-root .employee-slip.dense .bank-item { min-height: 48px; padding: 7px 8px; }
+    .payslip-root .employee-slip.dense .net-banner { min-height: 52px; padding: 8px 14px; }
+    .payslip-root .employee-slip.dense .net-money { font-size: 27px; }
+    .payslip-root .employee-slip.dense .sign-space { height: 40px; }
+    .payslip-root .employee-slip.dense .sign-cell { min-height: 92px; }
+
+    .payslip-root .employee-slip.ultra-dense .emp-table th, .payslip-root .employee-slip.ultra-dense .emp-table td { padding: 3.9px 7px; }
+    .payslip-root .employee-slip.ultra-dense .emp-table thead th { padding: 5px 7px; }
+    .payslip-root .employee-slip.ultra-dense .emp-total td { padding: 5.5px 7px; font-size: 10.4px; }
+    .payslip-root .employee-slip.ultra-dense .entry-label { font-size: 9.8px; line-height: 1.32; }
+    .payslip-root .employee-slip.ultra-dense .entry-note { font-size: 8.4px; line-height: 1.32; margin-top: 2px; }
+    .payslip-root .employee-slip.ultra-dense .money-head { padding: 5px 9px; font-size: 10.6px; }
+    .payslip-root .employee-slip.ultra-dense .money-tables { margin-top: 8px; }
+    .payslip-root .employee-slip.ultra-dense .info-box { min-height: 42px; padding: 4px 9px; }
+    .payslip-root .employee-slip.ultra-dense .info-value { font-size: 10.8px; margin-top: 3px; }
+    .payslip-root .employee-slip.ultra-dense .employee-info { margin-top: 7px; }
+    .payslip-root .employee-slip.ultra-dense .quick-cell { min-height: 34px; padding: 3px 7px; }
+    .payslip-root .employee-slip.ultra-dense .quick-value { font-size: 10.6px; margin-top: 2px; }
+    .payslip-root .employee-slip.ultra-dense .quick-summary { margin-top: 6px; }
+    .payslip-root .employee-slip.ultra-dense .bank-item { min-height: 38px; padding: 3px 8px; }
+    .payslip-root .employee-slip.ultra-dense .bank-title { padding: 4px 10px; }
+    .payslip-root .employee-slip.ultra-dense .bank-strip { margin-top: 6px; }
+    .payslip-root .employee-slip.ultra-dense .bank-amount { font-size: 11.4px; }
+    .payslip-root .employee-slip.ultra-dense .net-banner { margin-top: 6px; min-height: 42px; padding: 5px 13px; }
     .payslip-root .employee-slip.ultra-dense .net-money { font-size: 25px; }
-    .payslip-root .employee-slip.ultra-dense .signature-block { margin-top: 7px; }
-    .payslip-root .employee-slip.ultra-dense .sign-cell { min-height: 76px; }
+    .payslip-root .employee-slip.ultra-dense .net-label { font-size: 12px; }
+    .payslip-root .employee-slip.ultra-dense .words-line { margin-top: 4px; font-size: 9.4px; }
+    .payslip-root .employee-slip.ultra-dense .signature-block { margin-top: 6px; padding-top: 5px; }
+    .payslip-root .employee-slip.ultra-dense .sign-grid { margin-top: 5px; }
+    .payslip-root .employee-slip.ultra-dense .sign-space { height: 22px; }
+    .payslip-root .employee-slip.ultra-dense .sign-cell { min-height: 62px; }
+    .payslip-root .employee-slip.ultra-dense .employee-foot { margin-top: 5px; padding-top: 4px; font-size: 8.4px; }
   `;
 
   const body = `
@@ -3576,15 +3610,16 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
       ${companyAddress ? `<div class="company-line">${payslipEscape(companyAddress)}</div>` : ""}
       ${(companyPhone || companyTaxCode) ? `<div class="company-line">${companyPhone ? `ĐT: ${payslipEscape(companyPhone)}` : ""}${companyPhone && companyTaxCode ? " · " : ""}${companyTaxCode ? `MST: ${payslipEscape(companyTaxCode)}` : ""}</div>` : ""}
     </div>
-    <div class="title-block">
-      <h1 class="slip-title">PHIẾU LƯƠNG NHÂN VIÊN</h1>
-      <div class="period-pill">KỲ LƯƠNG THÁNG ${String(month).padStart(2, "0")}/${year}</div>
-      <div class="slip-meta">
-        <div>Số phiếu: <b>${payslipEscape(slipCode)}</b></div>
-        <div>Ngày lập: <b>${createdDate}</b></div>
-        ${statusLabel ? `<div>Trạng thái: <b>${payslipEscape(statusLabel)}</b></div>` : ""}
-      </div>
+    <div class="slip-meta">
+      <div>Số phiếu: <b>${payslipEscape(slipCode)}</b></div>
+      <div>Ngày lập: <b>${createdDate}</b></div>
+      ${statusLabel ? `<div>Trạng thái: <b>${payslipEscape(statusLabel)}</b></div>` : ""}
     </div>
+  </div>
+
+  <div class="title-block">
+    <h1 class="slip-title">PHIẾU LƯƠNG NHÂN VIÊN</h1>
+    <div class="period-pill">KỲ LƯƠNG THÁNG ${String(month).padStart(2, "0")}/${year}</div>
   </div>
 
   <div class="employee-info">
@@ -3636,7 +3671,7 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
       <div class="bank-item"><div class="bank-label">Ngân hàng</div><div class="bank-value">${payslipEscape(bankName)}</div></div>
       <div class="bank-item"><div class="bank-label">Số tài khoản</div><div class="bank-value">${payslipEscape(bankAccount)}</div></div>
       <div class="bank-item"><div class="bank-label">Người thụ hưởng</div><div class="bank-value">${payslipEscape(beneficiaryName)}</div></div>
-      <div class="bank-item"><div class="bank-label">Phương thức / số tiền chuyển</div><div class="bank-value">${payslipEscape(paymentMethodLabel)}<br>${money(netFinal)}</div></div>
+      <div class="bank-item"><div class="bank-label">Số tiền chuyển thực tế</div><div class="bank-method">${payslipEscape(paymentMethodLabel)}</div><div class="bank-amount">${money(netFinal)}</div></div>
     </div>
   </div>
   ${midMonthTotal > 0 ? `<div class="reconcile-note">Đã ứng lương giữa tháng ${money(midMonthTotal)} (${midMonthList.map((entry) => `${dmy(entry.date)} ${money(entry.amount)}`).join(" · ")}) — khoản này đã chi riêng trước đó, không trừ vào số thực nhận kỳ này.</div>` : ""}
@@ -3656,7 +3691,7 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
         ${bossApproved ? `<div class="stamp"><div class="s1">ĐÃ DUYỆT</div><div class="s2">${payslipEscape(companyName)}</div><div class="s3">${payslipEscape(approval.bossApprovedAt || "")}</div></div><div class="sign-who">${payslipEscape(approval.bossApprovedByName || approval.bossApprovedByEmail || "Giám đốc")}</div>` : `<div class="stamp empty"><div class="s1">CHƯA<br>ĐÓNG DẤU</div></div>`}
       </div>
     </div>
-    <div class="employee-foot">Phiếu lương phát cho nhân viên: thể hiện toàn bộ khoản thu nhập, khoản khấu trừ, số thực nhận và tài khoản thụ hưởng. Các khoản doanh nghiệp tự đóng ngoài lương không hiển thị trên phiếu này.</div>
+    <div class="employee-foot">Phiếu lương được lập tự động từ hệ thống DOMIX. Thực nhận = Tổng thu nhập - Tổng khấu trừ.</div>
   </div>
 </div>`;
 
