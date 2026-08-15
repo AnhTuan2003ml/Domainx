@@ -89,9 +89,14 @@ services:
       - domix_internal
 
 volumes:
+  # Dữ liệu PostgreSQL hiện có được giữ nguyên và dùng như một volume ngoài dự án Compose.
+  # Không chạy `docker compose down -v` và không xóa volume này khi nâng cấp.
   domix_postgres_data:
+    external: true
     name: domix_postgres_data
 
 networks:
+  # Để Compose tự tạo network riêng `domix_domix_internal` cho project hiện tại.
+  # Nhờ vậy Docker DNS tạo đúng alias service: database, backend, web.
   domix_internal:
-    name: domix_internal
+    driver: bridge

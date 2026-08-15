@@ -86,7 +86,7 @@ EMPLOYEE_PRIVATE_FIELDS = {
     "baseSalary", "dailySalary", "bonusTarget", "contractType", "probationRate", "dependents",
     "mealAllowance", "attendanceBonus", "otherBonus", "advance", "allowances",
     "compensationHistory", "kpiTiersOverride",
-    "dob", "hometown", "bankName", "bankAccount", "phone", "idNumber",
+    "dob", "hometown", "bankName", "bankAccount", "bankAccountHolder", "phone", "idNumber",
     "education", "major", "resumeSummary", "idFrontData", "idFrontName", "idFrontType",
     "idBackData", "idBackName", "idBackType", "resumeFileData", "resumeFileName",
     "resumeFileType",

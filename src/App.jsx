@@ -2910,6 +2910,7 @@ function exportPayrollExcel(payrollRows, payments = [], midMonthRequests = [], p
     "Họ tên": r.name,
     "Ngân hàng": r.bankName || "",
     "Số tài khoản": r.bankAccount || "",
+    "Người thụ hưởng": r.bankAccountHolder || r.name || "",
     "Số tiền chuyển": Math.round(r.net),
     "Nội dung chuyển khoản": `Luong T${ATT_MONTH}/${ATT_YEAR} ${r.name}`,
     "Số điện thoại": r.phone || "",
@@ -2923,7 +2924,7 @@ function exportPayrollExcel(payrollRows, payments = [], midMonthRequests = [], p
     "Họ tên": r.name, "Chức vụ": r.position, "Phòng ban": r.dept, "Loại hợp đồng": r.contractLabel,
     "Ngày sinh": r.dob || "", "Quê quán": r.hometown || "",
     "Số điện thoại": r.phone || "", "Email": r.email || "",
-    "Ngân hàng": r.bankName || "", "Số tài khoản": r.bankAccount || "",
+    "Ngân hàng": r.bankName || "", "Số tài khoản": r.bankAccount || "", "Người thụ hưởng": r.bankAccountHolder || r.name || "",
     "Ngày vào làm": r.joined, "Số người phụ thuộc": r.dependents || 0,
   }));
   const ws5 = XLSX.utils.json_to_sheet(profile);
@@ -3307,28 +3308,33 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
   const month = Number(period.month) || ATT_MONTH;
   const year = Number(period.year) || ATT_YEAR;
   const dmy = (iso) => String(iso || "").slice(0, 10).split("-").reverse().join("/");
-  const money = (n) => `${Math.round(Number(n) || 0).toLocaleString("vi-VN")}đ`;
+  const num = (n) => Math.round(Number(n) || 0).toLocaleString("vi-VN");
+  const money = (n) => `${num(n)}đ`;
   const isOfficial = row.contractType === "chinh_thuc";
   const isCollaborator = row.contractType === "ctv";
   const usesFlatWithholding = row.contractType === "ctv" || row.contractType === "thu_viec";
   const taxPolicy = payrollTaxPolicyFor(year, month);
-  const periodEnd = new Date(year, month, 0, 23, 59, 59);
-  const periodStillOpen = periodEnd > TODAY;
+  const companyName = company?.name || "Công ty Công nghệ DOMIX";
+  const companyAddress = company?.address || "";
+  const companyPhone = company?.phone || "";
+  const companyTaxCode = company?.taxCode || "";
+  const slipCode = `PL-${year}${String(month).padStart(2, "0")}-${row.id || "NV"}`;
+  const createdDate = dmy(TODAY_STR);
 
   const probationRate = Number(row.probationRate) || 1;
   const overtimeAmount = (hours, rate) => (Number(hours) || 0) * (Number(row.otHourlyRate) || 0) * (rate / 100) * probationRate;
   const overtimeItems = [
-    { label: "Lương làm thêm ngày thường (150%)", hours: row.otByType?.weekday, rate: 150 },
-    { label: "Lương làm thêm ngày nghỉ hằng tuần (200%)", hours: row.otByType?.weekend, rate: 200 },
-    { label: "Lương làm thêm ngày lễ, Tết (300%)", hours: row.otByType?.holiday, rate: 300 },
+    { label: "Làm thêm ngày thường", hours: row.otByType?.weekday, rate: 150 },
+    { label: "Làm thêm ngày nghỉ hằng tuần", hours: row.otByType?.weekend, rate: 200 },
+    { label: "Làm thêm ngày lễ, Tết", hours: row.otByType?.holiday, rate: 300 },
   ].filter((item) => (Number(item.hours) || 0) > 0).map((item) => ({
-    label: item.label,
-    note: `${Number(item.hours).toFixed(1)} giờ x ${money(row.otHourlyRate)}/giờ x ${item.rate}%${probationRate < 1 ? ` x ${Math.round(probationRate * 100)}% thử việc` : ""}`,
+    label: `${item.label} (${item.rate}%)`,
+    note: `${Number(item.hours).toFixed(1)} giờ × ${money(row.otHourlyRate)}/giờ × ${item.rate}%${probationRate < 1 ? ` × ${Math.round(probationRate * 100)}% thử việc` : ""}`,
     amount: overtimeAmount(item.hours, item.rate),
   }));
   if ((Number(row.nightHours) || 0) > 0 || (Number(row.nightPay) || 0) > 0) {
     overtimeItems.push({
-      label: "Tiền lương làm việc ban đêm",
+      label: "Làm việc ban đêm",
       note: `${Number(row.nightHours || 0).toFixed(1)} giờ làm việc ban đêm`,
       amount: row.nightPay || 0,
     });
@@ -3339,7 +3345,7 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
       label: row.usesRevenueModel ? "Lương chính theo cơ chế doanh thu" : "Lương theo ngày công",
       note: row.usesRevenueModel
         ? (row.compStatusLabel || `Theo cơ chế lương của vị trí ${row.position || "nhân viên"}`)
-        : `${money(row.daySalary)}/ngày x ${Number(row.actualDays || 0).toFixed(1)} công${probationRate < 1 ? ` x ${Math.round(probationRate * 100)}% thử việc` : ""}`,
+        : `${money(row.daySalary)}/ngày × ${Number(row.actualDays || 0).toFixed(1)} công${probationRate < 1 ? ` × ${Math.round(probationRate * 100)}% thử việc` : ""}`,
       amount: row.mainSalary || 0,
     },
     ...overtimeItems,
@@ -3348,16 +3354,15 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
     { label: "Hoa hồng doanh số", note: row.compStatusLabel || "Theo doanh số được ghi nhận trong kỳ", amount: row.commission || 0 },
     { label: "Thưởng doanh số", note: "Theo chính sách thưởng của vị trí", amount: row.compBonus || 0 },
     { label: "Hoa hồng upsale kỹ thuật (7%)", note: "7% giá trị upsale đủ điều kiện", amount: row.techUpsale || 0 },
-    { label: "Thưởng KPI", note: row.bonusTarget ? `${Number(row.kpi || 0)}% x mức thưởng mục tiêu ${money(row.bonusTarget)}` : "Theo kết quả KPI được duyệt", amount: row.kpiBonus || 0 },
-    { label: "Thưởng mốc doanh số", note: row.kpiMilestonePct ? `${row.kpiMilestonePct}% x doanh thu tính thưởng ${money(row.kpiMilestoneNetRevenue || row.revenueUsed)}` : "", amount: row.kpiMilestoneBonus || 0 },
+    { label: "Thưởng KPI", note: row.bonusTarget ? `${Number(row.kpi || 0)}% × mức thưởng mục tiêu ${money(row.bonusTarget)}` : "Theo kết quả KPI được duyệt", amount: row.kpiBonus || 0 },
+    { label: "Thưởng mốc doanh số", note: row.kpiMilestonePct ? `${row.kpiMilestonePct}% × doanh thu tính thưởng ${money(row.kpiMilestoneNetRevenue || row.revenueUsed)}` : "", amount: row.kpiMilestoneBonus || 0 },
     { label: "Thưởng khác", note: "Khoản thưởng khác được duyệt trong kỳ", amount: row.otherBonus || 0 },
   ].filter((item) => (Number(item.amount) || 0) > 0);
-  if (bonusItems.length === 0) bonusItems.push({ label: "Không phát sinh thưởng / hoa hồng", note: "Kỳ này không có khoản thưởng hoặc hoa hồng được duyệt", amount: 0 });
 
   const allowanceItems = [
     {
       label: "Phụ cấp ăn trưa",
-      note: `Mức tháng ${money(row.configuredMealAllowance)}; ${money(row.mealAllowancePerDay)}/ngày đủ công x ${row.fullWorkDays || 0} ngày`,
+      note: `Mức tháng ${money(row.configuredMealAllowance)}; ${money(row.mealAllowancePerDay)}/ngày đủ công × ${row.fullWorkDays || 0} ngày`,
       amount: row.mealAllowance || 0,
     },
     {
@@ -3371,6 +3376,7 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
         ? `Đủ ${Number(row.attendanceBonusWorkDays || row.standardDays).toFixed(1)}/${row.standardDays} công chuẩn`
         : `Không hưởng - mới đạt ${Number(row.attendanceBonusWorkDays || 0).toFixed(1)}/${row.standardDays} công chuẩn; thiếu ${Number(row.attendanceBonusMissingDays || 0).toFixed(1)} công`,
       amount: row.attendanceBonus || 0,
+      always: true,
     },
     ...(Array.isArray(row.customAllowances) ? row.customAllowances : []).map((item) => ({
       label: item.label || "Phụ cấp khác",
@@ -3385,14 +3391,12 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
     })),
   ];
 
-  // Chỉ thay đổi nội dung PHIẾU PDF: bảo hiểm được tách rõ phần NLĐ và doanh nghiệp,
-  // kèm tỷ lệ và căn cứ lương cơ bản. Không thay đổi công thức lương hay bảng trên màn hình.
   const employeeInsuranceItems = !isOfficial
     ? [{
       label: "Bảo hiểm người lao động",
       note: isCollaborator
         ? "Cộng tác viên - không thuộc cơ chế BH bắt buộc của bảng lương này"
-        : "Thử việc theo hợp đồng thử việc riêng - chưa phát sinh BH bắt buộc; nếu thử việc là nội dung của HĐLĐ thì phải khai đúng loại hợp đồng để hệ thống tính BH",
+        : "Thử việc theo hợp đồng thử việc riêng - chưa phát sinh BH bắt buộc",
       amount: 0,
       always: true,
     }]
@@ -3404,288 +3408,256 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
         always: true,
       }]
       : [
-        { label: "BHXH người lao động (8%)", note: `8% x lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhxhNV || 0, always: true },
-        { label: "BHYT người lao động (1,5%)", note: `1,5% x lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhytNV || 0, always: true },
-        { label: "BHTN người lao động (1%)", note: `1% x lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhtnNV || 0, always: true },
-        { label: "Tổng bảo hiểm người lao động (10,5%)", note: row.insuranceSuspendedForUnpaidLeave ? `Tạm dừng do có ${Number(row.unpaidLeaveDays || 0)} ngày không hưởng lương trong tháng` : "Khoản thực tế bị trừ vào lương", amount: row.employeeInsurance || 0, always: true, summary: true },
+        { label: "BHXH người lao động (8%)", note: `8% × lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhxhNV || 0, always: true },
+        { label: "BHYT người lao động (1,5%)", note: `1,5% × lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhytNV || 0, always: true },
+        { label: "BHTN người lao động (1%)", note: `1% × lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhtnNV || 0, always: true },
       ];
+
   const deductionItems = [
     ...employeeInsuranceItems,
     {
       label: usesFlatWithholding ? "Thuế TNCN khấu trừ (10%)" : "Thuế thu nhập cá nhân",
       note: usesFlatWithholding
-        ? `Khấu trừ 10% khi mức chi trả từ ${money(row.flatTaxThreshold || taxPolicy.flatTaxThreshold)}/lần; thuế tính trên phần thu nhập chịu thuế`
+        ? `Khấu trừ 10% khi mức chi trả từ ${money(row.flatTaxThreshold || taxPolicy.flatTaxThreshold)}/lần`
         : `Thu nhập tính thuế ${money(row.taxableIncome)}${row.personalDeduction > 0 ? ` · giảm trừ gia cảnh ${money(row.personalDeduction)}` : ""}${row.mealTaxFree > 0 ? ` · miễn tiền ăn ${money(row.mealTaxFree)}` : ""}${row.overtimeTaxFree > 0 ? ` · miễn OT ${money(row.overtimeTaxFree)}` : ""}`,
       amount: row.thueTNCN || 0,
       always: true,
     },
     { label: "Tạm ứng / khấu trừ trên hồ sơ", note: "", amount: row.advance || 0 },
-    ...(Array.isArray(midMonthEntries) ? midMonthEntries : []).map((entry) => ({
-      label: `Đã ứng lương giữa tháng ngày ${dmy(entry.date)}`, note: entry.reason || "", amount: entry.amount || 0,
-    })),
   ].filter((item) => item.always || (Number(item.amount) || 0) > 0);
 
-  const employerInsuranceItems = !isOfficial
-    ? [{
-      label: "Bảo hiểm doanh nghiệp đóng",
-      note: isCollaborator
-        ? "Cộng tác viên - không phát sinh"
-        : "Thử việc theo hợp đồng thử việc riêng - không phát sinh tại bảng này",
-      amount: 0,
-      always: true,
-    }]
-    : row.insuranceFixed
-      ? [{
-        label: "Bảo hiểm doanh nghiệp đóng",
-        note: `Mức cố định theo hồ sơ; lương cơ bản ${money(row.baseSalary)}`,
-        amount: row.employerInsurance || 0,
-        always: true,
-      }]
-      : [
-        { label: "BHXH doanh nghiệp (17%)", note: `17% x lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhxhDN || 0, always: true },
-        { label: "BH TNLĐ-BNN doanh nghiệp (0,5%)", note: `0,5% x lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhtnldBnnDN || 0, always: true },
-        { label: "BHYT doanh nghiệp (3%)", note: `3% x lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhytDN || 0, always: true },
-        { label: "BHTN doanh nghiệp (1%)", note: `1% x lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhtnDN || 0, always: true },
-      ];
-
   const grossIncome = Number(row.grossIncome) || 0;
-  const totalDeduction = deductionItems.reduce((sum, item) => sum + (item.summary ? 0 : (Number(item.amount) || 0)), 0);
-  const netFinal = grossIncome - totalDeduction; // = thực lĩnh − đã ứng giữa tháng
-  const salaryTotal = salaryItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-  const bonusTotal = bonusItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-  const allowanceTotal = allowanceItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-  const employeeInsuranceTotal = Number(row.employeeInsurance) || 0;
-  const personalIncomeTax = Number(row.thueTNCN) || 0;
-  const advanceDeduction = Math.max(0, totalDeduction - employeeInsuranceTotal - personalIncomeTax);
-  const employerInsuranceTotal = Number(row.employerInsurance) || 0;
-  const paymentAmount = Number(payment?.amount) || 0;
-  const paymentDifference = payment ? netFinal - paymentAmount : null;
 
-  // Số tiền trong bảng in TRẦN theo chuẩn chứng từ (đầu bảng đã ghi "Đơn vị tính: đồng").
-  const num = (n) => Math.round(Number(n) || 0).toLocaleString("vi-VN");
-  const detailRows = (items, type = "income") => items.map((item) => {
-    const amount = Number(item.amount) || 0;
-    const sign = type === "deduct" && amount > 0 ? "-" : type === "income" && amount > 0 ? "+" : "";
-    return `
-      <tr class="${item.summary ? "summary-line" : ""}">
-        <td class="item-name">${payslipEscape(item.label)}</td>
-        <td class="desc">${payslipEscape(item.note || "")}</td>
-        <td class="num ${type}">${sign}${num(amount)}</td>
-      </tr>`;
-  }).join("");
+  // Phiếu phát cho nhân viên chỉ có ĐÚNG MỘT số tiền cuối cùng: THỰC NHẬN = số tiền chuyển
+  // cho nhân sự. Số này lấy nguyên từ bảng lương đang lưu (row.net = thu nhập - BH - thuế -
+  // tạm ứng), đúng bằng số mà bước chi trả cưỡng chế chuyển khoản; chứng từ chi trả cũ tuyệt
+  // đối không được ghi đè để phiếu không bao giờ hiện hai con số khác nhau.
+  const rowNetRaw = row?.net;
+  const hasRowNet = rowNetRaw !== undefined && rowNetRaw !== null && rowNetRaw !== ""
+    && Number.isFinite(Number(rowNetRaw));
+  const netFinal = Math.max(0, Math.round(hasRowNet ? Number(rowNetRaw) : grossIncome - deductionItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0)));
 
-  const compactRows = (items, type = "deduct") => items.map((item) => {
-    const amount = Number(item.amount) || 0;
-    const sign = type === "deduct" && amount > 0 ? "-" : "";
-    return `
-      <tr>
-        <td class="compact-item"><div class="compact-name">${payslipEscape(item.label)}</div>${item.note ? `<div class="compact-note">${payslipEscape(item.note)}</div>` : ""}</td>
-        <td class="compact-amount ${type}">${sign}${num(amount)}</td>
-      </tr>`;
-  }).join("");
+  // Bảng khấu trừ phải cộng ra đúng THỰC NHẬN. Nếu bảng lương còn khoản trừ nào chưa được
+  // liệt kê thành dòng riêng, gộp thành một dòng cân đối thay vì để phiếu tự mâu thuẫn.
+  const listedDeduction = deductionItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const balancingDeduction = Math.round(grossIncome - listedDeduction - netFinal);
+  if (Math.abs(balancingDeduction) >= 1) {
+    deductionItems.push({
+      label: balancingDeduction > 0 ? "Khoản trừ khác theo bảng lương" : "Điều chỉnh tăng theo bảng lương",
+      note: "Chênh lệch giữa các khoản đã liệt kê và số thực nhận trên bảng lương kỳ này",
+      amount: balancingDeduction,
+    });
+  }
+  const totalDeduction = deductionItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const netSourceLabel = "Tổng thu nhập - Tổng khấu trừ · đúng số tiền chuyển cho nhân viên";
 
-  const accountantApproved = Boolean(approval?.accountantApprovedAt);
-  const bossApproved = Boolean(approval?.bossApprovedAt);
-  const companyName = company?.name || "CÔNG TY DOMIX";
+  // Ứng lương giữa tháng đã được chi riêng và KHÔNG trừ vào số thực nhận kỳ này -> chỉ ghi chú,
+  // không đưa vào bảng khấu trừ để tổng cộng của phiếu luôn khớp số chuyển khoản.
+  const midMonthList = (Array.isArray(midMonthEntries) ? midMonthEntries : [])
+    .filter((entry) => (Number(entry?.amount) || 0) > 0);
+  const midMonthTotal = midMonthList.reduce((sum, entry) => sum + (Number(entry.amount) || 0), 0);
 
-  // V7: tách class net-card khỏi class .net cũ của PAYSLIP_BASE_CSS để khối C không bị display:flex
-  // làm tiêu đề, số tiền và chú thích dạt ngang / lệch hàng trong PDF.
-  // V6: ưu tiên khả năng đọc khi in/PDF: tăng khoảng thở theo chiều dọc, dùng line-height an toàn
-  // cho dấu tiếng Việt và giữ toàn bộ chữ cách đường kẻ bảng rõ ràng. Vẫn giữ bố cục chứng từ một trang.
+  const accountantApproved = Boolean(approval?.accountantApprovedAt || approval?.approval_status === "accountant_approved");
+  const bossApproved = Boolean(approval?.bossApprovedAt || ["director_approved", "approved"].includes(approval?.approval_status));
+  const incomeItems = [...salaryItems, ...bonusItems, ...allowanceItems]
+    .filter((item) => item.always || (Number(item.amount) || 0) > 0 || String(item.label || "").toLowerCase().includes("chuyên cần"));
+  const beneficiaryName = row.bankAccountHolder || row.name || "";
+  const bankName = row.bankName || "Chưa khai báo";
+  const bankAccount = row.bankAccount || "Chưa khai báo";
+  const paymentMethodLabel = payment?.paymentMethod === "tien_mat" ? "Tiền mặt" : payment?.paymentMethod === "chuyen_khoan" ? "Chuyển khoản" : "Chưa chi trả";
+  const maxRows = Math.max(incomeItems.length, deductionItems.length);
+  const densityClass = maxRows >= 9 ? "ultra-dense" : maxRows >= 7 ? "dense" : "";
+
+  const renderTableRows = (items, type) => items.map((item, idx) => `
+    <tr>
+      <td class="idx">${idx + 1}</td>
+      <td>
+        <div class="entry-label">${payslipEscape(item.label)}</div>
+        ${item.note ? `<div class="entry-note">${payslipEscape(item.note)}</div>` : ""}
+      </td>
+      <td class="amount ${type}">${type === "deduct" && (Number(item.amount) || 0) > 0 ? "-" : (type === "income" && (Number(item.amount) || 0) > 0 ? "+" : "")}${num(item.amount)}</td>
+    </tr>`).join("");
+
   const css = `${PAYSLIP_BASE_CSS}
-    .payslip-root { width: 794px; padding: 9px 14px; color: #172033; font-family: Arial, "Noto Sans", sans-serif; font-size: 9.8px; line-height: 1.45; text-rendering: geometricPrecision; -webkit-font-smoothing: antialiased; }
-    .payslip-root * { box-sizing: border-box; }
-    .payslip-root div, .payslip-root p, .payslip-root span, .payslip-root td, .payslip-root th { overflow: visible; }
-    .payslip-root .co { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: end; font-family: Arial, "Noto Sans", sans-serif; font-size: 9.8px; line-height: 1.48; border-bottom: 2px solid #263a5b; padding: 0 0 7px; }
-    .payslip-root .co > div:last-child { text-align: right; }
-    .payslip-root .co b { font-size: 11.8px; line-height: 1.4; }
-    .payslip-root h1 { color: #18243b; font-size: 18px; margin: 9px 0 1px; letter-spacing: .45px; line-height: 1.32; }
-    .payslip-root .sub { margin: 1px 0 5px; color: #657084; font-size: 9.2px; line-height: 1.42; }
-    .payslip-root .period-warning { margin: 5px 0 6px; padding: 5px 7px; border: 1px solid #d6b354; border-left: 4px solid #c69312; background: #fffaf0; color: #684b07; font-size: 8.6px; font-weight: 700; line-height: 1.5; }
+    .payslip-root { width: 794px; padding: 11px 15px 9px; font-family: Arial, "Helvetica Neue", Helvetica, sans-serif; color: #10233f; font-size: 9.2px; line-height: 1.35; }
+    .payslip-root .employee-slip { width: 100%; page-break-inside: avoid; }
+    .payslip-root .slip-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; }
+    .payslip-root .brand-block { width: 42%; }
+    .payslip-root .brand-logo { font-size: 29px; line-height: .95; font-weight: 950; color: #0c3d91; letter-spacing: .8px; }
+    .payslip-root .company-name { margin-top: 4px; font-size: 10.7px; font-weight: 800; color: #1e293b; text-transform: uppercase; }
+    .payslip-root .company-line { margin-top: 6px; font-size: 8.7px; color: #475569; line-height: 1.45; }
+    .payslip-root .title-block { width: 58%; text-align: right; }
+    .payslip-root .slip-title { margin: 0; font-size: 19px; font-weight: 900; color: #123f93; letter-spacing: .25px; }
+    .payslip-root .period-pill { display: inline-block; margin-top: 5px; background: #0c3d91; color: #fff; border-radius: 7px; padding: 5px 14px; font-weight: 800; font-size: 9.2px; }
+    .payslip-root .slip-meta { margin-top: 9px; color: #334155; font-size: 8.6px; line-height: 1.55; }
+    .payslip-root .slip-meta b { color: #0f172a; }
+    .payslip-root .period-note { margin-top: 8px; border: 1px solid #edd184; background: #fff9e9; color: #8a6513; border-radius: 7px; padding: 5px 8px; font-size: 8px; font-weight: 700; line-height: 1.35; }
 
-    .payslip-root .employee-strip { display: grid; grid-template-columns: 1.45fr 1fr .72fr .8fr; gap: 6px; margin: 6px 0; }
-    .payslip-root .employee-card { border: 1px solid #d7dce5; background: #fafbfc; padding: 6px 7px; min-height: 42px; }
-    .payslip-root .employee-card .label { color: #737d8d; font-size: 7.9px; line-height: 1.4; text-transform: uppercase; letter-spacing: .25px; }
-    .payslip-root .employee-card .value { margin-top: 3px; font-size: 9.5px; font-weight: 700; color: #172033; line-height: 1.48; }
+    .payslip-root .employee-info { margin-top: 9px; display: grid; grid-template-columns: 1.08fr 1.2fr .72fr .86fr; border: 1px solid #d8e0ec; border-radius: 12px; overflow: hidden; }
+    .payslip-root .info-box { padding: 8px 10px; min-height: 58px; border-right: 1px solid #e2e8f0; background: #fff; }
+    .payslip-root .info-box:last-child { border-right: none; }
+    .payslip-root .info-label { font-size: 7.8px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: .35px; }
+    .payslip-root .info-value { margin-top: 5px; color: #0f172a; font-size: 10px; line-height: 1.35; font-weight: 800; }
 
-    .payslip-root .summary-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; margin: 6px 0 7px; }
-    .payslip-root .summary-card { min-height: 64px; padding: 8px 10px 7px; border: 1px solid #cfd6e2; border-top: 3px solid #55708f; background: #fff; }
-    .payslip-root .summary-card.income { border-top-color: #2d7a55; background: #f8fcf9; }
-    .payslip-root .summary-card.deduct { border-top-color: #a33a33; background: #fffafa; }
-    .payslip-root .summary-card.net-card { display: block; border: 2px solid #265b97; border-top-width: 3px; background: #f4f8fd; padding: 7px 10px 7px; }
-    .payslip-root .summary-label { color: #687386; font-size: 8px; font-weight: 700; line-height: 1.42; text-transform: uppercase; letter-spacing: .25px; }
-    .payslip-root .summary-value { margin-top: 5px; color: #172033; font-family: "Courier New", monospace; font-size: 15.5px; font-weight: 800; line-height: 1.3; white-space: nowrap; }
-    .payslip-root .summary-card.net-card .summary-value { color: #174b84; font-size: 17.5px; line-height: 1.3; }
-    .payslip-root .summary-foot { margin-top: 4px; color: #7b8493; font-size: 7.8px; line-height: 1.42; }
+    .payslip-root .money-tables { margin-top: 11px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+    .payslip-root .money-panel { border: 1px solid #d8e0ec; border-radius: 12px; overflow: hidden; background: #fff; }
+    .payslip-root .money-head { display: flex; align-items: center; gap: 7px; background: #0b3d91; color: #fff; padding: 7px 10px; font-size: 10.6px; font-weight: 900; text-transform: uppercase; }
+    .payslip-root .money-icon { width: 20px; height: 20px; border-radius: 50%; background: #fff; color: #0b3d91; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 900; }
+    .payslip-root table.emp-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+    .payslip-root .emp-table th, .payslip-root .emp-table td { border: 1px solid #e3e8f1; padding: 6px 7px; vertical-align: top; }
+    .payslip-root .emp-table thead th { background: #f7f9fc; color: #475569; font-size: 7.7px; font-weight: 800; text-transform: uppercase; }
+    .payslip-root .emp-table .idx { width: 32px; text-align: center; color: #475569; }
+    .payslip-root .emp-table .amount { width: 105px; text-align: right; white-space: nowrap; font-size: 9.5px; font-weight: 800; }
+    .payslip-root .emp-table .amount.income { color: #047857; }
+    .payslip-root .emp-table .amount.deduct { color: #c62828; }
+    .payslip-root .entry-label { font-size: 9.2px; font-weight: 800; color: #0f172a; line-height: 1.28; }
+    .payslip-root .entry-note { margin-top: 2px; color: #64748b; font-size: 7.5px; line-height: 1.35; }
+    .payslip-root .emp-total td { background: #f4f7fb; font-size: 9.4px; font-weight: 900; text-transform: uppercase; }
 
-    .payslip-root .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin: 7px 0 3px; padding-bottom: 3px; border-bottom: 1px solid #7d8899; }
-    .payslip-root .section-head .title { color: #172033; font-size: 10px; font-weight: 800; line-height: 1.42; text-transform: uppercase; letter-spacing: .18px; }
-    .payslip-root .section-head .hint { color: #7b8493; font-size: 7.8px; line-height: 1.4; text-align: right; }
-    .payslip-root .section-head.income { border-bottom-color: #549070; }
-    .payslip-root .section-head.deduct { border-bottom-color: #b05b55; }
-    .payslip-root .section-head.company { border-bottom-color: #7e8998; }
+    .payslip-root .net-banner { margin-top: 10px; min-height: 58px; border-radius: 12px; background: linear-gradient(90deg,#0b3d91,#08479d); color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 10px 15px; }
+    .payslip-root .net-label { font-size: 11px; font-weight: 900; text-transform: uppercase; }
+    .payslip-root .net-formula { margin-top: 2px; font-size: 7.8px; opacity: .95; }
+    .payslip-root .net-money { font-size: 28px; line-height: 1; font-weight: 950; letter-spacing: .4px; white-space: nowrap; }
+    .payslip-root .words-line { margin-top: 6px; font-size: 8.3px; color: #334155; line-height: 1.35; }
 
-    .payslip-root table.grid { width: 100% !important; min-width: 0 !important; table-layout: fixed; border-collapse: collapse; margin: 0; }
-    .payslip-root .grid th, .payslip-root .grid td { border: 1px solid #727b88; padding: 5.5px 6px; vertical-align: middle; overflow-wrap: anywhere; word-break: normal; line-height: 1.48; }
-    .payslip-root .grid th { background: #eef1f5; color: #425066; font-size: 8.1px; font-weight: 800; line-height: 1.42; text-transform: uppercase; }
-    .payslip-root .detail-table .item-name { font-size: 9.1px; font-weight: 700; line-height: 1.45; }
-    .payslip-root .detail-table .desc { color: #626d7e; font-size: 8.1px; font-family: Arial, sans-serif; line-height: 1.5; }
-    .payslip-root .detail-table .num { font-family: "Courier New", monospace; font-size: 9.1px; font-weight: 800; line-height: 1.45; text-align: right; white-space: nowrap; }
-    .payslip-root .detail-table .num.income { color: #256847; }
-    .payslip-root .section-total td { border-top: 1.5px solid #485569 !important; background: #f4f6f8; font-weight: 800; }
-    .payslip-root .section-total.income td { background: #f3faf6; }
+    .payslip-root .quick-summary { margin-top: 7px; display: grid; grid-template-columns: repeat(4,1fr); border: 1px solid #d8e0ec; border-radius: 10px; overflow: hidden; background: #f9fbfe; }
+    .payslip-root .quick-cell { padding: 6px 8px; text-align: center; border-right: 1px solid #e2e8f0; }
+    .payslip-root .quick-cell:last-child { border-right: none; }
+    .payslip-root .quick-label { font-size: 7.2px; color: #64748b; text-transform: uppercase; font-weight: 700; }
+    .payslip-root .quick-value { margin-top: 3px; font-size: 9.7px; font-weight: 900; color: #10233f; }
+    .payslip-root .quick-value.takehome { color: #0b3d91; font-size: 10.8px; }
 
-    .payslip-root .lower-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 7px; align-items: start; }
-    .payslip-root .ledger-panel { border: 1px solid #aeb6c2; background: #fff; min-width: 0; }
-    .payslip-root .ledger-panel.deduct { border-top: 3px solid #a33a33; }
-    .payslip-root .ledger-panel.company { border-top: 3px solid #5e6d80; }
-    .payslip-root .ledger-title { padding: 5px 7px 5px; border-bottom: 1px solid #c7cdd6; background: #f7f8fa; }
-    .payslip-root .ledger-title strong { display: block; color: #172033; font-size: 9.2px; line-height: 1.42; text-transform: uppercase; }
-    .payslip-root .ledger-title span { display: block; margin-top: 2px; color: #7a8390; font-size: 7.6px; line-height: 1.45; }
-    .payslip-root .compact-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
-    .payslip-root .compact-table tr:last-child td { border-bottom: none; }
-    .payslip-root .compact-table td { padding: 5px 6px; border-bottom: 1px solid #d4d9e0; vertical-align: middle; line-height: 1.45; }
-    .payslip-root .compact-item { width: 73%; }
-    .payslip-root .compact-name { color: #273247; font-size: 8.6px; font-weight: 700; line-height: 1.45; }
-    .payslip-root .compact-note { margin-top: 2px; color: #7a8390; font-size: 7.5px; line-height: 1.45; }
-    .payslip-root .compact-amount { width: 27%; text-align: right; white-space: nowrap; font-family: "Courier New", monospace; font-size: 8.8px; font-weight: 800; line-height: 1.45; }
-    .payslip-root .compact-amount.deduct { color: #992d2d; }
-    .payslip-root .compact-amount.company { color: #46556a; }
-    .payslip-root .ledger-total { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-top: 1.5px solid #657184; padding: 5.5px 7px; background: #f4f6f8; font-size: 8.8px; font-weight: 800; line-height: 1.42; }
-    .payslip-root .ledger-total .amount { font-family: "Courier New", monospace; white-space: nowrap; }
-    .payslip-root .ledger-panel.deduct .ledger-total { background: #fff6f6; color: #7f2424; }
+    .payslip-root .bank-strip { margin-top: 7px; border: 1px solid #d8e0ec; border-radius: 10px; overflow: hidden; }
+    .payslip-root .bank-title { padding: 5px 9px; background: #f4f7fb; color: #0b3d91; font-size: 8px; font-weight: 900; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; }
+    .payslip-root .bank-grid { display: grid; grid-template-columns: .9fr 1.05fr 1.2fr .85fr; }
+    .payslip-root .bank-item { padding: 6px 8px; min-height: 42px; border-right: 1px solid #e2e8f0; }
+    .payslip-root .bank-item:last-child { border-right: none; }
+    .payslip-root .bank-label { font-size: 7px; text-transform: uppercase; color: #64748b; font-weight: 700; }
+    .payslip-root .bank-value { margin-top: 3px; font-size: 8.8px; line-height: 1.3; color: #0f172a; font-weight: 800; word-break: break-word; }
+    .payslip-root .reconcile-note { margin-top: 5px; border-radius: 7px; padding: 4px 7px; background: #fff6e8; border: 1px solid #f2d5a5; color: #9a6700; font-size: 7.5px; line-height: 1.3; }
 
-    .payslip-root .settlement { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: center; margin-top: 8px; padding: 8px 10px; border: 2px solid #243b5e; background: #f8fafc; }
-    .payslip-root .settlement .formula-text { color: #526074; font-size: 8.7px; line-height: 1.52; }
-    .payslip-root .settlement .formula-text b { color: #172033; font-size: 9.4px; line-height: 1.45; }
-    .payslip-root .settlement .net-wrap { text-align: right; }
-    .payslip-root .settlement .net-label { color: #4f6078; font-size: 8px; font-weight: 800; line-height: 1.4; text-transform: uppercase; }
-    .payslip-root .settlement .net-amount { margin-top: 3px; color: #174b84; font-family: "Courier New", monospace; font-size: 17.5px; font-weight: 900; line-height: 1.3; white-space: nowrap; }
-    .payslip-root .words { margin: 5px 0 0; color: #5b6677; font-size: 8.2px; font-style: italic; line-height: 1.5; }
-    .payslip-root .payment-alert { margin-top: 5px; padding: 5.5px 7px; border-left: 3px solid; font-size: 7.9px; line-height: 1.5; }
-    .payslip-root .payment-alert.ok { background: #f3faf5; border-color: #4d8a64; color: #315e40; }
-    .payslip-root .payment-alert.warn { background: #fff8ef; border-color: #ce8f36; color: #764711; }
+    .payslip-root .signature-block { margin-top: 9px; border-top: 1px solid #e2e8f0; padding-top: 7px; page-break-inside: avoid; }
+    .payslip-root .sign-date { text-align: right; color: #64748b; font-size: 7.5px; font-style: italic; margin: 0; }
+    .payslip-root .sign-grid { margin-top: 6px; display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
+    .payslip-root .sign-cell { text-align: center; min-height: 92px; }
+    .payslip-root .sign-role { font-size: 8.5px; font-weight: 900; text-transform: uppercase; color: #10233f; }
+    .payslip-root .sign-hint { margin-top: 1px; font-size: 7px; color: #64748b; font-style: italic; }
+    .payslip-root .sign-space { height: 38px; }
+    .payslip-root .sign-who { margin-top: 4px; font-size: 8.8px; font-weight: 800; color: #1f2937; }
+    .payslip-root .sign-when { margin-top: 1px; font-size: 6.8px; color: #64748b; }
+    .payslip-root .ok { color: #166534; border: 1.7px solid #16a34a; display: inline-block; border-radius: 6px; padding: 3px 10px; margin-top: 9px; font-size: 8px; font-weight: 900; transform: rotate(-5deg); }
+    .payslip-root .pending { margin-top: 13px; color: #64748b; font-size: 7.5px; font-style: italic; }
+    .payslip-root .stamp { width: 66px; height: 66px; border: 1.8px double #c62828; border-radius: 50%; color: #c62828; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 5px; margin: 4px auto 0; transform: rotate(-9deg); }
+    .payslip-root .stamp .s1 { font-size: 7.4px; font-weight: 900; line-height: 1.18; }
+    .payslip-root .stamp .s2 { margin-top: 1px; font-size: 4.5px; font-weight: 900; text-transform: uppercase; line-height: 1.15; }
+    .payslip-root .stamp .s3 { margin-top: 1px; font-size: 4.4px; line-height: 1.15; }
+    .payslip-root .stamp.empty { border-style: dashed; color: #94a3b8; transform: none; }
+    .payslip-root .employee-foot { margin-top: 5px; border-top: 1px solid #e2e8f0; padding-top: 4px; color: #64748b; font-size: 6.7px; line-height: 1.3; }
 
-    .payslip-root .meta-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid #b9c0ca; margin-top: 7px; }
-    .payslip-root .meta-cell { min-width: 0; padding: 5.5px 6px; border-right: 1px solid #d0d5dc; }
-    .payslip-root .meta-cell:last-child { border-right: none; }
-    .payslip-root .meta-label { color: #7a8390; font-size: 7.3px; line-height: 1.4; text-transform: uppercase; }
-    .payslip-root .meta-value { margin-top: 2px; color: #273247; font-size: 8.2px; font-weight: 700; line-height: 1.48; overflow-wrap: anywhere; }
-
-    .payslip-root .signature-block { display: block; width: 100%; margin-top: 8px; break-inside: avoid-page !important; page-break-inside: avoid !important; }
-    .payslip-root .sign-date { text-align: right; margin: 0 0 4px; color: #566276; font-size: 7.9px; line-height: 1.4; font-style: italic; }
-    .payslip-root .sign-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; border-top: 1px solid #aeb6c2; padding-top: 6px; }
-    .payslip-root .sign-cell { min-height: 104px; text-align: center; position: relative; padding: 0 4px; }
-    .payslip-root .sign-role { color: #172033; font-size: 8.6px; font-weight: 800; line-height: 1.45; text-transform: uppercase; }
-    .payslip-root .sign-hint { margin-top: 2px; color: #7a8390; font-size: 7.4px; line-height: 1.42; font-style: italic; }
-    .payslip-root .sign-space { height: 45px; }
-    .payslip-root .sign-who { margin-top: 3px; color: #273247; font-size: 8.6px; font-weight: 800; line-height: 1.42; }
-    .payslip-root .sign-when { margin-top: 2px; color: #7a8390; font-size: 7.1px; line-height: 1.4; }
-    .payslip-root .ok { color: #166534; border: 1.5px solid #166534; border-radius: 3px; display: inline-block; padding: 3px 8px; margin: 8px 0 4px; transform: rotate(-4deg); font-size: 8px; line-height: 1.35; font-weight: 800; }
-    .payslip-root .pending { color: #7a8390; font-style: italic; margin: 10px 0 3px; font-size: 7.5px; }
-    .payslip-root .stamp { width: 68px; height: 68px; border: 2px double #bf2222; border-radius: 50%; color: #bf2222; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; transform: rotate(-8deg); margin: 2px auto 1px; padding: 4px; }
-    .payslip-root .stamp .s1 { font-size: 8.5px; font-weight: 900; line-height: 1.3; letter-spacing: .4px; }
-    .payslip-root .stamp .s2 { margin-top: 2px; font-size: 5.7px; font-weight: 800; text-transform: uppercase; line-height: 1.35; }
-    .payslip-root .stamp .s3 { margin-top: 2px; font-size: 5.6px; line-height: 1.35; }
-    .payslip-root .stamp.empty { border: 1.5px dashed #9ca3af; color: #8b94a3; transform: none; }
-    .payslip-root .foot { margin-top: 5px; border-top: 1px solid #d4d9e0; padding-top: 4px; color: #87909e; font-size: 7px; line-height: 1.5; }
+    .payslip-root .employee-slip.dense .emp-table th, .payslip-root .employee-slip.dense .emp-table td { padding: 4.7px 6px; }
+    .payslip-root .employee-slip.dense .entry-label { font-size: 8.6px; }
+    .payslip-root .employee-slip.dense .entry-note { font-size: 7px; }
+    .payslip-root .employee-slip.dense .sign-cell { min-height: 84px; }
+    .payslip-root .employee-slip.ultra-dense .emp-table th, .payslip-root .employee-slip.ultra-dense .emp-table td { padding: 3.8px 5px; }
+    .payslip-root .employee-slip.ultra-dense .entry-label { font-size: 8.1px; }
+    .payslip-root .employee-slip.ultra-dense .entry-note { font-size: 6.5px; line-height: 1.25; }
+    .payslip-root .employee-slip.ultra-dense .net-banner { margin-top: 7px; min-height: 52px; padding: 8px 13px; }
+    .payslip-root .employee-slip.ultra-dense .net-money { font-size: 25px; }
+    .payslip-root .employee-slip.ultra-dense .signature-block { margin-top: 7px; }
+    .payslip-root .employee-slip.ultra-dense .sign-cell { min-height: 76px; }
   `;
 
-  const incomeAllItems = [...salaryItems, ...bonusItems, ...allowanceItems].filter((item) =>
-    (Number(item.amount) || 0) > 0 || String(item.label || "").toLowerCase().includes("chuyên cần")
-  );
-  const paymentStatusHtml = payment
-    ? (() => {
-        const absDiff = Math.abs(paymentDifference || 0);
-        if (absDiff < 1) return `<div class="payment-alert ok"><b>Chi trả:</b> Đã chi khớp ${money(paymentAmount)}${payment.paidDate || payment.paidAt ? ` ngày ${dmy(payment.paidDate || payment.paidAt)}` : ""}.</div>`;
-        return `<div class="payment-alert warn"><b>Cần đối soát:</b> Chứng từ đã chi ${money(paymentAmount)}; số còn nhận theo bảng lương ${money(netFinal)}; chênh lệch ${money(absDiff)} ${paymentDifference > 0 ? "còn phải chi" : "đã chi vượt / cần xác định tạm ứng"}.</div>`;
-      })()
-    : `<div class="payment-alert warn"><b>Chưa ghi nhận chi trả:</b> Còn phải trả ${money(netFinal)}.</div>`;
-
   const body = `
-<div class="co">
-  <div>
-    <b>${payslipEscape(companyName)}</b><br>
-    ${payslipEscape(company?.address || "")}<br>
-    ${company?.taxCode ? `MST: ${payslipEscape(company.taxCode)}` : ""}${company?.phone ? `${company?.taxCode ? " · " : ""}ĐT: ${payslipEscape(company.phone)}` : ""}
-  </div>
-  <div>
-    Phiếu: <b>PL-${year}${String(month).padStart(2, "0")}-${payslipEscape(row.id)}</b><br>
-    Kỳ lương: <b>${String(month).padStart(2, "0")}/${year}</b><br>
-    Trạng thái: <b>${payslipEscape(statusLabel || "—")}</b>
-  </div>
-</div>
-<h1>PHIẾU LƯƠNG NHÂN VIÊN</h1>
-<p class="sub">Bảng giải thích nguồn thu nhập, các khoản khấu trừ và số tiền thực nhận</p>
-${periodStillOpen ? `<div class="period-warning">KỲ LƯƠNG CHƯA KẾT THÚC - Số liệu đang tạm tính. Phụ cấp chuyên cần chỉ phát sinh khi đủ toàn bộ công chuẩn của kỳ.</div>` : ""}
-
-<div class="employee-strip">
-  <div class="employee-card"><div class="label">Nhân viên</div><div class="value">${payslipEscape(row.name)}</div></div>
-  <div class="employee-card"><div class="label">Chức vụ / bộ phận</div><div class="value">${payslipEscape(row.position || "Chưa khai báo")}${row.department ? ` · ${payslipEscape(row.department)}` : ""}</div></div>
-  <div class="employee-card"><div class="label">Ngày công</div><div class="value">${Number(row.actualDays || 0).toFixed(1)} / ${row.standardDays}</div></div>
-  <div class="employee-card"><div class="label">Lương cơ bản</div><div class="value mono">${money(row.baseSalary)}</div></div>
-</div>
-
-<div class="summary-grid">
-  <div class="summary-card income"><div class="summary-label">A. Tổng thu nhập</div><div class="summary-value">${money(grossIncome)}</div><div class="summary-foot">Lương + OT + thưởng/hoa hồng + phụ cấp</div></div>
-  <div class="summary-card deduct"><div class="summary-label">B. Tổng phải trừ</div><div class="summary-value">${money(totalDeduction)}</div><div class="summary-foot">BH người lao động + thuế + tạm ứng/khấu trừ</div></div>
-  <div class="summary-card net-card"><div class="summary-label">C. Thực nhận</div><div class="summary-value">${money(netFinal)}</div><div class="summary-foot">Thực nhận = A - B</div></div>
-</div>
-
-<div class="section-head income"><div class="title">A. Các khoản được cộng vào thu nhập</div><div class="hint">Đơn vị: đồng</div></div>
-<table class="grid detail-table">
-  <colgroup><col style="width:31%"><col style="width:51%"><col style="width:18%"></colgroup>
-  <thead><tr><th>Nguồn thu nhập</th><th>Cách tính / căn cứ</th><th class="num">Số tiền cộng</th></tr></thead>
-  <tbody>
-    ${detailRows(incomeAllItems, "income")}
-    <tr class="section-total income"><td colspan="2">TỔNG THU NHẬP (A)</td><td class="num income">+${num(grossIncome)}</td></tr>
-  </tbody>
-</table>
-
-<div class="lower-grid">
-  <div class="ledger-panel deduct">
-    <div class="ledger-title"><strong>B. Nhân viên phải đóng / bị trừ</strong><span>Các khoản trực tiếp làm giảm tiền thực nhận</span></div>
-    <table class="compact-table"><tbody>${compactRows(deductionItems.filter((item) => !item.summary), "deduct")}</tbody></table>
-    <div class="ledger-total"><span>TỔNG PHẢI TRỪ (B)</span><span class="amount">-${num(totalDeduction)}</span></div>
-  </div>
-  <div class="ledger-panel company">
-    <div class="ledger-title"><strong>D. Công ty đóng thêm - không trừ lương</strong><span>Chi phí doanh nghiệp nộp thêm ngoài tiền bạn nhận</span></div>
-    <table class="compact-table"><tbody>${compactRows(employerInsuranceItems, "company")}</tbody></table>
-    <div class="ledger-total"><span>TỔNG CÔNG TY ĐÓNG</span><span class="amount">${num(employerInsuranceTotal)}</span></div>
-  </div>
-</div>
-
-<div class="settlement">
-  <div class="formula-text"><b>C. KẾT QUẢ KỲ LƯƠNG</b><br>Tổng thu nhập ${money(grossIncome)} - Tổng phải trừ ${money(totalDeduction)} = Thực nhận.</div>
-  <div class="net-wrap"><div class="net-label">Số tiền còn nhận</div><div class="net-amount">${money(netFinal)}</div></div>
-</div>
-<div class="words">Bằng chữ: <b>${payslipEscape(vndInWords(netFinal))}</b>.</div>
-${paymentStatusHtml}
-
-<div class="meta-grid">
-  <div class="meta-cell"><div class="meta-label">Lương đóng BH</div><div class="meta-value mono">${money(row.insuranceContributionBase || row.baseSalary)}</div></div>
-  <div class="meta-cell"><div class="meta-label">Bảo hiểm NLĐ</div><div class="meta-value">${money(employeeInsuranceTotal)}</div></div>
-  <div class="meta-cell"><div class="meta-label">Chuyên cần</div><div class="meta-value">${row.attendanceBonusEligible ? `Đủ ${Number(row.attendanceBonusWorkDays || row.standardDays).toFixed(1)}/${row.standardDays} công - được hưởng` : `Chưa đủ ${Number(row.attendanceBonusWorkDays || 0).toFixed(1)}/${row.standardDays} công - không hưởng`}</div></div>
-  <div class="meta-cell"><div class="meta-label">Chi trả / tài khoản</div><div class="meta-value">${payment ? `${money(paymentAmount)} · ${payment.paymentMethod === "tien_mat" ? "Tiền mặt" : "Chuyển khoản"}` : "Chưa chi"}${row.bankAccount ? `<br>${payslipEscape(row.bankName || "")} ${payslipEscape(row.bankAccount)}` : ""}</div></div>
-</div>
-
-<div class="signature-block">
-  <div class="sign-date">Ngày ${new Date().getDate()} tháng ${new Date().getMonth() + 1} năm ${new Date().getFullYear()}</div>
-  <div class="sign-grid">
-    <div class="sign-cell">
-      <div class="sign-role">Người lao động</div><div class="sign-hint">(Ký, ghi rõ họ tên)</div>
-      <div class="sign-space"></div><div class="sign-who">${payslipEscape(row.name)}</div>
+<div class="employee-slip ${densityClass}">
+  <div class="slip-header">
+    <div class="brand-block">
+      <div class="brand-logo">DOMIX</div>
+      <div class="company-name">${payslipEscape(companyName)}</div>
+      ${companyAddress ? `<div class="company-line">${payslipEscape(companyAddress)}</div>` : ""}
+      ${(companyPhone || companyTaxCode) ? `<div class="company-line">${companyPhone ? `ĐT: ${payslipEscape(companyPhone)}` : ""}${companyPhone && companyTaxCode ? " · " : ""}${companyTaxCode ? `MST: ${payslipEscape(companyTaxCode)}` : ""}</div>` : ""}
     </div>
-    <div class="sign-cell">
-      <div class="sign-role">Kế toán duyệt</div><div class="sign-hint">(Ký, ghi rõ họ tên)</div>
-      ${accountantApproved ? `<div class="ok">✓ ĐÃ DUYỆT</div><div class="sign-who">${payslipEscape(approval.accountantApprovedByName || approval.accountantApprovedByEmail || "Kế toán")}</div><div class="sign-when">${payslipEscape(approval.accountantApprovedAt || "")}</div>` : `<div class="pending">Chưa duyệt</div>`}
-    </div>
-    <div class="sign-cell">
-      <div class="sign-role">Giám đốc duyệt</div><div class="sign-hint">(Ký tên, đóng dấu)</div>
-      ${bossApproved ? `<div class="stamp"><div class="s1">ĐÃ DUYỆT</div><div class="s2">${payslipEscape(companyName)}</div><div class="s3">${payslipEscape(approval.bossApprovedAt || "")}</div></div><div class="sign-who">${payslipEscape(approval.bossApprovedByName || approval.bossApprovedByEmail || "Giám đốc")}</div>` : `<div class="stamp empty"><div class="s1">CHƯA<br>ĐÓNG DẤU</div></div>`}
+    <div class="title-block">
+      <h1 class="slip-title">PHIẾU LƯƠNG NHÂN VIÊN</h1>
+      <div class="period-pill">KỲ LƯƠNG THÁNG ${String(month).padStart(2, "0")}/${year}</div>
+      <div class="slip-meta">
+        <div>Số phiếu: <b>${payslipEscape(slipCode)}</b></div>
+        <div>Ngày lập: <b>${createdDate}</b></div>
+        ${statusLabel ? `<div>Trạng thái: <b>${payslipEscape(statusLabel)}</b></div>` : ""}
+      </div>
     </div>
   </div>
-  <div class="foot">Phiếu lương giải thích theo công thức: Tổng thu nhập (A) - Tổng phải trừ (B) = Thực nhận (C). Phần doanh nghiệp đóng thêm (D) được trình bày riêng và không trừ vào lương nhân viên.</div>
+
+  <div class="employee-info">
+    <div class="info-box"><div class="info-label">Nhân viên</div><div class="info-value">${payslipEscape(row.name)}</div></div>
+    <div class="info-box"><div class="info-label">Chức vụ / bộ phận</div><div class="info-value">${payslipEscape(row.position || "Chưa khai báo")}${row.department ? `<br>${payslipEscape(row.department)}` : ""}</div></div>
+    <div class="info-box"><div class="info-label">Ngày công</div><div class="info-value">${Number(row.actualDays || 0).toFixed(1)} / ${row.standardDays}</div></div>
+    <div class="info-box"><div class="info-label">Lương cơ bản</div><div class="info-value">${money(row.baseSalary)}</div></div>
+  </div>
+
+  <div class="money-tables">
+    <div class="money-panel">
+      <div class="money-head"><span class="money-icon">↑</span> Thu nhập</div>
+      <table class="emp-table">
+        <thead><tr><th class="idx">STT</th><th>Khoản thu nhập</th><th class="amount">Số tiền (đ)</th></tr></thead>
+        <tbody>
+          ${renderTableRows(incomeItems, "income")}
+          <tr class="emp-total"><td colspan="2">Tổng thu nhập</td><td class="amount income">${num(grossIncome)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="money-panel">
+      <div class="money-head"><span class="money-icon">↓</span> Khấu trừ</div>
+      <table class="emp-table">
+        <thead><tr><th class="idx">STT</th><th>Khoản khấu trừ</th><th class="amount">Số tiền (đ)</th></tr></thead>
+        <tbody>
+          ${renderTableRows(deductionItems, "deduct")}
+          <tr class="emp-total"><td colspan="2">Tổng khấu trừ</td><td class="amount deduct">${num(totalDeduction)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="net-banner">
+    <div><div class="net-label">Thực nhận</div><div class="net-formula">${payslipEscape(netSourceLabel)}</div></div>
+    <div class="net-money">${money(netFinal)}</div>
+  </div>
+  <div class="words-line">Bằng chữ: <b>${payslipEscape(vndInWords(netFinal))}</b>.</div>
+
+  <div class="quick-summary">
+    <div class="quick-cell"><div class="quick-label">Lương cơ bản</div><div class="quick-value">${money(row.baseSalary)}</div></div>
+    <div class="quick-cell"><div class="quick-label">Tổng thu nhập</div><div class="quick-value">${money(grossIncome)}</div></div>
+    <div class="quick-cell"><div class="quick-label">Tổng khấu trừ</div><div class="quick-value">${money(totalDeduction)}</div></div>
+    <div class="quick-cell"><div class="quick-label">Thực nhận</div><div class="quick-value takehome">${money(netFinal)}</div></div>
+  </div>
+
+  <div class="bank-strip">
+    <div class="bank-title">Thông tin tài khoản thụ hưởng</div>
+    <div class="bank-grid">
+      <div class="bank-item"><div class="bank-label">Ngân hàng</div><div class="bank-value">${payslipEscape(bankName)}</div></div>
+      <div class="bank-item"><div class="bank-label">Số tài khoản</div><div class="bank-value">${payslipEscape(bankAccount)}</div></div>
+      <div class="bank-item"><div class="bank-label">Người thụ hưởng</div><div class="bank-value">${payslipEscape(beneficiaryName)}</div></div>
+      <div class="bank-item"><div class="bank-label">Phương thức / số tiền chuyển</div><div class="bank-value">${payslipEscape(paymentMethodLabel)}<br>${money(netFinal)}</div></div>
+    </div>
+  </div>
+  ${midMonthTotal > 0 ? `<div class="reconcile-note">Đã ứng lương giữa tháng ${money(midMonthTotal)} (${midMonthList.map((entry) => `${dmy(entry.date)} ${money(entry.amount)}`).join(" · ")}) — khoản này đã chi riêng trước đó, không trừ vào số thực nhận kỳ này.</div>` : ""}
+  <div class="signature-block">
+    <div class="sign-date">Ngày ${new Date().getDate()} tháng ${new Date().getMonth() + 1} năm ${new Date().getFullYear()}</div>
+    <div class="sign-grid">
+      <div class="sign-cell">
+        <div class="sign-role">Người lao động</div><div class="sign-hint">(Ký, ghi rõ họ tên)</div>
+        <div class="sign-space"></div><div class="sign-who">${payslipEscape(row.name)}</div>
+      </div>
+      <div class="sign-cell">
+        <div class="sign-role">Kế toán duyệt</div><div class="sign-hint">(Ký, ghi rõ họ tên)</div>
+        ${accountantApproved ? `<div class="ok">ĐÃ DUYỆT</div><div class="sign-who">${payslipEscape(approval.accountantApprovedByName || approval.accountantApprovedByEmail || "Kế toán")}</div><div class="sign-when">${payslipEscape(approval.accountantApprovedAt || "")}</div>` : `<div class="pending">Chưa duyệt</div>`}
+      </div>
+      <div class="sign-cell">
+        <div class="sign-role">Giám đốc duyệt</div><div class="sign-hint">(Ký tên, đóng dấu)</div>
+        ${bossApproved ? `<div class="stamp"><div class="s1">ĐÃ DUYỆT</div><div class="s2">${payslipEscape(companyName)}</div><div class="s3">${payslipEscape(approval.bossApprovedAt || "")}</div></div><div class="sign-who">${payslipEscape(approval.bossApprovedByName || approval.bossApprovedByEmail || "Giám đốc")}</div>` : `<div class="stamp empty"><div class="s1">CHƯA<br>ĐÓNG DẤU</div></div>`}
+      </div>
+    </div>
+    <div class="employee-foot">Phiếu lương phát cho nhân viên: thể hiện toàn bộ khoản thu nhập, khoản khấu trừ, số thực nhận và tài khoản thụ hưởng. Các khoản doanh nghiệp tự đóng ngoài lương không hiển thị trên phiếu này.</div>
+  </div>
 </div>`;
 
   return { css, body, month, year };
@@ -3783,6 +3755,7 @@ async function exportEmployeeProfilePdf(employee, { company = {}, pay = {}, peri
     standardDays: Number(pay.standardDays ?? standardDays) || 26,
     bankName: employee.bankName || pay.bankName || "",
     bankAccount: employee.bankAccount || pay.bankAccount || "",
+    bankAccountHolder: employee.bankAccountHolder || pay.bankAccountHolder || employee.name || pay.name || "",
   };
   const options = {
     company,
@@ -7148,6 +7121,7 @@ function CaiDatCongTy({ company, setCompany, authUser, t, lang, exportAllData, i
     { key: "establishedDate", label: "Ngày thành lập (theo ĐKKD)", type: "date", mono: true },
     { key: "bankName", label: "Ngân hàng (tên · chi nhánh)" },
     { key: "bankAccount", label: "Số tài khoản ngân hàng", mono: true },
+    { key: "bankAccountHolder", label: "Người thụ hưởng" },
   ];
   // MST Việt Nam chuẩn: 10 số, chi nhánh/đơn vị phụ thuộc dạng 10 số - 3 số. Chỉ CẢNH BÁO,
   // không chặn lưu — kế toán vẫn nhập được khi mã đang chờ cấp.
@@ -21049,6 +21023,7 @@ function EmployeeProfileModal({ employee, tasks = [], orders = [], marketingLogs
                       {infoItem("Phụ cấp chuyên cần", <span className="ktns-mono">{fmtVND(employee.attendanceBonus)}</span>)}
                       {infoItem("Ngân hàng", employee.bankName)}
                       {infoItem("Số tài khoản", <span className="ktns-mono">{employee.bankAccount || "—"}</span>)}
+                      {infoItem("Người thụ hưởng", employee.bankAccountHolder || employee.name || "—")}
                     </div>
                   </div>
                 </section>
@@ -21144,7 +21119,7 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
     dependents: "0", mealAllowance: "730000", attendanceBonus: "300000",
     roleType: "khac", customScore: "80",
     contractType: "chinh_thuc", probationRate: "85",
-    dob: "", hometown: "", bankName: "", bankAccount: "", phone: "", email: "", resignedDate: "",
+    dob: "", hometown: "", bankName: "", bankAccount: "", bankAccountHolder: "", phone: "", email: "", resignedDate: "",
     idNumber: "", education: "Đại học", major: "", resumeSummary: "",
     idFrontData: "", idFrontName: "", idFrontType: "", idBackData: "", idBackName: "", idBackType: "",
     resumeFileData: "", resumeFileName: "", resumeFileType: "",
@@ -21198,7 +21173,7 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
       dependents: String(e.dependents || 0), mealAllowance: String(mc.mealAllowance || 0), attendanceBonus: String(mc.attendanceBonus || 0),
       roleType: e.roleType, customScore: String(e.customScore || 0),
       contractType: mc.contractType || "chinh_thuc", probationRate: String(Math.round((mc.probationRate || DEFAULT_PROBATION_RATE) * 100)),
-      dob: e.dob || "", hometown: e.hometown || "", bankName: e.bankName || "", bankAccount: e.bankAccount || "", phone: e.phone || "", email: e.email || "", resignedDate: e.resignedDate || "",
+      dob: e.dob || "", hometown: e.hometown || "", bankName: e.bankName || "", bankAccount: e.bankAccount || "", bankAccountHolder: e.bankAccountHolder || e.name || "", phone: e.phone || "", email: e.email || "", resignedDate: e.resignedDate || "",
       idNumber: e.idNumber || "", education: e.education || "Đại học", major: e.major || "", resumeSummary: e.resumeSummary || "",
       idFrontData: e.idFrontData || "", idFrontName: e.idFrontName || "", idFrontType: e.idFrontType || "",
       idBackData: e.idBackData || "", idBackName: e.idBackName || "", idBackType: e.idBackType || "",
@@ -21575,7 +21550,8 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
               <label className="text-xs text-muted flex flex-col gap-1">Số điện thoại<input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="09xxxxxxxx" className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
               <label className="text-xs text-muted flex flex-col gap-1">Email<input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="ten@congty.vn" className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
               <label className="text-xs text-muted flex flex-col gap-1">Ngân hàng<input value={form.bankName} onChange={(e) => setForm({ ...form, bankName: e.target.value })} placeholder="VD: Vietcombank" className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
-              <label className="text-xs text-muted flex flex-col gap-1 md:col-span-2">Số tài khoản<input value={form.bankAccount} onChange={(e) => setForm({ ...form, bankAccount: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
+              <label className="text-xs text-muted flex flex-col gap-1">Số tài khoản<input value={form.bankAccount} onChange={(e) => setForm({ ...form, bankAccount: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
+              <label className="text-xs text-muted flex flex-col gap-1 md:col-span-2">Người thụ hưởng / Tên chủ tài khoản<input value={form.bankAccountHolder} onChange={(e) => setForm({ ...form, bankAccountHolder: e.target.value })} placeholder={form.name || "VD: NGUYEN VAN A"} className="border border-paper-line rounded px-2 py-1.5 text-sm" /><span className="text-[10px] text-ink-light normal-case">Tên đúng theo tài khoản ngân hàng để in trên phiếu lương.</span></label>
               {editingId && (
                 <label className="text-xs text-muted flex flex-col gap-1">Ngày nghỉ việc (nếu có)<input type="date" value={form.resignedDate} onChange={(e) => setForm({ ...form, resignedDate: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm" /></label>
               )}
@@ -22970,6 +22946,22 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
       return;
     }
     const approvedAmount = proposalNumbersOf(approval).amount;
+    const finalTransferAmount = Math.max(0, Math.round(Number(r.net) || 0));
+    if (finalTransferAmount <= 0) {
+      noticeOverlay("Thực nhận hiện tại phải lớn hơn 0đ trước khi chi trả.", { title: "Số tiền chưa hợp lệ" });
+      return;
+    }
+    // Bất biến nghiệp vụ: THỰC NHẬN chính là số tiền cuối cùng chuyển cho nhân viên.
+    // Nếu số đã duyệt còn là dữ liệu cũ, tuyệt đối không cho chi số cũ.
+    if (Math.abs(approvedAmount - finalTransferAmount) > 0.5) {
+      noticeOverlay(
+        `Số đã duyệt ${fmtVND(approvedAmount)} đang lệch Thực nhận hiện tại ${fmtVND(finalTransferAmount)}. Hệ thống đã chặn chuyển khoản sai; hãy đối soát/tính lại hồ sơ trước khi chi.`,
+        { title: "Số chuyển khoản không khớp Thực nhận" },
+      );
+      setPayrollPaymentTarget(null);
+      openPayrollReconciliation(r);
+      return;
+    }
     if (!payrollPaymentForm.date) {
       noticeOverlay("Cần chọn ngày chi trả.", { title: "Thiếu ngày chi trả" });
       return;
@@ -22986,7 +22978,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
         employeeName: r.name,
         year: reportYear,
         month: reportMonth,
-        amount: approvedAmount,
+        amount: finalTransferAmount,
         date: payrollPaymentForm.date,
         paymentMethod: payrollPaymentForm.paymentMethod,
         cashAccount: payrollPaymentForm.cashAccount,
@@ -22999,7 +22991,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
       if (result.data && applyAppData) applyAppData(result.data, { markPersisted: true });
       await refreshFinancialSummary?.();
       setPayrollPaymentTarget(null);
-      noticeOverlay(`Đã chi trả ${fmtVND(approvedAmount)} và tạo đúng một bút toán Chi liên kết. Phiếu lương PDF đang được tải về máy.`, { title: "Chi trả thành công" });
+      noticeOverlay(`Đã chi trả ${fmtVND(finalTransferAmount)} và tạo đúng một bút toán Chi liên kết. Phiếu lương PDF đang được tải về máy.`, { title: "Chi trả thành công" });
       // Chi trả xong là XUẤT LUÔN phiếu lương PDF của người này — phiếu ghi trạng thái "Đã chi trả".
       // State payrollPayments chưa kịp cập nhật trong closure nên tự dựng thông tin chi trả vừa ghi.
       try {
@@ -23008,7 +23000,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
           period: { year: reportYear, month: reportMonth },
           approval,
           payment: {
-            amount: approvedAmount,
+            amount: finalTransferAmount,
             paymentMethod: payrollPaymentForm.paymentMethod,
             paidDate: payrollPaymentForm.date,
             paidByName: actor.name,

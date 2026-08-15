@@ -52,6 +52,7 @@ FIELD_SPEC = [
     ("hometown", "hometown", "text"),
     ("bankName", "bank_name", "text"),
     ("bankAccount", "bank_account", "text"),
+    ("bankAccountHolder", "bank_account_holder", "text"),
     ("phone", "phone", "text"),
     ("idNumber", "id_number", "text"),
     ("education", "education", "text"),
