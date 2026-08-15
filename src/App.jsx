@@ -1988,14 +1988,16 @@ function isPeriodLocked(year, month, unlockedSet) {
 const ATTENDANCE_CODES = {
   X: { label: "Làm đủ công", value: 1 },
   P: { label: "Làm nửa công", value: 0.5 },
-  N: { label: "Nghỉ có phép", value: 0 },
-  K: { label: "Nghỉ không phép", value: 0 },
+  // N/K là ngày không hưởng lương trong mô hình hiện tại. Đây là dữ liệu dùng để xét
+  // điều kiện tạm dừng đóng BH khi tổng số ngày không hưởng lương đạt ngưỡng luật định.
+  N: { label: "Nghỉ có phép (không lương)", value: 0 },
+  K: { label: "Nghỉ không phép (không lương)", value: 0 },
   L: { label: "Nghỉ lễ / Tết (hưởng lương)", value: 1 },
   O: { label: "Tăng ca ngày nghỉ", value: 1 },
   CN: { label: "Nghỉ Chủ nhật (tự động)", value: 0 },
 };
 const ATTENDANCE_CODE_LABELS_EN = {
-  X: "Full workday", P: "Half workday", N: "Approved leave", K: "Unapproved absence",
+  X: "Full workday", P: "Half workday", N: "Approved unpaid leave", K: "Unapproved unpaid absence",
   L: "Paid public holiday", O: "Rest-day overtime", CN: "Sunday off (automatic)",
 };
 
@@ -2024,14 +2026,13 @@ function otTypeForDate(employee, dateStr) {
   return "weekday";
 }
 
-// Lương 1 GIỜ tăng ca — công thức CỐ ĐỊNH theo quy định công ty:
-// LƯƠNG CƠ BẢN ÷ 26 công = tiền 1 ngày; tiền 1 ngày ÷ 8 tiếng = tiền 1 giờ.
-// VD lương 5.000.000đ → 1 ngày 192.308đ → 1 giờ 24.038đ; OT ngày thường × 150%.
-// (baseSalary tra theo tháng qua compensationHistory để xem lại tháng cũ vẫn đúng mức lương khi ấy.)
-const OT_STANDARD_MONTH_DAYS = 26;
+// Lương 1 GIỜ tăng ca lấy theo tiền lương của công việc đang làm và tổng giờ làm việc
+// bình thường của đúng kỳ lương. Không chia cứng cho 26 ngày vì tháng/người vào-nghỉ
+// giữa kỳ có số ngày làm việc chuẩn khác nhau, dễ làm sai đơn giá OT.
 function otHourlyRateFor(employee, year, month) {
   const resolved = employeeCompForMonth(employee, year, month);
-  return (Number(resolved.baseSalary) || 0) / OT_STANDARD_MONTH_DAYS / OT_STANDARD_DAY_HOURS;
+  const standardDays = standardWorkDaysForEmployee(resolved, year, month) || standardWorkDaysFor(year, month) || 26;
+  return (Number(resolved.baseSalary) || 0) / standardDays / OT_STANDARD_DAY_HOURS;
 }
 
 // Số giờ OT tối đa còn đăng ký được trong NGÀY: tổng giờ làm thường + OT ≤ 12h.
@@ -2128,13 +2129,25 @@ function monthlyFullDaysFor(attendance, year, month) {
   let total = 0;
   for (let d = 1; d <= days; d++) {
     const code = rec?.[d];
-    if (code && (ATTENDANCE_CODES[code]?.value ?? 0) === 1) total += 1;
+    // Suất ăn chỉ phát sinh khi thực tế làm việc đủ ngày. Ngày lễ hưởng lương (L) vẫn là
+    // 1 công để tính lương nhưng không tự động phát sinh suất ăn nếu nhân viên không đi làm.
+    if (code === "X" || code === "O") total += 1;
   }
   return total;
 }
-// Phụ cấp chuyên cần — chỉ được hưởng ĐỦ nếu tháng đó không có ngày nghỉ có phép (N)
-// hay nghỉ không phép (K) nào. Có bất kỳ ngày N/K nào trong tháng là mất luôn phụ cấp này,
-// đúng thực tế phổ biến ở doanh nghiệp Việt Nam (thưởng chuyên cần toàn tháng, không chia nhỏ).
+// Số ngày không hưởng lương được ghi nhận rõ trong kỳ. Luật BHXH dùng tiêu chí
+// "không hưởng tiền lương từ 14 ngày làm việc trở lên", KHÔNG dùng tiêu chí
+// "đi làm dưới 14 ngày". N/K trong hệ thống hiện đều có giá trị công = 0 nên được
+// xem là ngày không hưởng lương; ngày CN và ngày chưa chấm công không được suy đoán là nghỉ.
+function monthlyUnpaidLeaveDaysFor(attendance, year, month) {
+  const rec = attendance?.[monthKey(year, month)];
+  if (!rec) return 0;
+  return Object.values(rec).filter((code) => code === "N" || code === "K").length;
+}
+// Theo chính sách DOMIX, phụ cấp chuyên cần chỉ phát sinh khi nhân viên ĐỦ CÔNG CHUẨN
+// của chính nhân viên đó trong kỳ. Không chỉ kiểm tra N/K: ngày để trống, nửa công hoặc
+// thiếu công cũng làm mất chuyên cần. OT ngày nghỉ (O) không được dùng để bù cho công chuẩn
+// còn thiếu; ngày lễ/Tết hưởng lương (L) vẫn được tính như một công chuẩn hợp lệ.
 function hasAbsenceInMonth(attendance, year, month) {
   const rec = attendance?.[monthKey(year, month)];
   if (!rec) return false;
@@ -2163,6 +2176,30 @@ function standardWorkDaysForEmployee(emp, year, month) {
     if (!isSundayVN(year, month, d)) c++;
   }
   return Math.max(1, c);
+}
+// Số công dùng RIÊNG để xét chuyên cần: chỉ các ngày làm việc chuẩn trong khoảng nhân viên
+// có hiệu lực được tính. X/L = 1 công, P = 0,5 công; ngày nghỉ/để trống = 0. O ngày nghỉ
+// không được cộng bù vào công chuẩn còn thiếu.
+function attendanceBonusWorkDaysForEmployee(emp, year, month) {
+  const days = daysInMonthVN(year, month);
+  const monthStartKey = year * 10000 + month * 100 + 1;
+  const monthEndKey = year * 10000 + month * 100 + days;
+  const joined = calendarDateParts(emp?.joined);
+  if (joined && joined.key > monthEndKey) return 0;
+  const resigned = emp?.status === "inactive" ? calendarDateParts(emp?.resignedDate) : null;
+  if (resigned && resigned.key < monthStartKey) return 0;
+  const rangeStartDay = joined && joined.key >= monthStartKey && joined.key <= monthEndKey ? joined.day : 1;
+  const rangeEndDay = resigned && resigned.key >= monthStartKey && resigned.key <= monthEndKey ? resigned.day : days;
+  if (rangeStartDay > rangeEndDay) return 0;
+  const rec = emp?.attendance?.[monthKey(year, month)] || {};
+  let total = 0;
+  for (let d = rangeStartDay; d <= rangeEndDay; d++) {
+    if (isSundayVN(year, month, d)) continue;
+    const code = rec?.[d];
+    if (code === "X" || code === "L") total += 1;
+    else if (code === "P") total += 0.5;
+  }
+  return total;
 }
 function monthlyCong(attendance) { return monthlyCongFor(attendance, ATT_YEAR, ATT_MONTH); }
 // attendance của nhân viên giờ lưu dạng { "2026-07": {1:"X",...}, "2026-08": {...} } — mỗi tháng một bản ghi riêng.
@@ -2241,29 +2278,49 @@ function corporateTaxRate(annualRevenue) {
 // loại chi phí khi quyết toán thuế, dù có đủ hoá đơn.
 const CASH_PAYMENT_DEDUCTIBLE_LIMIT = 5000000;
 
-// CẬP NHẬT theo Luật Thuế TNCN 2025 (số 109/2025/QH15) — áp dụng từ kỳ tính thuế 01/01/2026: biểu
-// thuế lũy tiến rút gọn từ 7 xuống còn 5 bậc, giãn khoảng cách rộng hơn, giảm thuế suất bậc 2-3.
-const PIT_BRACKETS = [
+// Chính sách thuế TNCN theo kỳ. Từ kỳ tính thuế 2026 áp dụng biểu 5 bậc và mức
+// giảm trừ gia cảnh mới; các tháng trước 2026 vẫn giữ biểu/mức cũ để xem lịch sử không bị sai.
+const PIT_BRACKETS_PRE_2026 = [
+  [5000000, 0.05], [10000000, 0.10], [18000000, 0.15], [32000000, 0.20],
+  [52000000, 0.25], [80000000, 0.30], [Infinity, 0.35],
+];
+const PIT_BRACKETS_2026 = [
   [10000000, 0.05], [30000000, 0.10], [60000000, 0.20], [100000000, 0.30], [Infinity, 0.35],
 ];
-function progressiveTax(taxableIncome) {
+function progressiveTax(taxableIncome, year = ATT_YEAR) {
   if (taxableIncome <= 0) return 0;
+  const brackets = Number(year) >= 2026 ? PIT_BRACKETS_2026 : PIT_BRACKETS_PRE_2026;
   let tax = 0, prev = 0;
-  for (const [upper, rate] of PIT_BRACKETS) {
+  for (const [upper, rate] of brackets) {
     if (taxableIncome <= prev) break;
     tax += (Math.min(taxableIncome, upper) - prev) * rate;
     prev = upper;
   }
   return tax;
 }
-// CẬP NHẬT theo Nghị quyết 110/2025/UBTVQH15 — mức giảm trừ gia cảnh mới áp dụng từ kỳ tính thuế
-// 01/01/2026, tăng ~41% so với mức cũ (11tr/4,4tr) theo Nghị quyết 954/2020/UBTVQH14 đã hết hiệu lực.
-const PERSONAL_DEDUCTION = 15500000;
-const DEPENDENT_DEDUCTION = 6200000;
-const MEAL_ALLOWANCE_TAX_FREE_CAP = 730000;
-// Điều 42 Quyết định 595/QĐ-BHXH: NLĐ nghỉ không lương từ đủ 14 ngày làm việc trở lên trong
-// tháng thì không đóng BHXH/BHYT/BHTN tháng đó — dưới ngưỡng này thì đóng đủ trên nguyên lương.
-const INSURANCE_MIN_WORKDAYS = 14;
+const PERSONAL_DEDUCTION_PRE_2026 = 11000000;
+const DEPENDENT_DEDUCTION_PRE_2026 = 4400000;
+const PERSONAL_DEDUCTION_2026 = 15500000;
+const DEPENDENT_DEDUCTION_2026 = 6200000;
+const MEAL_ALLOWANCE_TAX_FREE_CAP_PRE_2026 = 730000;
+const MEAL_ALLOWANCE_TAX_FREE_CAP_FROM_2026_07 = 1200000;
+const FLAT_TAX_WITHHOLDING_THRESHOLD_PRE_2026 = 2000000;
+const FLAT_TAX_WITHHOLDING_THRESHOLD_2026 = 5000000;
+const INSURANCE_UNPAID_LEAVE_DAYS_THRESHOLD = 14;
+function payrollTaxPolicyFor(year, month) {
+  const y = Number(year);
+  const m = Number(month);
+  const is2026Policy = y >= 2026;
+  return {
+    personalDeduction: is2026Policy ? PERSONAL_DEDUCTION_2026 : PERSONAL_DEDUCTION_PRE_2026,
+    dependentDeduction: is2026Policy ? DEPENDENT_DEDUCTION_2026 : DEPENDENT_DEDUCTION_PRE_2026,
+    mealTaxFreeCap: y > 2026 || (y === 2026 && m >= 7)
+      ? MEAL_ALLOWANCE_TAX_FREE_CAP_FROM_2026_07
+      : MEAL_ALLOWANCE_TAX_FREE_CAP_PRE_2026,
+    flatTaxThreshold: is2026Policy ? FLAT_TAX_WITHHOLDING_THRESHOLD_2026 : FLAT_TAX_WITHHOLDING_THRESHOLD_PRE_2026,
+    overtimeTaxExempt: is2026Policy,
+  };
+}
 
 // ---------- Công thức lương Sale / Marketing / Hỗ trợ kỹ thuật ----------
 // Chép đúng theo bảng "Quy định KPI" bạn gửi (3 khối: Sale, Marketing, Hỗ trợ kỹ thuật).
@@ -2327,20 +2384,19 @@ const TECH_UPSALE_RATE = 0.07;
 // Áp theo Bộ luật Lao động & Luật BHXH hiện hành — có thể thay đổi theo quy định mới:
 // - Chính thức (HĐLĐ ≥1 tháng): bắt buộc đóng BHXH-BHYT-BHTN cả NV & DN, thuế TNCN
 //   lũy tiến có giảm trừ gia cảnh, được tính phụ cấp thâm niên.
-// - Thử việc: hưởng tối thiểu 85% lương vị trí chính thức (Điều 26 BLLĐ 2019, có thể
-//   chỉnh riêng từng người), thường CHƯA bắt buộc đóng BHXH nếu ký hợp đồng thử việc
-//   riêng (không phải HĐLĐ), thuế TNCN vẫn tính lũy tiến có giảm trừ gia cảnh vì trả
-//   lương định kỳ qua bảng lương.
+// - Thử việc: hưởng tối thiểu 85% lương vị trí chính thức. Cấu hình "thu_viec" ở đây
+//   được hiểu là HỢP ĐỒNG THỬ VIỆC RIÊNG (không phải HĐLĐ): chưa phát sinh BH bắt buộc và
+//   khoản chi trả thuộc cơ chế khấu trừ 10% nếu đạt ngưỡng theo kỳ. Nếu nội dung thử việc
+//   nằm trong HĐLĐ, phải khai loại hợp đồng thuộc diện HĐLĐ để tính BH/thuế đúng bản chất.
 // - Cộng tác viên (hợp đồng dịch vụ/khoán việc, không phải quan hệ lao động): KHÔNG
-//   đóng BHXH-BHYT-BHTN, KHÔNG được giảm trừ gia cảnh, khấu trừ thuế TNCN 10% ngay
-//   tại nguồn nếu mỗi lần chi trả ≥2.000.000đ (Điều 25 Thông tư 111/2013/TT-BTC).
+//   đóng BHXH-BHYT-BHTN; khoản chi trả thuộc diện khấu trừ theo tỷ lệ 10% áp dụng ngưỡng
+//   theo đúng kỳ thuế (từ kỳ tính thuế 2026: 5.000.000đ/lần theo NĐ 253/2026/NĐ-CP).
 const CONTRACT_META = {
   chinh_thuc: { label: "Chính thức", hasInsurance: true, progressiveTax: true, hasSeniority: true },
-  thu_viec: { label: "Thử việc", hasInsurance: false, progressiveTax: true, hasSeniority: false },
+  thu_viec: { label: "Thử việc", hasInsurance: false, progressiveTax: false, hasSeniority: false },
   ctv: { label: "Cộng tác viên", hasInsurance: false, progressiveTax: false, hasSeniority: false },
 };
 const CTV_FLAT_TAX_RATE = 0.10;
-const CTV_FLAT_TAX_THRESHOLD = 2000000;
 const DEFAULT_PROBATION_RATE = 0.85;
 
 // Central payroll engine — mọi số liệu kế toán trưởng cần: thu nhập, BHXH-BHYT-BHTN
@@ -2433,7 +2489,7 @@ function resolveKpiMilestone(e, revenue, roleTiers) {
 // Sửa lương/KPI trên hồ sơ chỉ áp dụng TỪ THÁNG được chọn trở đi; bảng lương các tháng
 // TRƯỚC mốc đó tra lại đúng snapshot đã áp dụng khi ấy — xem lại tháng cũ không bị đổi.
 const COMP_HISTORY_FIELDS = [
-  "baseSalary", "dailySalary", "mealAllowance", "attendanceBonus", "bonusTarget", "kpi",
+  "baseSalary", "dailySalary", "insuranceSalary", "mealAllowance", "attendanceBonus", "bonusTarget", "kpi",
   "contractType", "probationRate", "allowances", "kpiRevenueThreshold", "kpiRevenuePct", "kpiTiersOverride",
 ];
 function employeeCompForMonth(e, year, month) {
@@ -2469,11 +2525,11 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
   // Tháng chưa tới (chưa có ngày làm việc nào) — toàn bộ lương = 0, kể cả Sale/Marketing tính theo
   // doanh số, để tránh hiện lương "khống" cho tháng chưa bắt đầu.
   if (new Date(year, month - 1, 1) > TODAY) {
-    const standardDays = standardWorkDaysFor(year, month);
+    const standardDays = standardWorkDaysForEmployee(e, year, month) || standardWorkDaysFor(year, month);
     return {
       contractType: e.contractType || "chinh_thuc", contractLabel: contract.label, probationRate: 1, periodYear: year, periodMonth: month,
       customAllowances: [], customAllowanceTotal: 0, customAllowanceConfigured: 0, customAllowanceDeducted: 0,
-      months, standardDays, actualDays: 0, fullWorkDays: 0, daySalary: (Number(e.dailySalary) > 0 ? Number(e.dailySalary) : e.baseSalary / standardDays), salaryByDays: 0, kpiBonus: 0, seniorityAllowance: 0, mealAllowance: 0, mealAllowancePerDay: standardDays > 0 ? (Number(e.mealAllowance) || 0) / standardDays : 0, mealAllowanceDeducted: Number(e.mealAllowance) || 0, configuredMealAllowance: Number(e.mealAllowance) || 0, otherBonus: 0, advance: 0, attendanceBonus: 0, hasAbsence: false, kpiMilestoneBonus: 0, kpiMilestonePct: 0, kpiMilestoneNetRevenue: 0, grossIncome: 0,
+      months, standardDays, actualDays: 0, fullWorkDays: 0, attendanceBonusWorkDays: 0, attendanceBonusEligible: false, attendanceBonusMissingDays: standardDays, daySalary: (Number(e.dailySalary) > 0 ? Number(e.dailySalary) : e.baseSalary / standardDays), salaryByDays: 0, kpiBonus: 0, seniorityAllowance: 0, mealAllowance: 0, mealAllowancePerDay: standardDays > 0 ? (Number(e.mealAllowance) || 0) / standardDays : 0, mealAllowanceDeducted: Number(e.mealAllowance) || 0, configuredMealAllowance: Number(e.mealAllowance) || 0, otherBonus: 0, advance: 0, attendanceBonus: 0, hasAbsence: false, kpiMilestoneBonus: 0, kpiMilestonePct: 0, kpiMilestoneNetRevenue: 0, grossIncome: 0,
       usesRevenueModel: e.roleType === "sale" || e.roleType === "ads", mainSalary: 0, commission: 0, compBonus: 0, techUpsale: 0, compStatusLabel: "Tháng chưa bắt đầu — chưa có dữ liệu", compRate: null, revenueUsed: 0,
       otHours: 0, otPay: 0, otHourlyRate: 0, otByType: { weekday: 0, weekend: 0, holiday: 0 },
       bhxhNV: 0, bhytNV: 0, bhtnNV: 0, employeeInsurance: 0,
@@ -2485,12 +2541,16 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
     };
   }
 
-  const standardDays = standardWorkDaysFor(year, month);
+  const employeeStandardDays = standardWorkDaysForEmployee(e, year, month);
+  const standardDays = employeeStandardDays || standardWorkDaysFor(year, month);
   const actualDays = monthlyCongFor(e.attendance, year, month);
   const daySalary = Number(e.dailySalary) > 0 ? Number(e.dailySalary) : e.baseSalary / standardDays;
   const salaryByDays = daySalary * actualDays;
   const seniorityRate = contract.hasSeniority ? (months >= 24 ? 0.04 : months >= 12 ? 0.02 : 0) : 0;
   const hasAbsence = hasAbsenceInMonth(e.attendance, year, month);
+  const attendanceBonusWorkDays = attendanceBonusWorkDaysForEmployee(e, year, month);
+  const attendanceBonusEligible = standardDays > 0 && attendanceBonusWorkDays >= standardDays - 0.0001;
+  const attendanceBonusMissingDays = Math.max(0, standardDays - attendanceBonusWorkDays);
   const otherBonus = e.otherBonus || 0;
   const advance = e.advance || 0;
   const probationRate = e.contractType === "thu_viec" ? (e.probationRate || DEFAULT_PROBATION_RATE) : 1;
@@ -2511,7 +2571,7 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
   const mealAllowancePerDay = standardDays > 0 ? configuredMealAllowance / standardDays : 0;
   const mealAllowance = hasAnyAttendance ? mealAllowancePerDay * Math.min(fullWorkDays, standardDays) : 0;
   const mealAllowanceDeducted = Math.max(0, configuredMealAllowance - mealAllowance);
-  const attendanceBonus = hasAnyAttendance && !hasAbsence ? (e.attendanceBonus || 0) : 0;
+  const attendanceBonus = attendanceBonusEligible ? (e.attendanceBonus || 0) : 0;
   // Các khoản phụ cấp tự khai báo (xăng xe, OT, sinh con...) — cộng thêm ngoài ăn trưa/thâm niên.
   const customAllowances = computeEmployeeAllowances(e, standardDays, actualDays, hasAnyAttendance);
   let mainSalary, kpiBonus = 0, commission = 0, compBonus = 0, techUpsale = 0, compStatusLabel = null, compRate = null, revenueUsed = 0;
@@ -2560,46 +2620,54 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
 
   const grossIncome = mainSalary + kpiBonus + commission + compBonus + techUpsale + seniorityAllowance + mealAllowance + otherBonus + attendanceBonus + kpiMilestoneBonus + customAllowances.total + otPay;
 
-  // Bảo hiểm chỉ áp dụng cho hợp đồng chính thức VÀ đủ NGƯỠNG ≥14 ngày công trong tháng (Điều 42
-  // Quyết định 595/QĐ-BHXH: NLĐ nghỉ không lương từ 14 ngày làm việc trở lên trong tháng thì
-  // không đóng BHXH tháng đó). Mức đóng luôn tính trên NGUYÊN lương tháng (baseSalary), không
-  // chia theo tỷ lệ ngày công — vì vậy trước đây dùng ngưỡng "chỉ cần >0 ngày công" khiến người
-  // mới vào làm/nghỉ việc giữa tháng (VD 1-2 ngày công) bị trừ bảo hiểm nguyên tháng, có thể vượt
-  // quá cả thu nhập họ kiếm được trong tháng đó và làm "thực lĩnh" ra số âm.
-  const qualifiesForInsurance = actualDays >= INSURANCE_MIN_WORKDAYS;
-  // CƠ CHẾ MỚI: bảo hiểm khai theo SỐ TIỀN CỐ ĐỊNH cho TỪNG nhân viên (cả phần NV đóng
-  // lẫn phần DN đóng) — bật/chỉnh ở popup "Bảo hiểm" trong Bảng lương. Nhân viên chưa
-  // bật chế độ tiền cố định vẫn tính theo % luật như cũ (tương thích ngược).
+  // Bảo hiểm: tiêu chí pháp lý là số ngày KHÔNG HƯỞNG LƯƠNG trong tháng, không phải số
+  // ngày đã đi làm. NLĐ thuộc diện bắt buộc chỉ tạm dừng đóng tháng đó khi có từ 14 ngày
+  // làm việc trở lên không hưởng lương. Vì vậy một nhân viên mới chấm 6 công giữa tháng
+  // không được tự động suy ra "không phát sinh bảo hiểm" như công thức cũ.
+  const unpaidLeaveDays = monthlyUnpaidLeaveDaysFor(e.attendance, year, month);
+  const insuranceSuspendedForUnpaidLeave = unpaidLeaveDays >= INSURANCE_UNPAID_LEAVE_DAYS_THRESHOLD;
+  const employeeActiveInPeriod = employeeStandardDays > 0;
+  // Cho phép khai riêng tiền lương làm căn cứ đóng BH nếu hồ sơ có trường insuranceSalary;
+  // chưa khai thì tương thích ngược bằng lương cơ bản hiện có.
+  const insuranceContributionBase = Math.max(0, Number(e.insuranceSalary) || Number(e.baseSalary) || 0);
+  const insurancePeriodEligible = employeeActiveInPeriod && !insuranceSuspendedForUnpaidLeave;
+  // Bảo hiểm khai theo SỐ TIỀN CỐ ĐỊNH cho từng nhân viên vẫn được tôn trọng. Với chế độ
+  // theo tỷ lệ, chỉ hợp đồng thuộc diện bảo hiểm bắt buộc mới phát sinh.
   const insuranceFixed = Number(e.insuranceFixedMode) === 1;
   let bhxhNV; let bhytNV; let bhtnNV; let bhxhDN; let bhytDN; let bhtnDN; let bhtnldBnnDN;
   if (insuranceFixed) {
-    bhxhNV = qualifiesForInsurance ? Math.max(0, Number(e.insuranceEmployeeAmount) || 0) : 0;
+    bhxhNV = insurancePeriodEligible ? Math.max(0, Number(e.insuranceEmployeeAmount) || 0) : 0;
     bhytNV = 0; bhtnNV = 0;
-    bhxhDN = qualifiesForInsurance ? Math.max(0, Number(e.insuranceEmployerAmount) || 0) : 0;
+    bhxhDN = insurancePeriodEligible ? Math.max(0, Number(e.insuranceEmployerAmount) || 0) : 0;
     bhytDN = 0; bhtnDN = 0; bhtnldBnnDN = 0;
   } else {
-    bhxhNV = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.08 : 0;
-    bhytNV = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.015 : 0;
-    bhtnNV = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.01 : 0;
-    bhxhDN = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.17 : 0;
-    bhytDN = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.03 : 0;
-    bhtnDN = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.01 : 0;
-    bhtnldBnnDN = contract.hasInsurance && qualifiesForInsurance ? e.baseSalary * 0.005 : 0;
+    const mandatoryInsurance = contract.hasInsurance && insurancePeriodEligible;
+    bhxhNV = mandatoryInsurance ? insuranceContributionBase * 0.08 : 0;
+    bhytNV = mandatoryInsurance ? insuranceContributionBase * 0.015 : 0;
+    bhtnNV = mandatoryInsurance ? insuranceContributionBase * 0.01 : 0;
+    bhxhDN = mandatoryInsurance ? insuranceContributionBase * 0.17 : 0;
+    bhytDN = mandatoryInsurance ? insuranceContributionBase * 0.03 : 0;
+    bhtnDN = mandatoryInsurance ? insuranceContributionBase * 0.01 : 0;
+    bhtnldBnnDN = mandatoryInsurance ? insuranceContributionBase * 0.005 : 0;
   }
   const employeeInsurance = bhxhNV + bhytNV + bhtnNV;
   const employerInsurance = bhxhDN + bhytDN + bhtnDN + bhtnldBnnDN;
 
   let personalDeduction = 0, taxableIncome = 0, thueTNCN = 0;
+  const taxPolicy = payrollTaxPolicyFor(year, month);
+  const mealTaxFree = Math.min(mealAllowance, taxPolicy.mealTaxFreeCap);
+  // Từ kỳ tính thuế 2026, tiền lương làm thêm giờ đúng điều kiện/mức của pháp luật lao động
+  // được miễn TNCN. Engine OT đang tính đúng các hệ số tối thiểu 150/200/300%, vì vậy phần
+  // OT do engine tính được loại khỏi thu nhập tính thuế của kỳ 2026 trở đi.
+  const overtimeTaxFree = taxPolicy.overtimeTaxExempt ? Math.max(0, otPay) : 0;
   if (contract.progressiveTax) {
-    // Chính thức & Thử việc: lương trả định kỳ qua bảng lương → thuế lũy tiến, có giảm trừ gia cảnh
-    const mealTaxFree = Math.min(mealAllowance, MEAL_ALLOWANCE_TAX_FREE_CAP);
-    personalDeduction = PERSONAL_DEDUCTION + (e.dependents || 0) * DEPENDENT_DEDUCTION;
-    taxableIncome = grossIncome - mealTaxFree - employeeInsurance - personalDeduction;
-    thueTNCN = progressiveTax(taxableIncome);
+    personalDeduction = taxPolicy.personalDeduction + (e.dependents || 0) * taxPolicy.dependentDeduction;
+    taxableIncome = grossIncome - mealTaxFree - overtimeTaxFree - employeeInsurance - personalDeduction;
+    thueTNCN = progressiveTax(taxableIncome, year);
   } else {
-    // Cộng tác viên: khấu trừ 10% toàn bộ nếu ≥2 triệu/lần, không giảm trừ gia cảnh
-    taxableIncome = grossIncome;
-    thueTNCN = grossIncome >= CTV_FLAT_TAX_THRESHOLD ? grossIncome * CTV_FLAT_TAX_RATE : 0;
+    // Cộng tác viên / thu nhập thuộc diện khấu trừ theo tỷ lệ: ngưỡng theo kỳ thuế.
+    taxableIncome = Math.max(0, grossIncome - mealTaxFree - overtimeTaxFree);
+    thueTNCN = grossIncome >= taxPolicy.flatTaxThreshold ? taxableIncome * CTV_FLAT_TAX_RATE : 0;
   }
 
   const net = grossIncome - employeeInsurance - thueTNCN - advance;
@@ -2607,14 +2675,16 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
 
   return {
     contractType: e.contractType || "chinh_thuc", contractLabel: contract.label, probationRate, periodYear: year, periodMonth: month,
-    months, standardDays, actualDays, fullWorkDays, daySalary, salaryByDays, kpiBonus, seniorityAllowance, mealAllowance, mealAllowancePerDay, mealAllowanceDeducted, configuredMealAllowance, otherBonus, advance, attendanceBonus, hasAbsence, kpiMilestoneBonus, kpiMilestonePct, kpiMilestoneNetRevenue, grossIncome,
+    months, standardDays, actualDays, fullWorkDays, attendanceBonusWorkDays, attendanceBonusEligible, attendanceBonusMissingDays, daySalary, salaryByDays, kpiBonus, seniorityAllowance, mealAllowance, mealAllowancePerDay, mealAllowanceDeducted, configuredMealAllowance, otherBonus, advance, attendanceBonus, hasAbsence, kpiMilestoneBonus, kpiMilestonePct, kpiMilestoneNetRevenue, grossIncome,
     customAllowances: customAllowances.items, customAllowanceTotal: customAllowances.total,
     customAllowanceConfigured: customAllowances.configuredTotal, customAllowanceDeducted: customAllowances.deductedTotal,
     usesRevenueModel, mainSalary, commission, compBonus, techUpsale, compStatusLabel, compRate, revenueUsed,
     otHours: ot.hours, otPay, otHourlyRate: ot.hourlyRate, otByType: ot.byType,
     bhxhNV, bhytNV, bhtnNV, employeeInsurance, insuranceFixed,
     bhxhDN, bhytDN, bhtnDN, bhtnldBnnDN, employerInsurance,
+    unpaidLeaveDays, insuranceSuspendedForUnpaidLeave, insuranceContributionBase,
     personalDeduction, taxableIncome: Math.max(taxableIncome, 0), thueTNCN,
+    mealTaxFree, overtimeTaxFree, flatTaxThreshold: taxPolicy.flatTaxThreshold,
     net, employerTotalCost,
     // Cấu hình lương ĐÃ TRA THEO THÁNG — ghi đè giá trị sống khi spread {...e, ...computePayroll()}
     // để cột "Lương cơ bản"/KPI ở Bảng lương & Nhân sự hiển thị đúng mức của tháng đang xem.
@@ -2785,7 +2855,7 @@ function exportPayrollExcel(payrollRows, payments = [], midMonthRequests = [], p
     "Giờ tăng ca đã duyệt": Number(r.otHours) || 0,
     "PC tăng ca (150-300%)": Math.round(r.otPay || 0),
     "PC ăn trưa": Math.round(r.mealAllowance),
-    "PC chuyên cần": Math.round(r.attendanceBonus), "Mất chuyên cần": r.hasAbsence ? "Có" : "Không",
+    "PC chuyên cần": Math.round(r.attendanceBonus), "Mất chuyên cần": r.attendanceBonusEligible ? "Không" : "Có",
     "Phụ cấp khác (xăng xe, OT, sinh con...)": Math.round(r.customAllowanceTotal || 0),
     "Chi tiết phụ cấp khác": (r.customAllowances || []).filter((item) => item.amount > 0).map((item) => `${item.label}: ${Math.round(item.amount)}`).join(" | ") || "—",
     "Thưởng khác": Math.round(r.otherBonus),
@@ -2943,15 +3013,15 @@ const payslipEscape = (value) => String(value ?? "")
 // không được để ảnh hưởng giao diện đang mở.
 const PAYSLIP_BASE_CSS = `
   .payslip-root, .payslip-root * { box-sizing: border-box; }
-  .payslip-root { font-family: "Times New Roman", "Noto Serif", serif; color: #111; font-size: 12.5px; margin: 0 auto; padding: 20px 26px; background: #fff; width: 794px; max-width: 100%; }
-  .payslip-root h1 { font-size: 20px; text-align: center; margin: 14px 0 2px; letter-spacing: 1px; }
-  .payslip-root .sub { text-align: center; margin: 0 0 14px; font-size: 12px; }
+  .payslip-root { font-family: "Times New Roman", "Noto Serif", serif; color: #111; font-size: 11.5px; margin: 0 auto; padding: 12px 18px; background: #fff; width: 794px; max-width: 100%; }
+  .payslip-root h1 { font-size: 19px; text-align: center; margin: 9px 0 1px; letter-spacing: .8px; }
+  .payslip-root .sub { text-align: center; margin: 0 0 7px; font-size: 11px; }
   .payslip-root .co { display: flex; justify-content: space-between; gap: 16px; font-size: 12px; border-bottom: 2px solid #111; padding-bottom: 8px; }
   .payslip-root .co b { font-size: 14px; }
-  .payslip-root h2 { font-size: 13px; margin: 16px 0 6px; text-transform: uppercase; }
+  .payslip-root h2 { font-size: 12px; margin: 9px 0 4px; text-transform: uppercase; }
   .payslip-root table.grid { width: 100%; min-width: 742px; border-collapse: collapse; }
   .payslip-root .grid tr { page-break-inside: avoid; }
-  .payslip-root .grid th, .payslip-root .grid td { border: 1px solid #333; padding: 6px 8px; vertical-align: middle; word-wrap: break-word; }
+  .payslip-root .grid th, .payslip-root .grid td { border: 1px solid #333; padding: 5px 6px; vertical-align: middle; word-wrap: break-word; line-height: 1.38; overflow: visible; }
   .payslip-root .grid th { background: #ececec; font-size: 11px; text-transform: uppercase; text-align: left; }
   .payslip-root .grid th.c, .payslip-root .grid th.num { text-align: center; }
   .payslip-root .info td { border: 1px solid #333; }
@@ -2959,10 +3029,10 @@ const PAYSLIP_BASE_CSS = `
   .payslip-root .c { text-align: center; }
   .payslip-root .r { text-align: right; white-space: nowrap; }
   .payslip-root .num { text-align: right; white-space: nowrap; font-family: "Courier New", monospace; }
-  .payslip-root .desc { color: #444; font-size: 11px; font-family: Arial, sans-serif; }
+  .payslip-root .desc { color: #444; font-size: 9.5px; font-family: Arial, sans-serif; line-height: 1.38; overflow: visible; }
   .payslip-root .mono { font-family: "Courier New", monospace; font-weight: bold; }
-  .payslip-root .note { font-size: 10.5px; color: #555; font-family: Arial, sans-serif; font-weight: normal; }
-  .payslip-root .unit { text-align: right; font-style: italic; font-size: 11px; margin: 10px 0 -10px; }
+  .payslip-root .note { font-size: 9.3px; color: #555; font-family: Arial, sans-serif; font-weight: normal; line-height: 1.38; overflow: visible; }
+  .payslip-root .unit { text-align: right; font-style: italic; font-size: 10px; margin: 5px 0 -5px; }
   .payslip-root .meta { display: flex; flex-wrap: wrap; margin: 14px 0 4px; }
   .payslip-root .meta .mitem { width: 50%; padding: 7px 0; font-size: 13px; }
   .payslip-root .meta .mlabel { display: inline-block; min-width: 185px; color: #555; font-size: 12px; }
@@ -2970,11 +3040,12 @@ const PAYSLIP_BASE_CSS = `
   .payslip-root .total td { background: #f2f2f2; font-weight: bold; }
   .payslip-root .grand td { background: #e8e8e8; font-weight: bold; font-size: 14px; }
   .payslip-root .grand .num { font-size: 15px; }
-  .payslip-root .sign-date { text-align: right; font-style: italic; margin-top: 16px; font-size: 12px; }
+  .payslip-root .sign-date { text-align: right; font-style: italic; margin-top: 8px; font-size: 10.5px; }
   .payslip-root .net { border: 2px solid #111; margin-top: 14px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; }
   .payslip-root .net .amount { font-size: 20px; font-weight: bold; font-family: "Courier New", monospace; }
   .payslip-root .words { margin-top: 6px; font-style: italic; font-size: 12px; }
-  .payslip-root .sign { width: 100%; margin-top: 26px; border-collapse: collapse; page-break-inside: avoid; }
+  .payslip-root .signature-block { display: inline-block; width: 100%; break-inside: avoid-page !important; page-break-inside: avoid !important; }
+  .payslip-root .sign { width: 100%; margin-top: 12px; border-collapse: collapse; break-inside: avoid-page !important; page-break-inside: avoid !important; }
   .payslip-root .sign td { width: 33.33%; text-align: center; vertical-align: top; padding: 4px 8px; border: none; }
   .payslip-root .sign .role { font-weight: bold; text-transform: uppercase; font-size: 12px; }
   .payslip-root .sign .hint { font-size: 10.5px; color: #555; font-style: italic; }
@@ -3006,12 +3077,12 @@ async function saveA4Pdf({ css = PAYSLIP_BASE_CSS, body, filename, fallbackHtml 
   try {
     await html2pdf()
       .set({
-        margin: [8, 6, 10, 6],
+        margin: [5, 5, 6, 5],
         filename: `${filename}.pdf`,
         image: { type: "jpeg", quality: 0.96 },
         html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: pageWidth },
         jsPDF: { unit: "mm", format: "a4", orientation },
-        pagebreak: { mode: ["css", "legacy"] },
+        pagebreak: { mode: ["css", "legacy"], avoid: [".signature-block", ".sign"] },
       })
       .from(holder.querySelector(".payslip-root"))
       .save();
@@ -3030,6 +3101,205 @@ async function saveA4Pdf({ css = PAYSLIP_BASE_CSS, body, filename, fallbackHtml 
   }
 }
 
+// Bảng chấm công PDF dùng A4 ngang, mỗi nhân viên đúng một trang. Ngày được trình bày
+// theo HÀNG và chia 01-16 / 17-cuối tháng để không ép 31 ngày thành các cột quá hẹp.
+const ATTENDANCE_PDF_CSS = `${PAYSLIP_BASE_CSS}
+  .payslip-root { width: 1123px; padding: 10px 16px; font-family: Arial, "Noto Sans", sans-serif; font-size: 10px; color: #172033; }
+  .payslip-root .attendance-sheet { width: 100%; break-inside: avoid-page !important; page-break-inside: avoid !important; }
+  .payslip-root .attendance-sheet + .attendance-sheet { break-before: page; page-break-before: always; }
+  .payslip-root .attendance-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; border-bottom: 2px solid #172033; padding-bottom: 6px; }
+  .payslip-root .attendance-company { max-width: 62%; line-height: 1.35; }
+  .payslip-root .attendance-company strong { display: block; font-size: 12px; text-transform: uppercase; }
+  .payslip-root .attendance-document { text-align: right; color: #4a5568; line-height: 1.4; }
+  .payslip-root .attendance-title { margin: 7px 0 1px; text-align: center; font-size: 18px; letter-spacing: .7px; color: #111827; }
+  .payslip-root .attendance-period { margin: 0 0 7px; text-align: center; font-size: 10.5px; font-weight: 700; color: #334155; }
+  .payslip-root .attendance-info { width: 100%; border-collapse: collapse; table-layout: fixed; margin-bottom: 7px; }
+  .payslip-root .attendance-info td { border: 1px solid #8b95a5; padding: 4px 6px; line-height: 1.2; }
+  .payslip-root .attendance-info .label { width: 10%; background: #eef2f7; color: #526071; font-size: 8.5px; font-weight: 700; text-transform: uppercase; }
+  .payslip-root .attendance-info .value { width: 23.33%; font-weight: 700; }
+  .payslip-root .attendance-tables { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 8px; }
+  .payslip-root .attendance-half { min-width: 0; }
+  .payslip-root .attendance-day-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .payslip-root .attendance-day-table thead tr { height: 28px; }
+  .payslip-root .attendance-day-table tbody tr { height: 28px; }
+  .payslip-root .attendance-day-table th, .payslip-root .attendance-day-table td { border: 1px solid #7d8797; min-height: 28px; padding: 4px 5px; line-height: 1.35; overflow: visible; white-space: nowrap; text-overflow: ellipsis; vertical-align: middle; }
+  .payslip-root .attendance-day-table th { background: #26344d; color: #fff; font-size: 8.6px; line-height: 1.3; text-align: center; text-transform: uppercase; letter-spacing: .15px; }
+  .payslip-root .attendance-day-table .date { width: 55px; text-align: center; font-family: "Courier New", monospace; font-weight: 700; }
+  .payslip-root .attendance-day-table .weekday { width: 54px; text-align: center; }
+  .payslip-root .attendance-day-table .code { width: 44px; text-align: center; }
+  .payslip-root .attendance-day-table .workday { width: 38px; text-align: center; font-family: "Courier New", monospace; font-weight: 700; }
+  .payslip-root .attendance-day-table .time { width: 52px; text-align: center; font-family: "Courier New", monospace; }
+  .payslip-root .attendance-day-table .status { text-align: left; font-size: 9px; }
+  .payslip-root .attendance-day-table tr.work td { background: #f2fbf5; }
+  .payslip-root .attendance-day-table tr.absence td { background: #fff3f3; }
+  .payslip-root .attendance-day-table tr.pending td { background: #fff8df; }
+  .payslip-root .attendance-day-table tr.time-missing td { background: #fff8df; }
+  .payslip-root .attendance-day-table tr.time-missing .status { color: #8a5a00; font-weight: 700; }
+  .payslip-root .attendance-day-table tr.sunday td, .payslip-root .attendance-day-table tr.future td { background: #f1f3f6; color: #6b7280; }
+  .payslip-root .attendance-day-table tr.empty td { background: #fafafa; color: transparent; }
+  .payslip-root .attendance-code { display: inline-block; min-width: 24px; height: 16px; border: 1px solid #64748b; border-radius: 3px; padding: 0 3px; background: #fff; color: #172033; font-weight: 800; line-height: 14px; text-align: center; vertical-align: middle; }
+  .payslip-root .attendance-summary { display: grid; grid-template-columns: 1.35fr .65fr; gap: 8px; margin-top: 7px; }
+  .payslip-root .attendance-summary-box { border: 1px solid #7d8797; padding: 5px 7px; }
+  .payslip-root .attendance-summary-title { margin-bottom: 4px; font-size: 8.5px; font-weight: 800; text-transform: uppercase; color: #526071; }
+  .payslip-root .attendance-metrics { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .payslip-root .attendance-metric strong { font-family: "Courier New", monospace; font-size: 10px; color: #111827; }
+  .payslip-root .attendance-legend { line-height: 1.45; color: #475569; }
+  .payslip-root .attendance-signature { break-inside: avoid-page !important; page-break-inside: avoid !important; }
+  .payslip-root .attendance-sign-date { margin-top: 7px; text-align: right; font-style: italic; }
+  .payslip-root .attendance-sign { width: 100%; border-collapse: collapse; table-layout: fixed; margin-top: 3px; }
+  .payslip-root .attendance-sign td { width: 33.33%; border: none; padding: 2px 8px; text-align: center; vertical-align: top; }
+  .payslip-root .attendance-sign .role { font-size: 9px; font-weight: 800; text-transform: uppercase; }
+  .payslip-root .attendance-sign .hint { color: #64748b; font-size: 8px; font-style: italic; }
+  .payslip-root .attendance-sign .space { height: 30px; }
+  .payslip-root .attendance-sign .name { font-size: 9px; font-weight: 700; }
+  .payslip-root .attendance-footer { display: flex; justify-content: space-between; gap: 16px; margin-top: 5px; border-top: 1px solid #b8c0cc; padding-top: 3px; color: #64748b; font-size: 7.5px; }
+`;
+
+function buildAttendancePdfParts(employeeList, { company = {}, year = ATT_YEAR, month = ATT_MONTH, attendanceRequests = [], otRecords = [] } = {}) {
+  const periodKey = monthKey(year, month);
+  const daysInPeriod = daysInMonthVN(year, month);
+  const standardDays = standardWorkDaysFor(year, month);
+  const employeesForPdf = (employeeList || []).filter(Boolean);
+  const companyName = company?.name || "CÔNG TY DOMIX";
+  const pad = (value) => String(value).padStart(2, "0");
+  const cleanFilename = (value) => String(value || "nhan_vien").trim().replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, "_");
+  const timeText = (value) => {
+    if (!value) return "-";
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return String(value).slice(11, 16) || "-";
+    return parsed.toLocaleTimeString("vi-VN", { timeZone: "Asia/Ho_Chi_Minh", hour: "2-digit", minute: "2-digit" });
+  };
+  const latestRequest = (employeeId, day) => {
+    const dateText = `${periodKey}-${pad(day)}`;
+    return [...(attendanceRequests || [])].reverse().find((request) => Number(request.employeeId) === Number(employeeId) && request.date === dateText) || null;
+  };
+  const todayEnd = new Date(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate(), 23, 59, 59);
+
+  const sheetHtml = employeesForPdf.map((employee, employeeIndex) => {
+    const monthRecord = employee.attendance?.[periodKey] || {};
+    const monthTimes = employee.attendanceTimes?.[periodKey] || {};
+    const rows = Array.from({ length: daysInPeriod }, (_, index) => {
+      const day = index + 1;
+      const sunday = isSundayVN(year, month, day);
+      const request = latestRequest(employee.id, day);
+      const storedCode = monthRecord[day] || monthRecord[String(day)] || "";
+      const approvedCode = storedCode || (request?.status === "approved" ? request.code : "") || (sunday ? "CN" : "");
+      const displayCode = approvedCode || (request?.status === "pending" ? request.code : "");
+      const timeMeta = monthTimes[day] || monthTimes[String(day)] || {};
+      const future = new Date(year, month - 1, day, 23, 59, 59) > todayEnd;
+      const value = approvedCode ? Number(ATTENDANCE_CODES[approvedCode]?.value || 0) : 0;
+      const checkIn = timeText(timeMeta.checkInAt || request?.checkInAt);
+      const checkOut = timeText(timeMeta.checkOutAt || request?.checkOutAt);
+      const isWorkedCode = ["X", "P", "O"].includes(approvedCode);
+      const missingOneTime = isWorkedCode && ((checkIn !== "-" && checkOut === "-") || (checkIn === "-" && checkOut !== "-"));
+      let status = "Chưa ghi";
+      let tone = "";
+      if (future && !approvedCode && request?.status !== "pending") { status = "Chưa đến ngày"; tone = "future"; }
+      else if (request?.status === "pending" && !storedCode) { status = "Chờ duyệt"; tone = "pending"; }
+      else if (request?.status === "rejected" && !storedCode) { status = "Đã từ chối"; tone = "absence"; }
+      else if (approvedCode === "CN") { status = "Nghỉ Chủ nhật"; tone = "sunday"; }
+      else if (["X", "P", "L", "O"].includes(approvedCode)) { status = ATTENDANCE_CODES[approvedCode]?.label || "Đã duyệt"; tone = "work"; }
+      else if (["N", "K"].includes(approvedCode)) { status = ATTENDANCE_CODES[approvedCode]?.label || "Nghỉ"; tone = "absence"; }
+      if (missingOneTime) { status = `${status} · thiếu ${checkIn === "-" ? "giờ vào" : "giờ ra"}`; tone = "time-missing"; }
+      return {
+        day,
+        date: `${pad(day)}/${pad(month)}`,
+        weekday: dayNameVN(year, month, day),
+        code: displayCode,
+        approvedCode,
+        value,
+        checkIn,
+        checkOut,
+        status,
+        tone,
+        missingOneTime,
+      };
+    });
+    const renderRow = (row) => row ? `
+      <tr class="${row.tone}">
+        <td class="date">${row.date}</td>
+        <td class="weekday">${payslipEscape(row.weekday)}</td>
+        <td class="code">${row.code ? `<span class="attendance-code">${payslipEscape(row.code)}</span>` : "-"}</td>
+        <td class="workday">${row.approvedCode ? row.value.toFixed(1) : "-"}</td>
+        <td class="time">${payslipEscape(row.checkIn)}</td>
+        <td class="time">${payslipEscape(row.checkOut)}</td>
+        <td class="status" title="${payslipEscape(row.status)}">${payslipEscape(row.status)}</td>
+      </tr>` : `<tr class="empty"><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td><td>&nbsp;</td></tr>`;
+    const renderHalf = (halfRows) => `
+      <table class="attendance-day-table">
+        <thead><tr><th class="date">Ngày</th><th class="weekday">Thứ</th><th class="code">Mã</th><th class="workday">Công</th><th class="time">Giờ vào</th><th class="time">Giờ ra</th><th class="status">Trạng thái / kiểm soát</th></tr></thead>
+        <tbody>${halfRows.map(renderRow).join("")}</tbody>
+      </table>`;
+    const firstHalf = rows.slice(0, 16);
+    const secondHalf = rows.slice(16);
+    while (secondHalf.length < 16) secondHalf.push(null);
+    const codeCounts = Object.keys(ATTENDANCE_CODES).reduce((result, code) => {
+      result[code] = rows.filter((row) => row.approvedCode === code).length;
+      return result;
+    }, {});
+    const actualDays = monthlyCongFor(employee.attendance, year, month);
+    const pendingCount = rows.filter((row) => row.tone === "pending").length;
+    const incompleteTimeCount = rows.filter((row) => row?.missingOneTime).length;
+    const approvedOtHours = (otRecords || []).filter((record) => Number(record.employeeId) === Number(employee.id)
+      && record.status === "approved" && String(record.date || "").startsWith(`${periodKey}-`))
+      .reduce((sum, record) => sum + (Number(record.hours) || 0), 0);
+    const position = employee.position || ROLE_META[employee.roleType]?.label || "Nhân viên";
+    const issueDate = new Date();
+
+    return `
+      <section class="attendance-sheet">
+        <div class="attendance-header">
+          <div class="attendance-company"><strong>${payslipEscape(companyName)}</strong>${company?.address ? `${payslipEscape(company.address)}<br>` : ""}${company?.taxCode ? `MST: ${payslipEscape(company.taxCode)}` : ""}</div>
+          <div class="attendance-document">Mã biểu: CC-${payslipEscape(employee.id || employeeIndex + 1)}-${pad(month)}${year}<br>Đơn vị tính: ngày công / giờ</div>
+        </div>
+        <h1 class="attendance-title">BẢNG CHẤM CÔNG CÁ NHÂN</h1>
+        <div class="attendance-period">Tháng ${pad(month)} năm ${year}</div>
+        <table class="attendance-info">
+          <tr><td class="label">Họ và tên</td><td class="value">${payslipEscape(employee.name || "-")}</td><td class="label">Mã nhân viên</td><td class="value">${payslipEscape(employee.id || "-")}</td><td class="label">Bộ phận</td><td class="value">${payslipEscape(employee.dept || "Chưa khai báo")}</td></tr>
+          <tr><td class="label">Chức vụ</td><td class="value">${payslipEscape(position)}</td><td class="label">Công chuẩn</td><td class="value">${standardDays.toFixed(1)} công</td><td class="label">Công thực tế</td><td class="value">${actualDays.toFixed(1)} công</td></tr>
+        </table>
+        <div class="attendance-tables"><div class="attendance-half">${renderHalf(firstHalf)}</div><div class="attendance-half">${renderHalf(secondHalf)}</div></div>
+        <div class="attendance-summary">
+          <div class="attendance-summary-box">
+            <div class="attendance-summary-title">Tổng hợp kỳ công</div>
+            <div class="attendance-metrics">
+              <span class="attendance-metric">Công thực tế: <strong>${actualDays.toFixed(1)}</strong></span>
+              <span class="attendance-metric">Đủ công (X): <strong>${codeCounts.X || 0}</strong></span>
+              <span class="attendance-metric">Nửa công (P): <strong>${codeCounts.P || 0}</strong></span>
+              <span class="attendance-metric">Phép (N): <strong>${codeCounts.N || 0}</strong></span>
+              <span class="attendance-metric">Không phép (K): <strong>${codeCounts.K || 0}</strong></span>
+              <span class="attendance-metric">Lễ/Tết (L): <strong>${codeCounts.L || 0}</strong></span>
+              <span class="attendance-metric">OT ngày nghỉ (O): <strong>${codeCounts.O || 0}</strong></span>
+              <span class="attendance-metric">Giờ OT đã duyệt: <strong>${approvedOtHours.toFixed(1)}h</strong></span>
+              <span class="attendance-metric">Chờ duyệt: <strong>${pendingCount}</strong></span>
+              <span class="attendance-metric">Thiếu giờ vào/ra: <strong>${incompleteTimeCount}</strong></span>
+            </div>
+          </div>
+          <div class="attendance-summary-box attendance-legend"><div class="attendance-summary-title">Chú giải & kiểm soát</div>X: đủ công · P: nửa công · N: nghỉ có phép không lương<br>K: nghỉ không phép · L: lễ/Tết hưởng lương · O: OT ngày nghỉ · CN: Chủ nhật<br><b>Nền vàng:</b> chờ duyệt hoặc thiếu một đầu giờ vào/ra.</div>
+        </div>
+        <div class="attendance-signature signature-block">
+          <div class="attendance-sign-date">Ngày ${issueDate.getDate()} tháng ${issueDate.getMonth() + 1} năm ${issueDate.getFullYear()}</div>
+          <table class="attendance-sign"><tr>
+            <td><div class="role">Người lao động</div><div class="hint">(Ký, ghi rõ họ tên)</div><div class="space"></div><div class="name">${payslipEscape(employee.name || "")}</div></td>
+            <td><div class="role">Người chấm công</div><div class="hint">(Ký, ghi rõ họ tên)</div><div class="space"></div></td>
+            <td><div class="role">Người duyệt</div><div class="hint">(Ký, ghi rõ họ tên)</div><div class="space"></div></td>
+          </tr></table>
+        </div>
+        <div class="attendance-footer"><span>Dữ liệu được xuất từ hệ thống quản trị ${payslipEscape(companyName)}. Chỉ công đã duyệt mới được tính vào lương.</span><span>Trang ${employeeIndex + 1}/${employeesForPdf.length}</span></div>
+      </section>`;
+  }).join("");
+
+  const suffix = employeesForPdf.length === 1 ? cleanFilename(employeesForPdf[0]?.name) : "Tat_ca_nhan_vien";
+  return { css: ATTENDANCE_PDF_CSS, body: sheetHtml, filename: `DOMIX_Cham_cong_T${pad(month)}-${year}_${suffix}` };
+}
+
+async function exportAttendancePdf(employeeList, options = {}) {
+  const employeesForPdf = (employeeList || []).filter(Boolean);
+  if (!employeesForPdf.length) return;
+  const { css, body, filename } = buildAttendancePdfParts(employeesForPdf, options);
+  await saveA4Pdf({ css, body, filename, orientation: "landscape" });
+}
+
 // Dựng NỘI DUNG phiếu lương khổ A4 cho MỘT nhân viên: liệt kê từng khoản ĐƯỢC NHẬN, từng khoản BỊ TRỪ,
 // thực tế nhận + số tiền bằng chữ, STK ngân hàng nhận lương và khối Kế toán duyệt / Sếp duyệt đóng dấu.
 // Trả về { css, body } để vừa render ra file PDF trực tiếp, vừa dựng được bản HTML in dự phòng.
@@ -3038,59 +3308,190 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
   const year = Number(period.year) || ATT_YEAR;
   const dmy = (iso) => String(iso || "").slice(0, 10).split("-").reverse().join("/");
   const money = (n) => `${Math.round(Number(n) || 0).toLocaleString("vi-VN")}đ`;
+  const isOfficial = row.contractType === "chinh_thuc";
+  const isCollaborator = row.contractType === "ctv";
+  const usesFlatWithholding = row.contractType === "ctv" || row.contractType === "thu_viec";
+  const taxPolicy = payrollTaxPolicyFor(year, month);
+  const periodEnd = new Date(year, month, 0, 23, 59, 59);
+  const periodStillOpen = periodEnd > TODAY;
 
-  const incomeItems = [
-    { label: "Lương theo ngày công", note: `${money(row.daySalary)}/ngày × ${Number(row.actualDays || 0).toFixed(1)} công${row.probationRate && row.probationRate < 1 ? ` × ${Math.round(row.probationRate * 100)}% thử việc` : ""}`, amount: row.mainSalary || 0, always: true },
-    { label: "Hoa hồng doanh số", note: row.compStatusLabel || "", amount: row.commission || 0 },
-    { label: "Thưởng doanh số", note: "", amount: row.compBonus || 0 },
-    { label: "Hoa hồng upsale kỹ thuật (7%)", note: "", amount: row.techUpsale || 0 },
-    { label: "Thưởng KPI", note: "", amount: row.kpiBonus || 0 },
-    { label: "Thưởng mốc doanh số", note: row.kpiMilestonePct ? `${row.kpiMilestonePct}% doanh thu tháng` : "", amount: row.kpiMilestoneBonus || 0 },
-    { label: "Thưởng khác", note: "", amount: row.otherBonus || 0 },
-    { label: "Phụ cấp ăn trưa", note: `${money(row.mealAllowancePerDay)}/ngày đủ công × ${row.fullWorkDays || 0} ngày`, amount: row.mealAllowance || 0 },
-    { label: "Phụ cấp thâm niên", note: "", amount: row.seniorityAllowance || 0 },
-    { label: "Phụ cấp chuyên cần", note: row.hasAbsence ? "Mất do có ngày nghỉ trong tháng" : "Đi làm đủ, không nghỉ", amount: row.hasAbsence ? 0 : (row.attendanceBonus || 0) },
-    { label: "Phụ cấp tăng ca (OT)", note: `${row.otHours || 0}h đã duyệt · hệ số 150–300% lương giờ`, amount: row.otPay || 0 },
+  const probationRate = Number(row.probationRate) || 1;
+  const overtimeAmount = (hours, rate) => (Number(hours) || 0) * (Number(row.otHourlyRate) || 0) * (rate / 100) * probationRate;
+  const overtimeItems = [
+    { label: "Lương làm thêm ngày thường (150%)", hours: row.otByType?.weekday, rate: 150 },
+    { label: "Lương làm thêm ngày nghỉ hằng tuần (200%)", hours: row.otByType?.weekend, rate: 200 },
+    { label: "Lương làm thêm ngày lễ, Tết (300%)", hours: row.otByType?.holiday, rate: 300 },
+  ].filter((item) => (Number(item.hours) || 0) > 0).map((item) => ({
+    label: item.label,
+    note: `${Number(item.hours).toFixed(1)} giờ x ${money(row.otHourlyRate)}/giờ x ${item.rate}%${probationRate < 1 ? ` x ${Math.round(probationRate * 100)}% thử việc` : ""}`,
+    amount: overtimeAmount(item.hours, item.rate),
+  }));
+  if ((Number(row.nightHours) || 0) > 0 || (Number(row.nightPay) || 0) > 0) {
+    overtimeItems.push({
+      label: "Tiền lương làm việc ban đêm",
+      note: `${Number(row.nightHours || 0).toFixed(1)} giờ làm việc ban đêm`,
+      amount: row.nightPay || 0,
+    });
+  }
+
+  const salaryItems = [
+    {
+      label: row.usesRevenueModel ? "Lương chính theo cơ chế doanh thu" : "Lương theo ngày công",
+      note: row.usesRevenueModel
+        ? (row.compStatusLabel || `Theo cơ chế lương của vị trí ${row.position || "nhân viên"}`)
+        : `${money(row.daySalary)}/ngày x ${Number(row.actualDays || 0).toFixed(1)} công${probationRate < 1 ? ` x ${Math.round(probationRate * 100)}% thử việc` : ""}`,
+      amount: row.mainSalary || 0,
+    },
+    ...overtimeItems,
+  ];
+  const bonusItems = [
+    { label: "Hoa hồng doanh số", note: row.compStatusLabel || "Theo doanh số được ghi nhận trong kỳ", amount: row.commission || 0 },
+    { label: "Thưởng doanh số", note: "Theo chính sách thưởng của vị trí", amount: row.compBonus || 0 },
+    { label: "Hoa hồng upsale kỹ thuật (7%)", note: "7% giá trị upsale đủ điều kiện", amount: row.techUpsale || 0 },
+    { label: "Thưởng KPI", note: row.bonusTarget ? `${Number(row.kpi || 0)}% x mức thưởng mục tiêu ${money(row.bonusTarget)}` : "Theo kết quả KPI được duyệt", amount: row.kpiBonus || 0 },
+    { label: "Thưởng mốc doanh số", note: row.kpiMilestonePct ? `${row.kpiMilestonePct}% x doanh thu tính thưởng ${money(row.kpiMilestoneNetRevenue || row.revenueUsed)}` : "", amount: row.kpiMilestoneBonus || 0 },
+    { label: "Thưởng khác", note: "Khoản thưởng khác được duyệt trong kỳ", amount: row.otherBonus || 0 },
+  ].filter((item) => (Number(item.amount) || 0) > 0);
+  if (bonusItems.length === 0) bonusItems.push({ label: "Không phát sinh thưởng / hoa hồng", note: "Kỳ này không có khoản thưởng hoặc hoa hồng được duyệt", amount: 0 });
+
+  const allowanceItems = [
+    {
+      label: "Phụ cấp ăn trưa",
+      note: `Mức tháng ${money(row.configuredMealAllowance)}; ${money(row.mealAllowancePerDay)}/ngày đủ công x ${row.fullWorkDays || 0} ngày`,
+      amount: row.mealAllowance || 0,
+    },
+    {
+      label: "Phụ cấp thâm niên",
+      note: `Thâm niên ${Number(row.months || 0)} tháng`,
+      amount: row.seniorityAllowance || 0,
+    },
+    {
+      label: "Phụ cấp chuyên cần",
+      note: row.attendanceBonusEligible
+        ? `Đủ ${Number(row.attendanceBonusWorkDays || row.standardDays).toFixed(1)}/${row.standardDays} công chuẩn`
+        : `Không hưởng - mới đạt ${Number(row.attendanceBonusWorkDays || 0).toFixed(1)}/${row.standardDays} công chuẩn; thiếu ${Number(row.attendanceBonusMissingDays || 0).toFixed(1)} công`,
+      amount: row.attendanceBonus || 0,
+    },
     ...(Array.isArray(row.customAllowances) ? row.customAllowances : []).map((item) => ({
-      label: `Phụ cấp ${item.label || "khác"}`, note: item.note || (item.prorate ? "Chia theo ngày công" : ""), amount: item.amount || 0,
+      label: item.label || "Phụ cấp khác",
+      note: [
+        item.prorate
+          ? `Mức đăng ký ${money(item.configured)}; chia theo ${Number(row.actualDays || 0).toFixed(1)}/${row.standardDays} công`
+          : `Mức áp dụng ${money(item.configured)}`,
+        item.deducted > 0 ? `giảm theo ngày công ${money(item.deducted)}` : "",
+        item.note || "",
+      ].filter(Boolean).join("; "),
+      amount: item.amount || 0,
     })),
-  ].filter((item) => item.always || (Number(item.amount) || 0) > 0);
+  ];
 
-  const deductionItems = [
-    ...(row.insuranceFixed
-      ? [{ label: "Bảo hiểm NV đóng (mức cố định khai riêng)", note: "", amount: row.employeeInsurance || 0 }]
+  // Chỉ thay đổi nội dung PHIẾU PDF: bảo hiểm được tách rõ phần NLĐ và doanh nghiệp,
+  // kèm tỷ lệ và căn cứ lương cơ bản. Không thay đổi công thức lương hay bảng trên màn hình.
+  const employeeInsuranceItems = !isOfficial
+    ? [{
+      label: "Bảo hiểm người lao động",
+      note: isCollaborator
+        ? "Cộng tác viên - không thuộc cơ chế BH bắt buộc của bảng lương này"
+        : "Thử việc theo hợp đồng thử việc riêng - chưa phát sinh BH bắt buộc; nếu thử việc là nội dung của HĐLĐ thì phải khai đúng loại hợp đồng để hệ thống tính BH",
+      amount: 0,
+      always: true,
+    }]
+    : row.insuranceFixed
+      ? [{
+        label: "Bảo hiểm người lao động đóng",
+        note: `Mức cố định theo hồ sơ; lương cơ bản ${money(row.baseSalary)}`,
+        amount: row.employeeInsurance || 0,
+        always: true,
+      }]
       : [
-        { label: "BHXH nhân viên đóng (8%)", note: `Trên lương cơ bản ${money(row.baseSalary)}`, amount: row.bhxhNV || 0 },
-        { label: "BHYT nhân viên đóng (1,5%)", note: "", amount: row.bhytNV || 0 },
-        { label: "BHTN nhân viên đóng (1%)", note: "", amount: row.bhtnNV || 0 },
-      ]),
-    { label: "Thuế thu nhập cá nhân", note: `Thu nhập tính thuế ${money(row.taxableIncome)}${row.personalDeduction > 0 ? ` · giảm trừ gia cảnh ${money(row.personalDeduction)}` : ""}`, amount: row.thueTNCN || 0 },
+        { label: "BHXH người lao động (8%)", note: `8% x lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhxhNV || 0, always: true },
+        { label: "BHYT người lao động (1,5%)", note: `1,5% x lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhytNV || 0, always: true },
+        { label: "BHTN người lao động (1%)", note: `1% x lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhtnNV || 0, always: true },
+        { label: "Tổng bảo hiểm người lao động (10,5%)", note: row.insuranceSuspendedForUnpaidLeave ? `Tạm dừng do có ${Number(row.unpaidLeaveDays || 0)} ngày không hưởng lương trong tháng` : "Khoản thực tế bị trừ vào lương", amount: row.employeeInsurance || 0, always: true, summary: true },
+      ];
+  const deductionItems = [
+    ...employeeInsuranceItems,
+    {
+      label: usesFlatWithholding ? "Thuế TNCN khấu trừ (10%)" : "Thuế thu nhập cá nhân",
+      note: usesFlatWithholding
+        ? `Khấu trừ 10% khi mức chi trả từ ${money(row.flatTaxThreshold || taxPolicy.flatTaxThreshold)}/lần; thuế tính trên phần thu nhập chịu thuế`
+        : `Thu nhập tính thuế ${money(row.taxableIncome)}${row.personalDeduction > 0 ? ` · giảm trừ gia cảnh ${money(row.personalDeduction)}` : ""}${row.mealTaxFree > 0 ? ` · miễn tiền ăn ${money(row.mealTaxFree)}` : ""}${row.overtimeTaxFree > 0 ? ` · miễn OT ${money(row.overtimeTaxFree)}` : ""}`,
+      amount: row.thueTNCN || 0,
+      always: true,
+    },
     { label: "Tạm ứng / khấu trừ trên hồ sơ", note: "", amount: row.advance || 0 },
     ...(Array.isArray(midMonthEntries) ? midMonthEntries : []).map((entry) => ({
       label: `Đã ứng lương giữa tháng ngày ${dmy(entry.date)}`, note: entry.reason || "", amount: entry.amount || 0,
     })),
-  ].filter((item) => (Number(item.amount) || 0) > 0);
+  ].filter((item) => item.always || (Number(item.amount) || 0) > 0);
+
+  const employerInsuranceItems = !isOfficial
+    ? [{
+      label: "Bảo hiểm doanh nghiệp đóng",
+      note: isCollaborator
+        ? "Cộng tác viên - không phát sinh"
+        : "Thử việc theo hợp đồng thử việc riêng - không phát sinh tại bảng này",
+      amount: 0,
+      always: true,
+    }]
+    : row.insuranceFixed
+      ? [{
+        label: "Bảo hiểm doanh nghiệp đóng",
+        note: `Mức cố định theo hồ sơ; lương cơ bản ${money(row.baseSalary)}`,
+        amount: row.employerInsurance || 0,
+        always: true,
+      }]
+      : [
+        { label: "BHXH doanh nghiệp (17%)", note: `17% x lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhxhDN || 0, always: true },
+        { label: "BH TNLĐ-BNN doanh nghiệp (0,5%)", note: `0,5% x lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhtnldBnnDN || 0, always: true },
+        { label: "BHYT doanh nghiệp (3%)", note: `3% x lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhytDN || 0, always: true },
+        { label: "BHTN doanh nghiệp (1%)", note: `1% x lương đóng BH ${money(row.insuranceContributionBase || row.baseSalary)}`, amount: row.bhtnDN || 0, always: true },
+      ];
 
   const grossIncome = Number(row.grossIncome) || 0;
-  const totalDeduction = deductionItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const totalDeduction = deductionItems.reduce((sum, item) => sum + (item.summary ? 0 : (Number(item.amount) || 0)), 0);
   const netFinal = grossIncome - totalDeduction; // = thực lĩnh − đã ứng giữa tháng
+  const salaryTotal = salaryItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const bonusTotal = bonusItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const allowanceTotal = allowanceItems.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
 
   // Số tiền trong bảng in TRẦN theo chuẩn chứng từ (đầu bảng đã ghi "Đơn vị tính: đồng").
   const num = (n) => Math.round(Number(n) || 0).toLocaleString("vi-VN");
-  // Mỗi dòng 4 cột: STT · Khoản mục · Diễn giải (cột riêng) · Thành tiền — không chen chú thích dưới tên.
-  const itemRows = (items) => items.map((item, index) => `
-    <tr>
+  const groupedRows = (groupLabel, items, amountClass = "") => items.map((item, index) => `
+    <tr class="${item.summary ? "summary-line" : ""}">
+      ${index === 0 ? `<td class="group-cell" rowspan="${items.length}">${payslipEscape(groupLabel)}</td>` : ""}
       <td class="c">${index + 1}</td>
       <td>${payslipEscape(item.label)}</td>
       <td class="desc">${payslipEscape(item.note || "")}</td>
-      <td class="num">${num(item.amount)}</td>
+      <td class="num ${amountClass}">${amountClass === "deduct" && Number(item.amount) > 0 ? "(" : ""}${num(item.amount)}${amountClass === "deduct" && Number(item.amount) > 0 ? ")" : ""}</td>
     </tr>`).join("");
 
   const accountantApproved = Boolean(approval?.accountantApprovedAt);
   const bossApproved = Boolean(approval?.bossApprovedAt);
   const companyName = company?.name || "CÔNG TY DOMIX";
 
-  const css = PAYSLIP_BASE_CSS;
+  const css = `${PAYSLIP_BASE_CSS}
+    .payslip-root table.grid { width: 100% !important; min-width: 0 !important; table-layout: fixed; }
+    .payslip-root .grid th, .payslip-root .grid td { overflow-wrap: anywhere; word-break: normal; }
+    .payslip-root .salary-table th:nth-child(1) { width: 16% !important; }
+    .payslip-root .salary-table th:nth-child(2) { width: 6% !important; }
+    .payslip-root .salary-table th:nth-child(3) { width: 27% !important; }
+    .payslip-root .salary-table th:nth-child(4) { width: 36% !important; }
+    .payslip-root .salary-table th:nth-child(5) { width: 15% !important; }
+    .payslip-root .salary-table .group-cell { width: 16% !important; background: #f3f3f3; font-weight: bold; text-align: center; vertical-align: middle; }
+    .payslip-root .salary-table td { line-height: 1.38; padding-top: 5px; padding-bottom: 5px; overflow: visible; }
+    .payslip-root .salary-table .group-cell { line-height: 1.28; padding-top: 6px; padding-bottom: 6px; }
+    .payslip-root .salary-table .num { padding-left: 3px; padding-right: 3px; font-size: 9.8px; line-height: 1.3; }
+    .payslip-root .salary-table .deduct { color: #8b1a1a; }
+    .payslip-root .salary-table .summary-line td { background: #fafafa; font-weight: bold; }
+    .payslip-root .salary-table .group-total td { background: #fbfbfb; font-weight: bold; }
+    .payslip-root .salary-table .section-total td { border-top: 2px solid #333; background: #f7f7f7; font-weight: bold; }
+    .payslip-root .salary-table .net-row td { border-top: 2px solid #111; border-bottom: 2px solid #111; background: #e8e8e8; font-size: 12.5px; font-weight: bold; }
+    .payslip-root .legal-basis { margin: 1px 0 6px; text-align: center; color: #555; font-size: 9.5px; font-style: italic; }
+    .payslip-root .period-warning { margin: 5px 0 7px; padding: 5px 7px; border: 1px solid #d9a72d; background: #fff8df; color: #704d00; font: 700 9.5px/1.25 Arial, sans-serif; }
+    .payslip-root .audit-note { margin: 5px 0 0; color: #555; font: 9px/1.25 Arial, sans-serif; }
+    .payslip-root .sign .space { height: 42px !important; }
+  `;
 
   const body = `
 <div class="co">
@@ -3105,41 +3506,42 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
     Trạng thái: ${payslipEscape(statusLabel || "—")}
   </div>
 </div>
-<h1>PHIẾU LƯƠNG NHÂN VIÊN</h1>
+<h1>BẢNG KÊ TRẢ LƯƠNG / PHIẾU LƯƠNG</h1>
 <p class="sub">Kỳ lương tháng ${month} năm ${year}</p>
+<p class="legal-basis">Bảng kê thể hiện tiền lương, tiền làm thêm giờ và các khoản khấu trừ theo khoản 3 Điều 95 Bộ luật Lao động 2019.</p>
+${periodStillOpen ? `<div class="period-warning">KỲ LƯƠNG CHƯA KẾT THÚC: đây là số liệu tạm tính đến thời điểm xuất. Không nên coi là quyết toán cuối tháng cho đến khi chấm công, OT, nghỉ không lương và bảo hiểm đã được khóa sổ.</div>` : ""}
 
-<h2>I. Người nhận lương &amp; tài khoản nhận</h2>
-<table class="grid info" style="width:742px">
-  <tr><td class="k">Họ và tên</td><td><b>${payslipEscape(row.name)}</b></td><td class="k">Ngày công thực tế</td><td>${Number(row.actualDays || 0).toFixed(1)}/${row.standardDays} công chuẩn</td></tr>
-  <tr><td class="k">Ngân hàng nhận lương</td><td>${payslipEscape(row.bankName || "Chưa khai báo")}</td><td class="k">Số tài khoản nhận</td><td class="mono">${payslipEscape(row.bankAccount || "Chưa khai báo")}</td></tr>
-  <tr><td class="k">Chủ tài khoản</td><td>${payslipEscape(row.name)}</td><td class="k">Lương cơ bản</td><td class="mono">${money(row.baseSalary)}</td></tr>
+<h2>I. Thông tin người lao động và căn cứ tính lương</h2>
+<table class="grid info">
+  <tr><td class="k">Họ và tên</td><td><b>${payslipEscape(row.name)}</b></td><td class="k">Mã nhân viên</td><td class="mono">${payslipEscape(row.id || "-")}</td></tr>
+  <tr><td class="k">Chức vụ</td><td>${payslipEscape(row.position || "Chưa khai báo")}</td><td class="k">Bộ phận</td><td>${payslipEscape(row.dept || "Chưa khai báo")}</td></tr>
+  <tr><td class="k">Loại hợp đồng</td><td>${payslipEscape(row.contractLabel || "Chưa khai báo")}</td><td class="k">Ngày công</td><td>${Number(row.actualDays || 0).toFixed(1)}/${row.standardDays} công chuẩn</td></tr>
+  <tr><td class="k">Lương cơ bản</td><td class="mono">${money(row.baseSalary)}</td><td class="k">Đơn giá ngày công</td><td class="mono">${money(row.daySalary)}/ngày</td></tr>
+  <tr><td class="k">Lương đóng BH</td><td class="mono">${money(row.insuranceContributionBase || row.baseSalary)}</td><td class="k">Ngày không lương</td><td>${Number(row.unpaidLeaveDays || 0)} ngày${row.insuranceSuspendedForUnpaidLeave ? " · tạm dừng đóng BH kỳ này" : ""}</td></tr>
 </table>
 
 <div class="unit">Đơn vị tính: đồng</div>
-<h2>II. Các khoản được nhận</h2>
-<table class="grid" style="width:742px">
-  <tr><th class="c" style="width:42px">STT</th><th style="width:32%">Khoản mục</th><th>Diễn giải</th><th class="num" style="width:118px">Thành tiền</th></tr>
-  ${itemRows(incomeItems)}
-  <tr class="total"><td class="c"></td><td colspan="2">CỘNG CÁC KHOẢN ĐƯỢC NHẬN (A)</td><td class="num">${num(grossIncome)}</td></tr>
-</table>
-
-<h2>III. Các khoản khấu trừ</h2>
-<table class="grid" style="width:742px">
-  <tr><th class="c" style="width:42px">STT</th><th style="width:32%">Khoản mục</th><th>Diễn giải</th><th class="num" style="width:118px">Số tiền trừ</th></tr>
-  ${deductionItems.length ? itemRows(deductionItems) : `<tr><td class="c">—</td><td>Không phát sinh khoản khấu trừ</td><td class="desc">Kỳ này không có bảo hiểm, thuế hay tạm ứng nào bị trừ</td><td class="num">0</td></tr>`}
-  <tr class="total"><td class="c"></td><td colspan="2">CỘNG CÁC KHOẢN KHẤU TRỪ (B)</td><td class="num">(${num(totalDeduction)})</td></tr>
-</table>
-
-<h2>IV. Tổng hợp thanh toán</h2>
-<table class="grid" style="width:742px">
-  <tr><td class="c" style="width:42px">A</td><td>Tổng các khoản được nhận</td><td class="num" style="width:150px">${num(grossIncome)}</td></tr>
-  <tr><td class="c">B</td><td>Tổng các khoản khấu trừ${midMonthPaid > 0 ? ` <span class="desc">(gồm ${num(midMonthPaid)} đã ứng giữa tháng)</span>` : ""}</td><td class="num">(${num(totalDeduction)})</td></tr>
-  <tr class="grand"><td class="c"></td><td>THỰC LĨNH KỲ NÀY (A − B)</td><td class="num">${num(netFinal)}</td></tr>
+<h2>II. Chi tiết tiền lương, phụ cấp, thưởng và khấu trừ</h2>
+<table class="grid salary-table">
+  <tr><th style="width:118px">Nhóm</th><th class="c" style="width:38px">STT</th><th style="width:190px">Khoản mục</th><th>Diễn giải</th><th class="num" style="width:118px">Thành tiền</th></tr>
+  ${groupedRows("TIỀN LƯƠNG", salaryItems)}
+  <tr class="group-total"><td colspan="4">CỘNG TIỀN LƯƠNG</td><td class="num">${num(salaryTotal)}</td></tr>
+  ${groupedRows("THƯỞNG / HOA HỒNG", bonusItems)}
+  <tr class="group-total"><td colspan="4">CỘNG THƯỞNG VÀ HOA HỒNG</td><td class="num">${num(bonusTotal)}</td></tr>
+  ${groupedRows("PHỤ CẤP / TRỢ CẤP", allowanceItems)}
+  <tr class="group-total"><td colspan="4">CỘNG PHỤ CẤP VÀ TRỢ CẤP</td><td class="num">${num(allowanceTotal)}</td></tr>
+  <tr class="section-total"><td colspan="4">TỔNG CÁC KHOẢN ĐƯỢC NHẬN (A)</td><td class="num">${num(grossIncome)}</td></tr>
+  ${groupedRows("KHẤU TRỪ VÀO LƯƠNG", deductionItems, "deduct")}
+  <tr class="section-total"><td colspan="4">TỔNG CÁC KHOẢN KHẤU TRỪ (B)${midMonthPaid > 0 ? ` - gồm ${num(midMonthPaid)} đã ứng giữa tháng` : ""}</td><td class="num deduct">(${num(totalDeduction)})</td></tr>
+  <tr class="net-row"><td colspan="4">THỰC LĨNH KỲ NÀY (A - B)</td><td class="num">${num(netFinal)}</td></tr>
+  ${groupedRows("DOANH NGHIỆP ĐÓNG - KHÔNG TRỪ VÀO LƯƠNG", employerInsuranceItems)}
+  <tr class="section-total"><td colspan="4">TỔNG BẢO HIỂM DOANH NGHIỆP ĐÓNG${isOfficial && !row.insuranceFixed ? " (21,5%)" : ""}</td><td class="num">${num(row.employerInsurance)}</td></tr>
+  <tr class="section-total"><td colspan="4">TỔNG CHI PHÍ DOANH NGHIỆP (THU NHẬP + BH DOANH NGHIỆP)</td><td class="num">${num(row.employerTotalCost)}</td></tr>
 </table>
 <div class="words">(Bằng chữ: <b>${payslipEscape(vndInWords(netFinal))}</b>)</div>
 
-<h2>V. Thông tin chi trả &amp; chi phí doanh nghiệp</h2>
-<table class="grid info" style="width:742px">
+<h2>III. Thông tin chi trả</h2>
+<table class="grid info">
   <tr>
     <td class="k">Tình trạng chi trả</td>
     <td>${payment ? `<b>Đã chi trả ${money(payment.amount)}</b><br>${payment.paymentMethod === "tien_mat" ? "Tiền mặt" : "Chuyển khoản"} · ngày ${dmy(payment.paidDate || payment.paidAt)}` : "<b>Chưa chi trả</b>"}</td>
@@ -3152,21 +3554,16 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
     <td class="k">Hình thức nhận</td>
     <td>${row.bankAccount ? `Chuyển khoản — ${payslipEscape(row.bankName || "")} · <span class="mono">${payslipEscape(row.bankAccount)}</span>` : "Tiền mặt / chưa khai báo STK"}</td>
   </tr>
-  <tr>
-    <td class="k">BH doanh nghiệp đóng</td>
-    <td><span class="mono">${money(row.employerInsurance)}</span> <span class="note">(không trừ vào lương)</span></td>
-    <td class="k">Tổng chi phí doanh nghiệp</td>
-    <td class="mono">${money(row.employerTotalCost)}</td>
-  </tr>
 </table>
 
+<div class="signature-block">
 <div class="sign-date">Ngày ${new Date().getDate()} tháng ${new Date().getMonth() + 1} năm ${new Date().getFullYear()}</div>
 <table class="sign">
   <tr>
     <td>
       <div class="role">Nhân viên đề xuất</div>
       <div class="hint">(Ký, ghi rõ họ tên)</div>
-      <div style="height:64px"></div>
+      <div class="space" style="height:42px"></div>
       <div class="who">${payslipEscape(approval?.submittedByName || row.name)}</div>
       ${approval?.submittedAt ? `<div class="when">Gửi lúc ${payslipEscape(approval.submittedAt)}</div>` : ""}
     </td>
@@ -3187,7 +3584,8 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
   </tr>
 </table>
 
-<div class="foot">Phiếu lương được lập tự động từ hệ thống quản trị ${payslipEscape(companyName)} ngày ${dmy(new Date().toISOString())}. Mọi thắc mắc về số liệu vui lòng liên hệ bộ phận Kế toán trong vòng 07 ngày kể từ ngày nhận phiếu.</div>`;
+<div class="foot">Phiếu lương được lập tự động từ hệ thống quản trị ${payslipEscape(companyName)} ngày ${dmy(new Date().toISOString())}. Mọi thắc mắc về số liệu vui lòng liên hệ bộ phận Kế toán trong vòng 07 ngày kể từ ngày nhận phiếu.</div>
+</div>`;
 
   return { css, body, month, year };
 }
@@ -3229,8 +3627,8 @@ async function exportInsurancePdf(payrollRows, { company = {}, period = {} } = {
     <tr>
       <td class="c">${index + 1}</td>
       <td>${payslipEscape(r.name)}<div class="note">${payslipEscape(r.position || ROLE_META[r.roleType]?.label || "Nhân viên")} · ${payslipEscape(r.contractLabel || "—")} · công ${Number(r.actualDays || 0).toFixed(1)}/${r.standardDays}</div></td>
-      <td>${r.insuranceFixed ? "Số tiền cố định" : "% theo luật"}${Number(r.actualDays || 0) < INSURANCE_MIN_WORKDAYS ? `<div class="note">&lt;14 ngày công — kỳ này chưa phát sinh</div>` : ""}</td>
-      <td class="r mono">${money(r.baseSalary)}</td>
+      <td>${r.insuranceFixed ? "Số tiền cố định" : "% theo luật"}${r.insuranceSuspendedForUnpaidLeave ? `<div class="note">${Number(r.unpaidLeaveDays || 0)} ngày không hưởng lương — tạm dừng đóng BH kỳ này</div>` : `<div class="note">Không suy theo số công thực tế; xét ngày không hưởng lương</div>`}</td>
+      <td class="r mono">${money(r.insuranceContributionBase || r.baseSalary)}</td>
       <td class="r mono">${money(r.employeeInsurance)}${!r.insuranceFixed && (Number(r.employeeInsurance) || 0) > 0 ? `<div class="note">BHXH ${money(r.bhxhNV)} · BHYT ${money(r.bhytNV)} · BHTN ${money(r.bhtnNV)}</div>` : ""}</td>
       <td class="r mono">${money(r.employerInsurance)}${!r.insuranceFixed && (Number(r.employerInsurance) || 0) > 0 ? `<div class="note">BHXH 17 · BHYT 3 · BHTN 1 · TNLĐ 0,5 (%)</div>` : ""}</td>
       <td class="r mono">${money((Number(r.employeeInsurance) || 0) + (Number(r.employerInsurance) || 0))}</td>
@@ -3251,7 +3649,7 @@ async function exportInsurancePdf(payrollRows, { company = {}, period = {} } = {
   ${rowsHtml || `<tr><td class="c">—</td><td colspan="6">Không có nhân sự trong kỳ này.</td></tr>`}
   <tr class="total"><td></td><td colspan="3">TỔNG CỘNG</td><td class="r mono">${money(totalNV)}</td><td class="r mono">${money(totalDN)}</td><td class="r mono">${money(totalNV + totalDN)}</td></tr>
 </table>
-<p class="note" style="margin-top:8px">Phần NV đóng trừ vào thực lĩnh của nhân viên; phần DN đóng tính vào chi phí doanh nghiệp, không trừ vào lương. Bảo hiểm chỉ phát sinh khi đủ ≥14 ngày công/tháng theo Điều 42 QĐ 595/QĐ-BHXH.</p>
+<p class="note" style="margin-top:8px">Phần NV đóng trừ vào thực lĩnh; phần DN đóng là chi phí doanh nghiệp. Không dùng quy tắc “đủ 14 ngày công mới đóng”. Trường hợp thuộc diện BH bắt buộc chỉ tạm dừng đóng tháng đó khi người lao động không hưởng tiền lương từ đủ 14 ngày làm việc trở lên trong tháng.</p>
 <table class="sign">
   <tr>
     <td style="width:50%">
@@ -3270,111 +3668,33 @@ async function exportInsurancePdf(payrollRows, { company = {}, period = {} } = {
   await saveA4Pdf({ body, filename: `DOMIX_Bao_hiem_T${month}-${year}` });
 }
 
-// Xuất PDF LƯƠNG & BẢO HIỂM của MỘT nhân viên (bảng Nhân sự) — form A4 NGANG:
-// thông tin nhân viên/kỳ/tài khoản là TEXT phía trên; phần thống kê thu–chi là MỘT BẢNG
-// mỗi cột một khoản, có cột tổng thu nhập, tổng trừ và THỰC NHẬN.
-async function exportEmployeeProfilePdf(employee, { company = {}, pay = {}, period = {}, account = null, cong = 0, standardDays = 26, approval = null, payment = null } = {}) {
+// Nút PDF tại bảng Nhân sự dùng chung đúng một mẫu phiếu lương chi tiết. Việc dùng lại
+// buildPayslipParts bảo đảm tên và số tiền của từng phụ cấp không bị gộp thành một ô tổng.
+async function exportEmployeeProfilePdf(employee, { company = {}, pay = {}, period = {}, cong = 0, standardDays = 26, approval = null, payment = null } = {}) {
   const month = Number(period.month) || ATT_MONTH;
   const year = Number(period.year) || ATT_YEAR;
-  const money = (n) => `${Math.round(Number(n) || 0).toLocaleString("vi-VN")}đ`;
-  const num = (n) => Math.round(Number(n) || 0).toLocaleString("vi-VN");
-  const dmy = (iso) => String(iso || "").slice(0, 10).split("-").reverse().join("/");
-  const companyName = company?.name || "CÔNG TY DOMIX";
-
-  // Gom số liệu thu–chi của KỲ đang xem từ computePayroll (pay).
-  const allowanceTotal = (Number(pay.mealAllowance) || 0) + (Number(pay.seniorityAllowance) || 0)
-    + (Number(pay.attendanceBonus) || 0) + (Number(pay.customAllowanceTotal) || 0) + (Number(pay.otPay) || 0);
-  const bonusTotal = (Number(pay.commission) || 0) + (Number(pay.compBonus) || 0) + (Number(pay.techUpsale) || 0)
-    + (Number(pay.kpiBonus) || 0) + (Number(pay.kpiMilestoneBonus) || 0) + (Number(pay.otherBonus) || 0);
-  const grossIncome = Number(pay.grossIncome) || 0;
-  const totalDeduction = (Number(pay.employeeInsurance) || 0) + (Number(pay.thueTNCN) || 0) + (Number(pay.advance) || 0);
-  const netFinal = grossIncome - totalDeduction;
-
-  const body = `
-<div class="co">
-  <div>
-    <b>${payslipEscape(companyName)}</b><br>
-    ${payslipEscape(company?.address || "")}<br>
-    ${company?.taxCode ? `MST: ${payslipEscape(company.taxCode)}` : ""}
-  </div>
-  <div style="text-align:right">Mã phiếu: <b>NS-${payslipEscape(employee.id)}</b><br>Kỳ lương: <b>tháng ${month}/${year}</b></div>
-</div>
-<h1>PHIẾU LƯƠNG &amp; BẢO HIỂM NHÂN VIÊN</h1>
-<p class="sub">Kỳ lương tháng ${month} năm ${year}</p>
-
-<div class="meta">
-  <div class="mitem"><span class="mlabel">Họ và tên:</span> <b>${payslipEscape(employee.name)}</b></div>
-  <div class="mitem"><span class="mlabel">Hợp đồng:</span> ${payslipEscape(CONTRACT_META[employee.contractType]?.label || "Chính thức")}</div>
-  <div class="mitem"><span class="mlabel">Ngày công kỳ này:</span> ${Number(cong || 0).toFixed(1)}/${standardDays} công chuẩn</div>
-  <div class="mitem"><span class="mlabel">Đơn giá ngày:</span> ${money(pay.daySalary)}</div>
-  <div class="mitem"><span class="mlabel">Ngân hàng nhận lương:</span> ${payslipEscape(employee.bankName || "Chưa khai báo")}</div>
-  <div class="mitem"><span class="mlabel">Số tài khoản nhận:</span> <span class="mono">${payslipEscape(employee.bankAccount || "Chưa khai báo")}</span></div>
-  <div class="mitem"><span class="mlabel">Chủ tài khoản:</span> ${payslipEscape(employee.name)}</div>
-  <div class="mitem"><span class="mlabel">Ngày lập phiếu:</span> ${dmy(new Date().toISOString())}</div>
-</div>
-
-<div class="unit">Đơn vị tính: đồng</div>
-<h2>Thống kê lương kỳ tháng ${month}/${year} — mỗi cột một khoản</h2>
-<table class="grid">
-  <tr>
-    <th class="c">Lương cơ bản</th>
-    <th class="c">Lương theo công</th>
-    <th class="c">Phụ cấp<div class="note">ăn trưa · chuyên cần · thâm niên · OT</div></th>
-    <th class="c">Thưởng &amp; hoa hồng</th>
-    <th class="c hl">TỔNG NHẬN (A)</th>
-    <th class="c">BH nhân viên đóng</th>
-    <th class="c">Thuế TNCN</th>
-    <th class="c">Tạm ứng</th>
-    <th class="c hl">TỔNG TRỪ (B)</th>
-    <th class="c hl">THỰC NHẬN (A − B)</th>
-    <th class="c">BH doanh nghiệp đóng<div class="note">không trừ vào lương</div></th>
-  </tr>
-  <tr>
-    <td class="num">${num(pay.baseSalary)}</td>
-    <td class="num">${num(pay.mainSalary)}</td>
-    <td class="num">${num(allowanceTotal)}</td>
-    <td class="num">${num(bonusTotal)}</td>
-    <td class="num hl">${num(grossIncome)}</td>
-    <td class="num">(${num(pay.employeeInsurance)})</td>
-    <td class="num">(${num(pay.thueTNCN)})</td>
-    <td class="num">(${num(pay.advance)})</td>
-    <td class="num hl">(${num(totalDeduction)})</td>
-    <td class="num hl">${num(netFinal)}</td>
-    <td class="num">${num(pay.employerInsurance)}</td>
-  </tr>
-</table>
-<div class="words">(Bằng chữ — thực nhận: <b>${payslipEscape(vndInWords(netFinal))}</b>)</div>
-
-<table class="sign">
-  <tr>
-    <td style="width:33.33%">
-      <div class="role">Người làm đơn</div>
-      <div class="hint">(Ký, ghi rõ họ tên)</div>
-      <div style="height:56px"></div>
-      <div class="who">${payslipEscape(approval?.submittedByName || employee.name)}</div>
-      ${approval?.submittedAt ? `<div class="when">Gửi lúc ${payslipEscape(approval.submittedAt)}</div>` : ""}
-    </td>
-    <td style="width:33.33%">
-      <div class="role">Kế toán chi trả</div>
-      <div class="hint">(Ký, ghi rõ họ tên)</div>
-      ${payment
-        ? `<div class="ok">✓ ĐÃ CHI TRẢ</div><div class="who">${payslipEscape(payment.paidByName || payment.paidByEmail || "Kế toán")}</div><div class="when">Ngày ${payslipEscape(String(payment.paidDate || payment.paidAt || "").slice(0, 10).split("-").reverse().join("/"))} · ${money(payment.amount)}</div>`
-        : `<div class="pending">Chưa chi trả</div>`}
-    </td>
-    <td style="width:33.33%">
-      <div class="role">Giám đốc duyệt &amp; đóng dấu</div>
-      <div class="hint">(Ký tên, đóng dấu)</div>
-      ${approval?.bossApprovedAt
-        ? `<div class="stamp"><div class="s1">ĐÃ DUYỆT</div><div class="s2">${payslipEscape(companyName)}</div><div class="s3">${payslipEscape(approval.bossApprovedAt)}</div></div><div class="who">${payslipEscape(approval.bossApprovedByName || approval.bossApprovedByEmail || "Giám đốc")}</div>`
-        : `<div class="stamp empty"><div class="s1">CHƯA<br>ĐÓNG DẤU</div></div>`}
-    </td>
-  </tr>
-</table>
-<div class="foot">Phiếu được xuất tự động từ hệ thống quản trị ${payslipEscape(companyName)} ngày ${dmy(new Date().toISOString())}.</div>`;
+  const row = {
+    ...employee,
+    ...pay,
+    id: employee.id ?? pay.id,
+    name: employee.name || pay.name,
+    actualDays: Number(pay.actualDays ?? cong) || 0,
+    standardDays: Number(pay.standardDays ?? standardDays) || 26,
+    bankName: employee.bankName || pay.bankName || "",
+    bankAccount: employee.bankAccount || pay.bankAccount || "",
+  };
+  const options = {
+    company,
+    period: { month, year },
+    approval,
+    payment,
+    statusLabel: payment ? "Đã chi trả" : approval?.bossApprovedAt ? "Đã duyệt - chờ chi trả" : "Chờ duyệt",
+  };
+  const { css, body } = buildPayslipParts(row, options);
   await saveA4Pdf({
+    css,
     body,
     filename: `DOMIX_Luong_bao_hiem_${String(employee.name || "nhan_vien").trim().replace(/\s+/g, "_")}`,
-    orientation: "landscape",
   });
 }
 
@@ -19609,6 +19929,26 @@ function ChamCong({ authUser, employees, setEmployees, refreshEmployees, employe
               {employeesSyncing ? ui("Đang cập nhật", "Updating") : ui("Cập nhật nhân sự", "Refresh employees")}
             </button>
           )}
+          {selectedEmployee && (
+            <button
+              type="button"
+              onClick={() => exportAttendancePdf([selectedEmployee], { company, year: viewYear, month: viewMonth, attendanceRequests, otRecords })}
+              className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-stamp-red/35 bg-stamp-red/5 px-3 text-xs font-semibold text-stamp-red transition hover:bg-stamp-red/10"
+              title={ui("Xuất bảng chấm công theo hàng của nhân viên đang chọn", "Export the selected employee's row-based timesheet")}
+            >
+              <Printer size={14} /> {canReviewAttendance ? ui("PDF cá nhân", "Individual PDF") : ui("Xuất PDF", "Export PDF")}
+            </button>
+          )}
+          {canReviewAttendance && visibleEmployees.length > 0 && (
+            <button
+              type="button"
+              onClick={() => exportAttendancePdf(visibleEmployees, { company, year: viewYear, month: viewMonth, attendanceRequests, otRecords })}
+              className="inline-flex h-10 items-center gap-1.5 rounded-lg bg-ink px-3 text-xs font-semibold text-white transition hover:bg-ink-light"
+              title={ui("Xuất mỗi nhân viên thành một trang PDF riêng trong cùng một tệp", "Export one page per employee in a single PDF")}
+            >
+              <Printer size={14} /> {ui("PDF tất cả", "All employees PDF")}
+            </button>
+          )}
           {canReviewAttendance && locked && <button onClick={openUnlockModal} className="inline-flex items-center gap-1.5 rounded-lg bg-stamp-red px-3 py-2 text-xs font-semibold text-white"><KeyRound size={14} /> {ui("Mở khóa kỳ", "Unlock period")}</button>}
         </div>
       </div>}
@@ -21083,8 +21423,6 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
             </label>
             <label className="text-xs text-muted flex flex-col gap-1">Lương cơ bản tháng (đ)<MoneyInput value={form.baseSalary} onChange={(v) => setForm({ ...form, baseSalary: v })} /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Lương một ngày (đ)<MoneyInput value={form.dailySalary} onChange={(v) => setForm({ ...form, dailySalary: v })} /><span className="text-[10px] text-ink-light normal-case">Nếu để 0, hệ thống tự lấy lương cơ bản chia số ngày làm việc chuẩn của tháng.</span></label>
-            <label className="text-xs text-muted flex flex-col gap-1">Mức thưởng mục tiêu (đ)<MoneyInput value={form.bonusTarget} onChange={(v) => setForm({ ...form, bonusTarget: v })} /></label>
-            <label className="text-xs text-muted flex flex-col gap-1">KPI thưởng (%)<input type="number" value={form.kpi} onChange={(e) => setForm({ ...form, kpi: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
             {form.contractType === "thu_viec" && (
               <label className="text-xs text-muted flex flex-col gap-1">% Lương thử việc<input type="number" value={form.probationRate} onChange={(e) => setForm({ ...form, probationRate: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
             )}
@@ -21101,7 +21439,7 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
             <div className="mt-4 pt-4 border-t border-paper-line">
               <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
                 <div className="text-xs font-medium text-ink">Bảng KPI riêng của nhân viên này — áp dụng từ tháng {String(reportMonth).padStart(2, "0")}/{reportYear} <span className="font-normal text-muted">· trống thì dùng bảng KPI chung</span></div>
-                <button type="button" onClick={() => setForm({ ...form, kpiTiersOverride: [...(form.kpiTiersOverride || []), { minRevenue: "", pct: "" }] })} className="text-[11px] border border-paper-line px-2.5 py-1.5 rounded-md text-ink-light hover:text-ink flex items-center gap-1"><Plus size={12} /> Thêm mốc</button>
+                <button type="button" onClick={() => setForm({ ...form, kpiTiersOverride: [...(form.kpiTiersOverride || []), { minRevenue: "", pct: "" }] })} className="inline-flex items-center gap-1.5 rounded-md bg-ledger-green px-3.5 py-2 text-xs font-bold text-white shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ledger-green/50"><Plus size={14} /> Thêm mốc KPI</button>
               </div>
               {(form.kpiTiersOverride || []).length === 0 ? (
                 <p className="text-[11px] text-muted">Đang dùng bảng KPI chung. Bấm "Thêm mốc" để đặt các mốc doanh thu → % thưởng áp dụng RIÊNG cho {form.name || "nhân viên này"} (có thể đổi từng tháng — mốc "Áp dụng từ tháng" ở trên quyết định tháng bắt đầu).</p>
@@ -23388,8 +23726,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                   <td className="px-3 py-2.5">
                     {row.insuranceFixed
                       ? <span className="rounded-full border border-[#86efac]/40 bg-[#86efac]/10 px-2 py-0.5 text-[9px] font-bold text-[#86efac]" title={`Mức khai: NV ${fmtVND(Number(row.insuranceEmployeeAmount) || 0)}/tháng · DN ${fmtVND(Number(row.insuranceEmployerAmount) || 0)}/tháng`}>SỐ TIỀN CỐ ĐỊNH</span>
-                      : <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[9px] font-bold text-[#aebbd0]" title="NV 10,5% + DN 21,5% trên lương cơ bản">% THEO LUẬT</span>}
-                    {Number(row.actualDays || 0) < INSURANCE_MIN_WORKDAYS && <div className="mt-1 text-[9px] text-[#f4c76a]">&lt;14 ngày công — kỳ này chưa phát sinh</div>}
+                      : <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[9px] font-bold text-[#aebbd0]" title="NV 10,5% + DN 21,5% trên lương đóng BH">% THEO LUẬT</span>}
+                    {row.insuranceSuspendedForUnpaidLeave && <div className="mt-1 text-[9px] text-[#f4c76a]">{Number(row.unpaidLeaveDays || 0)} ngày không hưởng lương — tạm dừng đóng BH kỳ này</div>}
                   </td>
                   <td className="px-3 py-2.5 text-right ktns-mono text-[#fca5a5]">{(Number(row.employeeInsurance) || 0) > 0 ? `-${fmtVND(row.employeeInsurance)}` : "—"}</td>
                   <td className="px-3 py-2.5 text-right ktns-mono text-[#86efac]">{(Number(row.employerInsurance) || 0) > 0 ? fmtVND(row.employerInsurance) : "—"}</td>
@@ -23404,7 +23742,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
             </tbody>
           </table>
         </div>
-        <p className="mt-2 shrink-0 text-[10px] text-[#8fa4c8]">Phần NV đóng trừ vào thực lĩnh (cột Khấu trừ ở Bảng lương và mục C của Đề xuất lương); phần DN đóng cộng vào tổng chi phí doanh nghiệp. Quy tắc ≥14 ngày công/tháng mới phát sinh bảo hiểm được giữ nguyên.</p>
+        <p className="mt-2 shrink-0 text-[10px] text-[#8fa4c8]">Phần NV đóng trừ vào thực lĩnh (cột Khấu trừ ở Bảng lương và mục C của Đề xuất lương); phần DN đóng cộng vào tổng chi phí doanh nghiệp. Không dùng quy tắc “đủ 14 ngày công mới đóng”; hệ thống xét riêng số ngày không hưởng lương trong kỳ.</p>
       </section>
       )}
 
@@ -24050,7 +24388,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
           </table>
         </div>
         <div className="mt-2 shrink-0 rounded-lg border border-paper-line bg-[#F8FAFC] px-3 py-2 text-[10px] leading-4 text-muted">
-          Bảo hiểm tính trên NGUYÊN lương cơ bản khi đủ ≥14 ngày công (NV đóng: BHXH 8% · BHYT 1,5% · BHTN 1%; DN đóng: BHXH 17% · BHYT 3% · BHTN 1% · BH TNLĐ-BNN 0,5%).
+          Bảo hiểm tính trên lương đóng BH đã khai báo. Hệ thống không dùng tiêu chí “đủ 14 ngày công”; trường hợp tạm dừng đóng được xét theo số ngày không hưởng lương trong kỳ (NV: BHXH 8% · BHYT 1,5% · BHTN 1%; DN: BHXH 17% · BHYT 3% · BHTN 1% · BH TNLĐ-BNN 0,5%).
           Phần DN đóng KHÔNG trừ vào lương nhân viên — cộng vào tổng chi phí doanh nghiệp và đối chiếu sổ Thu Chi khi chi trả.
         </div>
       </section>
@@ -24135,7 +24473,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                 <div key={role}>
                   <div className="text-[11px] font-semibold text-ink uppercase mb-1.5 flex items-center justify-between">
                     <span>{role === "sale" ? "Sale / Kinh doanh" : "Marketing / Ads"}</span>
-                    <button onClick={() => addKpiTierRow(role)} className="text-[10px] bg-ink text-white px-2 py-1 rounded">+ Thêm mốc</button>
+                    <button onClick={() => addKpiTierRow(role)} className="inline-flex items-center gap-1 rounded-md bg-[#3C50E0] px-3 py-1.5 text-[11px] font-bold text-white shadow-sm transition hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3C50E0]/40"><Plus size={12} /> Thêm mốc KPI</button>
                   </div>
                   <div className="flex flex-col gap-2">
                     {kpiTiers[role].map((t, i) => (
@@ -24312,7 +24650,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                             )}
                             <div className="flex justify-between"><span className="text-muted font-sans">Phụ cấp thâm niên</span>{fmtVND(r.seniorityAllowance)}</div>
                             <div className="flex justify-between"><span className="text-muted font-sans">Phụ cấp ăn trưa</span>{fmtVND(r.mealAllowance)}</div>
-                            <div className="flex justify-between"><span className="text-muted font-sans">Phụ cấp chuyên cần {r.hasAbsence ? "(mất — có ngày nghỉ)" : ""}</span>{fmtVND(r.attendanceBonus)}</div>
+                            <div className="flex justify-between"><span className="text-muted font-sans">Phụ cấp chuyên cần {!r.attendanceBonusEligible ? `(chưa đủ ${Number(r.attendanceBonusWorkDays || 0).toFixed(1)}/${r.standardDays} công)` : ""}</span>{fmtVND(r.attendanceBonus)}</div>
                             {r.kpiMilestoneBonus > 0 && <div className="flex justify-between"><span className="text-muted font-sans">Thưởng KPI mốc doanh số ({r.kpiMilestonePct}%)</span>{fmtVND(r.kpiMilestoneBonus)}</div>}
                             {r.otPay > 0 && <div className="flex justify-between"><span className="text-muted font-sans">Phụ cấp tăng ca {r.otHours || 0}h đã duyệt (150–300% lương giờ)</span>{fmtVND(r.otPay)}</div>}
                             <div className="flex justify-between font-semibold border-t border-paper-line pt-1 mt-1"><span className="font-sans">Tổng thu nhập</span>{fmtVND(r.grossIncome)}</div>
@@ -24869,7 +25207,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                   {(r.customAllowances || []).map((item) => (
                     <Row key={item.id} label={`Phụ cấp ${item.label}${item.deducted > 0 ? " (đã trừ theo ngày nghỉ)" : ""}`} value={fmtVND(item.amount)} />
                   ))}
-                  <Row label={`Chuyên cần${r.hasAbsence ? " (mất do có ngày nghỉ)" : ""}`} value={r.hasAbsence ? "0đ" : fmtVND(r.attendanceBonus || 0)} />
+                  <Row label={`Chuyên cần${!r.attendanceBonusEligible ? ` (chưa đủ ${Number(r.attendanceBonusWorkDays || 0).toFixed(1)}/${r.standardDays} công)` : ""}`} value={fmtVND(r.attendanceBonus || 0)} />
                   {(r.otPay ?? 0) > 0 && <Row label={`Phụ cấp tăng ca ${r.otHours || 0}h đã duyệt (150–300% lương giờ)`} value={fmtVND(r.otPay)} />}
                   <Row label="TỔNG THU NHẬP" value={fmtVND(r.grossIncome)} strong />
                 </div>
