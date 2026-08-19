@@ -2693,6 +2693,27 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
   };
 }
 
+// Gom mọi khoản của MỘT dòng bảng lương thành 2 nhóm chuẩn: PHỤ CẤP và THƯỞNG. Tất cả các vị
+// trí hiển thị (Bảng lương tổng quát, Tổng quan, phiếu lương PDF) đều lấy tổng từ đúng hai
+// hàm này, nên số ở các màn hình không bao giờ lệch nhau. Tiền tăng ca đã duyệt xếp vào nhóm
+// PHỤ CẤP theo quy định công ty.
+const payrollAmount = (value) => Number(value) || 0;
+function payrollAllowanceTotal(row = {}) {
+  return payrollAmount(row.mealAllowance)
+    + payrollAmount(row.seniorityAllowance)
+    + payrollAmount(row.attendanceBonus)
+    + payrollAmount(row.customAllowanceTotal)
+    + payrollAmount(row.otPay);
+}
+function payrollBonusTotal(row = {}) {
+  return payrollAmount(row.commission)
+    + payrollAmount(row.compBonus)
+    + payrollAmount(row.techUpsale)
+    + payrollAmount(row.kpiBonus)
+    + payrollAmount(row.kpiMilestoneBonus)
+    + payrollAmount(row.otherBonus);
+}
+
 // Central performance engine - one function, role-aware, feeds both the
 // Hiệu suất tab UI and the Excel export so numbers never drift apart.
 function evaluatePerformance(e) {
@@ -3348,7 +3369,6 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
         : `${money(row.daySalary)}/ngày × ${Number(row.actualDays || 0).toFixed(1)} công${probationRate < 1 ? ` × ${Math.round(probationRate * 100)}% thử việc` : ""}`,
       amount: row.mainSalary || 0,
     },
-    ...overtimeItems,
   ];
   const bonusItems = [
     { label: "Hoa hồng doanh số", note: row.compStatusLabel || "Theo doanh số được ghi nhận trong kỳ", amount: row.commission || 0 },
@@ -3359,6 +3379,8 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
     { label: "Thưởng khác", note: "Khoản thưởng khác được duyệt trong kỳ", amount: row.otherBonus || 0 },
   ].filter((item) => (Number(item.amount) || 0) > 0);
 
+  // Tiền tăng ca nằm trong nhóm PHỤ CẤP (đúng như Bảng lương tổng quát) để ô tổng "Phụ cấp"
+  // trên phiếu cộng đúng bằng các dòng đang liệt kê ngay bên trên.
   const allowanceItems = [
     {
       label: "Phụ cấp ăn trưa",
@@ -3389,6 +3411,7 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
       ].filter(Boolean).join("; "),
       amount: item.amount || 0,
     })),
+    ...overtimeItems,
   ];
 
   const employeeInsuranceItems = !isOfficial
@@ -3427,6 +3450,12 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
   ].filter((item) => item.always || (Number(item.amount) || 0) > 0);
 
   const grossIncome = Number(row.grossIncome) || 0;
+  // Hai ô tổng "Phụ cấp" và "Thưởng" cộng thẳng từ chính các dòng đang liệt kê ngay bên trên
+  // (nhóm giống hệt payrollAllowanceTotal/payrollBonusTotal của Bảng lương tổng quát, kể cả
+  // tiền tăng ca nằm trong nhóm phụ cấp) — người xem cộng nhẩm là ra đúng số trong ô.
+  const sumItems = (items) => items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+  const allowanceSum = sumItems(allowanceItems);
+  const bonusSum = sumItems(bonusItems);
 
   // Phiếu phát cho nhân viên chỉ có ĐÚNG MỘT số tiền cuối cùng: THỰC NHẬN = số tiền chuyển
   // cho nhân sự. Số này lấy nguyên từ bảng lương đang lưu (row.net = thu nhập - BH - thuế -
@@ -3459,14 +3488,25 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
 
   const accountantApproved = Boolean(approval?.accountantApprovedAt || approval?.approval_status === "accountant_approved");
   const bossApproved = Boolean(approval?.bossApprovedAt || ["director_approved", "approved"].includes(approval?.approval_status));
-  const incomeItems = [...salaryItems, ...bonusItems, ...allowanceItems]
-    .filter((item) => item.always || (Number(item.amount) || 0) > 0 || String(item.label || "").toLowerCase().includes("chuyên cần"));
+  // Bảng THU NHẬP tách thành 3 mục rõ ràng theo chuẩn kế toán: I. Lương · II. Phụ cấp ·
+  // III. Thưởng. Mỗi dòng mục mang luôn tổng của mục đó nên đọc là biết ngay cơ cấu thu nhập,
+  // các khoản chi tiết đánh số lại từ 1 trong từng mục.
+  const keepIncomeItem = (item) => item.always || (Number(item.amount) || 0) > 0
+    || String(item.label || "").toLowerCase().includes("chuyên cần");
+  const incomeGroups = [
+    { code: "I", label: "Lương", items: salaryItems.filter(keepIncomeItem), total: sumItems(salaryItems) },
+    { code: "II", label: "Phụ cấp", items: allowanceItems.filter(keepIncomeItem), total: allowanceSum },
+    { code: "III", label: "Thưởng", items: bonusItems.filter(keepIncomeItem), total: bonusSum },
+  ];
+  const incomeItems = incomeGroups.flatMap((group) => [{ group: true }, ...group.items]);
   const beneficiaryName = row.bankAccountHolder || row.name || "";
   const bankName = row.bankName || "Chưa khai báo";
   const bankAccount = row.bankAccount || "Chưa khai báo";
   const paymentMethodLabel = payment?.paymentMethod === "tien_mat" ? "Tiền mặt" : payment?.paymentMethod === "chuyen_khoan" ? "Chuyển khoản" : "Chưa chi trả";
   const maxRows = Math.max(incomeItems.length, deductionItems.length);
-  const densityClass = maxRows >= 9 ? "ultra-dense" : maxRows >= 7 ? "dense" : "";
+  // Ba dòng mục làm bảng thu nhập cao thêm ~3 dòng, nên mốc co gọn hạ xuống tương ứng để
+  // phiếu vẫn nằm trọn MỘT trang A4.
+  const densityClass = maxRows >= 10 ? "ultra-dense" : maxRows >= 7 ? "dense" : "";
 
   const renderTableRows = (items, type) => items.map((item, idx) => `
     <tr>
@@ -3477,6 +3517,23 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
       </td>
       <td class="amount ${type}">${type === "deduct" && (Number(item.amount) || 0) > 0 ? "-" : (type === "income" && (Number(item.amount) || 0) > 0 ? "+" : "")}${num(item.amount)}</td>
     </tr>`).join("");
+
+  // Bảng thu nhập: dòng mục (I/II/III) + các dòng chi tiết đánh số riêng trong từng mục.
+  const renderIncomeRows = () => incomeGroups.map((group) => `
+    <tr class="group-row">
+      <td class="idx">${group.code}</td>
+      <td><div class="group-label">${payslipEscape(group.label)}</div></td>
+      <td class="amount income">${num(group.total)}</td>
+    </tr>
+    ${group.items.map((item, idx) => `
+    <tr>
+      <td class="idx">${idx + 1}</td>
+      <td>
+        <div class="entry-label">${payslipEscape(item.label)}</div>
+        ${item.note ? `<div class="entry-note">${payslipEscape(item.note)}</div>` : ""}
+      </td>
+      <td class="amount income">${(Number(item.amount) || 0) > 0 ? "+" : ""}${num(item.amount)}</td>
+    </tr>`).join("")}`).join("");
 
   const css = `${PAYSLIP_BASE_CSS}
     /* Toàn phiếu dùng Times New Roman (VnTime) theo chuẩn văn bản hành chính Việt Nam. */
@@ -3516,6 +3573,11 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
     .payslip-root .emp-table .amount.deduct { color: #c62828; }
     .payslip-root .entry-label { font-size: 11.2px; font-weight: 700; color: #0f172a; line-height: 1.42; }
     .payslip-root .entry-note { margin-top: 3px; color: #5b6b80; font-size: 9.6px; line-height: 1.5; }
+    /* Dòng MỤC của bảng thu nhập (I. Lương · II. Phụ cấp · III. Thưởng) — mảnh, nền nhạt. */
+    .payslip-root .emp-table .group-row td { background: #f2f6fc; padding: 4.6px 9px; }
+    .payslip-root .emp-table .group-row .idx { color: #0b3d91; font-weight: 700; }
+    .payslip-root .emp-table .group-row .amount { color: #0b3d91; font-size: 11px; }
+    .payslip-root .group-label { font-size: 10.4px; font-weight: 700; color: #0b3d91; text-transform: uppercase; letter-spacing: .3px; line-height: 1.3; }
     /* Dòng tổng của mỗi bảng: nền nhạt đậm hơn + kẻ trên rõ để nổi khỏi các dòng chi tiết. */
     .payslip-root .emp-total td { background: #e9f0fa; border-top: 1.6px solid #b9cce8; font-size: 11.6px; font-weight: 700; text-transform: uppercase; padding: 8.5px 9px; color: #0b3d91; }
 
@@ -3525,12 +3587,15 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
     .payslip-root .net-money { font-size: 30px; line-height: 1; font-weight: 700; letter-spacing: .4px; white-space: nowrap; }
     .payslip-root .words-line { margin-top: 7px; font-size: 10.4px; color: #334155; line-height: 1.4; }
 
-    .payslip-root .quick-summary { margin-top: 7px; display: grid; grid-template-columns: repeat(4,1fr); border: 1px solid #d8e0ec; border-radius: 10px; overflow: hidden; background: #f9fbfe; }
-    .payslip-root .quick-cell { padding: 8px; min-height: 45px; text-align: center; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: center; }
+    /* 6 ô tóm tắt: lương cơ bản · phụ cấp · thưởng · tổng thu nhập · tổng khấu trừ · thực nhận. */
+    .payslip-root .quick-summary { margin-top: 7px; display: grid; grid-template-columns: repeat(6,1fr); border: 1px solid #d8e0ec; border-radius: 10px; overflow: hidden; background: #f9fbfe; }
+    .payslip-root .quick-cell { padding: 8px 6px; min-height: 45px; text-align: center; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: center; }
     .payslip-root .quick-cell:last-child { border-right: none; }
-    .payslip-root .quick-label { font-size: 8.8px; color: #64748b; text-transform: uppercase; font-weight: 700; line-height: 1.3; }
-    .payslip-root .quick-value { margin-top: 4px; font-size: 11.6px; font-weight: 700; color: #10233f; line-height: 1.35; }
-    .payslip-root .quick-value.takehome { color: #0b3d91; font-size: 12.8px; }
+    .payslip-root .quick-label { font-size: 8.4px; color: #64748b; text-transform: uppercase; font-weight: 700; line-height: 1.3; }
+    .payslip-root .quick-value { margin-top: 4px; font-size: 10.8px; font-weight: 700; color: #10233f; line-height: 1.35; white-space: nowrap; }
+    .payslip-root .quick-value.allowance { color: #92610a; }
+    .payslip-root .quick-value.bonus { color: #047857; }
+    .payslip-root .quick-value.takehome { color: #0b3d91; font-size: 11.8px; }
 
     .payslip-root .bank-strip { margin-top: 7px; border: 1px solid #d8e0ec; border-radius: 10px; overflow: hidden; }
     .payslip-root .bank-title { padding: 6px 10px; background: #f4f7fb; color: #0b3d91; font-size: 9.8px; font-weight: 700; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; }
@@ -3563,6 +3628,8 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
 
     /* Nhân viên nhiều khoản: co dần để giữ đúng MỘT trang A4 mà chữ vẫn đọc được. */
     .payslip-root .employee-slip.dense .emp-table th, .payslip-root .employee-slip.dense .emp-table td { padding: 7px 8px; }
+    .payslip-root .employee-slip.dense .emp-table .group-row td { padding: 3.8px 8px; }
+    .payslip-root .employee-slip.dense .group-label { font-size: 10px; }
     .payslip-root .employee-slip.dense .entry-label { font-size: 10.4px; }
     .payslip-root .employee-slip.dense .entry-note { font-size: 9px; line-height: 1.4; }
     .payslip-root .employee-slip.dense .info-box { min-height: 56px; padding: 8px 9px; }
@@ -3573,31 +3640,34 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
     .payslip-root .employee-slip.dense .sign-space { height: 40px; }
     .payslip-root .employee-slip.dense .sign-cell { min-height: 92px; }
 
-    .payslip-root .employee-slip.ultra-dense .emp-table th, .payslip-root .employee-slip.ultra-dense .emp-table td { padding: 3.9px 7px; }
+    .payslip-root .employee-slip.ultra-dense .emp-table th, .payslip-root .employee-slip.ultra-dense .emp-table td { padding: 2.4px 7px; }
     .payslip-root .employee-slip.ultra-dense .emp-table thead th { padding: 5px 7px; }
-    .payslip-root .employee-slip.ultra-dense .emp-total td { padding: 5.5px 7px; font-size: 10.4px; }
+    .payslip-root .employee-slip.ultra-dense .emp-table .group-row td { padding: 2.2px 7px; }
+    .payslip-root .employee-slip.ultra-dense .group-label { font-size: 9.4px; }
+    .payslip-root .employee-slip.ultra-dense .emp-table .group-row .amount { font-size: 10px; }
+    .payslip-root .employee-slip.ultra-dense .emp-total td { padding: 4.5px 7px; font-size: 10.4px; }
     .payslip-root .employee-slip.ultra-dense .entry-label { font-size: 9.8px; line-height: 1.32; }
-    .payslip-root .employee-slip.ultra-dense .entry-note { font-size: 8.4px; line-height: 1.32; margin-top: 2px; }
+    .payslip-root .employee-slip.ultra-dense .entry-note { font-size: 8.4px; line-height: 1.26; margin-top: 1.5px; }
     .payslip-root .employee-slip.ultra-dense .money-head { padding: 5px 9px; font-size: 10.6px; }
-    .payslip-root .employee-slip.ultra-dense .money-tables { margin-top: 8px; }
-    .payslip-root .employee-slip.ultra-dense .info-box { min-height: 42px; padding: 4px 9px; }
+    .payslip-root .employee-slip.ultra-dense .money-tables { margin-top: 6px; }
+    .payslip-root .employee-slip.ultra-dense .info-box { min-height: 38px; padding: 3px 9px; }
     .payslip-root .employee-slip.ultra-dense .info-value { font-size: 10.8px; margin-top: 3px; }
     .payslip-root .employee-slip.ultra-dense .employee-info { margin-top: 7px; }
-    .payslip-root .employee-slip.ultra-dense .quick-cell { min-height: 34px; padding: 3px 7px; }
+    .payslip-root .employee-slip.ultra-dense .quick-cell { min-height: 31px; padding: 2.5px 6px; }
     .payslip-root .employee-slip.ultra-dense .quick-value { font-size: 10.6px; margin-top: 2px; }
     .payslip-root .employee-slip.ultra-dense .quick-summary { margin-top: 6px; }
-    .payslip-root .employee-slip.ultra-dense .bank-item { min-height: 38px; padding: 3px 8px; }
+    .payslip-root .employee-slip.ultra-dense .bank-item { min-height: 34px; padding: 2.5px 8px; }
     .payslip-root .employee-slip.ultra-dense .bank-title { padding: 4px 10px; }
     .payslip-root .employee-slip.ultra-dense .bank-strip { margin-top: 6px; }
     .payslip-root .employee-slip.ultra-dense .bank-amount { font-size: 11.4px; }
-    .payslip-root .employee-slip.ultra-dense .net-banner { margin-top: 6px; min-height: 42px; padding: 5px 13px; }
-    .payslip-root .employee-slip.ultra-dense .net-money { font-size: 25px; }
+    .payslip-root .employee-slip.ultra-dense .net-banner { margin-top: 5px; min-height: 39px; padding: 4px 13px; }
+    .payslip-root .employee-slip.ultra-dense .net-money { font-size: 23px; }
     .payslip-root .employee-slip.ultra-dense .net-label { font-size: 12px; }
     .payslip-root .employee-slip.ultra-dense .words-line { margin-top: 4px; font-size: 9.4px; }
     .payslip-root .employee-slip.ultra-dense .signature-block { margin-top: 6px; padding-top: 5px; }
     .payslip-root .employee-slip.ultra-dense .sign-grid { margin-top: 5px; }
-    .payslip-root .employee-slip.ultra-dense .sign-space { height: 22px; }
-    .payslip-root .employee-slip.ultra-dense .sign-cell { min-height: 62px; }
+    .payslip-root .employee-slip.ultra-dense .sign-space { height: 14px; }
+    .payslip-root .employee-slip.ultra-dense .sign-cell { min-height: 50px; }
     .payslip-root .employee-slip.ultra-dense .employee-foot { margin-top: 5px; padding-top: 4px; font-size: 8.4px; }
   `;
 
@@ -3635,7 +3705,7 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
       <table class="emp-table">
         <thead><tr><th class="idx">STT</th><th>Khoản thu nhập</th><th class="amount">Số tiền (đ)</th></tr></thead>
         <tbody>
-          ${renderTableRows(incomeItems, "income")}
+          ${renderIncomeRows()}
           <tr class="emp-total"><td colspan="2">Tổng thu nhập</td><td class="amount income">${num(grossIncome)}</td></tr>
         </tbody>
       </table>
@@ -3660,6 +3730,8 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
 
   <div class="quick-summary">
     <div class="quick-cell"><div class="quick-label">Lương cơ bản</div><div class="quick-value">${money(row.baseSalary)}</div></div>
+    <div class="quick-cell"><div class="quick-label">Tổng phụ cấp</div><div class="quick-value allowance">${money(allowanceSum)}</div></div>
+    <div class="quick-cell"><div class="quick-label">Tổng thưởng</div><div class="quick-value bonus">${money(bonusSum)}</div></div>
     <div class="quick-cell"><div class="quick-label">Tổng thu nhập</div><div class="quick-value">${money(grossIncome)}</div></div>
     <div class="quick-cell"><div class="quick-label">Tổng khấu trừ</div><div class="quick-value">${money(totalDeduction)}</div></div>
     <div class="quick-cell"><div class="quick-label">Thực nhận</div><div class="quick-value takehome">${money(netFinal)}</div></div>
@@ -6623,6 +6695,10 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
     [orders, debts, supportCases, tasks, inventory, employees, attendanceRequests, transactions, payrollApprovals, midMonthRequests, otRecords, opsViewer],
   );
   const opsHighCount = opsRows.filter((row) => row.priority === "Cao").length;
+  // Tổng phụ cấp / tổng thưởng toàn công ty của kỳ đang xem — cùng công thức gom nhóm với
+  // Bảng lương tổng quát và phiếu lương PDF nên ba màn hình luôn khớp số.
+  const payrollAllowanceSum = payrollRows.reduce((sum, r) => sum + payrollAllowanceTotal(r), 0);
+  const payrollBonusSum = payrollRows.reduce((sum, r) => sum + payrollBonusTotal(r), 0);
   const lowKpi = payrollRows.filter((r) => r.kpi < 80).length;
   const lowKpiNames = payrollRows.filter((r) => r.kpi < 80).map((r) => r.name);
   const [showLowKpiList, setShowLowKpiList] = useState(false);
@@ -6837,6 +6913,28 @@ function Dashboard({ totals, financialSummary, financialSummaryLoading, financia
           <h3 className="ktns-serif font-semibold text-ink">{t("payroll_link_title")}</h3>
           <div className="text-xs text-muted">{t("payroll_link_sub")}</div>
           <div className="ktns-mono text-lg font-semibold text-ink">{fmtVND(totalPayroll)}</div>
+          {/* Hai ô Phụ cấp / Thưởng nối thẳng với bảng lương kỳ đang xem — bấm để mở Bảng lương
+              xem thống kê chi tiết từng khoản của từng nhân sự. */}
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => setTab("luong")}
+              className="rounded-lg border border-paper-line bg-paper/40 px-3 py-2 text-left transition hover:border-[#92610A]/45 hover:bg-[#92610A]/5"
+              title="Tổng phụ cấp kỳ này: ăn trưa, thâm niên, chuyên cần, tăng ca đã duyệt và phụ cấp khai báo thêm — bấm để xem chi tiết từng khoản ở Bảng lương"
+            >
+              <div className="text-[10px] font-semibold uppercase text-muted">Tổng phụ cấp</div>
+              <div className="ktns-mono text-sm font-semibold text-[#92610A]">{fmtVND(payrollAllowanceSum)}</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => setTab("luong")}
+              className="rounded-lg border border-paper-line bg-paper/40 px-3 py-2 text-left transition hover:border-ledger-green/45 hover:bg-ledger-green/5"
+              title="Tổng thưởng kỳ này: hoa hồng, thưởng doanh số, upsale, thưởng KPI, thưởng mốc doanh số và thưởng khác — bấm để xem chi tiết từng khoản ở Bảng lương"
+            >
+              <div className="text-[10px] font-semibold uppercase text-muted">Tổng thưởng</div>
+              <div className="ktns-mono text-sm font-semibold text-ledger-green">{fmtVND(payrollBonusSum)}</div>
+            </button>
+          </div>
           <div className="flex flex-col gap-1 text-xs">
             {lowKpi > 0 && (
               <div>
@@ -23516,17 +23614,10 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
     return [row.name, row.email, row.position, ROLE_META[row.roleType]?.label]
       .some((value) => String(value || "").toLowerCase().includes(overviewSearchText));
   }).map((row) => {
-    const allowanceTotal = (Number(row.mealAllowance) || 0)
-      + (Number(row.seniorityAllowance) || 0)
-      + (Number(row.attendanceBonus) || 0)
-      + (Number(row.customAllowanceTotal) || 0)
-      + (Number(row.otPay) || 0); // tiền tăng ca đã duyệt — xếp vào nhóm PHỤ CẤP theo quy định công ty
-    const bonusTotal = (Number(row.commission) || 0)
-      + (Number(row.compBonus) || 0)
-      + (Number(row.techUpsale) || 0)
-      + (Number(row.kpiBonus) || 0)
-      + (Number(row.kpiMilestoneBonus) || 0)
-      + (Number(row.otherBonus) || 0);
+    // Dùng chung công thức gom nhóm với Tổng quan và phiếu lương PDF (tiền tăng ca đã duyệt
+    // xếp vào nhóm PHỤ CẤP theo quy định công ty).
+    const allowanceTotal = payrollAllowanceTotal(row);
+    const bonusTotal = payrollBonusTotal(row);
     const payment = paymentOf(row.id);
     const midMonthEntries = midMonthEntriesOf(row.id);
     const midMonthPaid = midMonthPaidOf(row.id);
@@ -24329,6 +24420,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
           </div>
         </div>
         <InlineStats items={[
+          { label: "Tổng phụ cấp", value: fmtVND(overviewTotalAllowance), className: "text-[#92610A]", sub: "ăn trưa · thâm niên · chuyên cần · tăng ca · phụ cấp khai báo thêm" },
+          { label: "Tổng thưởng", value: fmtVND(overviewTotalBonus), className: "text-ledger-green", sub: "hoa hồng · thưởng doanh số · upsale · KPI · mốc doanh số · thưởng khác" },
           { label: "Tổng thu nhập (gross)", value: fmtVND(overviewTotalGross), className: "text-ledger-green" },
           { label: "Thực lĩnh", value: fmtVND(overviewTotalNet), className: "text-[#3C50E0]", sub: `đã trả ${fmtVND(overviewTotalPaid)} · còn ${fmtVND(overviewTotalRemaining)}` },
           { label: "Tạm ứng trong kỳ", value: overviewTotalAdvance > 0 ? `-${fmtVND(overviewTotalAdvance)}` : "0đ", className: overviewTotalAdvance > 0 ? "text-stamp-red" : "text-ink" },
