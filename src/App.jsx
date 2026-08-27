@@ -2491,7 +2491,13 @@ function resolveKpiMilestone(e, revenue, roleTiers) {
 const COMP_HISTORY_FIELDS = [
   "baseSalary", "dailySalary", "insuranceSalary", "mealAllowance", "attendanceBonus", "bonusTarget", "kpi",
   "contractType", "probationRate", "allowances", "kpiRevenueThreshold", "kpiRevenuePct", "kpiTiersOverride",
+  // Thưởng khác nhập ngay trên hồ sơ nhân sự — cũng phải lưu riêng theo từng kỳ lương.
+  "otherBonus",
 ];
+
+// Ô "Phụ cấp khác" trên form hồ sơ nhân sự ghi vào ĐÚNG một dòng trong danh sách phụ cấp khai
+// báo thêm (id cố định) để không đụng các khoản kế toán tự thêm ở tab Phụ cấp.
+const PROFILE_OTHER_ALLOWANCE_ID = "pc-khac-ho-so";
 function employeeCompForMonth(e, year, month) {
   const history = Array.isArray(e?.compensationHistory)
     ? e.compensationHistory.filter((h) => h && /^\d{4}-\d{2}$/.test(String(h.effectiveFrom || "")) && h.values)
@@ -2880,6 +2886,9 @@ function exportPayrollExcel(payrollRows, payments = [], midMonthRequests = [], p
     "Phụ cấp khác (xăng xe, OT, sinh con...)": Math.round(r.customAllowanceTotal || 0),
     "Chi tiết phụ cấp khác": (r.customAllowances || []).filter((item) => item.amount > 0).map((item) => `${item.label}: ${Math.round(item.amount)}`).join(" | ") || "—",
     "Thưởng khác": Math.round(r.otherBonus),
+    // Hai cột tổng nhóm để mở Excel ra là đối chiếu được ngay với cột Phụ cấp/Thưởng trên app.
+    "TỔNG PHỤ CẤP": Math.round(payrollAllowanceTotal(r)),
+    "TỔNG THƯỞNG": Math.round(payrollBonusTotal(r)),
     "Tổng thu nhập": Math.round(r.grossIncome),
     "BHXH-BHYT-BHTN (NV đóng)": Math.round(r.employeeInsurance),
     "Giảm trừ gia cảnh": Math.round(r.personalDeduction),
@@ -2896,7 +2905,7 @@ function exportPayrollExcel(payrollRows, payments = [], midMonthRequests = [], p
     "Tổng chi phí DN": Math.round(r.employerTotalCost),
   }));
   const ws1 = XLSX.utils.json_to_sheet(main);
-  ws1["!cols"] = new Array(33).fill({ wch: 16 });
+  ws1["!cols"] = new Array(35).fill({ wch: 16 });
   XLSX.utils.book_append_sheet(wb, ws1, "Bảng lương chi tiết");
 
   const insurance = payrollRows.map((r) => ({
@@ -3035,7 +3044,9 @@ const payslipEscape = (value) => String(value ?? "")
 // không được để ảnh hưởng giao diện đang mở.
 const PAYSLIP_BASE_CSS = `
   .payslip-root, .payslip-root * { box-sizing: border-box; }
-  .payslip-root { font-family: "Times New Roman", "Noto Serif", serif; color: #111; font-size: 11.5px; margin: 0 auto; padding: 12px 18px; background: #fff; width: 794px; max-width: 100%; }
+  /* Bộ chữ in: Segoe UI (sans) thay Times New Roman — nét dày đều, thân chữ cao hơn nên ở cỡ
+     9-11px in ra sắc và dễ đọc hơn hẳn; Times nét mảnh rất dễ lòe khi in laser/phun. */
+  .payslip-root { font-family: "Segoe UI", Roboto, Arial, "Helvetica Neue", Helvetica, sans-serif; color: #111; font-size: 11.5px; margin: 0 auto; padding: 12px 18px; background: #fff; width: 794px; max-width: 100%; }
   .payslip-root h1 { font-size: 19px; text-align: center; margin: 9px 0 1px; letter-spacing: .8px; }
   .payslip-root .sub { text-align: center; margin: 0 0 7px; font-size: 11px; }
   .payslip-root .co { display: flex; justify-content: space-between; gap: 16px; font-size: 12px; border-bottom: 2px solid #111; padding-bottom: 8px; }
@@ -3043,74 +3054,149 @@ const PAYSLIP_BASE_CSS = `
   .payslip-root h2 { font-size: 12px; margin: 9px 0 4px; text-transform: uppercase; }
   .payslip-root table.grid { width: 100%; min-width: 742px; border-collapse: collapse; }
   .payslip-root .grid tr { page-break-inside: avoid; }
-  .payslip-root .grid th, .payslip-root .grid td { border: 1px solid #333; padding: 5px 6px; vertical-align: middle; word-wrap: break-word; line-height: 1.38; overflow: visible; }
-  .payslip-root .grid th { background: #ececec; font-size: 11px; text-transform: uppercase; text-align: left; }
+  /* Chữ canh GIỮA ô theo chiều dọc; đệm dưới nhỉnh hơn đệm trên để bù phần chân chữ tiếng Việt
+     (dấu nặng, ạ/ụ/ợ) — nếu để đều nhau thì chữ trông dính sát đường kẻ dưới. */
+  .payslip-root .grid th, .payslip-root .grid td { border: 1px solid #333; padding: 7px 7px 8.4px; vertical-align: middle; text-align: center; word-wrap: break-word; line-height: 1.38; overflow: visible; }
+  .payslip-root .grid th { background: #ececec; font-size: 11px; text-transform: uppercase; text-align: center; }
   .payslip-root .grid th.c, .payslip-root .grid th.num { text-align: center; }
   .payslip-root .info td { border: 1px solid #333; }
   .payslip-root .info .k { width: 21%; color: #333; background: #f7f7f7; font-size: 11px; }
   .payslip-root .c { text-align: center; }
   .payslip-root .r { text-align: right; white-space: nowrap; }
-  .payslip-root .num { text-align: right; white-space: nowrap; font-family: "Courier New", monospace; }
-  .payslip-root .desc { color: #444; font-size: 9.5px; font-family: Arial, sans-serif; line-height: 1.38; overflow: visible; }
-  .payslip-root .mono { font-family: "Courier New", monospace; font-weight: bold; }
-  .payslip-root .note { font-size: 9.3px; color: #555; font-family: Arial, sans-serif; font-weight: normal; line-height: 1.38; overflow: visible; }
+  /* Consolas thay Courier New: cùng là chữ đều ô nhưng nét dày hơn, số in ra không bị mảnh. */
+  .payslip-root .num { text-align: right; white-space: nowrap; font-family: Consolas, "Segoe UI", Arial, sans-serif; font-variant-numeric: tabular-nums; }
+  .payslip-root .desc { color: #222; font-size: 9.5px; line-height: 1.38; overflow: visible; }
+  .payslip-root .mono { font-family: Consolas, "Segoe UI", Arial, sans-serif; font-variant-numeric: tabular-nums; font-weight: bold; }
+  .payslip-root .note { font-size: 9.3px; color: #333; font-weight: normal; line-height: 1.38; overflow: visible; }
   .payslip-root .unit { text-align: right; font-style: italic; font-size: 10px; margin: 5px 0 -5px; }
   .payslip-root .meta { display: flex; flex-wrap: wrap; margin: 14px 0 4px; }
   .payslip-root .meta .mitem { width: 50%; padding: 7px 0; font-size: 13px; }
-  .payslip-root .meta .mlabel { display: inline-block; min-width: 185px; color: #555; font-size: 12px; }
+  .payslip-root .meta .mlabel { display: inline-block; min-width: 185px; color: #333; font-size: 12px; }
   .payslip-root .grid th.hl, .payslip-root .grid td.hl { background: #e8e8e8; font-weight: bold; }
   .payslip-root .total td { background: #f2f2f2; font-weight: bold; }
   .payslip-root .grand td { background: #e8e8e8; font-weight: bold; font-size: 14px; }
   .payslip-root .grand .num { font-size: 15px; }
   .payslip-root .sign-date { text-align: right; font-style: italic; margin-top: 8px; font-size: 10.5px; }
   .payslip-root .net { border: 2px solid #111; margin-top: 14px; padding: 10px 14px; display: flex; justify-content: space-between; align-items: center; }
-  .payslip-root .net .amount { font-size: 20px; font-weight: bold; font-family: "Courier New", monospace; }
+  .payslip-root .net .amount { font-size: 20px; font-weight: bold; font-family: Consolas, "Segoe UI", Arial, sans-serif; font-variant-numeric: tabular-nums; }
   .payslip-root .words { margin-top: 6px; font-style: italic; font-size: 12px; }
   .payslip-root .signature-block { display: inline-block; width: 100%; break-inside: avoid-page !important; page-break-inside: avoid !important; }
   .payslip-root .sign { width: 100%; margin-top: 12px; border-collapse: collapse; break-inside: avoid-page !important; page-break-inside: avoid !important; }
   .payslip-root .sign td { width: 33.33%; text-align: center; vertical-align: top; padding: 4px 8px; border: none; }
   .payslip-root .sign .role { font-weight: bold; text-transform: uppercase; font-size: 12px; }
-  .payslip-root .sign .hint { font-size: 10.5px; color: #555; font-style: italic; }
+  .payslip-root .sign .hint { font-size: 10.5px; color: #333; font-style: italic; }
   .payslip-root .sign .who { margin-top: 8px; font-weight: bold; }
-  .payslip-root .sign .when { font-size: 10.5px; color: #444; }
+  .payslip-root .sign .when { font-size: 10.5px; color: #222; }
   .payslip-root .ok { color: #14532d; font-weight: bold; border: 2px solid #14532d; border-radius: 6px; display: inline-block; padding: 3px 12px; margin: 10px 0 4px; transform: rotate(-6deg); }
-  .payslip-root .pending { color: #777; font-style: italic; margin: 14px 0 4px; }
+  .payslip-root .pending { color: #4a4a4a; font-style: italic; margin: 14px 0 4px; }
   .payslip-root .stamp { width: 138px; height: 138px; border: 3px double #c81e1e; border-radius: 50%; color: #c81e1e; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; transform: rotate(-12deg); margin: 8px auto 4px; padding: 10px; }
   .payslip-root .stamp .s1 { font-weight: bold; font-size: 15px; letter-spacing: 1px; }
   .payslip-root .stamp .s2 { font-size: 9px; font-weight: bold; text-transform: uppercase; margin-top: 3px; }
   .payslip-root .stamp .s3 { font-size: 9.5px; margin-top: 3px; }
-  .payslip-root .stamp.empty { border: 2px dashed #aaa; color: #999; transform: none; }
-  .payslip-root .foot { margin-top: 18px; font-size: 10px; color: #666; border-top: 1px solid #ccc; padding-top: 6px; }
+  .payslip-root .stamp.empty { border: 2px dashed #888; color: #6a6a6a; transform: none; }
+  .payslip-root .foot { margin-top: 18px; font-size: 10px; color: #3a3a3a; border-top: 1px solid #ccc; padding-top: 6px; }
 `;
+
+// html2canvas đo ĐƯỜNG CHÂN CHỮ bằng một thẻ <img> 1x1 ẩn đặt ngay sau một đoạn chữ mẫu: nó lấy
+// `img.offsetTop - span.offsetTop`, tức là dựa vào việc ảnh nằm INLINE nên đáy ảnh trùng chân chữ.
+// Tailwind (app đang dùng) đặt `img { display: block }` → thẻ dò bị xuống dòng, đường chân chữ đo
+// ra lớn hơn thực tế 6px, và MỌI dòng chữ trong PDF bị vẽ thấp xuống 6px so với ô kẻ (chữ dính
+// sát vạch dưới). Trả riêng thẻ dò đó về inline trong lúc xuất — chỉ khớp đúng thẻ có inline style
+// `vertical-align: baseline` mà html2canvas tự đặt, nên ảnh thật của giao diện không bị ảnh hưởng.
+const H2C_BASELINE_PROBE_FIX = `img[style*="vertical-align: baseline"] { display: inline !important; vertical-align: baseline !important; }`;
+
+// Lề giấy dùng chung cho MỌI bản xuất (PDF và HTML): [trên, phải, dưới, trái] tính bằng mm.
+// Máy in phổ thông không in được sát mép (~5mm đầu tiên hay bị cắt), nên chừa tối thiểu 10mm
+// hai bên để chữ và các khối nền không dính lề, in ra dễ đọc hơn.
+const PDF_MARGIN_MM = { top: 8, right: 10, bottom: 9, left: 10 };
+
+// Bọc { css, body } thành MỘT trang HTML in được: trên màn hình thì phiếu nằm giữa trên nền xám
+// nhạt để thấy rõ khổ giấy; khi in thì canh giữa, chừa đúng lề an toàn và tự thu nhỏ vừa bề ngang
+// in được nên không bị cắt mép phải như bản cũ (phiếu rộng 794px > vùng in 186mm của khổ A4).
+function buildPrintablePage({ css, body, title = "", orientation = "portrait", extraHead = "" }) {
+  const contentWidth = orientation === "landscape" ? 1123 : 794;
+  const paperWidthMm = orientation === "landscape" ? 297 : 210;
+  const printableWidthPx = (paperWidthMm - PDF_MARGIN_MM.left - PDF_MARGIN_MM.right) * 96 / 25.4;
+  const printZoom = Math.min(1, printableWidthPx / contentWidth).toFixed(4);
+  const pageCss = `
+    @page { size: A4 ${orientation}; margin: ${PDF_MARGIN_MM.top}mm ${PDF_MARGIN_MM.right}mm ${PDF_MARGIN_MM.bottom}mm ${PDF_MARGIN_MM.left}mm; }
+    html, body { margin: 0; padding: 0; background: #e9eef5; }
+    body { display: flex; justify-content: center; padding: 22px 14px; }
+    .payslip-root { background: #fff; box-shadow: 0 8px 28px rgba(16,35,63,.18); }
+    @media print {
+      html, body { background: #fff; }
+      body { display: block; padding: 0; }
+      /* Giữ nguyên bề ngang thiết kế rồi thu nhỏ vừa đúng vùng in được — nếu để max-width:100%
+         thì khối phiếu bị bóp lại và vỡ bố cục trước khi kịp thu nhỏ. */
+      .payslip-root { width: ${contentWidth}px; max-width: none; margin: 0 auto; box-shadow: none; zoom: ${printZoom}; }
+    }
+  `;
+  return `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8">
+<title>${payslipEscape(title)}</title>
+<style>${pageCss}${css}</style></head>
+<body><div class="payslip-root">${body}</div>${extraHead}</body></html>`;
+}
 
 // Render { css, body } thành trang A4 ẩn ngoài màn hình rồi tải thẳng file .pdf về máy —
 // dùng chung cho phiếu lương, bảng bảo hiểm và hồ sơ nhân sự. Lỗi thì rơi về tải HTML tự bật in.
-async function saveA4Pdf({ css = PAYSLIP_BASE_CSS, body, filename, fallbackHtml = "", orientation = "portrait" }) {
+async function saveA4Pdf({ css = PAYSLIP_BASE_CSS, body, filename, fallbackHtml = "", orientation = "portrait", fitOnePage = false }) {
   // A4 ở 96dpi: dọc ~794px, ngang ~1123px — bề ngang holder phải khớp khổ giấy để bố cục không vỡ.
   const pageWidth = orientation === "landscape" ? 1123 : 794;
+  const paperWidthMm = orientation === "landscape" ? 297 : 210;
+  const paperHeightMm = orientation === "landscape" ? 210 : 297;
+  // html2pdf KHÔNG chụp thẻ ta đưa vào: nó nhân bản sang một container rộng đúng bằng bề ngang
+  // giấy TRỪ LỀ (190mm ≈ 718px với A4 dọc, lề 10mm). Hai hệ quả phải xử lý cho phiếu MỘT TRANG:
+  //   1. `max-width: 100%` bóp phiếu 794px xuống 718px → chữ xuống dòng thêm, phiếu dài ra ~150px.
+  //      Khắc phục: khóa `max-width: none` và ép html2canvas chụp đúng bề ngang thiết kế; ảnh sau
+  //      đó được thu vừa khổ giấy nên bố cục giữ nguyên tỉ lệ.
+  //   2. Luật `pagebreak.avoid` chèn một khối trống (~150px) để khối chữ ký không bị cắt đôi —
+  //      chính nó đẩy phiếu sang trang 2. Phiếu một trang bỏ luật này đi.
+  // TUYỆT ĐỐI KHÔNG dùng `zoom` (html2canvas nuốt dấu cách: "TỔNG THU NHẬP" → "TỔNGTHUNHẬP")
+  // hay `transform: scale` (html2canvas đặt chữ lệch xuống đáy ô) để thu nhỏ phiếu.
+  const heightRatio = (paperHeightMm - PDF_MARGIN_MM.top - PDF_MARGIN_MM.bottom)
+    / (paperWidthMm - PDF_MARGIN_MM.left - PDF_MARGIN_MM.right);
   const holder = document.createElement("div");
   holder.style.position = "fixed";
   holder.style.left = "-10000px";
   holder.style.top = "0";
-  holder.style.width = `${pageWidth}px`;
+  holder.style.width = `${Math.round(pageWidth * 1.7)}px`;
   holder.style.background = "#fff";
-  holder.innerHTML = `<style>${css}</style><div class="payslip-root" style="width:${pageWidth}px">${body}</div>`;
+  holder.innerHTML = `<style>${H2C_BASELINE_PROBE_FIX}${css}</style><div class="payslip-root" style="width:${pageWidth}px${fitOnePage ? ";max-width:none" : ""}">${body}</div>`;
   document.body.appendChild(holder);
+  let designWidth = pageWidth;
+  if (fitOnePage) {
+    // Sức chứa một trang (tính bằng px của bản thiết kế) = bề ngang thiết kế × tỉ lệ giấy. Phiếu
+    // nào quá dài thì NỚI BỀ NGANG THIẾT KẾ ra: vừa tăng sức chứa, vừa bớt chữ xuống dòng — ảnh
+    // vẫn được thu vừa khổ giấy nên kết quả là phiếu nhỏ đi đôi chút chứ không bao giờ sang trang 2.
+    const root = holder.querySelector(".payslip-root");
+    for (let pass = 0; pass < 8; pass += 1) {
+      if (root.getBoundingClientRect().height <= designWidth * heightRatio - 4) break;
+      designWidth = Math.round(designWidth * 1.06);
+      if (designWidth > pageWidth * 1.6) break;
+      root.style.width = `${designWidth}px`;
+    }
+  }
   try {
     await html2pdf()
       .set({
-        margin: [5, 5, 6, 5],
+        margin: [PDF_MARGIN_MM.top, PDF_MARGIN_MM.left, PDF_MARGIN_MM.bottom, PDF_MARGIN_MM.right],
         filename: `${filename}.pdf`,
-        image: { type: "jpeg", quality: 0.96 },
-        html2canvas: { scale: 2, useCORS: true, backgroundColor: "#ffffff", windowWidth: pageWidth },
+        // PNG (không nén mất dữ liệu) + scale 3 ≈ 288dpi: chữ in ra sắc nét, hết mờ.
+        // JPEG quality .96 làm nhòe viền nét chữ nhỏ nên KHÔNG dùng cho văn bản.
+        image: { type: "png" },
+        html2canvas: fitOnePage
+          ? { scale: 3, useCORS: true, backgroundColor: "#ffffff", windowWidth: designWidth, width: designWidth }
+          : { scale: 3, useCORS: true, backgroundColor: "#ffffff", windowWidth: pageWidth },
         jsPDF: { unit: "mm", format: "a4", orientation },
-        pagebreak: { mode: ["css", "legacy"], avoid: [".signature-block", ".sign"] },
+        pagebreak: fitOnePage
+          ? { mode: [] }
+          : { mode: ["css", "legacy"], avoid: [".signature-block", ".sign"] },
       })
       .from(holder.querySelector(".payslip-root"))
       .save();
   } catch (err) {
     console.error("Xuất PDF lỗi, chuyển sang bản HTML in dự phòng:", err);
-    const html = fallbackHtml || `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8"><title>${filename}</title><style>body{margin:0}${css}</style></head><body><div class="payslip-root">${body}</div></body></html>`;
+    const html = fallbackHtml || buildPrintablePage({ css, body, title: filename, orientation });
     const blob = new Blob([html], { type: "text/html;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -3126,7 +3212,7 @@ async function saveA4Pdf({ css = PAYSLIP_BASE_CSS, body, filename, fallbackHtml 
 // Bảng chấm công PDF dùng A4 ngang, mỗi nhân viên đúng một trang. Ngày được trình bày
 // theo HÀNG và chia 01-16 / 17-cuối tháng để không ép 31 ngày thành các cột quá hẹp.
 const ATTENDANCE_PDF_CSS = `${PAYSLIP_BASE_CSS}
-  .payslip-root { width: 1123px; padding: 10px 16px; font-family: Arial, "Noto Sans", sans-serif; font-size: 10px; color: #172033; }
+  .payslip-root { width: 1123px; padding: 10px 16px; font-family: "Segoe UI", Roboto, Arial, "Noto Sans", sans-serif; font-size: 10px; color: #172033; }
   .payslip-root .attendance-sheet { width: 100%; break-inside: avoid-page !important; page-break-inside: avoid !important; }
   .payslip-root .attendance-sheet + .attendance-sheet { break-before: page; page-break-before: always; }
   .payslip-root .attendance-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; border-bottom: 2px solid #172033; padding-bottom: 6px; }
@@ -3164,7 +3250,7 @@ const ATTENDANCE_PDF_CSS = `${PAYSLIP_BASE_CSS}
   .payslip-root .attendance-summary-box { border: 1px solid #7d8797; padding: 5px 7px; }
   .payslip-root .attendance-summary-title { margin-bottom: 4px; font-size: 8.5px; font-weight: 800; text-transform: uppercase; color: #526071; }
   .payslip-root .attendance-metrics { display: flex; flex-wrap: wrap; gap: 4px 12px; }
-  .payslip-root .attendance-metric strong { font-family: "Courier New", monospace; font-size: 10px; color: #111827; }
+  .payslip-root .attendance-metric strong { font-family: Consolas, "Segoe UI", Arial, sans-serif; font-variant-numeric: tabular-nums; font-size: 10px; color: #111827; }
   .payslip-root .attendance-legend { line-height: 1.45; color: #475569; }
   .payslip-root .attendance-signature { break-inside: avoid-page !important; page-break-inside: avoid !important; }
   .payslip-root .attendance-sign-date { margin-top: 7px; text-align: right; font-style: italic; }
@@ -3536,8 +3622,10 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
     </tr>`).join("")}`).join("");
 
   const css = `${PAYSLIP_BASE_CSS}
-    /* Toàn phiếu dùng Times New Roman (VnTime) theo chuẩn văn bản hành chính Việt Nam. */
-    .payslip-root { width: 794px; padding: 6px 15px 8px; font-family: "Times New Roman", "Nimbus Roman No9 L", "Liberation Serif", Times, serif; color: #10233f; font-size: 10.6px; line-height: 1.4; }
+    /* Bộ chữ Segoe UI cho toàn phiếu: thân chữ cao, nét đều nên chữ nhỏ in ra vẫn rõ; Times New
+       Roman nét mảnh ở cỡ 9-10px bị lòe khi in. Dấu tiếng Việt của Segoe UI cũng gọn, không đội
+       cao làm lệch dòng như font serif. */
+    .payslip-root { width: 794px; padding: 6px 15px 8px; font-family: "Segoe UI", Roboto, Arial, "Helvetica Neue", Helvetica, sans-serif; color: #10233f; font-size: 10.4px; line-height: 1.4; text-rendering: geometricPrecision; }
     /* KHÔNG đặt page-break-inside: avoid cho cả phiếu — html2pdf sẽ đẩy nguyên khối cao gần
        bằng trang sang trang sau, sinh ra một trang trắng ở đầu. Chỉ khối chữ ký mới cần avoid. */
     .payslip-root .employee-slip { width: 100%; }
@@ -3545,19 +3633,19 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
     .payslip-root .brand-block { width: 60%; }
     .payslip-root .brand-logo { font-size: 30px; line-height: .95; font-weight: 700; color: #0c3d91; letter-spacing: .8px; }
     .payslip-root .company-name { margin-top: 4px; font-size: 11.6px; font-weight: 700; color: #1e293b; text-transform: uppercase; }
-    .payslip-root .company-line { margin-top: 5px; font-size: 9.6px; color: #475569; line-height: 1.45; }
+    .payslip-root .company-line { margin-top: 5px; font-size: 9.6px; color: #2f3e55; line-height: 1.45; font-weight: 500; }
     .payslip-root .title-block { margin-top: 4px; text-align: center; }
     .payslip-root .slip-title { margin: 0; font-size: 23px; font-weight: 700; color: #123f93; letter-spacing: .4px; text-align: center; }
     .payslip-root .period-pill { display: inline-flex; align-items: center; justify-content: center; margin-top: 8px; min-height: 26px; background: #0c3d91; color: #fff; border-radius: 8px; padding: 6px 22px; font-weight: 700; font-size: 10.6px; line-height: 1.4; letter-spacing: .3px; text-align: center; }
-    .payslip-root .slip-meta { width: 40%; text-align: right; color: #334155; font-size: 9.6px; line-height: 1.6; }
+    .payslip-root .slip-meta { width: 40%; text-align: right; color: #22314a; font-size: 9.6px; line-height: 1.6; }
     .payslip-root .slip-meta b { color: #0f172a; }
-    .payslip-root .period-note { margin-top: 8px; border: 1px solid #edd184; background: #fff9e9; color: #8a6513; border-radius: 7px; padding: 5px 8px; font-size: 8px; font-weight: 700; line-height: 1.35; }
+    .payslip-root .period-note { margin-top: 8px; border: 1px solid #edd184; background: #fff9e9; color: #6d4f0b; border-radius: 7px; padding: 5px 8px; font-size: 8px; font-weight: 700; line-height: 1.35; }
 
     .payslip-root .employee-info { margin-top: 9px; display: grid; grid-template-columns: 1.08fr 1.2fr .72fr .86fr; border: 1px solid #d8e0ec; border-radius: 12px; overflow: hidden; }
     /* Mọi ô đều canh GIỮA theo chiều dọc, chữ không dính vào đường kẻ. */
-    .payslip-root .info-box { padding: 9px 10px; min-height: 58px; border-right: 1px solid #e2e8f0; background: #fff; display: flex; flex-direction: column; justify-content: center; }
+    .payslip-root .info-box { padding: 8px 10px 9.5px; min-height: 58px; border-right: 1px solid #e2e8f0; background: #fff; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
     .payslip-root .info-box:last-child { border-right: none; }
-    .payslip-root .info-label { font-size: 9.2px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: .35px; line-height: 1.3; }
+    .payslip-root .info-label { font-size: 9.2px; text-transform: uppercase; color: #3f4d63; font-weight: 700; letter-spacing: .35px; line-height: 1.3; }
     .payslip-root .info-value { margin-top: 5px; color: #0f172a; font-size: 12px; line-height: 1.4; font-weight: 700; }
 
     .payslip-root .money-tables { margin-top: 11px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
@@ -3565,98 +3653,102 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
     .payslip-root .money-head { display: flex; align-items: center; gap: 7px; background: #0b3d91; color: #fff; padding: 7px 10px; font-size: 11.6px; font-weight: 700; text-transform: uppercase; }
     .payslip-root .money-icon { width: 20px; height: 20px; border-radius: 50%; background: #fff; color: #0b3d91; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
     .payslip-root table.emp-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    .payslip-root .emp-table th, .payslip-root .emp-table td { border: 1px solid #e3e8f1; padding: 8.4px 9px; vertical-align: middle; }
-    .payslip-root .emp-table thead th { background: #f7f9fc; color: #475569; font-size: 9.4px; font-weight: 700; text-transform: uppercase; padding: 8px 9px; line-height: 1.3; }
-    .payslip-root .emp-table .idx { width: 32px; text-align: center; color: #475569; }
-    .payslip-root .emp-table .amount { width: 108px; text-align: right; white-space: nowrap; font-size: 11.6px; font-weight: 700; }
+    /* Chữ nằm GIỮA ô: đệm dưới nhỉnh hơn đệm trên đúng bằng phần chân chữ tiếng Việt lấn xuống,
+       nhờ vậy dòng chữ không còn dính sát đường kẻ dưới như bản cũ. */
+    /* Mọi ô canh GIỮA theo cả chiều ngang lẫn chiều dọc. Riêng cột SỐ TIỀN giữ canh phải để các
+       con số thẳng hàng đơn vị — cộng nhẩm theo cột mới nhanh. */
+    .payslip-root .emp-table th, .payslip-root .emp-table td { border: 1px solid #e3e8f1; padding: 7.8px 9px 12.2px; vertical-align: middle; text-align: center; }
+    .payslip-root .emp-table thead th { background: #f7f9fc; color: #2f3e55; font-size: 9.2px; font-weight: 700; text-transform: uppercase; padding: 8.4px 9px 9.6px; line-height: 1.3; letter-spacing: .2px; }
+    .payslip-root .emp-table .idx { width: 32px; text-align: center; color: #2f3e55; }
+    .payslip-root .emp-table .amount { width: 108px; text-align: right; white-space: nowrap; font-size: 11.2px; font-weight: 700; font-variant-numeric: tabular-nums; }
     .payslip-root .emp-table .amount.income { color: #047857; }
     .payslip-root .emp-table .amount.deduct { color: #c62828; }
-    .payslip-root .entry-label { font-size: 11.2px; font-weight: 700; color: #0f172a; line-height: 1.42; }
-    .payslip-root .entry-note { margin-top: 3px; color: #5b6b80; font-size: 9.6px; line-height: 1.5; }
+    .payslip-root .entry-label { font-size: 10.6px; font-weight: 600; color: #0f172a; line-height: 1.36; }
+    .payslip-root .entry-note { margin-top: 2.4px; color: #3f4f66; font-size: 9px; line-height: 1.36; font-weight: 400; }
     /* Dòng MỤC của bảng thu nhập (I. Lương · II. Phụ cấp · III. Thưởng) — mảnh, nền nhạt. */
-    .payslip-root .emp-table .group-row td { background: #f2f6fc; padding: 4.6px 9px; }
+    .payslip-root .emp-table .group-row td { background: #f2f6fc; padding: 4.6px 9px 7.8px; }
     .payslip-root .emp-table .group-row .idx { color: #0b3d91; font-weight: 700; }
     .payslip-root .emp-table .group-row .amount { color: #0b3d91; font-size: 11px; }
     .payslip-root .group-label { font-size: 10.4px; font-weight: 700; color: #0b3d91; text-transform: uppercase; letter-spacing: .3px; line-height: 1.3; }
     /* Dòng tổng của mỗi bảng: nền nhạt đậm hơn + kẻ trên rõ để nổi khỏi các dòng chi tiết. */
-    .payslip-root .emp-total td { background: #e9f0fa; border-top: 1.6px solid #b9cce8; font-size: 11.6px; font-weight: 700; text-transform: uppercase; padding: 8.5px 9px; color: #0b3d91; }
+    .payslip-root .emp-total td { background: #e9f0fa; border-top: 1.6px solid #b9cce8; font-size: 11.2px; font-weight: 700; text-transform: uppercase; padding: 7.8px 9px 12.2px; color: #0b3d91; font-variant-numeric: tabular-nums; text-align: center; }
 
     .payslip-root .net-banner { margin-top: 9px; min-height: 54px; border-radius: 12px; background: linear-gradient(90deg,#0b3d91,#08479d); color: #fff; display: flex; align-items: center; justify-content: space-between; padding: 10px 15px; }
     .payslip-root .net-label { font-size: 13.2px; font-weight: 700; text-transform: uppercase; letter-spacing: .3px; }
     .payslip-root .net-formula { margin-top: 3px; font-size: 9.6px; opacity: .95; }
     .payslip-root .net-money { font-size: 30px; line-height: 1; font-weight: 700; letter-spacing: .4px; white-space: nowrap; }
-    .payslip-root .words-line { margin-top: 7px; font-size: 10.4px; color: #334155; line-height: 1.4; }
+    .payslip-root .words-line { margin-top: 7px; font-size: 10.4px; color: #22314a; line-height: 1.4; }
 
     /* 6 ô tóm tắt: lương cơ bản · phụ cấp · thưởng · tổng thu nhập · tổng khấu trừ · thực nhận. */
     .payslip-root .quick-summary { margin-top: 7px; display: grid; grid-template-columns: repeat(6,1fr); border: 1px solid #d8e0ec; border-radius: 10px; overflow: hidden; background: #f9fbfe; }
-    .payslip-root .quick-cell { padding: 8px 6px; min-height: 45px; text-align: center; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: center; }
+    .payslip-root .quick-cell { padding: 7px 6px 8.5px; min-height: 45px; text-align: center; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: center; }
     .payslip-root .quick-cell:last-child { border-right: none; }
-    .payslip-root .quick-label { font-size: 8.4px; color: #64748b; text-transform: uppercase; font-weight: 700; line-height: 1.3; }
+    .payslip-root .quick-label { font-size: 8.4px; color: #3f4d63; text-transform: uppercase; font-weight: 700; line-height: 1.3; }
     .payslip-root .quick-value { margin-top: 4px; font-size: 10.8px; font-weight: 700; color: #10233f; line-height: 1.35; white-space: nowrap; }
     .payslip-root .quick-value.allowance { color: #92610a; }
     .payslip-root .quick-value.bonus { color: #047857; }
     .payslip-root .quick-value.takehome { color: #0b3d91; font-size: 11.8px; }
 
     .payslip-root .bank-strip { margin-top: 7px; border: 1px solid #d8e0ec; border-radius: 10px; overflow: hidden; }
-    .payslip-root .bank-title { padding: 6px 10px; background: #f4f7fb; color: #0b3d91; font-size: 9.8px; font-weight: 700; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; }
+    .payslip-root .bank-title { padding: 6px 10px; background: #f4f7fb; color: #0b3d91; font-size: 9.8px; font-weight: 700; text-transform: uppercase; border-bottom: 1px solid #e2e8f0; text-align: center; }
     .payslip-root .bank-grid { display: grid; grid-template-columns: .95fr 1fr 1.05fr 1.05fr; }
-    .payslip-root .bank-item { padding: 8px 9px; min-height: 49px; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: center; }
+    .payslip-root .bank-item { padding: 7px 9px 8.5px; min-height: 49px; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
     .payslip-root .bank-item:last-child { border-right: none; }
-    .payslip-root .bank-label { font-size: 8.6px; text-transform: uppercase; color: #64748b; font-weight: 700; line-height: 1.3; }
+    .payslip-root .bank-label { font-size: 8.6px; text-transform: uppercase; color: #3f4d63; font-weight: 700; line-height: 1.3; }
     .payslip-root .bank-value { margin-top: 4px; font-size: 10.6px; line-height: 1.4; color: #0f172a; font-weight: 700; word-break: break-word; }
-    .payslip-root .bank-method { margin-top: 3px; font-size: 8.8px; font-weight: 400; color: #64748b; line-height: 1.3; }
+    .payslip-root .bank-method { margin-top: 3px; font-size: 8.8px; font-weight: 600; color: #3f4d63; line-height: 1.3; }
     .payslip-root .bank-amount { margin-top: 1px; font-size: 12.4px; font-weight: 700; color: #0b3d91; line-height: 1.3; white-space: nowrap; }
-    .payslip-root .reconcile-note { margin-top: 5px; border-radius: 7px; padding: 4px 7px; background: #fff6e8; border: 1px solid #f2d5a5; color: #9a6700; font-size: 8.5px; line-height: 1.3; }
+    .payslip-root .reconcile-note { margin-top: 5px; border-radius: 7px; padding: 4px 7px; background: #fff6e8; border: 1px solid #f2d5a5; color: #7a5100; font-size: 8.5px; line-height: 1.3; }
 
     .payslip-root .signature-block { margin-top: 9px; border-top: 1px solid #e2e8f0; padding-top: 7px; page-break-inside: avoid; }
-    .payslip-root .sign-date { text-align: right; color: #64748b; font-size: 9.4px; font-style: italic; margin: 0; }
+    .payslip-root .sign-date { text-align: right; color: #3f4d63; font-size: 9.4px; font-style: italic; margin: 0; }
     .payslip-root .sign-grid { margin-top: 8px; display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
     .payslip-root .sign-cell { text-align: center; min-height: 94px; }
     .payslip-root .sign-role { font-size: 10.6px; font-weight: 700; text-transform: uppercase; color: #10233f; }
-    .payslip-root .sign-hint { margin-top: 2px; font-size: 8.8px; color: #64748b; font-style: italic; }
+    .payslip-root .sign-hint { margin-top: 2px; font-size: 8.8px; color: #3f4d63; font-style: italic; font-weight: 500; }
     .payslip-root .sign-space { height: 42px; }
     .payslip-root .sign-who { margin-top: 6px; font-size: 10.6px; font-weight: 700; color: #1f2937; }
-    .payslip-root .sign-when { margin-top: 2px; font-size: 8.6px; color: #64748b; }
+    .payslip-root .sign-when { margin-top: 2px; font-size: 8.6px; color: #3f4d63; }
     .payslip-root .ok { color: #166534; border: 1.7px solid #16a34a; display: inline-block; border-radius: 6px; padding: 3px 10px; margin-top: 9px; font-size: 9px; font-weight: 700; transform: rotate(-5deg); }
-    .payslip-root .pending { margin-top: 13px; color: #64748b; font-size: 8.5px; font-style: italic; }
+    .payslip-root .pending { margin-top: 13px; color: #3f4d63; font-size: 8.5px; font-style: italic; }
     .payslip-root .stamp { width: 66px; height: 66px; border: 1.8px double #c62828; border-radius: 50%; color: #c62828; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 5px; margin: 4px auto 0; transform: rotate(-9deg); }
     .payslip-root .stamp .s1 { font-size: 8.2px; font-weight: 700; line-height: 1.18; }
     .payslip-root .stamp .s2 { margin-top: 1px; font-size: 5px; font-weight: 700; text-transform: uppercase; line-height: 1.15; }
     .payslip-root .stamp .s3 { margin-top: 1px; font-size: 4.9px; line-height: 1.15; }
-    .payslip-root .stamp.empty { border-style: dashed; color: #94a3b8; transform: none; }
-    .payslip-root .employee-foot { margin-top: 8px; border-top: 1px solid #e2e8f0; padding-top: 6px; color: #64748b; font-size: 9px; line-height: 1.4; text-align: center; }
+    .payslip-root .stamp.empty { border-style: dashed; color: #7688a0; transform: none; }
+    .payslip-root .employee-foot { margin-top: 8px; border-top: 1px solid #e2e8f0; padding-top: 6px; color: #3f4d63; font-size: 9px; line-height: 1.4; text-align: center; font-weight: 500; }
 
     /* Nhân viên nhiều khoản: co dần để giữ đúng MỘT trang A4 mà chữ vẫn đọc được. */
-    .payslip-root .employee-slip.dense .emp-table th, .payslip-root .employee-slip.dense .emp-table td { padding: 7px 8px; }
-    .payslip-root .employee-slip.dense .emp-table .group-row td { padding: 3.8px 8px; }
+    .payslip-root .employee-slip.dense .emp-table th, .payslip-root .employee-slip.dense .emp-table td { padding: 6.4px 8px 10.6px; }
+    .payslip-root .employee-slip.dense .emp-table .group-row td { padding: 3.6px 8px 6.6px; }
     .payslip-root .employee-slip.dense .group-label { font-size: 10px; }
     .payslip-root .employee-slip.dense .entry-label { font-size: 10.4px; }
     .payslip-root .employee-slip.dense .entry-note { font-size: 9px; line-height: 1.4; }
-    .payslip-root .employee-slip.dense .info-box { min-height: 56px; padding: 8px 9px; }
-    .payslip-root .employee-slip.dense .quick-cell { min-height: 44px; padding: 7px; }
-    .payslip-root .employee-slip.dense .bank-item { min-height: 48px; padding: 7px 8px; }
+    .payslip-root .employee-slip.dense .info-box { min-height: 56px; padding: 7px 9px 8.6px; }
+    .payslip-root .employee-slip.dense .quick-cell { min-height: 44px; padding: 6.2px 7px 7.8px; }
+    .payslip-root .employee-slip.dense .bank-item { min-height: 48px; padding: 6.2px 8px 7.8px; }
     .payslip-root .employee-slip.dense .net-banner { min-height: 52px; padding: 8px 14px; }
     .payslip-root .employee-slip.dense .net-money { font-size: 27px; }
     .payslip-root .employee-slip.dense .sign-space { height: 40px; }
     .payslip-root .employee-slip.dense .sign-cell { min-height: 92px; }
 
-    .payslip-root .employee-slip.ultra-dense .emp-table th, .payslip-root .employee-slip.ultra-dense .emp-table td { padding: 2.4px 7px; }
-    .payslip-root .employee-slip.ultra-dense .emp-table thead th { padding: 5px 7px; }
-    .payslip-root .employee-slip.ultra-dense .emp-table .group-row td { padding: 2.2px 7px; }
+    .payslip-root .employee-slip.ultra-dense .emp-table th, .payslip-root .employee-slip.ultra-dense .emp-table td { padding: 1.6px 7px 5.2px; }
+    .payslip-root .employee-slip.ultra-dense .emp-table thead th { padding: 5px 7px 6.2px; }
+    .payslip-root .employee-slip.ultra-dense .emp-table .group-row td { padding: 1.5px 7px 3.9px; }
     .payslip-root .employee-slip.ultra-dense .group-label { font-size: 9.4px; }
     .payslip-root .employee-slip.ultra-dense .emp-table .group-row .amount { font-size: 10px; }
-    .payslip-root .employee-slip.ultra-dense .emp-total td { padding: 4.5px 7px; font-size: 10.4px; }
+    .payslip-root .employee-slip.ultra-dense .emp-total td { padding: 4.6px 7px 6px; font-size: 10.4px; }
     .payslip-root .employee-slip.ultra-dense .entry-label { font-size: 9.8px; line-height: 1.32; }
     .payslip-root .employee-slip.ultra-dense .entry-note { font-size: 8.4px; line-height: 1.26; margin-top: 1.5px; }
     .payslip-root .employee-slip.ultra-dense .money-head { padding: 5px 9px; font-size: 10.6px; }
     .payslip-root .employee-slip.ultra-dense .money-tables { margin-top: 6px; }
-    .payslip-root .employee-slip.ultra-dense .info-box { min-height: 38px; padding: 3px 9px; }
+    .payslip-root .employee-slip.ultra-dense .info-box { min-height: 38px; padding: 2.4px 9px 3.8px; }
     .payslip-root .employee-slip.ultra-dense .info-value { font-size: 10.8px; margin-top: 3px; }
     .payslip-root .employee-slip.ultra-dense .employee-info { margin-top: 7px; }
-    .payslip-root .employee-slip.ultra-dense .quick-cell { min-height: 31px; padding: 2.5px 6px; }
+    .payslip-root .employee-slip.ultra-dense .quick-cell { min-height: 31px; padding: 2px 6px 3.2px; }
     .payslip-root .employee-slip.ultra-dense .quick-value { font-size: 10.6px; margin-top: 2px; }
     .payslip-root .employee-slip.ultra-dense .quick-summary { margin-top: 6px; }
-    .payslip-root .employee-slip.ultra-dense .bank-item { min-height: 34px; padding: 2.5px 8px; }
+    .payslip-root .employee-slip.ultra-dense .bank-item { min-height: 34px; padding: 2px 8px 3.2px; }
     .payslip-root .employee-slip.ultra-dense .bank-title { padding: 4px 10px; }
     .payslip-root .employee-slip.ultra-dense .bank-strip { margin-top: 6px; }
     .payslip-root .employee-slip.ultra-dense .bank-amount { font-size: 11.4px; }
@@ -3774,10 +3866,12 @@ function buildPayslipParts(row, { company = {}, period = {}, approval = null, pa
 function buildPayslipHtml(row, options = {}) {
   const { css, body, month, year } = buildPayslipParts(row, options);
   const autoPrint = "<scr" + "ipt>window.addEventListener('load', function () { setTimeout(function () { window.print(); }, 350); });</scr" + "ipt>";
-  return `<!DOCTYPE html><html lang="vi"><head><meta charset="utf-8">
-<title>Phieu luong T${month}-${year} - ${payslipEscape(row.name)}</title>
-<style>@page { size: A4; margin: 12mm; } body { margin: 0; } @media print { .payslip-root { padding: 0; } }${css}</style></head>
-<body><div class="payslip-root">${body}</div>${autoPrint}</body></html>`;
+  return buildPrintablePage({
+    css,
+    body,
+    title: `Phieu luong T${month}-${year} - ${row.name}`,
+    extraHead: autoPrint,
+  });
 }
 
 const payslipFileBase = (row, period = {}) =>
@@ -3791,6 +3885,7 @@ async function exportPayslipPdf(row, options = {}) {
     body,
     filename: payslipFileBase(row, options.period),
     fallbackHtml: buildPayslipHtml(row, options),
+    fitOnePage: true,
   });
 }
 
@@ -3876,6 +3971,7 @@ async function exportEmployeeProfilePdf(employee, { company = {}, pay = {}, peri
     css,
     body,
     filename: `DOMIX_Luong_bao_hiem_${String(employee.name || "nhan_vien").trim().replace(/\s+/g, "_")}`,
+    fitOnePage: true,
   });
 }
 
@@ -21250,6 +21346,7 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
   const blankForm = {
     name: "", position: "", dept: "", baseSalary: "", dailySalary: "", bonusTarget: "", kpi: "100", joined: TODAY_STR,
     dependents: "0", mealAllowance: "730000", attendanceBonus: "300000",
+    otherAllowance: "0", otherBonus: "0", allowances: [],
     roleType: "khac", customScore: "80",
     contractType: "chinh_thuc", probationRate: "85",
     dob: "", hometown: "", bankName: "", bankAccount: "", bankAccountHolder: "", phone: "", email: "", resignedDate: "",
@@ -21304,6 +21401,11 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
     setForm({
       name: e.name, position: e.position, dept: e.dept, baseSalary: String(mc.baseSalary), dailySalary: String(mc.dailySalary || 0), bonusTarget: String(mc.bonusTarget), kpi: String(mc.kpi), joined: e.joined,
       dependents: String(e.dependents || 0), mealAllowance: String(mc.mealAllowance || 0), attendanceBonus: String(mc.attendanceBonus || 0),
+      // Ô "Phụ cấp khác" tách khỏi các khoản kế toán khai ở tab Phụ cấp; phần còn lại giữ nguyên
+      // trong form.allowances để lưu lại không làm mất khoản nào.
+      otherAllowance: String((Array.isArray(mc.allowances) ? mc.allowances : []).find((item) => String(item?.id) === PROFILE_OTHER_ALLOWANCE_ID)?.amount || 0),
+      otherBonus: String(mc.otherBonus || e.otherBonus || 0),
+      allowances: (Array.isArray(mc.allowances) ? mc.allowances : []).filter((item) => String(item?.id) !== PROFILE_OTHER_ALLOWANCE_ID),
       roleType: e.roleType, customScore: String(e.customScore || 0),
       contractType: mc.contractType || "chinh_thuc", probationRate: String(Math.round((mc.probationRate || DEFAULT_PROBATION_RATE) * 100)),
       dob: e.dob || "", hometown: e.hometown || "", bankName: e.bankName || "", bankAccount: e.bankAccount || "", bankAccountHolder: e.bankAccountHolder || e.name || "", phone: e.phone || "", email: e.email || "", resignedDate: e.resignedDate || "",
@@ -21378,6 +21480,20 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
       accountRole: normalizeAccountRole(form.accountRole || "user"),
       baseSalary: num(form.baseSalary), dailySalary: num(form.dailySalary), bonusTarget: num(form.bonusTarget), kpi: num(form.kpi),
       dependents: num(form.dependents), mealAllowance: num(form.mealAllowance) || 730000, attendanceBonus: num(form.attendanceBonus),
+      // Ô "Thưởng khác" → cột Thưởng của bảng lương; ô "Phụ cấp khác" → một dòng trong danh sách
+      // phụ cấp khai báo thêm nên tự chảy vào cột Phụ cấp và hiện chi tiết trên phiếu lương.
+      otherBonus: num(form.otherBonus),
+      allowances: [
+        ...(Array.isArray(form.allowances) ? form.allowances : []),
+        ...(num(form.otherAllowance) > 0 ? [{
+          id: PROFILE_OTHER_ALLOWANCE_ID,
+          type: "khac",
+          label: "Phụ cấp khác",
+          amount: num(form.otherAllowance),
+          prorate: false,
+          note: "Khai trong hồ sơ nhân sự",
+        }] : []),
+      ],
       customScore: num(form.customScore),
       probationRate: num(form.probationRate) / 100 || DEFAULT_PROBATION_RATE,
       adSpend: num(form.adSpend), adRevenue: num(form.adRevenue), conversions: num(form.conversions), ctr: num(form.ctr),
@@ -21392,12 +21508,14 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
         .sort((a, b) => a.minRevenue - b.minRevenue),
     };
     delete parsed.compEffectiveFrom;
+    delete parsed.otherAllowance; // chỉ là ô nhập của form, đã quy về dòng trong allowances
     setAccountLoading(true);
     setAccountError("");
     setAccountMessage("");
     const nextEmployee = editingId
       ? { ...editingEmployee, ...parsed, id: editingId }
-      : { ...parsed, id: Date.now(), status: "active", attendance: defaultAttendance(), otherBonus: 0, advance: 0 };
+      // KHÔNG ghi đè otherBonus về 0 nữa — nhân sự mới có thể được nhập luôn thưởng khác trên form.
+      : { ...parsed, id: Date.now(), status: "active", attendance: defaultAttendance(), advance: 0 };
     // LƯƠNG HIỆU LỰC THEO THÁNG: nếu cấu hình lương/KPI thay đổi thì ghi mốc "áp dụng từ
     // tháng" vào compensationHistory — bảng lương các tháng TRƯỚC mốc giữ nguyên như cũ.
     if (editingId && editingEmployee) {
@@ -21642,6 +21760,14 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
             <label className="text-xs text-muted flex flex-col gap-1">Số người phụ thuộc<input type="number" value={form.dependents} onChange={(e) => setForm({ ...form, dependents: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm ktns-mono" /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Phụ cấp ăn trưa (đ)<MoneyInput value={form.mealAllowance} onChange={(v) => setForm({ ...form, mealAllowance: v })} /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Phụ cấp chuyên cần (đ)<MoneyInput value={form.attendanceBonus} onChange={(v) => setForm({ ...form, attendanceBonus: v })} /></label>
+            <label className="text-xs text-muted flex flex-col gap-1">Phụ cấp khác (đ)
+              <MoneyInput value={form.otherAllowance} onChange={(v) => setForm({ ...form, otherAllowance: v })} />
+              <span className="text-[10px] text-ink-light normal-case">Xăng xe, điện thoại, nhà ở… Cộng thẳng vào cột <strong>Phụ cấp</strong> của Bảng lương và hiện thành một dòng riêng trong mục II. PHỤ CẤP của phiếu lương.</span>
+            </label>
+            <label className="text-xs text-muted flex flex-col gap-1">Thưởng khác (đ)
+              <MoneyInput value={form.otherBonus} onChange={(v) => setForm({ ...form, otherBonus: v })} />
+              <span className="text-[10px] text-ink-light normal-case">Thưởng lễ, thưởng nóng, thưởng dự án… Cộng thẳng vào cột <strong>Thưởng</strong> của Bảng lương và hiện trong mục III. THƯỞNG của phiếu lương.</span>
+            </label>
             <div className="md:col-span-2 xl:col-span-3 rounded bg-gold/10 px-2.5 py-1.5 text-[11px] text-ink">Các khoản TIỀN ở trên lưu thành bản ghi riêng của <strong>tháng {String(reportMonth).padStart(2, "0")}/{reportYear}</strong> (kỳ đang chọn đầu trang) — tháng trước giữ nguyên mức cũ.</div>
           </div>
 
@@ -21842,6 +21968,7 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
         )}
         {visibleEmployees.map((employee) => {
           const account = accountForEmployee(employee);
+          const mobilePay = computePayroll(employee, reportYear, reportMonth, DEFAULT_KPI_TIERS, otRecords);
           return (
             <article key={`mobile-${employee.id}`} className="rounded-xl border border-paper-line bg-white p-4 shadow-sm">
               <div className="flex items-start justify-between gap-3">
@@ -21854,6 +21981,9 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
               <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
                 <div className="rounded-lg bg-paper px-3 py-2"><div className="text-[10px] uppercase text-muted">{ui("Tài khoản", "Account")}</div><div className={`mt-1 font-semibold ${account?.active ? "text-ledger-green" : account ? "text-stamp-red" : "text-gold"}`}>{account ? (account.active ? ui("Đang hoạt động", "Active") : ui("Đã khóa", "Locked")) : ui("Chưa liên kết", "Not linked")}</div></div>
                 <div className="rounded-lg bg-paper px-3 py-2"><div className="text-[10px] uppercase text-muted">Hợp đồng</div><div className="mt-1 font-semibold text-ink">{CONTRACT_META[employee.contractType]?.label || "Chính thức"}</div></div>
+                {/* Hai ô PHỤ CẤP - THƯỞNG của kỳ đang xem, khớp đúng Bảng lương tổng quát. */}
+                <div className="rounded-lg bg-paper px-3 py-2"><div className="text-[10px] uppercase text-muted">Phụ cấp</div><div className="mt-1 ktns-mono font-semibold text-[#92610A]">{fmtVND(payrollAllowanceTotal(mobilePay))}</div></div>
+                <div className="rounded-lg bg-paper px-3 py-2"><div className="text-[10px] uppercase text-muted">Thưởng</div><div className="mt-1 ktns-mono font-semibold text-ledger-green">{fmtVND(payrollBonusTotal(mobilePay))}</div></div>
               </div>
               <div className="mt-3 truncate text-xs text-muted">{employee.email || "Chưa có email"}{employee.phone ? ` · ${employee.phone}` : ""}</div>
               <div className="mt-4 flex gap-2">
@@ -21870,11 +22000,13 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
         <table data-disable-generated-total="true" className="domix-db-table text-sm">
           <thead>
             <tr>
-              {/* BẢNG CHỈ ĐỂ QUÉT NHANH — 6 cột thiết yếu: họ tên + vị trí, hợp đồng, lương cơ bản,
+              {/* BẢNG CHỈ ĐỂ QUÉT NHANH — họ tên + vị trí, hợp đồng, lương cơ bản, phụ cấp, thưởng,
                   tài khoản, trạng thái, thao tác. KPI/quyền/liên hệ... nằm sau nút "Chi tiết" và form Sửa. */}
               <th className="px-4 py-3 text-left">{ui("Nhân viên · Vị trí", "Employee · Position")}</th>
               <th className="hidden px-4 py-3 text-left xl:table-cell">{ui("Hợp đồng", "Contract")}</th>
               <th className="px-4 py-3 text-right">{ui("Lương cơ bản", "Base salary")}</th>
+              <th className="px-4 py-3 text-right">{ui("Phụ cấp", "Allowance")}</th>
+              <th className="px-4 py-3 text-right">{ui("Thưởng", "Bonus")}</th>
               <th className="px-4 py-3 text-left">{ui("Tài khoản", "Account")}</th>
               <th className="px-4 py-3 text-left">{ui("Trạng thái", "Status")}</th>
               <th className="px-4 py-3 text-right">{ui("Thao tác", "Actions")}</th>
@@ -21882,7 +22014,7 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
           </thead>
           <tbody>
             {visibleEmployees.length === 0 && accountsWithoutProfile.length === 0 && (
-              <tr><td colSpan={6} className="px-4 py-10 text-center text-sm text-muted">Chưa có dữ liệu nhân sự phù hợp với kỳ đang xem.</td></tr>
+              <tr><td colSpan={8} className="px-4 py-10 text-center text-sm text-muted">Chưa có dữ liệu nhân sự phù hợp với kỳ đang xem.</td></tr>
             )}
             {visibleEmployees.map((e) => {
               const months = tenureMonths(e.joined);
@@ -21906,6 +22038,16 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
                         không làm cột này của tháng cũ nhảy theo. */}
                     <div className="ktns-mono font-semibold text-ink">{fmtVND(pay.baseSalary)}</div>
                     <div className="mt-0.5 text-[11px] text-muted" title={`Lương kỳ ${reportMonth}/${reportYear} theo công thực tế`}>Kỳ này <span className="ktns-mono">{fmtVND(pay.usesRevenueModel ? pay.mainSalary : pay.salaryByDays)}</span> · Công {cong.toFixed(1)}/{standardWorkDaysFor(reportYear, reportMonth)}</div>
+                  </td>
+                  {/* Hai cột PHỤ CẤP - THƯỞNG của kỳ đang xem, cùng công thức gom nhóm với Bảng
+                      lương tổng quát và phiếu lương PDF nên ba màn hình luôn khớp số. */}
+                  <td className="px-4 py-2.5 text-right min-w-[130px]">
+                    <div className="ktns-mono font-semibold text-[#92610A]">{fmtVND(payrollAllowanceTotal(pay))}</div>
+                    <div className="mt-0.5 text-[11px] text-muted">ăn trưa · thâm niên · chuyên cần · tăng ca · khác</div>
+                  </td>
+                  <td className="px-4 py-2.5 text-right min-w-[130px]">
+                    <div className="ktns-mono font-semibold text-ledger-green">{fmtVND(payrollBonusTotal(pay))}</div>
+                    <div className="mt-0.5 text-[11px] text-muted">hoa hồng · doanh số · KPI · thưởng khác</div>
                   </td>
                   <td className="px-4 py-2.5 min-w-[140px]">
                     {/* Chỉ hiển thị TRẠNG THÁI + QUYỀN dạng chữ — đổi quyền ở form Sửa, Khóa/Mở ở menu ⋯. */}
@@ -21971,7 +22113,7 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
                     <div className="font-semibold text-ink-light">{isSystemAdminAccount ? "Tài khoản hệ thống" : "Tài khoản tạm thời · chờ cấp hồ sơ"}</div>
                     <div className="mt-1 text-[11px] text-muted ktns-mono">{user.email}</div>
                   </td>
-                  <td className="px-4 py-3 text-xs text-muted" colSpan={2}>
+                  <td className="px-4 py-3 text-xs text-muted" colSpan={4}>
                     {isSystemAdminAccount
                       ? "Tài khoản quản trị không bắt buộc là nhân viên nhận lương. Chỉ tạo hồ sơ nếu người này cần chấm công và tính lương."
                       : "Tài khoản đang bị chặn: không xem được bất kỳ dữ liệu nào cho tới khi được liên kết hồ sơ nhân sự. Liên kết hồ sơ để cấp quyền tham gia hệ thống."}
@@ -23383,7 +23525,12 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
   const totalEmployerIns = visiblePayrollRows.reduce((a, r) => a + r.employerInsurance, 0);
   const totalTax = visiblePayrollRows.reduce((a, r) => a + r.thueTNCN, 0);
   const totalCompanyCost = visiblePayrollRows.reduce((a, r) => a + r.employerTotalCost, 0);
-  const totalCommission = visiblePayrollRows.reduce((a, r) => a + r.commission + r.compBonus + r.techUpsale, 0);
+  // Tổng PHỤ CẤP và tổng THƯỞNG của kỳ — mọi tab trong màn hình Lương đều lấy từ đúng hai hàm
+  // gom nhóm dùng chung với Bảng lương tổng quát, Tổng quan và phiếu lương PDF nên không lệch số.
+  const periodAllowanceSum = payrollRows.reduce((sum, r) => sum + payrollAllowanceTotal(r), 0);
+  const periodBonusSum = payrollRows.reduce((sum, r) => sum + payrollBonusTotal(r), 0);
+  const proposalAllowanceSum = visiblePayrollRows.reduce((sum, r) => sum + payrollAllowanceTotal(r), 0);
+  const proposalBonusSum = visiblePayrollRows.reduce((sum, r) => sum + payrollBonusTotal(r), 0);
 
   const proposalSummaryOf = (r) => {
     const approval = approvalOf(r.id);
@@ -23697,6 +23844,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
       return {
         ...row, target, actual, achievedPct, kpiScore, kpiBonus, milestoneBonus,
         commission, otherBonus, otPay, totalBonus, evaluation,
+        // Tổng phụ cấp đi kèm để tab Thưởng cũng có đủ cặp ô PHỤ CẤP - THƯỞNG.
+        allowanceTotal: payrollAllowanceTotal(row),
       };
     })
     .sort((left, right) => right.totalBonus - left.totalBonus);
@@ -23709,7 +23858,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
     otPay: total.otPay + row.otPay,
     otHours: total.otHours + (Number(row.otHours) || 0),
     totalBonus: total.totalBonus + row.totalBonus,
-  }), { kpiBonus: 0, milestoneBonus: 0, commission: 0, otherBonus: 0, otPay: 0, otHours: 0, totalBonus: 0 });
+    allowanceTotal: total.allowanceTotal + row.allowanceTotal,
+  }), { kpiBonus: 0, milestoneBonus: 0, commission: 0, otherBonus: 0, otPay: 0, otHours: 0, totalBonus: 0, allowanceTotal: 0 });
 
   const canEditKpi = currentIsBoss || currentIsAccountant;
   const openKpiEdit = (row) => {
@@ -23806,6 +23956,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
         custom,
         fixedTotal,
         customTotal: Number(row.customAllowanceTotal) || 0,
+        // Kèm tổng thưởng để dải ô tóm tắt của tab này có đủ cặp PHỤ CẤP - THƯỞNG như các tab khác.
+        bonusTotal: payrollBonusTotal(row),
         grandTotal: fixedTotal + (Number(row.customAllowanceTotal) || 0),
         // Ăn trưa không còn khái niệm "trừ do nghỉ" (chỉ cộng ngày đủ công) — cột trừ chỉ còn
         // phần phụ cấp khai báo thêm bị chia lại theo ngày công.
@@ -23819,7 +23971,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
     custom: total.custom + row.customTotal,
     grand: total.grand + row.grandTotal,
     deducted: total.deducted + row.deducted,
-  }), { fixed: 0, custom: 0, grand: 0, deducted: 0 });
+    bonus: total.bonus + row.bonusTotal,
+  }), { fixed: 0, custom: 0, grand: 0, deducted: 0, bonus: 0 });
 
   const canEditAllowance = currentIsBoss || currentIsAccountant;
   const openAllowanceEditor = (row) => {
@@ -23925,6 +24078,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
           { label: "Tổng NV đóng kỳ này", value: fmtVND(payrollRows.reduce((s, r) => s + (Number(r.employeeInsurance) || 0), 0)), className: "text-[#fca5a5]" },
           { label: "Tổng DN đóng kỳ này", value: fmtVND(payrollRows.reduce((s, r) => s + (Number(r.employerInsurance) || 0), 0)), className: "text-[#86efac]" },
           { label: "Đang dùng mức cố định", value: `${payrollRows.filter((r) => r.insuranceFixed).length}/${payrollRows.length} người`, className: "text-white" },
+          { label: "Tổng phụ cấp kỳ này", value: fmtVND(periodAllowanceSum), className: "text-[#f4c76a]", sub: "ăn trưa · thâm niên · chuyên cần · tăng ca · khai báo thêm" },
+          { label: "Tổng thưởng kỳ này", value: fmtVND(periodBonusSum), className: "text-[#86efac]", sub: "hoa hồng · doanh số · upsale · KPI · mốc · thưởng khác" },
         ]} />
         <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-white/10">
           <table className="w-full min-w-[900px] text-xs">
@@ -23998,6 +24153,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
           { label: "Khai báo thêm", value: fmtVND(allowanceTotals.custom), className: "text-[#86efac]", sub: "xăng xe · OT · sinh con…" },
           { label: "Tổng thực nhận", value: fmtVND(allowanceTotals.grand), className: "text-white" },
           { label: "Trừ do nghỉ", value: fmtVND(allowanceTotals.deducted), className: "text-[#f6b6bd]" },
+          { label: "Tổng phụ cấp", value: fmtVND(allowanceTotals.grand), className: "text-[#f4c76a]", sub: "= cố định + khai báo thêm" },
+          { label: "Tổng thưởng", value: fmtVND(allowanceTotals.bonus), className: "text-[#86efac]", sub: "hoa hồng · doanh số · upsale · KPI · mốc · thưởng khác" },
         ]} />
 
         <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-white/10">
@@ -24172,6 +24329,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
           { label: "Thưởng mốc doanh số", value: fmtVND(kpiTotals.milestoneBonus), className: "text-[#86efac]" },
           { label: "Hoa hồng", value: fmtVND(kpiTotals.commission), className: "text-[#a9c4ff]" },
           { label: "Tăng ca đã duyệt (phụ cấp)", value: fmtVND(kpiTotals.otPay), className: "text-[#c4b5fd]", sub: `${kpiTotals.otHours}h · cộng ở cột Phụ cấp` },
+          { label: "Tổng phụ cấp kỳ", value: fmtVND(kpiTotals.allowanceTotal), className: "text-[#f4c76a]", sub: "ăn trưa · thâm niên · chuyên cần · tăng ca · khai báo thêm" },
           { label: "Tổng thưởng kỳ", value: fmtVND(kpiTotals.totalBonus), className: "text-white", sub: `thưởng khác ${fmtVND(kpiTotals.otherBonus)}` },
         ]} />
 
@@ -24535,7 +24693,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
           <div className="mt-1 text-[11px] text-muted">Bảng phụ giải trình CÁCH TÍNH: lương cơ bản → đơn giá ngày → lương theo công; từng % bảo hiểm nhân viên/doanh nghiệp đóng; thuế và từng lần tạm ứng. Số liệu khớp 1-1 với bảng tổng quát.</div>
         </div>
         <div className="min-h-0 flex-1 overflow-auto rounded-lg border border-paper-line">
-          <table className="w-full min-w-[1380px] text-xs">
+          <table className="w-full min-w-[1560px] text-xs">
             <thead className="sticky top-0 z-10 bg-[#F7F9FC] text-[10px] uppercase text-muted">
               <tr className="border-b border-paper-line">
                 <th className="px-3 py-2 text-left">Nhân sự</th>
@@ -24543,6 +24701,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                 <th className="px-3 py-2 text-right">Đơn giá ngày</th>
                 <th className="px-3 py-2 text-right">Ngày công</th>
                 <th className="px-3 py-2 text-right">Lương theo công</th>
+                <th className="px-3 py-2 text-right">Phụ cấp</th>
+                <th className="px-3 py-2 text-right">Thưởng</th>
                 <th className="px-3 py-2 text-right">Bảo hiểm NV (10,5%)</th>
                 <th className="px-3 py-2 text-right">Thuế TNCN</th>
                 <th className="px-3 py-2 text-right">Tạm ứng</th>
@@ -24552,7 +24712,7 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
             </thead>
             <tbody>
               {payrollOverviewRows.length === 0 && (
-                <tr><td colSpan={10} className="px-3 py-6 text-center text-[11px] text-muted">Không có nhân sự trong kỳ này.</td></tr>
+                <tr><td colSpan={12} className="px-3 py-6 text-center text-[11px] text-muted">Không có nhân sự trong kỳ này.</td></tr>
               )}
               {payrollOverviewRows.map((row, index) => (
                 <tr key={row.id} className={`border-t border-paper-line align-top ${index % 2 === 1 ? "bg-[#F8FAFC]" : "bg-white"} hover:bg-[#F0F5FF]`}>
@@ -24569,6 +24729,19 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                   <td className="px-3 py-2 text-right ktns-mono text-ink">
                     {fmtVND(row.mainSalary || 0)}
                     <div className="font-sans text-[9px] text-muted">= {fmtVND(row.daySalary || 0)} × {Number(row.actualDays || 0).toFixed(1)} công{row.probationRate && row.probationRate < 1 ? ` × ${Math.round(row.probationRate * 100)}% thử việc` : ""}</div>
+                  </td>
+                  {/* Hai cột PHỤ CẤP - THƯỞNG cộng đúng bằng cột cùng tên ở Bảng lương tổng quát,
+                      bấm vào là bung popup liệt kê chi tiết từng khoản. */}
+                  <td className="px-3 py-2 text-right ktns-mono text-[#92610A]">
+                    {row.allowanceTotal > 0 ? (
+                      <button type="button" onClick={() => setBreakdownPopup({ row, type: "allowance" })} className="font-semibold underline decoration-dotted underline-offset-2 hover:text-[#6b4707]" title="Xem chi tiết từng khoản phụ cấp (gồm cả tiền tăng ca đã duyệt)">{fmtVND(row.allowanceTotal)}</button>
+                    ) : "—"}
+                    {row.otPay > 0 && <div className="font-sans text-[9px] text-muted">gồm tăng ca {row.otHours || 0}h</div>}
+                  </td>
+                  <td className="px-3 py-2 text-right ktns-mono text-ledger-green">
+                    {row.bonusTotal > 0 ? (
+                      <button type="button" onClick={() => setBreakdownPopup({ row, type: "bonus" })} className="font-semibold underline decoration-dotted underline-offset-2 hover:text-[#14532d]" title="Xem chi tiết từng khoản thưởng">{fmtVND(row.bonusTotal)}</button>
+                    ) : "—"}
                   </td>
                   <td className="px-3 py-2 text-right ktns-mono text-stamp-red">
                     {row.employeeInsurance > 0 ? `-${fmtVND(row.employeeInsurance)}` : "—"}
@@ -24601,6 +24774,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                   <td className="px-3 py-2"></td>
                   <td className="px-3 py-2"></td>
                   <td className="px-3 py-2 text-right ktns-mono">{fmtVND(sumOverview("mainSalary"))}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-[#92610A]">{fmtVND(overviewTotalAllowance)}</td>
+                  <td className="px-3 py-2 text-right ktns-mono text-ledger-green">{fmtVND(overviewTotalBonus)}</td>
                   <td className="px-3 py-2 text-right ktns-mono text-stamp-red">{overviewEmployeeInsurance > 0 ? `-${fmtVND(overviewEmployeeInsurance)}` : "—"}</td>
                   <td className="px-3 py-2 text-right ktns-mono text-stamp-red">{overviewTotalTax > 0 ? `-${fmtVND(overviewTotalTax)}` : "—"}</td>
                   <td className="px-3 py-2 text-right ktns-mono text-stamp-red">{overviewTotalAdvance > 0 ? `-${fmtVND(overviewTotalAdvance)}` : "—"}</td>
@@ -24877,6 +25052,9 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                             <div className="flex justify-between"><span className="text-muted font-sans">Phụ cấp chuyên cần {!r.attendanceBonusEligible ? `(chưa đủ ${Number(r.attendanceBonusWorkDays || 0).toFixed(1)}/${r.standardDays} công)` : ""}</span>{fmtVND(r.attendanceBonus)}</div>
                             {r.kpiMilestoneBonus > 0 && <div className="flex justify-between"><span className="text-muted font-sans">Thưởng KPI mốc doanh số ({r.kpiMilestonePct}%)</span>{fmtVND(r.kpiMilestoneBonus)}</div>}
                             {r.otPay > 0 && <div className="flex justify-between"><span className="text-muted font-sans">Phụ cấp tăng ca {r.otHours || 0}h đã duyệt (150–300% lương giờ)</span>{fmtVND(r.otPay)}</div>}
+                            {/* Hai ô tổng nhóm PHỤ CẤP - THƯỞNG, khớp đúng cột cùng tên ở Bảng lương tổng quát. */}
+                            <div className="flex justify-between border-t border-paper-line pt-1 mt-1"><span className="font-sans text-muted">Tổng phụ cấp</span><span className="font-semibold text-[#92610A]">{fmtVND(payrollAllowanceTotal(r))}</span></div>
+                            <div className="flex justify-between"><span className="font-sans text-muted">Tổng thưởng</span><span className="font-semibold text-ledger-green">{fmtVND(payrollBonusTotal(r))}</span></div>
                             <div className="flex justify-between font-semibold border-t border-paper-line pt-1 mt-1"><span className="font-sans">Tổng thu nhập</span>{fmtVND(r.grossIncome)}</div>
                           </div>
                         </div>
@@ -24928,7 +25106,8 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
           <div className="domix-table-total-bar shrink-0 border-t border-paper-line bg-paper px-4 py-2.5 font-semibold">
             <div className="flex flex-wrap items-center gap-x-6 gap-y-1 text-xs">
               <span className="text-muted">Tổng đề xuất: <strong className="text-stamp-red">{fmtVND(visiblePayrollTotal)}</strong></span>
-              <span className="text-muted">Thưởng &amp; hoa hồng: <strong className="text-ledger-green">{fmtVND(totalCommission)}</strong></span>
+              <span className="text-muted" title="Ăn trưa · thâm niên · chuyên cần · tăng ca đã duyệt · phụ cấp khai báo thêm">Tổng phụ cấp: <strong className="text-[#92610A]">{fmtVND(proposalAllowanceSum)}</strong></span>
+              <span className="text-muted" title="Hoa hồng · thưởng doanh số · upsale kỹ thuật · KPI · mốc doanh số · thưởng khác">Tổng thưởng: <strong className="text-ledger-green">{fmtVND(proposalBonusSum)}</strong></span>
               <span className="text-muted">Thuế TNCN: <strong className="text-stamp-red">{fmtVND(totalTax)}</strong></span>
               <span className="text-muted">Chi phí doanh nghiệp: <strong className="text-stamp-red">{fmtVND(totalCompanyCost)}</strong></span>
             </div>
@@ -25433,6 +25612,9 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                   ))}
                   <Row label={`Chuyên cần${!r.attendanceBonusEligible ? ` (chưa đủ ${Number(r.attendanceBonusWorkDays || 0).toFixed(1)}/${r.standardDays} công)` : ""}`} value={fmtVND(r.attendanceBonus || 0)} />
                   {(r.otPay ?? 0) > 0 && <Row label={`Phụ cấp tăng ca ${r.otHours || 0}h đã duyệt (150–300% lương giờ)`} value={fmtVND(r.otPay)} />}
+                  {/* Hai dòng tổng nhóm để đọc là thấy ngay cơ cấu: lương + phụ cấp + thưởng. */}
+                  <Row label="Tổng phụ cấp" value={fmtVND(payrollAllowanceTotal(r))} strong />
+                  <Row label="Tổng thưởng" value={fmtVND(payrollBonusTotal(r))} strong />
                   <Row label="TỔNG THU NHẬP" value={fmtVND(r.grossIncome)} strong />
                 </div>
                 <div className="bg-paper/50 rounded-lg border border-paper-line p-4">
