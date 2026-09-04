@@ -2643,8 +2643,20 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
   const insuranceExemptByContract = !contract.hasInsurance;
   const insurancePeriodEligible = !insuranceExemptByContract && employeeActiveInPeriod && !insuranceSuspendedForUnpaidLeave;
   // Bảo hiểm khai theo SỐ TIỀN CỐ ĐỊNH cho từng nhân viên vẫn được tôn trọng, nhưng chỉ áp
-  // dụng với hợp đồng thuộc diện đóng BH bắt buộc.
-  const insuranceFixed = !insuranceExemptByContract && Number(e.insuranceFixedMode) === 1;
+  // dụng với hợp đồng thuộc diện đóng BH bắt buộc VÀ khi thực sự có khai số tiền.
+  //
+  // "Cố định 0đ" KHÔNG BAO GIỜ là một mức khai hợp lệ cho người thuộc diện đóng BH bắt buộc:
+  // nó chỉ có thể là dữ liệu chưa khai xong (mở popup Sửa bảo hiểm rồi bấm Lưu khi hai ô còn
+  // trống). Trước đây engine tin tuyệt đối vào cờ insuranceFixedMode nên trạng thái đó bị
+  // hiểu thành "miễn đóng bảo hiểm" và chỉ hiện dấu "—", không ai phát hiện. Đó cũng là lý do
+  // cùng một bản code chạy đúng trên máy này nhưng sai trên máy khác: khác nhau ở DỮ LIỆU chứ
+  // không phải ở code. Từ đây, khai 0đ được coi là CHƯA KHAI và tự quay về % theo luật.
+  const insuranceFixedDeclared = Math.max(0, Number(e.insuranceEmployeeAmount) || 0)
+    + Math.max(0, Number(e.insuranceEmployerAmount) || 0) > 0;
+  const insuranceFixedRequested = !insuranceExemptByContract && Number(e.insuranceFixedMode) === 1;
+  const insuranceFixed = insuranceFixedRequested && insuranceFixedDeclared;
+  // Cờ để giao diện nói rõ "đang bỏ qua mức cố định 0đ", thay vì im lặng đổi cách tính.
+  const insuranceFixedIgnored = insuranceFixedRequested && !insuranceFixedDeclared;
   let bhxhNV; let bhytNV; let bhtnNV; let bhxhDN; let bhytDN; let bhtnDN; let bhtnldBnnDN;
   if (insuranceFixed) {
     bhxhNV = insurancePeriodEligible ? Math.max(0, Number(e.insuranceEmployeeAmount) || 0) : 0;
@@ -2691,7 +2703,7 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
     customAllowanceConfigured: customAllowances.configuredTotal, customAllowanceDeducted: customAllowances.deductedTotal,
     usesRevenueModel, mainSalary, commission, compBonus, techUpsale, compStatusLabel, compRate, revenueUsed,
     otHours: ot.hours, otPay, otHourlyRate: ot.hourlyRate, otByType: ot.byType,
-    bhxhNV, bhytNV, bhtnNV, employeeInsurance, insuranceFixed,
+    bhxhNV, bhytNV, bhtnNV, employeeInsurance, insuranceFixed, insuranceFixedIgnored,
     bhxhDN, bhytDN, bhtnDN, bhtnldBnnDN, employerInsurance,
     unpaidLeaveDays, insuranceSuspendedForUnpaidLeave, insuranceExemptByContract, insuranceContributionBase,
     personalDeduction, taxableIncome: Math.max(taxableIncome, 0), thueTNCN,
@@ -23939,7 +23951,27 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
     if (!insuranceTarget || !canEditKpi) return;
     const employeeAmount = Math.max(0, Number(insuranceForm.employeeAmount) || 0);
     const employerAmount = Math.max(0, Number(insuranceForm.employerAmount) || 0);
-    // Lưu là chuyển hẳn sang SỐ TIỀN CỐ ĐỊNH — popup chỉ khai 2 số NV/DN đóng.
+    // Quay lại "% THEO LUẬT": xóa hẳn mức khai cũ để engine tính lại theo công thức
+    // luật định. Trước đây popup KHÔNG có đường về — mở ra bấm Lưu là bị khóa vĩnh viễn
+    // ở chế độ cố định, không cách nào trả lại % ngoài việc sửa thẳng dữ liệu.
+    if (!insuranceForm.fixed) {
+      setEmployees((current) => current.map((employee) => employee.id === insuranceTarget.id ? {
+        ...employee,
+        insuranceFixedMode: 0,
+        insuranceEmployeeAmount: 0,
+        insuranceEmployerAmount: 0,
+      } : employee));
+      setInsuranceTarget(null);
+      setInsuranceError("");
+      return;
+    }
+    // Bẫy cũ: bấm Lưu khi hai ô còn trống sẽ ghim nhân viên ở mức cố định 0đ — tức là ÂM
+    // THẦM ngừng đóng bảo hiểm dù hợp đồng vẫn là Chính thức, và bảng chỉ hiện dấu "—"
+    // nên không ai nhận ra. Chặn ngay tại đây thay vì để dữ liệu sai đi tiếp.
+    if (employeeAmount <= 0 && employerAmount <= 0) {
+      setInsuranceError("Mức cố định đang là 0đ cho cả hai phần — lưu như vậy là nhân viên KHÔNG đóng bảo hiểm. Hãy nhập số tiền thật, hoặc chọn \"% theo luật\" để hệ thống tự tính.");
+      return;
+    }
     setEmployees((current) => current.map((employee) => employee.id === insuranceTarget.id ? {
       ...employee,
       insuranceFixedMode: 1,
@@ -24114,12 +24146,18 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                   <td className="px-3 py-2.5">
                     {row.insuranceExemptByContract
                       ? <span className="rounded-full border border-[#f4c76a]/40 bg-[#f4c76a]/10 px-2 py-0.5 text-[9px] font-bold text-[#f4c76a]" title="Hợp đồng thử việc riêng / cộng tác viên chưa phát sinh BHXH-BHYT-BHTN bắt buộc">KHÔNG THUỘC DIỆN BH</span>
-                      : row.insuranceFixed
-                        ? <span className="rounded-full border border-[#86efac]/40 bg-[#86efac]/10 px-2 py-0.5 text-[9px] font-bold text-[#86efac]" title={`Mức khai: NV ${fmtVND(Number(row.insuranceEmployeeAmount) || 0)}/tháng · DN ${fmtVND(Number(row.insuranceEmployerAmount) || 0)}/tháng`}>SỐ TIỀN CỐ ĐỊNH</span>
-                        : <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[9px] font-bold text-[#aebbd0]" title="NV 10,5% + DN 21,5% trên lương đóng BH">% THEO LUẬT</span>}
+                      : row.insuranceFixedIgnored
+                        // Hồ sơ bật cờ "cố định" nhưng chưa khai số tiền — engine đã tự dùng %
+                        // theo luật. Nói thẳng ra đây để kế toán biết mà khai lại cho đúng.
+                        ? <span className="rounded-full border border-[#f4c76a]/50 bg-[#f4c76a]/15 px-2 py-0.5 text-[9px] font-bold text-[#f4c76a]" title="Hồ sơ đang bật chế độ số tiền cố định nhưng chưa khai mức đóng, nên hệ thống tự tính theo % luật định. Bấm Sửa bảo hiểm để khai mức thật hoặc chọn hẳn % theo luật.">% THEO LUẬT · CHƯA KHAI MỨC CỐ ĐỊNH</span>
+                        : row.insuranceFixed
+                          ? <span className="rounded-full border border-[#86efac]/40 bg-[#86efac]/10 px-2 py-0.5 text-[9px] font-bold text-[#86efac]" title={`Mức khai: NV ${fmtVND(Number(row.insuranceEmployeeAmount) || 0)}/tháng · DN ${fmtVND(Number(row.insuranceEmployerAmount) || 0)}/tháng`}>SỐ TIỀN CỐ ĐỊNH</span>
+                          : <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[9px] font-bold text-[#aebbd0]" title="NV 10,5% + DN 21,5% trên lương đóng BH">% THEO LUẬT</span>}
                     {row.insuranceExemptByContract
                       ? <div className="mt-1 text-[9px] text-[#8fa4c8]">{row.contractLabel || "—"} — không tính và không trừ bảo hiểm</div>
-                      : row.insuranceSuspendedForUnpaidLeave && <div className="mt-1 text-[9px] text-[#f4c76a]">{Number(row.unpaidLeaveDays || 0)} ngày không hưởng lương — tạm dừng đóng BH kỳ này</div>}
+                      : row.insuranceFixedIgnored
+                        ? <div className="mt-1 text-[9px] text-[#f4c76a]">Mức cố định đang để 0đ nên hệ thống dùng % theo luật — vào Sửa bảo hiểm để chốt lại</div>
+                        : row.insuranceSuspendedForUnpaidLeave && <div className="mt-1 text-[9px] text-[#f4c76a]">{Number(row.unpaidLeaveDays || 0)} ngày không hưởng lương — tạm dừng đóng BH kỳ này</div>}
                   </td>
                   <td className="px-3 py-2.5 text-right ktns-mono text-[#fca5a5]">{(Number(row.employeeInsurance) || 0) > 0 ? `-${fmtVND(row.employeeInsurance)}` : "—"}</td>
                   <td className="px-3 py-2.5 text-right ktns-mono text-[#86efac]">{(Number(row.employerInsurance) || 0) > 0 ? fmtVND(row.employerInsurance) : "—"}</td>
@@ -24527,7 +24565,23 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
             </>
           )}
         >
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="mb-4 grid gap-2 sm:grid-cols-2">
+            {[
+              { fixed: false, title: "% theo luật", desc: "NV 10,5% · DN 21,5% trên lương đóng BH. Hệ thống tự tính lại mỗi kỳ." },
+              { fixed: true, title: "Số tiền cố định", desc: "Dùng khi cơ quan BH chốt một mức riêng, không theo tỷ lệ." },
+            ].map((option) => (
+              <button
+                key={String(option.fixed)}
+                type="button"
+                onClick={() => { setInsuranceForm({ ...insuranceForm, fixed: option.fixed }); setInsuranceError(""); }}
+                className={`rounded-lg border px-3 py-2.5 text-left transition ${insuranceForm.fixed === option.fixed ? "border-[#315fae] bg-[#315fae]/10 shadow-sm" : "border-paper-line bg-white hover:border-ink/25"}`}
+              >
+                <div className={`text-sm font-bold ${insuranceForm.fixed === option.fixed ? "text-[#315fae]" : "text-ink"}`}>{option.title}</div>
+                <div className="mt-0.5 text-[11px] leading-snug text-muted">{option.desc}</div>
+              </button>
+            ))}
+          </div>
+          <div className={`grid gap-4 sm:grid-cols-2 ${insuranceForm.fixed ? "" : "pointer-events-none opacity-45"}`}>
             <SupportField label="Phần NHÂN VIÊN đóng (đ/tháng)" hint="Trừ vào lương thực lĩnh của nhân viên mỗi kỳ.">
               <MoneyInput value={insuranceForm.employeeAmount} onChange={(value) => setInsuranceForm({ ...insuranceForm, employeeAmount: value })} />
             </SupportField>
@@ -24535,6 +24589,12 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
               <MoneyInput value={insuranceForm.employerAmount} onChange={(value) => setInsuranceForm({ ...insuranceForm, employerAmount: value })} />
             </SupportField>
           </div>
+          {/* Luôn cho thấy mức theo luật để kế toán biết mình đang ghi đè lên con số nào. */}
+          <p className="mt-3 rounded-lg border border-paper-line bg-paper/60 px-3 py-2 text-[11px] leading-relaxed text-muted">
+            Lương đóng BH của {insuranceTarget.name}: <strong className="ktns-mono text-ink">{fmtVND(insuranceTarget.insuranceContributionBase || insuranceTarget.baseSalary || 0)}</strong>.
+            Nếu để <strong>% theo luật</strong>, kỳ này sẽ là NV <strong className="ktns-mono text-ink">{fmtVND((insuranceTarget.insuranceContributionBase || insuranceTarget.baseSalary || 0) * 0.105)}</strong>
+            {" "}· DN <strong className="ktns-mono text-ink">{fmtVND((insuranceTarget.insuranceContributionBase || insuranceTarget.baseSalary || 0) * 0.215)}</strong>.
+          </p>
           {insuranceError && <p className="mt-4 flex items-center gap-1.5 text-xs font-semibold text-stamp-red"><AlertTriangle size={13} /> {insuranceError}</p>}
         </SupportOverlay>
       )}
