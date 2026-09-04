@@ -2636,10 +2636,15 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
   // Cho phép khai riêng tiền lương làm căn cứ đóng BH nếu hồ sơ có trường insuranceSalary;
   // chưa khai thì tương thích ngược bằng lương cơ bản hiện có.
   const insuranceContributionBase = Math.max(0, Number(e.insuranceSalary) || Number(e.baseSalary) || 0);
-  const insurancePeriodEligible = employeeActiveInPeriod && !insuranceSuspendedForUnpaidLeave;
-  // Bảo hiểm khai theo SỐ TIỀN CỐ ĐỊNH cho từng nhân viên vẫn được tôn trọng. Với chế độ
-  // theo tỷ lệ, chỉ hợp đồng thuộc diện bảo hiểm bắt buộc mới phát sinh.
-  const insuranceFixed = Number(e.insuranceFixedMode) === 1;
+  // Hợp đồng KHÔNG thuộc diện BH bắt buộc (thử việc theo hợp đồng thử việc riêng, cộng tác
+  // viên) thì KHÔNG tính và KHÔNG trừ bảo hiểm — kể cả khi hồ sơ đã lỡ khai "số tiền cố định"
+  // ở tab Bảo hiểm. Trước đây nhánh số tiền cố định không xét loại hợp đồng nên nhân viên thử
+  // việc vẫn bị trừ BH vào thực lĩnh trong khi phiếu lương lại ghi 0 → hai nơi lệch số nhau.
+  const insuranceExemptByContract = !contract.hasInsurance;
+  const insurancePeriodEligible = !insuranceExemptByContract && employeeActiveInPeriod && !insuranceSuspendedForUnpaidLeave;
+  // Bảo hiểm khai theo SỐ TIỀN CỐ ĐỊNH cho từng nhân viên vẫn được tôn trọng, nhưng chỉ áp
+  // dụng với hợp đồng thuộc diện đóng BH bắt buộc.
+  const insuranceFixed = !insuranceExemptByContract && Number(e.insuranceFixedMode) === 1;
   let bhxhNV; let bhytNV; let bhtnNV; let bhxhDN; let bhytDN; let bhtnDN; let bhtnldBnnDN;
   if (insuranceFixed) {
     bhxhNV = insurancePeriodEligible ? Math.max(0, Number(e.insuranceEmployeeAmount) || 0) : 0;
@@ -2647,7 +2652,7 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
     bhxhDN = insurancePeriodEligible ? Math.max(0, Number(e.insuranceEmployerAmount) || 0) : 0;
     bhytDN = 0; bhtnDN = 0; bhtnldBnnDN = 0;
   } else {
-    const mandatoryInsurance = contract.hasInsurance && insurancePeriodEligible;
+    const mandatoryInsurance = insurancePeriodEligible;
     bhxhNV = mandatoryInsurance ? insuranceContributionBase * 0.08 : 0;
     bhytNV = mandatoryInsurance ? insuranceContributionBase * 0.015 : 0;
     bhtnNV = mandatoryInsurance ? insuranceContributionBase * 0.01 : 0;
@@ -2688,7 +2693,7 @@ function computePayroll(e, year = ATT_YEAR, month = ATT_MONTH, kpiTiers = DEFAUL
     otHours: ot.hours, otPay, otHourlyRate: ot.hourlyRate, otByType: ot.byType,
     bhxhNV, bhytNV, bhtnNV, employeeInsurance, insuranceFixed,
     bhxhDN, bhytDN, bhtnDN, bhtnldBnnDN, employerInsurance,
-    unpaidLeaveDays, insuranceSuspendedForUnpaidLeave, insuranceContributionBase,
+    unpaidLeaveDays, insuranceSuspendedForUnpaidLeave, insuranceExemptByContract, insuranceContributionBase,
     personalDeduction, taxableIncome: Math.max(taxableIncome, 0), thueTNCN,
     mealTaxFree, overtimeTaxFree, flatTaxThreshold: taxPolicy.flatTaxThreshold,
     net, employerTotalCost,
@@ -2971,7 +2976,7 @@ function exportInsuranceExcel(payrollRows, period = {}) {
     "Họ tên": r.name,
     "Chức vụ": r.position || "",
     "Loại hợp đồng": r.contractLabel,
-    "Cơ chế": r.insuranceFixed ? "Số tiền cố định" : "% theo luật",
+    "Cơ chế": r.insuranceExemptByContract ? "Không thuộc diện BH bắt buộc" : r.insuranceFixed ? "Số tiền cố định" : "% theo luật",
     "Lương đóng BH": Math.round(r.baseSalary),
     "Ngày công": `${Number(r.actualDays || 0).toFixed(1)}/${r.standardDays}`,
     "BHXH 8% (NV)": Math.round(r.bhxhNV || 0),
@@ -3902,7 +3907,7 @@ async function exportInsurancePdf(payrollRows, { company = {}, period = {} } = {
     <tr>
       <td class="c">${index + 1}</td>
       <td>${payslipEscape(r.name)}<div class="note">${payslipEscape(r.position || ROLE_META[r.roleType]?.label || "Nhân viên")} · ${payslipEscape(r.contractLabel || "—")} · công ${Number(r.actualDays || 0).toFixed(1)}/${r.standardDays}</div></td>
-      <td>${r.insuranceFixed ? "Số tiền cố định" : "% theo luật"}${r.insuranceSuspendedForUnpaidLeave ? `<div class="note">${Number(r.unpaidLeaveDays || 0)} ngày không hưởng lương — tạm dừng đóng BH kỳ này</div>` : `<div class="note">Không suy theo số công thực tế; xét ngày không hưởng lương</div>`}</td>
+      <td>${r.insuranceExemptByContract ? "Không thuộc diện BH bắt buộc" : r.insuranceFixed ? "Số tiền cố định" : "% theo luật"}${r.insuranceExemptByContract ? `<div class="note">${payslipEscape(r.contractLabel || "")} — không tính và không trừ bảo hiểm</div>` : r.insuranceSuspendedForUnpaidLeave ? `<div class="note">${Number(r.unpaidLeaveDays || 0)} ngày không hưởng lương — tạm dừng đóng BH kỳ này</div>` : `<div class="note">Không suy theo số công thực tế; xét ngày không hưởng lương</div>`}</td>
       <td class="r mono">${money(r.insuranceContributionBase || r.baseSalary)}</td>
       <td class="r mono">${money(r.employeeInsurance)}${!r.insuranceFixed && (Number(r.employeeInsurance) || 0) > 0 ? `<div class="note">BHXH ${money(r.bhxhNV)} · BHYT ${money(r.bhytNV)} · BHTN ${money(r.bhtnNV)}</div>` : ""}</td>
       <td class="r mono">${money(r.employerInsurance)}${!r.insuranceFixed && (Number(r.employerInsurance) || 0) > 0 ? `<div class="note">BHXH 17 · BHYT 3 · BHTN 1 · TNLĐ 0,5 (%)</div>` : ""}</td>
@@ -21750,6 +21755,9 @@ function NhanSu({ authUser, employees, setEmployees, onEmployeesPersisted, refre
               <select value={form.contractType} onChange={(e) => setForm({ ...form, contractType: e.target.value })} className="border border-paper-line rounded px-2 py-1.5 text-sm">
                 {Object.entries(CONTRACT_META).map(([id, m]) => (<option key={id} value={id}>{m.label}</option>))}
               </select>
+              {!CONTRACT_META[form.contractType]?.hasInsurance && (
+                <span className="text-[10px] text-ink-light normal-case">Loại hợp đồng này <strong>không tính và không trừ bảo hiểm</strong> (BHXH-BHYT-BHTN) trên bảng lương. Nếu người này đã ký HĐLĐ từ 1 tháng trở lên, hãy chọn <strong>Chính thức</strong>.</span>
+              )}
             </label>
             <label className="text-xs text-muted flex flex-col gap-1">Lương cơ bản tháng (đ)<MoneyInput value={form.baseSalary} onChange={(v) => setForm({ ...form, baseSalary: v })} /></label>
             <label className="text-xs text-muted flex flex-col gap-1">Lương một ngày (đ)<MoneyInput value={form.dailySalary} onChange={(v) => setForm({ ...form, dailySalary: v })} /><span className="text-[10px] text-ink-light normal-case">Nếu để 0, hệ thống tự lấy lương cơ bản chia số ngày làm việc chuẩn của tháng.</span></label>
@@ -23916,6 +23924,9 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
   const [insuranceError, setInsuranceError] = useState("");
   const openInsuranceEdit = (row) => {
     if (!canEditKpi) return;
+    // Thử việc / cộng tác viên không thuộc diện BH bắt buộc — không cho khai mức đóng cố định
+    // để tránh khai xong mà engine vẫn tính 0, người dùng tưởng hệ thống ăn gian số.
+    if (row.insuranceExemptByContract) return;
     setInsuranceTarget(row);
     setInsuranceForm({
       fixed: Number(row.insuranceFixedMode) === 1,
@@ -24101,18 +24112,22 @@ function BangLuong({ payrollRows, totalPayroll, setEmployees, reportYear, report
                     <div className="text-[10px] text-[#8fa4c8]">{row.position || ROLE_META[row.roleType]?.label || "Nhân viên"} · {row.contractLabel || "—"}</div>
                   </td>
                   <td className="px-3 py-2.5">
-                    {row.insuranceFixed
-                      ? <span className="rounded-full border border-[#86efac]/40 bg-[#86efac]/10 px-2 py-0.5 text-[9px] font-bold text-[#86efac]" title={`Mức khai: NV ${fmtVND(Number(row.insuranceEmployeeAmount) || 0)}/tháng · DN ${fmtVND(Number(row.insuranceEmployerAmount) || 0)}/tháng`}>SỐ TIỀN CỐ ĐỊNH</span>
-                      : <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[9px] font-bold text-[#aebbd0]" title="NV 10,5% + DN 21,5% trên lương đóng BH">% THEO LUẬT</span>}
-                    {row.insuranceSuspendedForUnpaidLeave && <div className="mt-1 text-[9px] text-[#f4c76a]">{Number(row.unpaidLeaveDays || 0)} ngày không hưởng lương — tạm dừng đóng BH kỳ này</div>}
+                    {row.insuranceExemptByContract
+                      ? <span className="rounded-full border border-[#f4c76a]/40 bg-[#f4c76a]/10 px-2 py-0.5 text-[9px] font-bold text-[#f4c76a]" title="Hợp đồng thử việc riêng / cộng tác viên chưa phát sinh BHXH-BHYT-BHTN bắt buộc">KHÔNG THUỘC DIỆN BH</span>
+                      : row.insuranceFixed
+                        ? <span className="rounded-full border border-[#86efac]/40 bg-[#86efac]/10 px-2 py-0.5 text-[9px] font-bold text-[#86efac]" title={`Mức khai: NV ${fmtVND(Number(row.insuranceEmployeeAmount) || 0)}/tháng · DN ${fmtVND(Number(row.insuranceEmployerAmount) || 0)}/tháng`}>SỐ TIỀN CỐ ĐỊNH</span>
+                        : <span className="rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[9px] font-bold text-[#aebbd0]" title="NV 10,5% + DN 21,5% trên lương đóng BH">% THEO LUẬT</span>}
+                    {row.insuranceExemptByContract
+                      ? <div className="mt-1 text-[9px] text-[#8fa4c8]">{row.contractLabel || "—"} — không tính và không trừ bảo hiểm</div>
+                      : row.insuranceSuspendedForUnpaidLeave && <div className="mt-1 text-[9px] text-[#f4c76a]">{Number(row.unpaidLeaveDays || 0)} ngày không hưởng lương — tạm dừng đóng BH kỳ này</div>}
                   </td>
                   <td className="px-3 py-2.5 text-right ktns-mono text-[#fca5a5]">{(Number(row.employeeInsurance) || 0) > 0 ? `-${fmtVND(row.employeeInsurance)}` : "—"}</td>
                   <td className="px-3 py-2.5 text-right ktns-mono text-[#86efac]">{(Number(row.employerInsurance) || 0) > 0 ? fmtVND(row.employerInsurance) : "—"}</td>
                   <td className="px-3 py-2.5 text-right ktns-mono font-semibold text-white">{fmtVND((Number(row.employeeInsurance) || 0) + (Number(row.employerInsurance) || 0))}</td>
                   <td className="px-3 py-2.5 text-right">
-                    {canEditKpi && (
-                      <button type="button" onClick={() => openInsuranceEdit(row)} className="inline-flex items-center gap-1 rounded-md border border-[#315fae]/40 bg-[#315fae]/10 px-2.5 py-1 text-[11px] font-semibold text-[#7ea4e8] hover:bg-[#315fae]/20"><Pencil size={11} /> Sửa bảo hiểm</button>
-                    )}
+                    {canEditKpi && (row.insuranceExemptByContract
+                      ? <span className="inline-flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2.5 py-1 text-[11px] font-semibold text-[#6f7f9c]" title="Không khai được mức đóng cho hợp đồng chưa thuộc diện BH bắt buộc. Đổi sang hợp đồng Chính thức ở tab Nhân sự nếu người này đã ký HĐLĐ.">Miễn đóng BH</span>
+                      : <button type="button" onClick={() => openInsuranceEdit(row)} className="inline-flex items-center gap-1 rounded-md border border-[#315fae]/40 bg-[#315fae]/10 px-2.5 py-1 text-[11px] font-semibold text-[#7ea4e8] hover:bg-[#315fae]/20"><Pencil size={11} /> Sửa bảo hiểm</button>)}
                   </td>
                 </tr>
               ))}
