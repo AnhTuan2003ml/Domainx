@@ -11,6 +11,7 @@ from config import (
     OTP_RESEND_SECONDS,
 )
 from db import password_reset_store, session_store, user_store
+from security import validate_password_strength
 from services import email_service
 
 
@@ -105,8 +106,7 @@ def reset_password_with_otp(db_path, email, otp_code, new_password, confirm_pass
         raise ValueError("Email không hợp lệ")
     if len(otp_code) != 6 or not otp_code.isdigit():
         raise ValueError("Mã OTP phải gồm 6 chữ số")
-    if not new_password or len(new_password) < 8:
-        raise ValueError("Mật khẩu mới phải có ít nhất 8 ký tự")
+    validate_password_strength(new_password, "Mật khẩu mới")
     if new_password != confirm_password:
         raise ValueError("Mật khẩu xác nhận không khớp")
 

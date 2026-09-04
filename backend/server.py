@@ -10,7 +10,13 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from config import COMPANY_ENV_OVERRIDES, CORS_ORIGIN, DEFAULT_DB_TARGET, DIST_DIR, MAX_REQUEST_BODY_BYTES
+from config import (
+    COMPANY_ENV_OVERRIDES,
+    DEFAULT_DB_TARGET,
+    DIST_DIR,
+    MAX_REQUEST_BODY_BYTES,
+    resolve_allowed_origin,
+)
 from db.connection import database_backend, database_identity, require_postgres_target
 from db.schema import init_db
 from db.state_store import read_state, update_state
@@ -1777,10 +1783,28 @@ class DomixHandler(BaseHTTPRequestHandler):
     static_dir = DIST_DIR
 
     def end_headers(self):
-        self.send_header("Access-Control-Allow-Origin", CORS_ORIGIN)
-        self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        # Chỉ phát header CORS cho origin đã khai báo. Ứng dụng thật chạy cùng origin
+        # qua Nginx nên không cần CORS; im lặng ở đây chính là cấu hình an toàn nhất.
+        allowed_origin = resolve_allowed_origin(self.headers.get("Origin", "") if self.headers else "")
+        if allowed_origin:
+            self.send_header("Access-Control-Allow-Origin", allowed_origin)
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
         super().end_headers()
+
+    def client_ip(self):
+        """IP người gọi, ưu tiên X-Forwarded-For do Nginx đặt.
+
+        Header này giả mạo được nếu ai đó gọi thẳng backend trong mạng Docker, nên nó
+        chỉ dùng cho lớp giới hạn THEO IP. Lớp giới hạn theo tài khoản không phụ thuộc
+        vào nó và mới là phòng tuyến chính.
+        """
+        forwarded = (self.headers.get("X-Forwarded-For", "") if self.headers else "").strip()
+        if forwarded:
+            return forwarded.split(",")[0].strip()[:64]
+        address = getattr(self, "client_address", None)
+        return (address[0] if address else "")[:64]
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -1933,13 +1957,15 @@ class DomixHandler(BaseHTTPRequestHandler):
             self.send_json({"error": f"JSON không hợp lệ: {exc}"}, 400)
             return None
 
-    def send_json(self, payload, status=200):
+    def send_json(self, payload, status=200, headers=None):
         body = json.dumps(payload, ensure_ascii=False, default=str).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
         self.send_header("Pragma", "no-cache")
         self.send_header("Content-Length", str(len(body)))
+        for name, value in (headers or {}).items():
+            self.send_header(str(name), str(value))
         self.end_headers()
         self.wfile.write(body)
 

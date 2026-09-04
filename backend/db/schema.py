@@ -85,6 +85,21 @@ def init_db(db_path):
             "CREATE INDEX IF NOT EXISTS idx_director_password_failures_key_time "
             "ON director_password_failures(attempt_key, attempted_at)"
         )
+        # Chống dò mật khẩu ở cửa đăng nhập. attempt_key có 2 dạng: "account:<email>"
+        # và "ip:<địa chỉ>" — đếm riêng để đổi IP không thoát được giới hạn theo tài khoản.
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS login_failures (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                attempt_key TEXT NOT NULL,
+                attempted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )
+            """
+        )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_login_failures_key_time "
+            "ON login_failures(attempt_key, attempted_at)"
+        )
         conn.execute(
             """
             CREATE TABLE IF NOT EXISTS email_alert_log (

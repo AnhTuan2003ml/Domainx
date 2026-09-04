@@ -39,7 +39,9 @@ services:
       DOMIX_DB_PASSWORD: ${POSTGRES_PASSWORD}
       DOMIX_ADMIN_EMAIL: ${DOMIX_ADMIN_EMAIL:?Hãy đặt DOMIX_ADMIN_EMAIL trong file .env}
       DOMIX_ADMIN_PASSWORD: ${DOMIX_ADMIN_PASSWORD:?Hãy đặt DOMIX_ADMIN_PASSWORD trong file .env}
-      DOMIX_CORS_ORIGIN: ${DOMIX_CORS_ORIGIN:-*}
+      # Để trống = chỉ cho phép cùng origin (đúng cho kiến trúc Nginx proxy /api).
+      # Chỉ khai origin cụ thể khi có client web nằm ở tên miền khác.
+      DOMIX_CORS_ORIGIN: ${DOMIX_CORS_ORIGIN:-}
       # Thông tin công ty hiển thị toàn hệ thống — đặt trong .env, để trống thì dùng giá trị lưu trong Cài đặt.
       DOMIX_COMPANY_NAME: ${DOMIX_COMPANY_NAME:-}
       DOMIX_COMPANY_ADDRESS: ${DOMIX_COMPANY_ADDRESS:-}

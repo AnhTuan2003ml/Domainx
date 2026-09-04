@@ -88,7 +88,21 @@ def _postgres_database_url_from_env():
 DATABASE_URL = _postgres_database_url_from_env()
 DEFAULT_DB_TARGET = DATABASE_URL
 APP_ENV = os.environ.get("DOMIX_APP_ENV", "development").strip().lower()
-CORS_ORIGIN = os.environ.get("DOMIX_CORS_ORIGIN", "*").strip() or "*"
+# CORS: khai báo danh sách origin được phép, phân tách bằng dấu phẩy. Giá trị "*" chỉ
+# còn hiệu lực NGOÀI production — ứng dụng thật chạy cùng origin qua Nginx (Nginx proxy
+# /api sang backend) nên không cần CORS. Để "*" trong production chỉ mở đường cho web lạ
+# gọi thẳng API đăng nhập/OTP từ trình duyệt của nạn nhân.
+_CORS_RAW = os.environ.get("DOMIX_CORS_ORIGIN", "").strip()
+CORS_ALLOWED_ORIGINS = tuple(value.strip() for value in _CORS_RAW.split(",") if value.strip())
+CORS_ALLOW_ANY_ORIGIN = "*" in CORS_ALLOWED_ORIGINS and APP_ENV != "production"
+
+
+def resolve_allowed_origin(origin):
+    """Origin được phép cho request hiện tại; rỗng nghĩa là không gửi header CORS."""
+    if CORS_ALLOW_ANY_ORIGIN:
+        return "*"
+    value = (origin or "").strip()
+    return value if value and value in CORS_ALLOWED_ORIGINS else ""
 
 # Thông tin công ty cấu hình từ .env (DOMIX_COMPANY_NAME/ADDRESS/PHONE).
 # Biến nào ĐƯỢC ĐẶT sẽ ghi đè giá trị hiển thị ở mọi API trả về (sidebar, in ấn, hóa đơn...)
@@ -115,6 +129,13 @@ OTP_EXPIRY_MINUTES = int(os.environ.get("DOMIX_OTP_EXPIRY_MINUTES", "10"))
 OTP_RESEND_SECONDS = int(os.environ.get("DOMIX_OTP_RESEND_SECONDS", "60"))
 OTP_MAX_ATTEMPTS = int(os.environ.get("DOMIX_OTP_MAX_ATTEMPTS", "5"))
 OTP_MAX_REQUESTS_PER_HOUR = int(os.environ.get("DOMIX_OTP_MAX_REQUESTS_PER_HOUR", "5"))
+
+# Chống dò mật khẩu đăng nhập. Ngưỡng theo tài khoản đặt thấp (bảo vệ đúng người bị
+# nhắm tới); ngưỡng theo IP đặt cao hơn để một văn phòng dùng chung đường mạng gõ nhầm
+# vài lần không làm cả công ty bị khóa.
+LOGIN_FAILURE_WINDOW_SECONDS = int(os.environ.get("DOMIX_LOGIN_FAILURE_WINDOW_SECONDS", "900"))
+LOGIN_MAX_FAILURES_PER_ACCOUNT = int(os.environ.get("DOMIX_LOGIN_MAX_FAILURES_PER_ACCOUNT", "5"))
+LOGIN_MAX_FAILURES_PER_IP = int(os.environ.get("DOMIX_LOGIN_MAX_FAILURES_PER_IP", "20"))
 
 ANTHROPIC_API_KEY = os.environ.get("DOMIX_ANTHROPIC_API_KEY", "").strip()
 ANTHROPIC_MODEL = os.environ.get("DOMIX_ANTHROPIC_MODEL", "claude-sonnet-4-6").strip() or "claude-sonnet-4-6"

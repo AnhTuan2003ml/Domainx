@@ -1,7 +1,12 @@
 import unicodedata
 
 from db import session_store, user_store
-from security import password_needs_rehash, verify_password
+from security import password_hash, password_needs_rehash, validate_password_strength, verify_password
+
+# Hash "mồi" để khi email không tồn tại vẫn tốn đúng một lượt bcrypt như tài khoản có
+# thật. Không có nó, thời gian phản hồi của email tồn tại và email không tồn tại lệch
+# nhau rõ rệt — đủ để dò ra danh sách email đang dùng trong hệ thống.
+_TIMING_DECOY_HASH = password_hash("domix-timing-decoy-not-a-real-password")
 
 
 def _password_candidates(password):
@@ -22,6 +27,7 @@ def login(db_path, email, password):
         return None
     row = user_store.get_user_by_email(db_path, email, active_only=True)
     if not row:
+        verify_password(password if isinstance(password, str) else "", _TIMING_DECOY_HASH)
         return None
     matched_password = next((candidate for candidate in _password_candidates(password) if verify_password(candidate, row["password_hash"])), None)
     if matched_password is None:
@@ -41,10 +47,11 @@ def logout(db_path, token):
 
 
 def change_password(db_path, email, current_password, new_password):
-    if not new_password or len(new_password) < 8:
-        raise ValueError("Mật khẩu mới phải có ít nhất 8 ký tự")
+    validate_password_strength(new_password, "Mật khẩu mới")
     row = user_store.get_user_by_email(db_path, email, active_only=True)
     if not row or not verify_password(current_password, row["password_hash"]):
         raise ValueError("Mật khẩu hiện tại không đúng")
+    if verify_password(new_password, row["password_hash"]):
+        raise ValueError("Mật khẩu mới phải khác mật khẩu hiện tại")
     user_store.update_password(db_path, email, new_password)
     session_store.prune_other_sessions(db_path, row["id"])

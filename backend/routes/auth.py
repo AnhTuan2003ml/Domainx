@@ -1,4 +1,4 @@
-from services import auth_service, password_reset_service, registration_service
+from services import auth_service, login_guard, password_reset_service, registration_service
 
 
 def handle_get(handler, route, _parsed):
@@ -20,10 +20,28 @@ def handle_post(handler, route, _parsed):
         data = handler.read_json()
         if data is None:
             return True
-        result = auth_service.login(handler.db_path, data.get("email", ""), data.get("password", ""))
+        email = str(data.get("email", "") or "").strip().lower()
+        client_ip = handler.client_ip()
+        try:
+            login_guard.ensure_allowed(handler.db_path, email, client_ip)
+        except login_guard.LoginBlocked as blocked:
+            print(f"[LOGIN BLOCKED] email={email or '-'} ip={client_ip or '-'}")
+            handler.send_json(
+                {"error": str(blocked), "retryAfterSeconds": blocked.retry_after},
+                429,
+                headers={"Retry-After": blocked.retry_after},
+            )
+            return True
+        result = auth_service.login(handler.db_path, email, data.get("password", ""))
         if not result:
+            login_guard.record_failure(handler.db_path, email, client_ip)
+            print(f"[LOGIN FAILED] email={email or '-'} ip={client_ip or '-'}")
+            # Thông báo giữ nguyên một câu chung cho cả sai email lẫn sai mật khẩu —
+            # không tiết lộ email nào đang tồn tại trong hệ thống.
             handler.send_json({"error": "Sai tài khoản hoặc mật khẩu"}, 401)
             return True
+        login_guard.record_success(handler.db_path, email, client_ip)
+        print(f"[LOGIN OK] email={email} ip={client_ip or '-'}")
         result["user"] = handler.effective_user(result.get("user"), persist=True)
         handler.send_json(result)
         return True

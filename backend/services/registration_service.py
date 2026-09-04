@@ -11,7 +11,7 @@ from config import (
     OTP_RESEND_SECONDS,
 )
 from db import registration_store, session_store, user_store
-from security import password_hash
+from security import password_hash, validate_password_strength
 from services import email_service
 
 
@@ -43,8 +43,7 @@ def _normalize_and_validate(email, password, confirm_password):
     email = user_store.normalize_email(email)
     if not user_store.is_email(email):
         raise ValueError("Email không hợp lệ")
-    if not password or len(password) < 8:
-        raise ValueError("Mật khẩu phải có ít nhất 8 ký tự")
+    validate_password_strength(password)
     if password != confirm_password:
         raise ValueError("Mật khẩu xác nhận không khớp")
     return email
